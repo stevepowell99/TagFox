@@ -136,7 +136,10 @@ try {
   exit 1
 }`;
 
-/** Same-folder rename only — JSON: { "from": "full\\\\path\\\\old", "newLeaf": "newName" }. Drive/OneDrive friendly. */
+/**
+ * Same-folder rename only — JSON: { "from": "full\\\\path\\\\old", "newLeaf": "newName" }.
+ * Clears read-only, tries Rename-Item, then .NET File/Directory Move (helps .gdoc shortcuts + cloud placeholders).
+ */
 const PS1_RENAME_SAME_DIR = `param([Parameter(Mandatory)][string]$JsonPath)
 try {
   $raw = Get-Content -LiteralPath $JsonPath -Raw -Encoding UTF8
@@ -144,7 +147,22 @@ try {
   $from = [string]$j.from
   $newLeaf = [string]$j.newLeaf
   if (-not $from -or $newLeaf -eq $null -or $newLeaf -eq '') { throw 'Missing from or newLeaf' }
-  Rename-Item -LiteralPath $from -NewName $newLeaf -ErrorAction Stop
+  if (-not (Test-Path -LiteralPath $from)) { throw 'Source path not found' }
+  $parent = Split-Path -LiteralPath $from -Parent
+  $to = Join-Path $parent $newLeaf
+  $item = Get-Item -LiteralPath $from -Force
+  if ($item.Attributes -band [System.IO.FileAttributes]::ReadOnly) {
+    $item.Attributes = $item.Attributes -band (-bnot [System.IO.FileAttributes]::ReadOnly)
+  }
+  try {
+    Rename-Item -LiteralPath $from -NewName $newLeaf -ErrorAction Stop
+  } catch {
+    if ($item.PSIsContainer) {
+      [System.IO.Directory]::Move($from, $to)
+    } else {
+      [System.IO.File]::Move($from, $to)
+    }
+  }
   exit 0
 } catch {
   [Console]::Error.WriteLine($_.Exception.Message)
@@ -162,13 +180,38 @@ function renameSameDirViaPowershell(fromRaw, toRaw) {
   const tmpJson = path.join(os.tmpdir(), `tagbrowser-rename-${process.pid}-${Date.now()}.json`);
   try {
     fssync.writeFileSync(tmpJson, JSON.stringify({ from, newLeaf }), 'utf8');
-    return runPowershellScriptFileWithArg(PS1_RENAME_SAME_DIR, tmpJson, 'Rename-Item');
+    return runPowershellScriptFileWithArg(PS1_RENAME_SAME_DIR, tmpJson, 'Rename');
   } catch (e) {
     return String(e.message || e);
   } finally {
     try {
       fssync.unlinkSync(tmpJson);
     } catch (_) {}
+  }
+}
+
+/** Same-folder rename via cmd `ren` in the parent directory (occasionally succeeds when PowerShell / Node do not). */
+function renameSameDirViaCmdRen(fromRaw, toRaw) {
+  if (process.platform !== 'win32') return 'Not Windows.';
+  const from = path.resolve(normalizeRenameOperand(String(fromRaw || '')));
+  const to = path.resolve(normalizeRenameOperand(String(toRaw || '')));
+  if (!from || !to) return 'Missing path.';
+  if (path.dirname(from).toLowerCase() !== path.dirname(to).toLowerCase()) return 'Paths must share the same parent folder.';
+  const dir = path.dirname(from);
+  const oldLeaf = path.basename(from);
+  const newLeaf = path.basename(to);
+  try {
+    const comSpec = getCmdExe();
+    const r = spawnSync(comSpec, ['/d', '/c', 'ren', oldLeaf, newLeaf], {
+      cwd: dir,
+      windowsHide: true,
+      encoding: 'utf8',
+    });
+    if (r.status === 0) return null;
+    const tail = [r.stderr, r.stdout].filter(Boolean).join(' ').trim();
+    return tail || 'cmd ren failed (exit ' + r.status + ').';
+  } catch (e) {
+    return String(e.message || e);
   }
 }
 
@@ -1189,6 +1232,8 @@ ipcMain.handle('list-child-folders', async (_event, { parentPath }) => {
     if (!d.isDirectory()) continue;
     const name = d.name;
     if (name === '.' || name === '..') continue;
+    /* Breadcrumb flyouts: hide dotfolders (.git, etc.); listing is dirs-only so no dotfiles here. */
+    if (name.startsWith('.')) continue;
     folders.push({ name, fullPath: path.join(p, name) });
   }
   folders.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }));
@@ -1319,7 +1364,7 @@ async function renameAttemptWithBusyRetry(from, to) {
   return { ok: false, err: lastErr };
 }
 
-/** fs.rename with busy retries; `\\?\` retry only after ENOENT (long paths), never after permission/sync errors. */
+/** fs.rename with busy retries; Windows adds PowerShell + cmd + `\\?\` fallbacks for cloud / read-only / gdoc shortcuts. */
 async function renameWithBusyRetry(fromRaw, toRaw) {
   const fromN = normalizeRenameOperand(fromRaw);
   const toN = normalizeRenameOperand(toRaw);
@@ -1329,14 +1374,24 @@ async function renameWithBusyRetry(fromRaw, toRaw) {
 
   const code = r.err && r.err.code;
   let psTail = '';
-  // Drive/OneDrive: Node's libuv rename often returns EPERM while Explorer/shell succeeds — try same-dir Rename-Item.
+  // Drive / placeholders: Node rename often EPERM — try PS (clear RO + Move), then cmd ren, then \\?\ fs.rename.
   if (process.platform === 'win32' && (code === 'EPERM' || code === 'EACCES' || code === 'EBUSY')) {
     const psErr = renameSameDirViaPowershell(fromN, toN);
     if (!psErr) return { ok: true };
-    psTail = ' PowerShell Rename-Item: ' + psErr;
+    psTail = ' PowerShell: ' + psErr;
+    const cmdErr = renameSameDirViaCmdRen(fromN, toN);
+    if (!cmdErr) return { ok: true };
+    psTail += ' | cmd ren: ' + cmdErr;
+    const a = toWinLongRenamePath(path.resolve(fromN));
+    const b = toWinLongRenamePath(path.resolve(toN));
+    if (a !== fromN || b !== toN) {
+      const rLong = await renameAttemptWithBusyRetry(a, b);
+      if (rLong.ok) return { ok: true };
+      psTail += ' | long-path fs.rename: ' + String((rLong.err && rLong.err.message) || rLong.err || 'failed');
+    }
   }
 
-  // Only ENOENT: `\\?\` can fix missing/not-found on MAX_PATH; avoid for EPERM/EACCES/EBUSY (sync locks).
+  // ENOENT: `\\?\` can fix missing/not-found on MAX_PATH (skip if already tried above for EPERM).
   const tryLong = process.platform === 'win32' && code === 'ENOENT';
   if (tryLong) {
     const a = toWinLongRenamePath(path.resolve(fromN));
@@ -1354,7 +1409,9 @@ async function renameWithBusyRetry(fromRaw, toRaw) {
   }
   if (r.err && (r.err.code === 'EPERM' || r.err.code === 'EACCES')) {
     msg +=
-      ' EPERM on Google Drive / OneDrive usually means the sync client still has the folder: wait until the folder is fully synced and not “in use”, try pausing sync briefly, ensure no upload is in progress, or rename from drive.google.com / onedrive.com instead of the local folder.';
+      ' EPERM on Google Drive / OneDrive often means a sync client, Explorer, or another app still has the path open—even if the tray app looks idle. Try closing File Explorer windows on that folder, terminals whose cwd is there, and any IDE window rooted on that path; wait a few seconds and retry.';
+    msg +=
+      ' If the file is a Google shortcut (.gdoc / .gsheet / .gslides), local renames can still be blocked without Drive’s shell integration—rename the document title in drive.google.com, or delete/recreate the shortcut after renaming online.';
   } else if (r.err && r.err.code === 'ENOENT') {
     msg +=
       ' If the item is in Google Drive / OneDrive, wait for sync or open the folder offline; then run Search again so paths match disk.';

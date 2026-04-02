@@ -56,9 +56,15 @@
       --bs-btn-hover-bg: #f4f4f5;
       --bs-btn-hover-border-color: #a1a1aa;
       --bs-btn-hover-color: #27272a;
-      --bs-btn-active-color: #fff;
-      --bs-btn-active-bg: #27272a;
-      --bs-btn-active-border-color: #27272a;
+      /* Checked / pressed: lighter grey (not near-black). */
+      --bs-btn-active-color: #f8fafc;
+      --bs-btn-active-bg: #6b6b76;
+      --bs-btn-active-border-color: #6b6b76;
+    }
+    .btn-check:checked + .btn-outline-secondary {
+      color: var(--bs-btn-active-color);
+      background-color: var(--bs-btn-active-bg);
+      border-color: var(--bs-btn-active-border-color);
     }
     .btn-outline-primary {
       --bs-btn-color: var(--tb-accent);
@@ -293,13 +299,14 @@
         box-shadow: none;
       }
     }
-    .pulse-hint:not(#query) {
+    /* Whole search row (clear + field); :focus-within pauses glow while typing. */
+    .pulse-hint:not(#queryInputGroup) {
       animation: empty-hint-btn-decay 20s ease-in-out forwards;
     }
-    #query.pulse-hint:not(:focus) {
+    #queryInputGroup.pulse-hint:not(:focus-within) {
       animation: empty-hint-query-decay 20s ease-in-out forwards;
     }
-    #query.pulse-hint:focus {
+    #queryInputGroup.pulse-hint:focus-within {
       animation: none;
     }
     @media (prefers-reduced-motion: reduce) {
@@ -423,13 +430,13 @@
     .tag-pill-x { line-height: 1; padding: 0 !important; min-width: 1em; }
     /* Hash-based tag colours on toolbar (inline background/border also set in JS). */
     #tagBar .tag-bar-pill { font-weight: 500; border-style: solid; border-width: 1px; box-sizing: border-box; }
-    /* Thicker border must not shrink the visible fill: with border-box, +1px border eats the bg unless padding is reduced. */
+    /* Thicker border must not shrink the visible fill: with border-box, extra border eats the bg unless padding is reduced. */
     #tagBar .tag-bar-pill.tag-bar-pill-active {
-      border-width: 2px;
-      padding-top: calc(var(--bs-btn-padding-y) - 1px);
-      padding-bottom: calc(var(--bs-btn-padding-y) - 1px);
-      padding-left: calc(var(--bs-btn-padding-x) - 1px);
-      padding-right: calc(var(--bs-btn-padding-x) - 1px);
+      border-width: 10px;
+      padding-top: calc(var(--bs-btn-padding-y) - 2px);
+      padding-bottom: calc(var(--bs-btn-padding-y) - 2px);
+      padding-left: calc(var(--bs-btn-padding-x) - 2px);
+      padding-right: calc(var(--bs-btn-padding-x) - 2px);
     }
     #tagBar .tag-bar-pill:focus-visible { box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.35); }
     #resultsTable thead th.sortable-th { cursor: pointer; user-select: none; white-space: nowrap; position: relative; }
@@ -464,16 +471,18 @@
     .status-bar-scope-up:disabled {
       opacity: 0.35;
     }
-    .breadcrumb-scope-dd .dropdown-toggle::after { display: none; }
-    /* Wider hit target; chevron from inline SVG in JS */
-    .breadcrumb-scope-dd .breadcrumb-dd-toggle {
+    /* Breadcrumb + favourites: same inline SVG ▾ (no Bootstrap caret). */
+    .tagfox-scope-chevron.dropdown-toggle::after {
+      display: none !important;
+    }
+    .tagfox-scope-chevron {
       min-width: 1.85rem;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       line-height: 1;
     }
-    .breadcrumb-scope-dd .breadcrumb-dd-toggle svg {
+    .tagfox-scope-chevron svg {
       opacity: 0.72;
       flex-shrink: 0;
     }
@@ -516,6 +525,56 @@
     }
     ul.breadcrumb-folder-flyout.is-open {
       display: block;
+    }
+    /* Breadcrumb ▾ / flyout: row on current scope path — inset bar (not .dropdown-item.active). */
+    #breadcrumbBar .dropdown-menu li.breadcrumb-folder-on-scope-path > button.dropdown-item,
+    ul.breadcrumb-folder-flyout li.breadcrumb-folder-on-scope-path > button.dropdown-item {
+      box-shadow: inset 4px 0 0 rgba(var(--bs-emphasis-color-rgb), 0.38);
+    }
+    /* Favourite chips: dropdown + body flyouts above results/panels (below breadcrumb row 1095). */
+    #favFoldersBar {
+      position: relative;
+      z-index: 1052;
+    }
+    /* Favourite “pill”: almost-white fill + dark grey text (distinct from breadcrumb link / primary). */
+    #favFoldersBar .fav-folder-chip-group {
+      --fav-chip-fg: #3f3f46;
+      --fav-chip-bg: #fafafa;
+      --fav-chip-border: #e4e4e7;
+    }
+    #favFoldersBar .fav-folder-chip-group > .fav-folder-chip-go {
+      color: var(--fav-chip-fg);
+      background-color: var(--fav-chip-bg);
+      border-color: var(--fav-chip-border);
+      font-weight: 500;
+    }
+    #favFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:hover {
+      color: #27272a;
+      background-color: #f4f4f5;
+      border-color: #d4d4d8;
+    }
+    #favFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:active {
+      color: #18181b;
+      background-color: #e4e4e7;
+      border-color: #a1a1aa;
+    }
+    #favFoldersBar .fav-folder-chip-group .dropdown-menu {
+      z-index: 1060;
+    }
+    #favFoldersBar .fav-folder-chip-chevron {
+      color: var(--fav-chip-fg);
+      background-color: var(--fav-chip-bg);
+      border-color: var(--fav-chip-border);
+    }
+    #favFoldersBar .fav-folder-chip-chevron:hover {
+      color: #27272a;
+      background-color: #f4f4f5;
+      border-color: #d4d4d8;
+    }
+    #favFoldersBar .fav-folder-chip-chevron:active {
+      color: #18181b;
+      background-color: #e4e4e7;
+      border-color: #a1a1aa;
     }
     .tag-toolbar-row {
       position: relative;
@@ -663,7 +722,13 @@
     <!-- Search + results -->
     <div class="center-panel">
       <div class="mb-2 d-flex flex-wrap gap-1 align-items-center small">
-        <span class="text-muted flex-shrink-0">Favourites</span>
+        <span class="text-muted flex-shrink-0 d-inline-flex align-items-center" title="Favourites" aria-label="Favourites">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              d="m8 2.748-.717-.737C5.6.281 2.514.878 1.4 3.053c-.523 1.023-.641 2.5.314 4.385.92 1.815 2.834 3.989 6.286 6.357 3.452-2.368 5.365-4.542 6.286-6.357 1.054-1.885.833-3.362.314-4.385C13.486.878 10.4.28 8.717 2.01L8 2.748zM8 15C-7.333 4.868 3.279-3.04 7.824 1.143c.06.055.119.112.176.171a3.12 3.12 0 0 1 .176-.17C12.72-3.042 23.333 4.867 8 15z"
+            />
+          </svg>
+        </span>
         <div id="favFoldersBar" class="d-flex flex-wrap gap-1 align-items-center"></div>
         <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0" id="btnSaveFavouriteFolder" title="Saves the current scope folder (Settings — Scope folder)">
           Save folder
@@ -701,18 +766,22 @@
         <div id="tagBar" class="d-flex flex-wrap gap-1 align-items-center flex-grow-1 min-w-0"></div>
         <button
           type="button"
-          class="btn btn-sm btn-outline-secondary flex-shrink-0 px-2"
+          class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
+          style="width: 2rem; height: 2rem"
           id="btnRefreshTags"
           title="Refresh tag counts: re-run main search and bracket-tag discovery (saved tags are kept)"
           aria-label="Refresh tag list"
         >
-          ↻
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+            <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z" />
+            <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.02 1.82a.25.25 0 0 1 0 .364L8.41 4.658A.25.25 0 0 1 8 4.466z" />
+          </svg>
         </button>
       </div>
 
       <!-- Search + new Title[(TODO)].md -->
       <div class="d-flex align-items-center gap-2 mb-2 min-w-0" style="flex-wrap: wrap">
-        <div class="input-group input-group-sm min-w-0" style="flex: 1 1 45%">
+        <div id="queryInputGroup" class="input-group input-group-sm min-w-0" style="flex: 1 1 45%">
           <button type="button" class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0 flex-shrink-0" style="width: 2rem" id="btnClearQuery" title="Clear search text" aria-label="Clear search text">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>
           </button>
@@ -1018,6 +1087,50 @@
     </div>
   </div>
 
+  <!-- Bulk rename: Ctrl+H — wildcard find/replace on basename for checked rows or current row -->
+  <div class="modal fade" id="bulkRenameModal" tabindex="-1" aria-labelledby="bulkRenameModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header py-2">
+          <h2 class="modal-title fs-6" id="bulkRenameModalLabel">Bulk rename in name</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body py-2">
+          <p class="small text-muted mb-2" id="bulkRenameTargetHint"></p>
+          <label class="form-label small mb-1" for="bulkRenameFind">Find</label>
+          <input type="text" id="bulkRenameFind" class="form-control form-control-sm mb-2" autocomplete="off" placeholder="e.g. report_* or old??" />
+          <label class="form-label small mb-1" for="bulkRenameReplace">Replace with</label>
+          <input type="text" id="bulkRenameReplace" class="form-control form-control-sm mb-2" autocomplete="off" />
+          <p class="small text-muted mb-0">
+            <code>*</code> = any characters, <code>?</code> = one character. Only the file or folder <strong>name</strong> (last segment) is changed — not parent folders. Matching uses the same
+            <strong>Match case</strong> setting as search (Settings / search row). Find and replace prefill uses the longest text common to every selected <strong>stem</strong> (text before the last
+            <code>.</code>; extensions ignored for that calculation only).
+          </p>
+          <p id="bulkRenameFeedback" class="small text-danger mb-0 mt-2" aria-live="polite"></p>
+          <!-- Live preview: new basenames vs current (same rules as Apply) -->
+          <div id="bulkRenamePreviewWrap" class="border rounded p-2 mt-3 bg-body-secondary" style="max-height: 14rem; overflow: auto">
+            <div class="small text-muted mb-1 fw-semibold">Preview</div>
+            <table class="table table-sm mb-0 align-middle">
+              <thead>
+                <tr class="small text-muted">
+                  <th scope="col" class="py-1">Current name</th>
+                  <th scope="col" class="py-1 text-center" style="width: 2rem">→</th>
+                  <th scope="col" class="py-1">New name</th>
+                </tr>
+              </thead>
+              <tbody id="bulkRenamePreviewBody" class="small font-monospace"></tbody>
+            </table>
+            <p id="bulkRenamePreviewMore" class="small text-muted mb-0 mt-1 d-none"></p>
+          </div>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary btn-sm" id="bulkRenameApply">Rename</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Help: Ctrl+/ (⌘+/ on Mac); last-opened tab restored from localStorage. -->
   <div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
@@ -1131,6 +1244,15 @@
                       <td>Rename</td>
                     </tr>
                     <tr>
+                      <td><kbd>Ctrl</kbd>+<kbd>H</kbd></td>
+                      <td>
+                        Bulk rename: find/replace on the file or folder <strong>name</strong> only (not parent folders). Uses <strong>checked</strong> rows, or the <strong>highlighted</strong> row if none
+                        checked. Find uses <code>*</code> / <code>?</code> wildcards; matching follows search <strong>Match case</strong>. <strong>Find</strong> and <strong>Replace</strong> prefill with the longest
+                        text common to every name’s <strong>stem</strong> (part before the last <code>.</code> — extensions skipped for that prefill only). <strong>Preview</strong> updates as you type.
+                        <strong>Rename</strong> applies to the list fixed when the dialog opened.
+                      </td>
+                    </tr>
+                    <tr>
                       <td><kbd>F5</kbd> · <kbd>Ctrl</kbd>+<kbd>R</kbd></td>
                       <td>Run the search again</td>
                     </tr>
@@ -1213,7 +1335,10 @@
               </ul>
               <h3 class="fs-6 text-secondary mb-2">Results, drag, shelf</h3>
               <ul class="mb-3 ps-3">
-                <li>Checkboxes on rows drive bulk actions. Drag rows onto a folder row or a breadcrumb segment to <strong>move</strong>; hold <kbd>Shift</kbd> while dropping to <strong>copy</strong>. <kbd>Alt</kbd>+drag starts an OS file drag (Explorer, etc.). The vertical <strong>shelf</strong> follows the same rules.</li>
+                <li>
+                  Checkboxes on rows drive bulk actions (Explorer copy, delete, tags). <kbd>Ctrl</kbd>+<kbd>H</kbd> opens <strong>bulk rename</strong> on names: shared-text prefill (stems; extensions ignored for that guess), wildcards (<code>*</code> / <code>?</code>), live preview, same scope rules as other renames.
+                </li>
+                <li>Drag rows onto a folder row or a breadcrumb segment to <strong>move</strong>; hold <kbd>Shift</kbd> while dropping to <strong>copy</strong>. <kbd>Alt</kbd>+drag starts an OS file drag (Explorer, etc.). The vertical <strong>shelf</strong> follows the same rules.</li>
                 <li>Column headers sort (sent to Everything). Use the header edges to resize columns.</li>
               </ul>
               <h3 class="fs-6 text-secondary mb-2">Viewer</h3>
@@ -1223,7 +1348,7 @@
               </ul>
               <h3 class="fs-6 text-secondary mb-2">Row menu (⋯)</h3>
               <ul class="mb-3 ps-3">
-                <li>Copy paths, open or reveal on disk, search the cloud by filename, rename, new folder, <strong>delete</strong> (confirmation), Notepad/Terminal where relevant.</li>
+                <li>Copy paths, open or reveal on disk, search the cloud by filename, rename (<kbd>F2</kbd>), new folder, <strong>delete</strong> (confirmation), Notepad/Terminal where relevant. For many names, use <kbd>Ctrl</kbd>+<kbd>H</kbd> after checking rows.</li>
               </ul>
               <h3 class="fs-6 text-secondary mb-2">Advanced options and toggles</h3>
               <ul class="mb-3 ps-3">
@@ -1238,6 +1363,7 @@
                 <li class="mb-2">In this app folder: <code>npm install</code> then <code>npm start</code>.</li>
                 <li class="mb-2">Open <strong>Settings</strong> and set <strong>Everything base URL</strong>. Optionally set <strong>Scope folder</strong> to start in a particular directory.</li>
                 <li class="mb-2">Type in the search box; the list fills from Everything. Open <strong>Help</strong> with <kbd>F1</kbd> or the <strong>?</strong> button.</li>
+                <li class="mb-2">Rename several files at once: check the rows, press <kbd>Ctrl</kbd>+<kbd>H</kbd>, edit find/replace (wildcard preview), then <strong>Rename</strong>.</li>
                 <li class="mb-0">
                   Use the <strong>breadcrumb</strong> to move the <strong>current folder</strong>; the <strong>Viewer</strong> on the right shows the selected item or folder context.
                 </li>
@@ -1334,6 +1460,7 @@
       tagStore: 'tagBrowserTagStore',
       knownBracketTags: 'tagBrowserKnownBracketTags',
       activeTagFilter: 'tagBrowserActiveTag',
+      tagFilterCombineOr: 'tagBrowserTagCombineOr',
       hideDotFolders: 'tagBrowserHideDotFolders',
       sortFoldersWithFiles: 'tagBrowserSortFoldersWithFiles',
       searchDebug: 'tagBrowserSearchDebug',
@@ -1390,6 +1517,7 @@
         tagStore: tagStoreOrder.slice(0, TAG_STORE_MAX),
         knownBracketTags: knownBracketTagsList.slice(0, KNOWN_BRACKET_TAGS_MAX),
         activeFilter: [...activeTagKeys].sort(),
+        tagCombineOr: !!tagFilterCombineOr,
       };
     }
 
@@ -1471,6 +1599,10 @@
       if (Array.isArray(snap.activeFilter)) {
         activeTagKeys = new Set(snap.activeFilter.map((x) => String(x).trim().toLowerCase()).filter(Boolean));
         persistActiveTagFilter();
+      }
+      if (typeof snap.tagCombineOr === 'boolean') {
+        tagFilterCombineOr = snap.tagCombineOr;
+        localStorage.setItem(LS.tagFilterCombineOr, tagFilterCombineOr ? '1' : '0');
       }
       scheduleTagPrefsDiskSync();
       searchDebugLog('tagPrefs.apply.after', {
@@ -1570,12 +1702,17 @@
 
     /** @type {Set<string>} lowercase keys; tag bar filters with AND (click toggles each). */
     let activeTagKeys = new Set();
+    /** Multiple tag filters: false = AND (default), true = OR (Everything regex + client filter). */
+    let tagFilterCombineOr = false;
     /** Tag modal targets (length 1 = single-name edit, &gt;1 = union add/remove on each). */
     let modalTargetPaths = [];
     let modalTags = [];
     /** Multi-select checkboxes: path key lowercase → canonical path */
     const checkedPathsMap = new Map();
     let tagModalInst = null;
+    let bulkRenameModalInst = null;
+    /** Paths captured when bulk rename opens — preview and Apply use this list. */
+    let bulkRenameTargetPaths = [];
     let tagRenameBusy = false;
     let renameItemBusy = false;
 
@@ -2374,31 +2511,64 @@
       }
     }
 
-    function favFolderLabel(fullPath) {
-      const n = String(fullPath || '').replace(/[/\\]+$/, '');
-      const base = T.baseName(n);
-      const s = base || n;
-      const max = 26;
-      return s.length > max ? s.slice(0, max - 1) + '…' : s;
-    }
-
     function renderFavFoldersBar() {
       const el = document.getElementById('favFoldersBar');
       if (!el) return;
       el.innerHTML = '';
       const paths = loadFavouriteFolders();
       for (const fp of paths) {
-        const grp = document.createElement('span');
-        grp.className = 'btn-group btn-group-sm';
+        const row = document.createElement('span');
+        row.className = 'd-inline-flex align-items-stretch';
+        const grp = document.createElement('div');
+        grp.className = 'btn-group btn-group-sm fav-folder-chip-group';
         const go = document.createElement('button');
         go.type = 'button';
-        go.className = 'btn btn-outline-primary btn-sm';
-        go.textContent = favFolderLabel(fp);
-        go.title = fp;
+        /* Amber folder icon + parseSegmentTags pretty + badges; pill colours from #favFoldersBar CSS. */
+        go.className = 'btn btn-sm fav-folder-chip-go d-inline-flex align-items-center flex-wrap gap-1 text-start';
+        const n = String(fp || '').replace(/[/\\]+$/, '');
+        const base = T.baseName(n) || n;
+        const parsed = T.parseSegmentTags(base);
+        let pretty = parsed.pretty || base;
+        const max = 26;
+        if (pretty.length > max) pretty = pretty.slice(0, max - 1) + '…';
+        const lead = document.createElement('span');
+        lead.className = 'd-inline-flex align-items-center gap-1';
+        lead.appendChild(folderIconEl());
+        const nm = document.createElement('span');
+        nm.textContent = pretty;
+        lead.appendChild(nm);
+        go.appendChild(lead);
+        for (const tag of parsed.tags) {
+          const b = document.createElement('span');
+          b.className = 'badge';
+          b.style.backgroundColor = tagColorCss(tag);
+          b.style.color = '#212529';
+          b.textContent = tag;
+          go.appendChild(b);
+        }
+        go.title = fp + ' — click to set scope';
         go.addEventListener('click', () => void applySearchScopeAndRefresh(fp));
+        const ddWrap = document.createElement('div');
+        ddWrap.className = 'dropdown';
+        const ddBtn = document.createElement('button');
+        ddBtn.type = 'button';
+        ddBtn.className = 'btn btn-sm dropdown-toggle fav-folder-chip-chevron tagfox-scope-chevron';
+        ddBtn.setAttribute('data-bs-toggle', 'dropdown');
+        ddBtn.setAttribute('aria-expanded', 'false');
+        ddBtn.setAttribute('aria-label', 'Subfolders of this favourite');
+        ddBtn.title = 'Browse subfolders (same nested flyouts as breadcrumb ▾)';
+        ddBtn.innerHTML = '<span class="visually-hidden">Subfolders</span>' + breadcrumbDropdownChevronHtml();
+        const menu = document.createElement('ul');
+        const parentNorm = normalizeFolderPathForEverything(fp);
+        const hl = breadcrumbHighlightChildPathNorm(parentNorm);
+        bindSubfolderDropdownWithFlyouts(ddBtn, menu, ddWrap, parentNorm, hl || '', true);
+        grp.appendChild(go);
+        ddWrap.appendChild(ddBtn);
+        ddWrap.appendChild(menu);
+        grp.appendChild(ddWrap);
         const rm = document.createElement('button');
         rm.type = 'button';
-        rm.className = 'btn btn-outline-secondary btn-sm px-1';
+        rm.className = 'btn btn-outline-secondary btn-sm px-1 ms-1';
         rm.setAttribute('aria-label', 'Remove');
         rm.textContent = '×';
         rm.title = 'Remove from favourites';
@@ -2408,9 +2578,9 @@
           saveFavouriteFolders(next);
           renderFavFoldersBar();
         });
-        grp.appendChild(go);
-        grp.appendChild(rm);
-        el.appendChild(grp);
+        row.appendChild(grp);
+        row.appendChild(rm);
+        el.appendChild(row);
       }
     }
 
@@ -2454,13 +2624,81 @@
      */
     function bindBreadcrumbDropdownHover(ddWrap, toggleEl) {
       ddWrap.addEventListener('mouseenter', () => {
-        document.querySelectorAll('#breadcrumbBar [data-bs-toggle="dropdown"]').forEach((btn) => {
-          if (btn === toggleEl) return;
-          const o = bootstrap.Dropdown.getInstance(btn);
-          if (o) o.hide();
-        });
+        document
+          .querySelectorAll('#breadcrumbBar [data-bs-toggle="dropdown"], #favFoldersBar [data-bs-toggle="dropdown"]')
+          .forEach((btn) => {
+            if (btn === toggleEl) return;
+            const o = bootstrap.Dropdown.getInstance(btn);
+            if (o) o.hide();
+          });
         bootstrap.Dropdown.getOrCreateInstance(toggleEl).show();
       });
+    }
+
+    /**
+     * Trailing-▾ pattern: list direct subfolders of parentPathRaw + chained ul.breadcrumb-folder-flyout (same IPC as breadcrumb).
+     * highlightPathNorm: optional path segment hint along current scope. hoverOpen: hover-opens-menu on ddWrap (breadcrumb + favourites; fav wraps only ▾ + menu so Go isn’t hijacked).
+     */
+    function bindSubfolderDropdownWithFlyouts(ddBtn, menu, ddWrap, parentPathRaw, highlightPathNorm, hoverOpen) {
+      const parentForList = normalizeFolderPathForEverything(parentPathRaw);
+      menu.className = 'dropdown-menu dropdown-menu-start py-1 small shadow';
+      menu.style.maxHeight = 'min(50vh, 280px)';
+      menu.style.overflow = 'auto';
+      menu.addEventListener('scroll', () => repositionBreadcrumbFlyoutChain());
+      menu.addEventListener('mouseenter', cancelBreadcrumbFlyoutHideTimer);
+      menu.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowRight') return;
+        const t = e.target;
+        if (!t.classList || !t.classList.contains('dropdown-item') || !menu.contains(t)) return;
+        const li = t.closest('li');
+        const path = li && li.dataset.breadcrumbFlyoutPath;
+        if (!path) return;
+        e.preventDefault();
+        e.stopPropagation();
+        cancelBreadcrumbFlyoutHideTimer();
+        void (async () => {
+          await openBreadcrumbSubfolderFlyoutForPath(path, li, ddBtn, 0);
+          const fly0 = breadcrumbSubfolderFlyoutChain[0];
+          const first = fly0 && fly0.querySelector('button.dropdown-item');
+          if (first) first.focus();
+        })();
+      });
+      ddBtn.addEventListener('click', (e) => e.stopPropagation());
+      ddBtn.addEventListener('hide.bs.dropdown', (ev) => {
+        if (focusInsideBreadcrumbFlyout()) ev.preventDefault();
+      });
+      ddBtn.addEventListener('hidden.bs.dropdown', () => hideBreadcrumbSubfolderFlyout());
+      ddBtn.addEventListener('show.bs.dropdown', () => {
+        menu.innerHTML =
+          '<li><span class="dropdown-item-text text-muted">' +
+          (window.tagBrowser.listChildFolders ? 'Loading…' : 'Not available') +
+          '</span></li>';
+        if (!window.tagBrowser.listChildFolders) return;
+        void (async () => {
+          const r = await window.tagBrowser.listChildFolders({ parentPath: parentForList });
+          menu.innerHTML = '';
+          if (!r || !r.ok) {
+            const li0 = document.createElement('li');
+            li0.innerHTML =
+              '<span class="dropdown-item-text text-danger small">' +
+              (r && r.error ? String(r.error) : 'Could not list folders') +
+              '</span>';
+            menu.appendChild(li0);
+            return;
+          }
+          const folders = r.folders || [];
+          if (!folders.length) {
+            const li0 = document.createElement('li');
+            li0.innerHTML = '<span class="dropdown-item-text text-muted">(no subfolders)</span>';
+            menu.appendChild(li0);
+            return;
+          }
+          const opts = { onMouseLeaveRow: scheduleHideBreadcrumbSubfolderFlyout };
+          if (highlightPathNorm) opts.highlightPathNorm = highlightPathNorm;
+          appendBreadcrumbFolderListItems(menu, folders, ddBtn, 0, opts);
+        })();
+      });
+      if (hoverOpen && ddWrap) bindBreadcrumbDropdownHover(ddWrap, ddBtn);
     }
 
     // --- Trailing breadcrumb ▾: chained flyouts (hover + focus moves load; ArrowRight/ArrowLeft). ---
@@ -2606,6 +2844,28 @@
       parentBtn.focus();
     }
 
+    /** Normalized (trim trail sep, lower) child of `parentPath` that continues toward current scope, or '' if none. */
+    function breadcrumbHighlightChildPathNorm(parentPath) {
+      const scopeRaw = document.getElementById('rootFolder').value.trim();
+      if (!scopeRaw) return '';
+      const scopeNorm = normalizeFolderPathForEverything(scopeRaw).replace(/[/\\]+$/, '').toLowerCase();
+      const parentNorm = normalizeFolderPathForEverything(String(parentPath || '').trim()).replace(/[/\\]+$/, '').toLowerCase();
+      if (!parentNorm || scopeNorm.length < parentNorm.length) return '';
+      if (scopeNorm === parentNorm) return '';
+      if (!scopeNorm.startsWith(parentNorm)) return '';
+      if (scopeNorm.length > parentNorm.length) {
+        const c = scopeNorm.charAt(parentNorm.length);
+        if (c !== '/' && c !== '\\') return '';
+      }
+      const rest = scopeNorm.slice(parentNorm.length).replace(/^[\\/]+/, '');
+      if (!rest) return '';
+      const firstSeg = rest.split(/[/\\]/)[0];
+      if (!firstSeg) return '';
+      const base = normalizeFolderPathForEverything(parentPath).replace(/[/\\]+$/, '');
+      const sep = base.includes('/') ? '/' : '\\';
+      return normalizeFolderPathForEverything(base + sep + firstSeg).replace(/[/\\]+$/, '').toLowerCase();
+    }
+
     /**
      * Shared folder rows for breadcrumb ▾ menus and nested flyouts (click = scope; hover = deeper flyout).
      * @param {HTMLElement} ulEl
@@ -2623,7 +2883,7 @@
         b.className = 'dropdown-item py-1';
         if (o.highlightPathNorm) {
           const fpNorm = f.fullPath.replace(/[/\\]+$/, '').toLowerCase();
-          if (fpNorm === o.highlightPathNorm) b.classList.add('active');
+          if (fpNorm === o.highlightPathNorm) li.classList.add('breadcrumb-folder-on-scope-path');
         }
         b.textContent = segmentPretty(f.name);
         b.title = f.fullPath;
@@ -2640,7 +2900,10 @@
           cancelBreadcrumbFlyoutHideTimer();
           void openBreadcrumbSubfolderFlyoutForPath(f.fullPath, li, toggleBtn, openFlyoutAtDepth);
         };
-        li.addEventListener('mouseenter', onEnterRow);
+        /* Same path as keyboard: focus the row button so Bootstrap :focus styling applies (avoid hover-only vs focus-only mismatch). */
+        li.addEventListener('mouseenter', () => {
+          if (document.activeElement !== b) b.focus({ preventScroll: true });
+        });
         li.addEventListener('focusin', (ev) => {
           if (ev.target === b) onEnterRow();
         });
@@ -2651,11 +2914,12 @@
     }
 
     /** One level: folder rows + hover/focus opens deeper flyout; click applies scope. */
-    function populateBreadcrumbSubfolderFlyoutAtDepth(flyEl, folders, subBtnToggle, depth) {
+    function populateBreadcrumbSubfolderFlyoutAtDepth(flyEl, folders, subBtnToggle, depth, parentPath) {
       flyEl.innerHTML = '';
       flyEl._subBtnToggle = subBtnToggle;
       // Nested flyout: no per-row mouseleave (gap → timer); rely on ul mouseleave + outside pointer.
-      appendBreadcrumbFolderListItems(flyEl, folders, subBtnToggle, depth + 1, {});
+      const hl = breadcrumbHighlightChildPathNorm(parentPath);
+      appendBreadcrumbFolderListItems(flyEl, folders, subBtnToggle, depth + 1, hl ? { highlightPathNorm: hl } : {});
       flyEl.classList.add('is-open');
       positionBreadcrumbFlyoutAtDepth(depth);
     }
@@ -2707,7 +2971,7 @@
         positionBreadcrumbFlyoutAtDepth(depth);
         return;
       }
-      populateBreadcrumbSubfolderFlyoutAtDepth(fly, folders, subBtnToggle, depth);
+      populateBreadcrumbSubfolderFlyoutAtDepth(fly, folders, subBtnToggle, depth, parentPath);
     }
 
     /** Folder trail: segments set scope; ▾ opens sibling/subfolder menus (hover or click). */
@@ -2775,7 +3039,8 @@
           ddWrap.className = 'dropdown d-inline-block';
           const ddBtn = document.createElement('button');
           ddBtn.type = 'button';
-          ddBtn.className = 'btn btn-link btn-sm text-secondary py-0 px-2 align-baseline breadcrumb-dd-toggle';
+          ddBtn.className =
+            'btn btn-link btn-sm text-secondary py-0 px-2 align-baseline breadcrumb-dd-toggle tagfox-scope-chevron';
           ddBtn.innerHTML = breadcrumbDropdownChevronHtml();
           ddBtn.title = 'Other folders in this location';
           ddBtn.setAttribute('aria-label', 'Other folders in this location');
@@ -2787,15 +3052,7 @@
           menu.style.overflow = 'auto';
           menu.addEventListener('scroll', () => repositionBreadcrumbFlyoutChain());
           menu.addEventListener('mouseenter', cancelBreadcrumbFlyoutHideTimer);
-          menu.addEventListener('focusin', (e) => {
-            const b = e.target.closest && e.target.closest('.dropdown-item');
-            if (!b || !menu.contains(b)) return;
-            const li = b.closest('li');
-            const path = li && li.dataset.breadcrumbFlyoutPath;
-            if (!path) return;
-            cancelBreadcrumbFlyoutHideTimer();
-            void openBreadcrumbSubfolderFlyoutForPath(path, li, ddBtn, 0);
-          });
+          /* Flyout open: row button focusin via appendBreadcrumbFolderListItems (mouseenter focuses button). */
           menu.addEventListener('keydown', (e) => {
             if (e.key !== 'ArrowRight') return;
             const t = e.target;
@@ -2867,82 +3124,17 @@
       subDd.className = 'dropdown d-inline-block';
       const subBtn = document.createElement('button');
       subBtn.type = 'button';
-      subBtn.className = 'btn btn-link btn-sm text-secondary py-0 px-2 align-baseline breadcrumb-dd-toggle';
+      subBtn.className =
+        'btn btn-link btn-sm text-secondary py-0 px-2 align-baseline breadcrumb-dd-toggle tagfox-scope-chevron';
       subBtn.innerHTML = breadcrumbDropdownChevronHtml();
       subBtn.title = 'Subfolders of current scope';
       subBtn.setAttribute('aria-label', 'Subfolders of current scope');
       subBtn.setAttribute('data-bs-toggle', 'dropdown');
       subBtn.setAttribute('aria-expanded', 'false');
       const subMenu = document.createElement('ul');
-      subMenu.className = 'dropdown-menu dropdown-menu-start py-1 small shadow';
-      subMenu.style.maxHeight = 'min(50vh, 280px)';
-      subMenu.style.overflow = 'auto';
-      subMenu.addEventListener('scroll', () => repositionBreadcrumbFlyoutChain());
-      subMenu.addEventListener('mouseenter', cancelBreadcrumbFlyoutHideTimer);
-      subMenu.addEventListener('focusin', (e) => {
-        const b = e.target.closest && e.target.closest('.dropdown-item');
-        if (!b || !subMenu.contains(b)) return;
-        const li = b.closest('li');
-        const path = li && li.dataset.breadcrumbFlyoutPath;
-        if (!path) return;
-        cancelBreadcrumbFlyoutHideTimer();
-        void openBreadcrumbSubfolderFlyoutForPath(path, li, subBtn, 0);
-      });
-      subMenu.addEventListener('keydown', (e) => {
-        if (e.key !== 'ArrowRight') return;
-        const t = e.target;
-        if (!t.classList || !t.classList.contains('dropdown-item') || !subMenu.contains(t)) return;
-        const li = t.closest('li');
-        const path = li && li.dataset.breadcrumbFlyoutPath;
-        if (!path) return;
-        e.preventDefault();
-        e.stopPropagation();
-        cancelBreadcrumbFlyoutHideTimer();
-        void (async () => {
-          await openBreadcrumbSubfolderFlyoutForPath(path, li, subBtn, 0);
-          const fly0 = breadcrumbSubfolderFlyoutChain[0];
-          const first = fly0 && fly0.querySelector('button.dropdown-item');
-          if (first) first.focus();
-        })();
-      });
-      subBtn.addEventListener('click', (e) => e.stopPropagation());
-      subBtn.addEventListener('hide.bs.dropdown', (ev) => {
-        if (focusInsideBreadcrumbFlyout()) ev.preventDefault();
-      });
-      subBtn.addEventListener('hidden.bs.dropdown', () => hideBreadcrumbSubfolderFlyout());
-      subBtn.addEventListener('show.bs.dropdown', () => {
-        subMenu.innerHTML =
-          '<li><span class="dropdown-item-text text-muted">' +
-          (window.tagBrowser.listChildFolders ? 'Loading…' : 'Not available') +
-          '</span></li>';
-        if (!window.tagBrowser.listChildFolders) return;
-        void (async () => {
-          const r = await window.tagBrowser.listChildFolders({ parentPath: scopeFolder });
-          subMenu.innerHTML = '';
-          if (!r || !r.ok) {
-            const li0 = document.createElement('li');
-            li0.innerHTML =
-              '<span class="dropdown-item-text text-danger small">' +
-              (r && r.error ? String(r.error) : 'Could not list folders') +
-              '</span>';
-            subMenu.appendChild(li0);
-            return;
-          }
-          const folders = r.folders || [];
-          if (!folders.length) {
-            const li0 = document.createElement('li');
-            li0.innerHTML = '<span class="dropdown-item-text text-muted">(no subfolders)</span>';
-            subMenu.appendChild(li0);
-            return;
-          }
-          appendBreadcrumbFolderListItems(subMenu, folders, subBtn, 0, {
-            onMouseLeaveRow: scheduleHideBreadcrumbSubfolderFlyout,
-          });
-        })();
-      });
+      bindSubfolderDropdownWithFlyouts(subBtn, subMenu, subDd, scopeFolder, '', true);
       subDd.appendChild(subBtn);
       subDd.appendChild(subMenu);
-      bindBreadcrumbDropdownHover(subDd, subBtn);
       subWrap.appendChild(subDd);
       el.appendChild(subWrap);
       syncStatusBarParentScopeButton();
@@ -2971,6 +3163,54 @@
       if (!t) return 'untitled';
       if (t.length > 120) t = t.slice(0, 120);
       return t;
+    }
+
+    /** User pattern with * and ? → RegExp source (* = any run, ? = one char; other regex chars escaped). */
+    function wildcardPatternToRegExpSource(pattern) {
+      let s = '';
+      for (let i = 0; i < pattern.length; i++) {
+        const c = pattern[i];
+        if (c === '*') s += '.*';
+        else if (c === '?') s += '.';
+        else s += c.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+      }
+      return s;
+    }
+
+    /** Longest contiguous substring that appears in every name (for bulk-rename prefill). */
+    function longestCommonSubstringAmong(names) {
+      const arr = (names || []).map((n) => String(n ?? ''));
+      if (arr.length === 0) return '';
+      if (arr.length === 1) return arr[0];
+      let shortest = arr[0];
+      for (const s of arr) if (s.length < shortest.length) shortest = s;
+      for (let len = shortest.length; len >= 1; len--) {
+        for (let i = 0; i + len <= shortest.length; i++) {
+          const sub = shortest.slice(i, i + len);
+          if (arr.every((s) => s.includes(sub))) return sub;
+        }
+      }
+      return '';
+    }
+
+    /** Strip trailing extension (last `.` segment) for prefill only; keeps `[(tags)]` etc. in the stem. */
+    function basenameStemIgnoringExtension(segment) {
+      const s = String(segment ?? '');
+      const d = s.lastIndexOf('.');
+      if (d > 0 && d < s.length - 1) return s.slice(0, d);
+      return s;
+    }
+
+    /** Same RegExp as Apply; null if find empty or invalid. */
+    function bulkRenameRegexFromFind(findRaw) {
+      const raw = String(findRaw ?? '');
+      if (!raw.trim()) return null;
+      const matchCase = document.getElementById('optCase') && document.getElementById('optCase').checked;
+      try {
+        return new RegExp(wildcardPatternToRegExpSource(raw), matchCase ? 'g' : 'gi');
+      } catch (_) {
+        return null;
+      }
     }
 
     function joinFolderAndFileName(folderAbs, fileName) {
@@ -3124,6 +3364,162 @@
         status.textContent = 'Renamed.';
         refreshAfterDiskMutation();
         refreshTagModalDatalist();
+      } finally {
+        renameItemBusy = false;
+      }
+    }
+
+    const BULK_RENAME_PREVIEW_MAX = 200;
+
+    /** Refresh preview table from Find/Replace + snapshot paths. */
+    function updateBulkRenamePreview() {
+      const tbody = document.getElementById('bulkRenamePreviewBody');
+      const moreEl = document.getElementById('bulkRenamePreviewMore');
+      const fb = document.getElementById('bulkRenameFeedback');
+      const findEl = document.getElementById('bulkRenameFind');
+      const replEl = document.getElementById('bulkRenameReplace');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+      if (moreEl) {
+        moreEl.classList.add('d-none');
+        moreEl.textContent = '';
+      }
+      if (!bulkRenameTargetPaths.length) return;
+      const findRaw = findEl ? String(findEl.value || '') : '';
+      const replaceLit = replEl ? String(replEl.value || '') : '';
+      if (fb) fb.textContent = '';
+      if (!findRaw.trim()) {
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td colspan="3" class="text-muted py-1 small">Enter a find pattern to see preview.</td>';
+        tbody.appendChild(tr);
+        return;
+      }
+      const re = bulkRenameRegexFromFind(findRaw);
+      if (!re) {
+        if (fb) fb.textContent = 'Invalid pattern.';
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td colspan="3" class="text-danger py-1 small">Invalid find pattern.</td>';
+        tbody.appendChild(tr);
+        return;
+      }
+      const rows = bulkRenameTargetPaths.map((fp) => T.baseName(fp));
+      const shown = rows.slice(0, BULK_RENAME_PREVIEW_MAX);
+      for (const base of shown) {
+        const replaced = base.replace(re, () => replaceLit);
+        const newBase = sanitizeFileTitleSegment(replaced);
+        const unchanged = newBase === base;
+        const tr = document.createElement('tr');
+        const td1 = document.createElement('td');
+        td1.className = 'py-1 text-break';
+        td1.textContent = base;
+        const td2 = document.createElement('td');
+        td2.className = 'py-1 text-center text-muted';
+        td2.textContent = '→';
+        const td3 = document.createElement('td');
+        td3.className = 'py-1 text-break' + (unchanged ? ' text-muted' : '');
+        td3.textContent = unchanged ? '(no change)' : newBase;
+        tr.appendChild(td1);
+        tr.appendChild(td2);
+        tr.appendChild(td3);
+        tbody.appendChild(tr);
+      }
+      if (rows.length > BULK_RENAME_PREVIEW_MAX && moreEl) {
+        moreEl.classList.remove('d-none');
+        moreEl.textContent =
+          'Showing first ' + BULK_RENAME_PREVIEW_MAX + ' of ' + rows.length + ' rows. Apply still affects all.';
+      }
+    }
+
+    function openBulkRenameModal() {
+      const paths = pathsForBulkRename();
+      const status = document.getElementById('status');
+      const hint = document.getElementById('bulkRenameTargetHint');
+      const fb = document.getElementById('bulkRenameFeedback');
+      const findEl = document.getElementById('bulkRenameFind');
+      const replEl = document.getElementById('bulkRenameReplace');
+      if (!hint || !document.getElementById('bulkRenameModal')) return;
+      if (!paths.length) {
+        if (status) status.textContent = 'Check rows or highlight one row to rename.';
+        return;
+      }
+      bulkRenameTargetPaths = paths.slice();
+      hint.textContent = paths.length + ' item(s) — name segment only';
+      if (fb) fb.textContent = '';
+      const basenames = bulkRenameTargetPaths.map((fp) => T.baseName(fp));
+      const stems = basenames.map((b) => basenameStemIgnoringExtension(b));
+      const common = longestCommonSubstringAmong(stems);
+      if (findEl) findEl.value = common;
+      if (replEl) replEl.value = common;
+      updateBulkRenamePreview();
+      if (!bulkRenameModalInst) {
+        bulkRenameModalInst = new bootstrap.Modal(document.getElementById('bulkRenameModal'), { focus: false });
+      }
+      bulkRenameModalInst.show();
+    }
+
+    /** Wildcard find/replace on basename; same scope rules as single rename. */
+    async function applyBulkRename() {
+      const fb = document.getElementById('bulkRenameFeedback');
+      const findEl = document.getElementById('bulkRenameFind');
+      const replEl = document.getElementById('bulkRenameReplace');
+      if (!findEl || !replEl) return;
+      const findRaw = String(findEl.value || '');
+      if (!findRaw.trim()) {
+        if (fb) fb.textContent = 'Enter a find pattern.';
+        return;
+      }
+      if (renameItemBusy || tagRenameBusy) return;
+      const paths = bulkRenameTargetPaths.length ? bulkRenameTargetPaths : pathsForBulkRename();
+      if (!paths.length) {
+        if (fb) fb.textContent = 'Nothing selected.';
+        return;
+      }
+      const replaceLit = String(replEl.value || '');
+      const re = bulkRenameRegexFromFind(findRaw);
+      if (!re) {
+        if (fb) fb.textContent = 'Invalid pattern.';
+        return;
+      }
+      const rootPrefix = T.normalizeRootPrefix(document.getElementById('rootFolder').value);
+      const pathPairs = [];
+      renameItemBusy = true;
+      if (fb) fb.textContent = '';
+      try {
+        for (const fp of paths) {
+          const base = T.baseName(fp);
+          const replaced = base.replace(re, () => replaceLit);
+          const newBase = sanitizeFileTitleSegment(replaced);
+          if (newBase === base) continue;
+          const parent = T.parentDir(fp);
+          const sep = fp.includes('/') ? '/' : '\\';
+          const toPath = parent ? parent + sep + newBase : newBase;
+          const fromN = fp.replace(/[/\\]+$/, '').toLowerCase();
+          const toN = toPath.replace(/[/\\]+$/, '').toLowerCase();
+          if (fromN === toN) continue;
+          const mdHere = mdAutosaveTargetPath && mdAutosaveTargetPath.replace(/[/\\]+$/, '').toLowerCase() === fromN;
+          if (mdHere) await flushMdFileAutosave();
+          const res = await window.tagBrowser.renamePath({ fromPath: fp, toPath, rootPrefix });
+          if (!res || !res.ok) {
+            if (fb) fb.textContent = (res && res.error) || 'Rename failed: ' + fp;
+            return;
+          }
+          pathPairs.push({ from: fp, to: toPath });
+          if (selectedFullPath && selectedFullPath.replace(/[/\\]+$/, '').toLowerCase() === fromN) {
+            selectedFullPath = toPath;
+            renderScopeBreadcrumbIfScopeChanged();
+          }
+          if (mdHere) mdAutosaveTargetPath = toPath;
+        }
+        const st = document.getElementById('status');
+        if (pathPairs.length) {
+          if (st) st.textContent = 'Renamed ' + pathPairs.length + ' item(s).';
+          if (bulkRenameModalInst) bulkRenameModalInst.hide();
+          await refreshAfterTagsSaved(pathPairs);
+        } else {
+          if (fb) fb.textContent = 'No names matched the pattern.';
+        }
       } finally {
         renameItemBusy = false;
       }
@@ -3807,13 +4203,20 @@
       return '(?i)\\[\\((?:[^,)]*,)*' + esc + '(?:,[^)]*)?\\)\\]';
     }
 
-    /** Narrow Everything: AND of one regex: clause per active tag (skipped when Regex is on). */
+    /** Narrow Everything: AND or OR of regex: clauses per active tag (skipped when global Regex is on). */
     function appendActiveTagToEverythingQuery(searchText) {
       if (!activeTagKeys.size || document.getElementById('optRegex').checked) return searchText;
       let out = String(searchText || '').trim();
-      for (const k of [...activeTagKeys].sort()) {
-        const re = tagKeyToEverythingBracketRegex(k);
-        if (re) out = (out + ' regex:' + re).trim();
+      const res = [...activeTagKeys]
+        .sort()
+        .map((k) => tagKeyToEverythingBracketRegex(k))
+        .filter(Boolean);
+      if (!res.length) return out;
+      if (tagFilterCombineOr && res.length > 1) {
+        const inner = res.map((p) => p.replace(/^\(\?i\)/, '')).join('|');
+        out = (out + ' regex:(?i)(?:' + inner + ')').trim();
+      } else {
+        for (const re of res) out = (out + ' regex:' + re).trim();
       }
       return out;
     }
@@ -3880,6 +4283,17 @@
 
     function getCheckedPathsArr() {
       return [...checkedPathsMap.values()];
+    }
+
+    /** Checked rows, else single highlighted row (same idea as bulk copy/delete). */
+    function pathsForBulkRename() {
+      const bulk = getCheckedPathsArr();
+      if (bulk.length) return bulk;
+      if (selectedFullPath) {
+        const row = findRowByFullPath(selectedFullPath);
+        if (row) return [fullPathForRow(row)];
+      }
+      return [];
     }
 
     /** Last path segment for Recycle Bin confirm (file or folder name). */
@@ -4621,6 +5035,7 @@
       document.getElementById('optSortFoldersWithFiles').checked = localStorage.getItem(LS.sortFoldersWithFiles) !== '0';
       document.getElementById('optSearchDebug').checked = localStorage.getItem(LS.searchDebug) === '1';
       activeTagKeys = activeTagKeysFromStored(localStorage.getItem(LS.activeTagFilter));
+      tagFilterCombineOr = localStorage.getItem(LS.tagFilterCombineOr) === '1';
       applyTagPrefsFromUserDataFile();
       for (const t of tagStoreOrder) ensureKnownBracketTag(t.key, t.display);
       searchDebugLog('tags.loadSettings.tail', {
@@ -4655,6 +5070,7 @@
         document.getElementById('optSortFoldersWithFiles').checked ? '1' : '0'
       );
       localStorage.setItem(LS.searchDebug, document.getElementById('optSearchDebug').checked ? '1' : '0');
+      localStorage.setItem(LS.tagFilterCombineOr, tagFilterCombineOr ? '1' : '0');
       persistActiveTagFilter();
     }
 
@@ -4736,6 +5152,7 @@
         query: document.getElementById('query').value,
         rootFolder: document.getElementById('rootFolder').value,
         activeTagKeys: [...activeTagKeys].sort(),
+        tagFilterCombineOr: !!tagFilterCombineOr,
         recursive: document.getElementById('folderSearchRecursive').checked,
         optCase: document.getElementById('optCase').checked,
         optWholeWord: document.getElementById('optWholeWord').checked,
@@ -4808,6 +5225,7 @@
       } else {
         activeTagKeys = new Set();
       }
+      tagFilterCombineOr = !!s.tagFilterCombineOr;
       document.getElementById('folderSearchRecursive').checked = !!s.recursive;
       document.getElementById('optCase').checked = !!s.optCase;
       document.getElementById('optWholeWord').checked = !!s.optWholeWord;
@@ -4948,6 +5366,14 @@
     function filteredRows() {
       let rows = rowsRespectingHideDotFolders(lastRows);
       if (!activeTagKeys.size) return rows;
+      if (tagFilterCombineOr && activeTagKeys.size > 1) {
+        return rows.filter((r) => {
+          for (const k of activeTagKeys) {
+            if (T.rowHasTag(r, k, fullPathForRow)) return true;
+          }
+          return false;
+        });
+      }
       return rows.filter((r) => {
         for (const k of activeTagKeys) {
           if (!T.rowHasTag(r, k, fullPathForRow)) return false;
@@ -4957,6 +5383,7 @@
     }
 
     function clearEmptyResultsPulseHintClasses() {
+      document.getElementById('queryInputGroup')?.classList.remove('pulse-hint');
       document.getElementById('query')?.classList.remove('pulse-hint');
       document.querySelector('label[for="folderSearchRecursive"]')?.classList.remove('pulse-hint');
       document.querySelectorAll('#tagBar button[data-tag-key]').forEach((b) => b.classList.remove('pulse-hint'));
@@ -4971,9 +5398,11 @@
       el.classList.add('pulse-hint');
     }
 
-    /** When the visible result list is empty, draw attention to filters; effect fades to static over ~20s (CSS). Restarts if query/tag/recursive changes while still empty. */
-    function updateEmptyResultsPulseHints(isEmpty) {
+    /** When the visible result list is empty, draw attention to filters; effect fades to static over ~20s (CSS). Restarts if query/tag/recursive changes while still empty. opts.forceRestart: full flash (e.g. after each successful empty search). */
+    function updateEmptyResultsPulseHints(isEmpty, opts) {
+      const forceRestart = !!(opts && opts.forceRestart);
       const q = document.getElementById('query');
+      const qWrap = document.getElementById('queryInputGroup');
       const rec = document.getElementById('folderSearchRecursive');
       const recLbl = document.querySelector('label[for="folderSearchRecursive"]');
       const qNonEmpty = !!(q && q.value && q.value.trim());
@@ -4989,29 +5418,55 @@
 
       const tagFp = [...activeTagKeys].sort().join('\0');
       const fp =
-        tagFp + '\0' + (q && q.value != null ? String(q.value).trim() : '') + '\0' + (rec && rec.checked ? '1' : '0');
-      const fpChanged = fp !== pulseHintFingerprint;
+        tagFp +
+        '\0' +
+        (q && q.value != null ? String(q.value).trim() : '') +
+        '\0' +
+        (rec && rec.checked ? '1' : '0') +
+        '\0' +
+        (tagFilterCombineOr ? 'or' : 'and');
+      const fpChanged = forceRestart || fp !== pulseHintFingerprint;
       if (fpChanged) pulseHintFingerprint = fp;
 
       if (fpChanged) {
-        restartEmptyPulseHint(q, wantQ);
+        restartEmptyPulseHint(qWrap, wantQ);
         restartEmptyPulseHint(recLbl, wantRec);
-        document.querySelectorAll('#tagBar button[data-tag-key]').forEach((btn) => {
+        document.querySelectorAll('#tagBar button.tag-bar-pill-active[data-tag-key]').forEach((btn) => {
           restartEmptyPulseHint(btn, wantTag && activeTagKeys.has(btn.dataset.tagKey));
         });
         return;
       }
 
-      q?.classList.toggle('pulse-hint', wantQ);
+      qWrap?.classList.toggle('pulse-hint', wantQ);
       recLbl?.classList.toggle('pulse-hint', wantRec);
-      document.querySelectorAll('#tagBar button[data-tag-key]').forEach((btn) => {
+      document.querySelectorAll('#tagBar button.tag-bar-pill-active[data-tag-key]').forEach((btn) => {
         btn.classList.toggle('pulse-hint', wantTag && activeTagKeys.has(btn.dataset.tagKey));
       });
+    }
+
+    /** After a successful Everything response with zero visible rows: replay decay pulse (fingerprint would otherwise skip). */
+    function pulseEmptyResultHintsAfterSearchOk() {
+      if (filteredRows().length > 0) return;
+      updateEmptyResultsPulseHints(true, { forceRestart: true });
     }
 
     function renderTagBar() {
       const el = document.getElementById('tagBar');
       el.innerHTML = '';
+      // Icon-only tag-bar controls (tooltips + aria-labels carry the text).
+      const tagBarIconBtnClass =
+        'btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0';
+      const tagBarIconBtnSize = 'width:2rem;height:2rem';
+      const svgRescan15 =
+        '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">' +
+        '<path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>' +
+        '<path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.02 1.82a.25.25 0 0 1 0 .364L8.41 4.658A.25.25 0 0 1 8 4.466z"/>' +
+        '</svg>';
+      const svgClear15 =
+        '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">' +
+        '<path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>' +
+        '<path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/>' +
+        '</svg>';
       const span = document.createElement('span');
       span.className = 'text-muted me-1';
       span.textContent = 'Tags:';
@@ -5019,10 +5474,12 @@
       const appendRescanAllTags = () => {
         const rescan = document.createElement('button');
         rescan.type = 'button';
-        rescan.className = 'btn btn-sm btn-outline-secondary';
-        rescan.textContent = 'Rescan all tags';
+        rescan.className = tagBarIconBtnClass;
+        rescan.style.cssText = tagBarIconBtnSize;
+        rescan.innerHTML = svgRescan15;
+        rescan.setAttribute('aria-label', 'Rescan tags');
         rescan.title =
-          'Re-run full-index [(…)] scan and remove remembered/active tags missing from this scan. Each search also refreshes the scan.';
+          'Re-run full-index [(…)] scan and drop remembered/active tags missing from this scan. Each search also refreshes the scan.';
         rescan.addEventListener('click', () => {
           void (async () => {
             rescan.disabled = true;
@@ -5070,11 +5527,57 @@
         const s = document.createElement('span');
         s.className = 'text-muted';
         s.textContent =
-          'No bracket tags in your list yet. Add one from the tags dialog, toggle a filter, or use Rescan all tags.';
+          'No bracket tags in your list yet. Add one from the tags dialog, toggle a filter, or use Rescan.';
         el.appendChild(s);
         appendRescanAllTags();
         updateEmptyResultsPulseHints(filteredRows().length === 0);
         return;
+      }
+      function appendTagFilterCombineToggle(barEl) {
+        const g = document.createElement('div');
+        g.className = 'btn-group btn-group-sm';
+        g.setAttribute('role', 'group');
+        g.title =
+          'Combine multiple tag filters: match ALL (AND) or ANY (OR). Used in the Everything query (when Regex is off) and in the result table filter.';
+        const idA = 'tagFoxTagCombineAnd';
+        const idO = 'tagFoxTagCombineOr';
+        const rA = document.createElement('input');
+        rA.type = 'radio';
+        rA.className = 'btn-check';
+        rA.name = 'tagFoxTagCombine';
+        rA.id = idA;
+        rA.autocomplete = 'off';
+        rA.checked = !tagFilterCombineOr;
+        const lA = document.createElement('label');
+        lA.className = 'btn btn-outline-secondary btn-sm';
+        lA.htmlFor = idA;
+        lA.textContent = 'AND';
+        const rO = document.createElement('input');
+        rO.type = 'radio';
+        rO.className = 'btn-check';
+        rO.name = 'tagFoxTagCombine';
+        rO.id = idO;
+        rO.autocomplete = 'off';
+        rO.checked = !!tagFilterCombineOr;
+        const lO = document.createElement('label');
+        lO.className = 'btn btn-outline-secondary btn-sm';
+        lO.htmlFor = idO;
+        lO.textContent = 'OR';
+        const sync = () => {
+          const next = !!rO.checked;
+          if (next === tagFilterCombineOr) return;
+          tagFilterCombineOr = next;
+          saveSettings();
+          void runSearchNow();
+          commitSearchHistoryNow();
+        };
+        rA.addEventListener('change', sync);
+        rO.addEventListener('change', sync);
+        g.appendChild(rA);
+        g.appendChild(lA);
+        g.appendChild(rO);
+        g.appendChild(lO);
+        barEl.appendChild(g);
       }
       for (const info of entries) {
         const key = info.key;
@@ -5086,10 +5589,12 @@
         applyTagBarPillStyle(b, key);
         b.textContent = info.count > 0 ? info.display + ' (' + info.count + ')' : info.display;
         b.title =
-          'Toggle [(…)] tag filter (AND). Regex off: adds an Everything regex: clause; any tag on turns Recursive. ' +
+          'Toggle [(…)] tag filter (multi-tag: ' +
+          (tagFilterCombineOr ? 'OR = any selected tag' : 'AND = all selected tags') +
+          '). Regex off: adds an Everything regex: clause; any tag on turns Recursive. ' +
           (info.count > 0
             ? 'Number = rows in the current result list with this tag (same cap as Max results).'
-            : 'No rows with this tag in the current list—try Rescan all tags or broaden search.');
+            : 'No rows with this tag in the current list—try Rescan or broaden search.');
         b.addEventListener('click', () => {
           void (async () => {
             if (activeTagKeys.has(key)) activeTagKeys.delete(key);
@@ -5124,11 +5629,14 @@
         });
         el.appendChild(b);
       }
+      appendTagFilterCombineToggle(el);
       if (activeTagKeys.size) {
         const clearTags = document.createElement('button');
         clearTags.type = 'button';
-        clearTags.className = 'btn btn-sm btn-outline-secondary ms-2';
-        clearTags.textContent = 'Clear all tags';
+        clearTags.className = tagBarIconBtnClass;
+        clearTags.style.cssText = tagBarIconBtnSize;
+        clearTags.innerHTML = svgClear15;
+        clearTags.setAttribute('aria-label', 'Clear tag filters');
         clearTags.title = 'Turn off every active tag filter at once.';
         clearTags.addEventListener('click', () => {
           void (async () => {
@@ -5389,19 +5897,11 @@
         tr.addEventListener('click', (e) => {
           if (e.target.closest('button')) return;
           if (e.target.closest('input[type="checkbox"]')) return;
-          if (rowIsFolder(row)) {
-            resultsShiftRangeAnchorIdx = null;
-            const folderFp = normalizeFolderPathForEverything(fp);
-            selectedRow = row;
-            selectedFullPath = fp;
-            focusResultsWrapAfterListSelection();
-            void applySearchScopeAndRefresh(folderFp);
-            return;
-          }
+          // Folders: select only (rename, bulk, props) — do not change scope; Enter still scopes/opens like before.
           resultsShiftRangeAnchorIdx = null;
           setSelection(row, fp);
         });
-        // File rows: double-click opens with default app (same as Enter). Folders: unchanged (single-click scopes).
+        // File rows: double-click opens with default app (same as Enter). Folder rows: dblclick ignored (use Enter to scope).
         tr.addEventListener('dblclick', (e) => {
           if (e.target.closest('button')) return;
           if (e.target.closest('input[type="checkbox"]')) return;
@@ -5863,6 +6363,7 @@
           await syncSelectionAfterSearch();
           renderTagBar();
           renderTable();
+          pulseEmptyResultHintsAfterSearchOk();
           kickTagDiscoveryAfterSearch();
           return;
         }
@@ -5893,6 +6394,7 @@
       await syncSelectionAfterSearch();
       renderTagBar();
       renderTable();
+      pulseEmptyResultHintsAfterSearchOk();
       kickTagDiscoveryAfterSearch();
     }
 
@@ -5982,6 +6484,9 @@
       document.getElementById(id).addEventListener('change', () => {
         saveSettings();
         if (id === 'folderSearchRecursive') renderScopeBreadcrumb();
+        if (id === 'optCase' && document.getElementById('bulkRenameModal')?.classList.contains('show')) {
+          updateBulkRenamePreview();
+        }
         scheduleSearch();
         commitSearchHistoryNow();
       });
@@ -6102,6 +6607,33 @@
       refreshTagModalDatalist();
       requestAnimationFrame(() => document.getElementById('tagModalInput')?.focus());
     });
+    document.getElementById('bulkRenameModal').addEventListener('shown.bs.modal', () => {
+      requestAnimationFrame(() => {
+        const rep = document.getElementById('bulkRenameReplace');
+        if (rep) {
+          rep.focus();
+          rep.select();
+        } else document.getElementById('bulkRenameFind')?.focus();
+      });
+    });
+    document.getElementById('bulkRenameModal').addEventListener('hidden.bs.modal', () => {
+      bulkRenameTargetPaths = [];
+    });
+    document.getElementById('bulkRenameApply').addEventListener('click', () => void applyBulkRename());
+    document.getElementById('bulkRenameFind').addEventListener('input', () => updateBulkRenamePreview());
+    document.getElementById('bulkRenameReplace').addEventListener('input', () => updateBulkRenamePreview());
+    document.getElementById('bulkRenameFind').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        document.getElementById('bulkRenameReplace')?.focus();
+      }
+    });
+    document.getElementById('bulkRenameReplace').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        void applyBulkRename();
+      }
+    });
     document.getElementById('tagModalAddBtn').addEventListener('click', () => void addModalTagFromInput());
     document.getElementById('tagModalInput').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
@@ -6214,6 +6746,7 @@
       if (!el || !el.closest) return false;
       if (el.closest('ul.breadcrumb-folder-flyout')) return true;
       if (el.closest('#breadcrumbBar .dropdown-menu')) return true;
+      if (el.closest('#favFoldersBar .dropdown-menu')) return true;
       return false;
     }
 
@@ -6568,6 +7101,13 @@
         keyboardOpenTagsModal();
         return;
       }
+      if (modC && (e.key === 'h' || e.key === 'H')) {
+        if (document.querySelector('.modal.show')) return;
+        if (blockAppShortcutInTextField(e.target)) return;
+        e.preventDefault();
+        openBulkRenameModal();
+        return;
+      }
       if (modC && e.key === 'Enter' && !e.shiftKey) {
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
@@ -6788,7 +7328,14 @@
       (e) => {
         if (!breadcrumbSubfolderFlyoutsAreOpen()) return;
         const t = e.target;
-        if (t && t.closest && (t.closest('ul.breadcrumb-folder-flyout') || t.closest('#breadcrumbBar .dropdown-menu'))) return;
+        if (
+          t &&
+          t.closest &&
+          (t.closest('ul.breadcrumb-folder-flyout') ||
+            t.closest('#breadcrumbBar .dropdown-menu') ||
+            t.closest('#favFoldersBar .dropdown-menu'))
+        )
+          return;
         hideBreadcrumbSubfolderFlyout();
       },
       true
@@ -6836,10 +7383,12 @@
     document.querySelectorAll('.modal').forEach((modalEl) => {
       modalEl.addEventListener('show.bs.modal', () => {
         hideBreadcrumbSubfolderFlyout();
-        document.querySelectorAll('#breadcrumbBar [data-bs-toggle="dropdown"]').forEach((btn) => {
-          const inst = bootstrap.Dropdown.getInstance(btn);
-          if (inst) inst.hide();
-        });
+        document
+          .querySelectorAll('#breadcrumbBar [data-bs-toggle="dropdown"], #favFoldersBar [data-bs-toggle="dropdown"]')
+          .forEach((btn) => {
+            const inst = bootstrap.Dropdown.getInstance(btn);
+            if (inst) inst.hide();
+          });
         if (modalEl.id === 'helpModal') restoreHelpModalTab();
       });
     });

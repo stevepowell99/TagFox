@@ -9,6 +9,15 @@ Small Electron UI for [Voidtools Everything](https://www.voidtools.com/) HTTP se
 3. Open **Settings** and set **Everything base URL**. Optionally set **Scope folder** so the app starts in a particular directory—that path is your **current folder** (same idea people sometimes call “scope”).
 4. Press **F1** or the **?** button for in-app help. **Ctrl+/** (**⌘+/** on Mac) focuses the search box; plain **/** does the same when no dialog is open.
 
+## Bulk rename (Ctrl+H)
+
+- **Ctrl+H** / **⌘+H** on Mac opens **Bulk rename in name** (wildcard find/replace on the last path segment only — not parent folders).
+- **Targets**: all **checked** rows, or the **highlighted** row if nothing is checked.
+- **Find** and **Replace** prefill with the **longest contiguous substring shared by every selected name**, computed on **stems** only (the part before the last `.` — e.g. `foo` from `foo.pdf`; extensions are ignored for this prefill, not for the actual rename). Wildcards in **Find** only: `*` = any characters, `?` = one character.
+- **Match case** for the rename pattern follows the search-row **Match case** toggle (same as Everything options).
+- **Preview** lists current → new names as you edit (first 200 rows shown; **Rename** still affects the whole batch captured when the dialog opened).
+- Renames obey **Scope folder** the same way as **Tags** and **F2** rename.
+
 ## Reloading during development
 
 TagFox does **not** ship with an application menu, so **Ctrl+Shift+R** (Chrome “hard reload”) is **not** wired up. Edits behave like this:
