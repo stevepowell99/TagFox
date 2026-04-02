@@ -417,9 +417,10 @@
     .folder-type-icon { color: #d97706; }
     .folder-type-icon svg, .file-type-icon svg { display: block; vertical-align: middle; }
     .name-badges { min-width: 0; }
-    /* Icon + filename stay one unit; only tags wrap (avoid icon alone on first line). */
+    /* Icon, then tag pills, then filename; wrap when narrow (icon stays first). */
     .name-badges-lead {
       display: inline-flex;
+      flex-wrap: wrap;
       align-items: center;
       gap: 0.25rem;
       flex: 1 1 auto;
@@ -487,15 +488,22 @@
       flex-shrink: 0;
     }
     /*
-      Stacking (low → high): table .sticky-top 1020; tag row + search opts 1040–1050; breadcrumb 1095+
-      (child menus cannot beat a later sibling if parents tie — breadcrumb row must be > .search-opts-bar).
-      Modals 1100/1110; theater 1990+.
+      Stacking (low → high): sticky thead ~1020; .search-opts-bar 1040; .tag-toolbar-row 1045;
+      .scope-breadcrumb-row 1085 (must beat tag/search rows when menus overlap);
+      .tagfox-fav-toolbar-row 1090 (physically above breadcrumb — dropdowns must cover breadcrumb strip);
+      body ul.breadcrumb-folder-flyout 1092–1099 (nested chain; below .modal-backdrop 1100);
+      .modal-backdrop 1100; .modal 1110; #propsTheater* 1990+.
     */
+    .tagfox-fav-toolbar-row {
+      position: relative;
+      z-index: 1090;
+    }
     .scope-breadcrumb-row {
       position: relative;
-      z-index: 1095;
+      z-index: 1085;
     }
     /* Modal open: drop back so backdrop + dimmer cover the bar (was stacking “above” the overlay). */
+    body.modal-open .tagfox-fav-toolbar-row,
     body.modal-open .scope-breadcrumb-row,
     body.modal-open .search-opts-bar,
     body.modal-open .tag-toolbar-row {
@@ -531,11 +539,7 @@
     ul.breadcrumb-folder-flyout li.breadcrumb-folder-on-scope-path > button.dropdown-item {
       box-shadow: inset 4px 0 0 rgba(var(--bs-emphasis-color-rgb), 0.38);
     }
-    /* Favourite chips: dropdown + body flyouts above results/panels (below breadcrumb row 1095). */
-    #favFoldersBar {
-      position: relative;
-      z-index: 1052;
-    }
+    /* Favourite chips: stacking via .tagfox-fav-toolbar-row (above breadcrumb row). */
     /* Favourite “pill”: almost-white fill + dark grey text (distinct from breadcrumb link / primary). */
     #favFoldersBar .fav-folder-chip-group {
       --fav-chip-fg: #3f3f46;
@@ -575,6 +579,51 @@
       color: #18181b;
       background-color: #e4e4e7;
       border-color: #a1a1aa;
+    }
+    /* Saved search chips: grey only — numbered slot + label (folder favourites unchanged above). */
+    #favSearchesBar .fav-search-chip-group {
+      --fav-search-fg: #3f3f46;
+      --fav-search-bg: #fafafa;
+      --fav-search-border: #e4e4e7;
+    }
+    #favSearchesBar .fav-search-chip-group > .fav-search-chip-go {
+      color: var(--fav-search-fg);
+      background-color: var(--fav-search-bg);
+      border-color: var(--fav-search-border);
+      font-weight: 500;
+    }
+    #favSearchesBar .fav-search-chip-group > .fav-search-chip-go:hover {
+      color: #27272a;
+      background-color: #f4f4f5;
+      border-color: #d4d4d8;
+    }
+    #favSearchesBar .fav-search-chip-group > .fav-search-chip-go:active {
+      color: #18181b;
+      background-color: #e4e4e7;
+      border-color: #a1a1aa;
+    }
+    #favSearchesBar .fav-search-chip-slot {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 1.15rem;
+      height: 1.15rem;
+      padding: 0 0.28rem;
+      font-size: 0.68rem;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+      color: #52525b;
+      background: #e4e4e7;
+      border: 1px solid #d4d4d8;
+      border-radius: 999px;
+      flex-shrink: 0;
+    }
+    #favSearchesBar .fav-search-chip-group .fav-search-tag-badge {
+      background-color: #e4e4e7 !important;
+      color: #3f3f46 !important;
+      border: 1px solid #d4d4d8;
+      font-weight: 500;
     }
     .tag-toolbar-row {
       position: relative;
@@ -721,7 +770,7 @@
     <div class="center-wrap bg-body-secondary">
     <!-- Search + results -->
     <div class="center-panel">
-      <div class="mb-2 d-flex flex-wrap gap-1 align-items-center small">
+      <div class="mb-1 d-flex flex-wrap gap-1 align-items-center small tagfox-fav-toolbar-row">
         <span class="text-muted flex-shrink-0 d-inline-flex align-items-center" title="Favourites" aria-label="Favourites">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
             <path
@@ -730,8 +779,53 @@
           </svg>
         </span>
         <div id="favFoldersBar" class="d-flex flex-wrap gap-1 align-items-center"></div>
-        <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0" id="btnSaveFavouriteFolder" title="Saves the current scope folder (Settings — Scope folder)">
-          Save folder
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center gap-1 px-2 fav-toolbar-save-pair"
+          style="height: 2rem; min-width: 2.75rem"
+          id="btnSaveFavouriteFolder"
+          title="Save current folder to favourites (Settings — Scope folder)"
+          aria-label="Save current folder to favourites"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              d="M1 3.5A1.5 1.5 0 0 1 2.5 2h2.764c.958 0 1.76.56 2.311 1.184C7.985 3.648 8.548 4 9 4h4.5A1.5 1.5 0 0 1 15 5.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12.5v-9z"
+            />
+          </svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              d="m8 2.748-.717-.737C5.6.281 2.514.878 1.4 3.053c-.523 1.023-.641 2.5.314 4.385.92 1.815 2.834 3.989 6.286 6.357 3.452-2.368 5.365-4.542 6.286-6.357 1.054-1.885.833-3.362.314-4.385C13.486.878 10.4.28 8.717 2.01L8 2.748zM8 15C-7.333 4.868 3.279-3.04 7.824 1.143c.06.055.119.112.176.171a3.12 3.12 0 0 1 .176-.17C12.72-3.042 23.333 4.867 8 15z"
+            />
+          </svg>
+        </button>
+      </div>
+      <div class="mb-2 d-flex flex-wrap gap-1 align-items-center small tagfox-fav-toolbar-row">
+        <span class="text-muted flex-shrink-0 d-inline-flex align-items-center" title="Saved searches" aria-label="Saved searches">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"
+            />
+          </svg>
+        </span>
+        <div id="favSearchesBar" class="d-flex flex-wrap gap-1 align-items-center"></div>
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center gap-1 px-2 fav-toolbar-save-pair"
+          style="height: 2rem; min-width: 2.75rem"
+          id="btnSaveFavouriteSearch"
+          title="Save current search (query, scope, tags, filters, Advanced, sort — same snapshot as search history)"
+          aria-label="Save current search to favourites"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"
+            />
+          </svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              d="M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v13.5a.5.5 0 0 1-.777.416L8 13.101 2.777 18.416A.5.5 0 0 1 2 18V2zm2-1a1 1 0 0 0-1 1v12.566l5.223-3.809a.5.5 0 0 1 .554 0L13 14.566V2a1 1 0 0 0-1-1H4z"
+            />
+          </svg>
         </button>
       </div>
 
@@ -1281,6 +1375,12 @@
                       <td><strong>Search history</strong> — undo or redo query, tags, options (toolbar arrows do the same)</td>
                     </tr>
                     <tr>
+                      <td><kbd>Ctrl</kbd>+<kbd>1</kbd> … <kbd>9</kbd></td>
+                      <td>
+                        Activate saved searches in list order: the chip numbered <strong>1</strong> = <kbd>Ctrl</kbd>+<kbd>1</kbd>, <strong>2</strong> = <kbd>Ctrl</kbd>+<kbd>2</kbd>, and so on (no shortcut if that slot is empty)
+                      </td>
+                    </tr>
+                    <tr>
                       <td><kbd>Ctrl</kbd>+<kbd>T</kbd></td>
                       <td>Edit tags for the selection or checked rows</td>
                     </tr>
@@ -1326,7 +1426,12 @@
               </ul>
               <h3 class="fs-6 text-secondary mb-2">Favourites and recent folders</h3>
               <ul class="mb-3 ps-3">
-                <li><strong>Save folder</strong> stores the present <strong>current folder</strong>. Chips recall it; <strong>×</strong> removes a favourite.</li>
+                <li>
+                  The <strong>folder + heart</strong> button stores the present <strong>current folder</strong>. Chips recall it; <strong>×</strong> removes a favourite.
+                </li>
+                <li>
+                  The <strong>search + bookmark</strong> button stores the full snapshot used for <strong>search history</strong> (query, folder, tags, Recursive and other match toggles, Advanced options, sort). Numbered grey chips restore a search at once — no subfolder ▾ menus.
+                </li>
                 <li>The <strong>clock</strong> menu lists folders you have scoped to recently (same as <kbd>Ctrl</kbd>+<kbd>L</kbd>).</li>
               </ul>
               <h3 class="fs-6 text-secondary mb-2">Tags</h3>
@@ -1456,6 +1561,7 @@
       propsWidthPx: 'tagBrowserPropsW',
       tableCols: 'tagBrowserTableCols',
       favFolders: 'tagBrowserFavFolders',
+      favSearches: 'tagBrowserFavSearches',
       scopeFolderHistory: 'tagBrowserScopeFolderHist',
       tagStore: 'tagBrowserTagStore',
       knownBracketTags: 'tagBrowserKnownBracketTags',
@@ -2275,7 +2381,8 @@
     }
 
     /** After paste / move / trash: search now plus a few delayed retries so the table catches up. */
-    function refreshAfterDiskMutation() {
+    async function refreshAfterDiskMutation() {
+      await detachViewerEditorsIfOpenTargetsGone();
       void renderShelf();
       clearAndScheduleSearchRetries();
       void runSearchNow();
@@ -2584,6 +2691,135 @@
       }
     }
 
+    function loadFavouriteSearches() {
+      try {
+        const raw = localStorage.getItem(LS.favSearches);
+        const arr = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr) ? arr.filter((x) => x && typeof x === 'object' && !Array.isArray(x)) : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function saveFavouriteSearches(entries) {
+      localStorage.setItem(LS.favSearches, JSON.stringify(entries.slice(0, 30)));
+    }
+
+    /** Tooltip: full snapshot summary (same fields as search history). slotIdx 0–8 → Ctrl+1…9 in the shortcuts table. */
+    function favouriteSearchTooltip(s, slotIdx) {
+      const q = s.query != null ? String(s.query) : '';
+      const sc = (s.rootFolder != null ? String(s.rootFolder) : '').trim();
+      const tags = Array.isArray(s.activeTagKeys) ? [...s.activeTagKeys].filter(Boolean).sort() : [];
+      const type =
+        s.optFoldersOnly && s.optFilesOnly ? 'both'
+        : s.optFoldersOnly ? 'folders only'
+        : s.optFilesOnly ? 'files only'
+        : 'both';
+      const lines = [];
+      if (slotIdx >= 0 && slotIdx < 9) {
+        lines.push('Shortcut: Ctrl+' + (slotIdx + 1));
+        lines.push('');
+      }
+      lines.push(
+        'Click to restore this search.',
+        '',
+        'Query: ' + (q.trim() || '(empty)'),
+        'Scope: ' + (sc || '(entire index)'),
+      );
+      if (tags.length) lines.push('Tags: ' + tags.join(', '));
+      lines.push('Tag combine: ' + (s.tagFilterCombineOr ? 'OR' : 'AND'));
+      lines.push('Recursive: ' + (s.recursive ? 'on' : 'off'));
+      lines.push(
+        'Match: case=' +
+          !!s.optCase +
+          ' path=' +
+          !!s.optPath +
+          ' whole=' +
+          !!s.optWholeWord +
+          ' regex=' +
+          !!s.optRegex +
+          ' diacritics=' +
+          !!s.optDiacritics
+      );
+      lines.push('Types: ' + type);
+      lines.push('Hide .folders: ' + !!s.optHideDotFolders);
+      lines.push('Sort folders with files (Settings): ' + (s.optSortFoldersWithFiles !== false));
+      lines.push('Sort: ' + (s.sortColumn || 'name') + ' ' + (s.sortAsc !== false ? 'asc' : 'desc'));
+      lines.push('Advanced panel: ' + (s.advancedPanelOpen ? 'open' : 'closed'));
+      return lines.join('\n');
+    }
+
+    /** Short label on the pill (query or scope hint + tag badges). */
+    function favouriteSearchPillMainText(s) {
+      let q = (s.query != null ? String(s.query) : '').trim();
+      if (!q) {
+        const raw = (s.rootFolder != null ? String(s.rootFolder) : '').trim();
+        if (raw) {
+          const n = raw.replace(/[/\\]+$/, '');
+          const base = T.baseName(n) || n;
+          q = '· ' + (segmentPretty(base) || base);
+        } else q = '(no query)';
+      }
+      const max = 28;
+      if (q.length > max) return q.slice(0, max - 1) + '…';
+      return q;
+    }
+
+    function renderFavSearchesBar() {
+      const el = document.getElementById('favSearchesBar');
+      if (!el) return;
+      el.innerHTML = '';
+      const entries = loadFavouriteSearches();
+      entries.forEach((s, idx) => {
+        const row = document.createElement('span');
+        row.className = 'd-inline-flex align-items-stretch';
+        const grp = document.createElement('div');
+        grp.className = 'btn-group btn-group-sm fav-search-chip-group';
+        const go = document.createElement('button');
+        go.type = 'button';
+        go.className = 'btn btn-sm fav-search-chip-go d-inline-flex align-items-center flex-wrap gap-1 text-start';
+        const lead = document.createElement('span');
+        lead.className = 'd-inline-flex align-items-center gap-1';
+        const slotEl = document.createElement('span');
+        slotEl.className = 'fav-search-chip-slot';
+        slotEl.textContent = String(idx + 1);
+        slotEl.setAttribute('aria-hidden', 'true');
+        lead.appendChild(slotEl);
+        const nm = document.createElement('span');
+        nm.textContent = favouriteSearchPillMainText(s);
+        lead.appendChild(nm);
+        go.appendChild(lead);
+        const tagKeys = Array.isArray(s.activeTagKeys) ? [...s.activeTagKeys].filter(Boolean).sort() : [];
+        for (const tag of tagKeys) {
+          const b = document.createElement('span');
+          b.className = 'badge fav-search-tag-badge';
+          b.textContent = tag;
+          go.appendChild(b);
+        }
+        go.title = favouriteSearchTooltip(s, idx);
+        go.addEventListener('click', () => void applyFavouriteSearchState(s));
+        grp.appendChild(go);
+        const rm = document.createElement('button');
+        rm.type = 'button';
+        rm.className = 'btn btn-outline-secondary btn-sm px-1 ms-1';
+        rm.setAttribute('aria-label', 'Remove');
+        rm.textContent = '×';
+        rm.title = 'Remove saved search';
+        rm.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const next = loadFavouriteSearches();
+          if (idx >= 0 && idx < next.length) {
+            next.splice(idx, 1);
+            saveFavouriteSearches(next);
+          }
+          renderFavSearchesBar();
+        });
+        row.appendChild(grp);
+        row.appendChild(rm);
+        el.appendChild(row);
+      });
+    }
+
     /** Search box hint: last segment of scope (pretty title), or entire-index wording when scope empty. */
     function updateQueryPlaceholder() {
       const q = document.getElementById('query');
@@ -2752,8 +2988,8 @@
         if (d === 0) ul.id = 'breadcrumbSubfolderFlyout';
         ul.className = 'breadcrumb-folder-flyout small shadow';
         ul.dataset.breadcrumbFlyoutDepth = String(d);
-        /* Stay below .modal-backdrop (1100); uncapped 1095+d reaches 1119 at max depth. */
-        ul.style.zIndex = String(Math.min(1095 + d, 1099));
+        /* Above fav/breadcrumb toolbars; stay below .modal-backdrop (1100). */
+        ul.style.zIndex = String(Math.min(1092 + d, 1099));
         ul.addEventListener('mouseenter', cancelBreadcrumbFlyoutHideTimer);
         ul.addEventListener('mouseleave', scheduleHideBreadcrumbSubfolderFlyout);
         ul.addEventListener('scroll', () => repositionBreadcrumbFlyoutChain());
@@ -3362,7 +3598,7 @@
         }
         if (mdWas) mdAutosaveTargetPath = toPath;
         status.textContent = 'Renamed.';
-        refreshAfterDiskMutation();
+        void refreshAfterDiskMutation();
         refreshTagModalDatalist();
       } finally {
         renameItemBusy = false;
@@ -3544,7 +3780,7 @@
       if (!r || !r.ok) status.textContent = (r && r.error) || 'Could not create folder';
       else {
         status.textContent = 'Created folder: ' + T.baseName(String(r.path || ''));
-        refreshAfterDiskMutation();
+        void refreshAfterDiskMutation();
       }
     }
 
@@ -3622,6 +3858,44 @@
 
     function propsPathKey(p) {
       return String(p || '').replace(/[/\\]+$/, '').toLowerCase();
+    }
+
+    /** Before Recycle: drop MD/readme editor binding to trashed paths so a later flushMdFileAutosave() cannot recreate the file. */
+    function detachViewerEditorsForTrashedPaths(trashedPaths) {
+      const ancestors = (trashedPaths || []).map((x) => propsPathKey(x)).filter(Boolean);
+      if (!ancestors.length) return;
+      function hitsOpenPath(openPath) {
+        if (!openPath) return false;
+        const k = propsPathKey(openPath);
+        if (!k) return false;
+        for (const a of ancestors) {
+          if (k === a) return true;
+          if (k.startsWith(a + '\\') || k.startsWith(a + '/')) return true;
+        }
+        return false;
+      }
+      if (hitsOpenPath(mdAutosaveTargetPath)) {
+        cancelMdFileAutosave();
+        mdAutosaveTargetPath = null;
+        activeMdPath = null;
+      }
+      if (hitsOpenPath(activeReadmePath)) activeReadmePath = null;
+    }
+
+    /** After external delete (e.g. context menu): clear MD/readme targets if those files are gone (avoids flush recreating them). */
+    async function detachViewerEditorsIfOpenTargetsGone() {
+      if (mdAutosaveTargetPath) {
+        const r = await window.tagBrowser.readTextFile({ fullPath: mdAutosaveTargetPath });
+        if (!r.ok && r.code === 'ENOENT') {
+          cancelMdFileAutosave();
+          mdAutosaveTargetPath = null;
+          activeMdPath = null;
+        }
+      }
+      if (activeReadmePath) {
+        const r = await window.tagBrowser.readTextFile({ fullPath: activeReadmePath });
+        if (!r.ok && r.code === 'ENOENT') activeReadmePath = null;
+      }
     }
 
     /** Viewer path: table selection if any, otherwise Settings scope folder. */
@@ -4203,7 +4477,7 @@
       return '(?i)\\[\\((?:[^,)]*,)*' + esc + '(?:,[^)]*)?\\)\\]';
     }
 
-    /** Narrow Everything: AND or OR of regex: clauses per active tag (skipped when global Regex is on). */
+    /** Narrow Everything: AND (space) or OR (|) of regex: clauses per active tag (skipped when global Regex is on). */
     function appendActiveTagToEverythingQuery(searchText) {
       if (!activeTagKeys.size || document.getElementById('optRegex').checked) return searchText;
       let out = String(searchText || '').trim();
@@ -4213,8 +4487,9 @@
         .filter(Boolean);
       if (!res.length) return out;
       if (tagFilterCombineOr && res.length > 1) {
-        const inner = res.map((p) => p.replace(/^\(\?i\)/, '')).join('|');
-        out = (out + ' regex:(?i)(?:' + inner + ')').trim();
+        // Everything: `|` is OR between terms; alternation inside one regex: does not replace that. Group so scope/query stays AND with (tag1 OR tag2).
+        const parts = res.map((re) => 'regex:' + re);
+        out = (out + ' < ' + parts.join(' | ') + ' >').trim();
       } else {
         for (const re of res) out = (out + ' regex:' + re).trim();
       }
@@ -4326,6 +4601,46 @@
       return [fp];
     }
 
+    /** Copy/move into scope or Shelf: on name clash, offer replace (retries whole op with replaceExisting). */
+    async function scopeCopyOrMoveWithConflictPrompt(mode, { sourcePaths, destFolder, rootPrefix }) {
+      const base = { sourcePaths, destFolder, rootPrefix };
+      const run = (replaceExisting) =>
+        mode === 'copy'
+          ? window.tagBrowser.copyPathsIntoFolder({ ...base, replaceExisting })
+          : window.tagBrowser.movePathsIntoFolder({ ...base, replaceExisting });
+      let r = await run(false);
+      if (r.ok || r.code !== 'EEXIST') return r;
+      const name = r.baseName ? String(r.baseName) : 'item';
+      if (
+        !confirm(
+          'Replace existing "' +
+            name +
+            '" in the destination folder?\n\nOK overwrites that item and runs the operation again. Cancel aborts.'
+        )
+      ) {
+        return { ok: false, error: 'Cancelled.' };
+      }
+      return run(true);
+    }
+
+    async function pasteClipboardIntoScopeWithConflictPrompt(destFolder, rootPrefix) {
+      const run = (replaceExisting) =>
+        window.tagBrowser.pasteClipboardIntoFolder({ destFolder, rootPrefix, replaceExisting });
+      let r = await run(false);
+      if (r.ok || r.code !== 'EEXIST') return r;
+      const name = r.baseName ? String(r.baseName) : 'item';
+      if (
+        !confirm(
+          'Replace existing "' +
+            name +
+            '" in the destination folder?\n\nOK overwrites that item and pastes again. Cancel aborts.'
+        )
+      ) {
+        return { ok: false, error: 'Cancelled.' };
+      }
+      return run(true);
+    }
+
     /** Internal drop: move (default) or copy with Shift — into dest folder. */
     async function applyInternalPathsDrop(destFolderRaw, paths, mode) {
       const destFolder = normalizeFolderPathForEverything(destFolderRaw);
@@ -4340,7 +4655,7 @@
           status.textContent = 'Copy into folder is not available.';
           return;
         }
-        const r = await window.tagBrowser.copyPathsIntoFolder({
+        const r = await scopeCopyOrMoveWithConflictPrompt('copy', {
           sourcePaths: filtered,
           destFolder,
           rootPrefix,
@@ -4348,7 +4663,7 @@
         status.textContent = r.ok ? 'Copied into folder.' : (r.error || 'Copy failed');
         if (r.ok) {
           await renderShelf(); // Shelf chips must match disk after drop (drop event may end before this await).
-          refreshAfterDiskMutation();
+          void refreshAfterDiskMutation();
         }
         return;
       }
@@ -4357,7 +4672,7 @@
         status.textContent = 'Move not available.';
         return;
       }
-      const r = await window.tagBrowser.movePathsIntoFolder({
+      const r = await scopeCopyOrMoveWithConflictPrompt('move', {
         sourcePaths: filtered,
         destFolder,
         rootPrefix,
@@ -4365,7 +4680,7 @@
       status.textContent = r.ok ? 'Moved into folder.' : (r.error || 'Move failed');
       if (r.ok) {
         await renderShelf();
-        refreshAfterDiskMutation();
+        void refreshAfterDiskMutation();
       }
     }
 
@@ -4578,7 +4893,7 @@
             const status = document.getElementById('status');
             let r;
             if (copy) {
-              r = await window.tagBrowser.copyPathsIntoFolder({
+              r = await scopeCopyOrMoveWithConflictPrompt('copy', {
                 sourcePaths: filtered,
                 destFolder: st.path,
                 rootPrefix: '',
@@ -4588,7 +4903,7 @@
                 status.textContent = 'Move not available.';
                 return;
               }
-              r = await window.tagBrowser.movePathsIntoFolder({
+              r = await scopeCopyOrMoveWithConflictPrompt('move', {
                 sourcePaths: filtered,
                 destFolder: st.path,
                 rootPrefix: '',
@@ -5148,6 +5463,7 @@
     }
 
     function serializeSearchState() {
+      const advPanel = document.getElementById('searchOptsAdvancedPanel');
       return {
         query: document.getElementById('query').value,
         rootFolder: document.getElementById('rootFolder').value,
@@ -5165,6 +5481,7 @@
         optSortFoldersWithFiles: document.getElementById('optSortFoldersWithFiles').checked,
         sortColumn: sortColumn,
         sortAsc: sortAsc,
+        advancedPanelOpen: !!(advPanel && !advPanel.hasAttribute('hidden')),
       };
     }
 
@@ -5240,6 +5557,15 @@
       document.getElementById('optSortFoldersWithFiles').checked = s.optSortFoldersWithFiles !== false;
       sortColumn = s.sortColumn && ['name', 'path', 'date_modified', 'size'].includes(s.sortColumn) ? s.sortColumn : 'name';
       sortAsc = s.sortAsc !== false;
+      const panel = document.getElementById('searchOptsAdvancedPanel');
+      const advBtn = document.getElementById('btnToggleSearchOptsAdvanced');
+      if (panel && advBtn) {
+        const open = !!s.advancedPanelOpen;
+        if (open) panel.removeAttribute('hidden');
+        else panel.setAttribute('hidden', '');
+        advBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        advBtn.classList.toggle('active', open);
+      }
     }
 
     async function goSearchHistory(delta) {
@@ -5259,6 +5585,26 @@
         searchHistNavigating = false;
         updateSearchHistoryNavUI();
       }
+    }
+
+    /** Apply one saved favourite search — same side effects as stepping history, but also append to search history when changed. */
+    async function applyFavouriteSearchState(s) {
+      if (searchHistNavigating) return;
+      searchHistNavigating = true;
+      try {
+        applySearchState(s);
+        updateQueryPlaceholder();
+        persistActiveTagFilter();
+        saveSettings();
+        updateSortHeaders();
+        renderScopeBreadcrumb();
+        renderTagBar();
+        await runSearchNow();
+      } finally {
+        searchHistNavigating = false;
+        updateSearchHistoryNavUI();
+      }
+      commitSearchHistoryNow();
     }
 
     function seedSearchHistoryFromCurrent() {
@@ -5354,12 +5700,12 @@
       lead.className = 'name-badges-lead';
       if (rowIsFolder(row)) lead.appendChild(folderIconEl());
       else lead.appendChild(fileIconEl(fileExtFromPretty(parsed.pretty)));
+      for (const tag of parsed.tags) appendTagPillWithRemove(lead, tag, fp);
       const title = document.createElement('span');
       title.className = 'name-badges-title text-truncate';
       title.textContent = parsed.pretty;
       lead.appendChild(title);
       wrap.appendChild(lead);
-      for (const tag of parsed.tags) appendTagPillWithRemove(wrap, tag, fp);
       return wrap;
     }
 
@@ -5901,11 +6247,10 @@
           resultsShiftRangeAnchorIdx = null;
           setSelection(row, fp);
         });
-        // File rows: double-click opens with default app (same as Enter). Folder rows: dblclick ignored (use Enter to scope).
+        // File: dblclick → open (same as Enter). Folder: dblclick → scope/focus that folder (same as Enter).
         tr.addEventListener('dblclick', (e) => {
           if (e.target.closest('button')) return;
           if (e.target.closest('input[type="checkbox"]')) return;
-          if (rowIsFolder(row)) return;
           e.preventDefault();
           resultsShiftRangeAnchorIdx = null;
           setSelection(row, fp);
@@ -6464,6 +6809,20 @@
       status.textContent = 'Favourite saved.';
     });
 
+    document.getElementById('btnSaveFavouriteSearch').addEventListener('click', () => {
+      const status = document.getElementById('status');
+      const snap = serializeSearchState();
+      const list = loadFavouriteSearches();
+      if (list.some((x) => searchStatesEqual(x, snap))) {
+        status.textContent = 'Already saved this search.';
+        return;
+      }
+      list.push(snap);
+      saveFavouriteSearches(list);
+      renderFavSearchesBar();
+      status.textContent = 'Search saved.';
+    });
+
     document.getElementById('btnRefreshTags').addEventListener('click', () => void refreshTagsBarAndScan());
 
     document.getElementById('btnCreateTodoMd').addEventListener('click', () => void createTodoMdInScope());
@@ -6584,12 +6943,13 @@
       const p = getCheckedPathsArr();
       if (!p.length) return;
       if (!confirm(recycleBinConfirmMessage(p))) return;
+      detachViewerEditorsForTrashedPaths(p);
       const r = await window.tagBrowser.trashPaths(p);
       if (!r || !r.ok) status.textContent = (r && r.error) || 'Delete failed';
       else {
         checkedPathsMap.clear();
         updateBulkBar();
-        refreshAfterDiskMutation(); // + paths-mutated from main; retries help Everything catch up
+        void refreshAfterDiskMutation(); // + paths-mutated from main; retries help Everything catch up
       }
     });
     document.getElementById('btnBulkTags').addEventListener('click', () => {
@@ -6676,7 +7036,7 @@
       status.textContent = r.created ? 'readme.md created.' : 'readme.md ready.';
     });
 
-    window.tagBrowser.setPathsMutatedHandler(() => refreshAfterDiskMutation());
+    window.tagBrowser.setPathsMutatedHandler(() => void refreshAfterDiskMutation());
     window.tagBrowser.setShellActionErrorHandler((msg) => {
       document.getElementById('status').textContent = String(msg || 'Action failed');
     });
@@ -6931,12 +7291,13 @@
       }
       if (!p.length) return;
       if (!confirm(recycleBinConfirmMessage(p))) return;
+      detachViewerEditorsForTrashedPaths(p);
       const r = await window.tagBrowser.trashPaths(p);
       if (!r || !r.ok) status.textContent = (r && r.error) || 'Delete failed';
       else {
         checkedPathsMap.clear();
         updateBulkBar();
-        refreshAfterDiskMutation();
+        void refreshAfterDiskMutation();
       }
     }
 
@@ -6997,9 +7358,9 @@
         return;
       }
       const rootPrefix = T.normalizeRootPrefix(document.getElementById('rootFolder').value);
-      const r = await window.tagBrowser.pasteClipboardIntoFolder({ destFolder: dest, rootPrefix });
+      const r = await pasteClipboardIntoScopeWithConflictPrompt(dest, rootPrefix);
       if (!r || !r.ok) status.textContent = (r && r.error) || 'Paste failed';
-      else refreshAfterDiskMutation(); // + paths-mutated from main (defense in depth)
+      else void refreshAfterDiskMutation(); // + paths-mutated from main (defense in depth)
     }
 
     /* capture: true — run before focused <button> or other controls eat the key (Electron + Chromium). */
@@ -7134,6 +7495,16 @@
         if (blockAppShortcutInTextField(e.target)) return;
         e.preventDefault();
         void goSearchHistory(1);
+        return;
+      }
+      if (modC && !e.shiftKey && /^[1-9]$/.test(e.key)) {
+        if (document.querySelector('.modal.show')) return;
+        if (blockAppShortcutInTextField(e.target)) return;
+        const list = loadFavouriteSearches();
+        const idx = e.key.charCodeAt(0) - 49;
+        if (!list[idx]) return;
+        e.preventDefault();
+        void applyFavouriteSearchState(list[idx]);
         return;
       }
 
@@ -7417,6 +7788,7 @@
     document.getElementById('btnPropsTheaterToggle').addEventListener('click', () => togglePropsTheaterMode());
     updateSortHeaders();
     renderFavFoldersBar();
+    renderFavSearchesBar();
     renderTagBar();
     renderTable();
     scheduleSearch();

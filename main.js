@@ -301,7 +301,7 @@ async function validateScopePasteDestination(destDirRaw, rootPrefix, err) {
 }
 
 /** Copy files/folders from disk into destDir (recursive); honors rootPrefix like rename-path. */
-async function copySourcesIntoScopeFolder(sourcePaths, destDirRaw, rootPrefix) {
+async function copySourcesIntoScopeFolder(sourcePaths, destDirRaw, rootPrefix, replaceExisting = false) {
   const v = await validateScopePasteDestination(destDirRaw, rootPrefix, {
     noDest: 'No destination folder.',
     destNotUnderRoot: 'Destination must stay under the configured root folder.',
@@ -337,12 +337,23 @@ async function copySourcesIntoScopeFolder(sourcePaths, destDirRaw, rootPrefix) {
       return { ok: false, error: 'Paste would place files outside the configured root folder.' };
     }
 
-    try {
-      await fs.cp(srcResolved, destResolved, { recursive: true, errorOnExist: true });
-    } catch (e) {
-      if (e && e.code === 'EEXIST') {
-        return { ok: false, error: 'Already exists in scope folder: ' + base };
+    if (!replaceExisting) {
+      try {
+        await fs.stat(destResolved);
+        return {
+          ok: false,
+          code: 'EEXIST',
+          error: 'Already exists in scope folder: ' + base,
+          baseName: base,
+        };
+      } catch (e) {
+        if (e.code !== 'ENOENT') return { ok: false, error: 'Destination check: ' + String(e.message || e) };
       }
+    }
+
+    try {
+      await fs.cp(srcResolved, destResolved, { recursive: true, force: !!replaceExisting });
+    } catch (e) {
       return { ok: false, error: String(e.message || e) };
     }
   }
@@ -350,7 +361,7 @@ async function copySourcesIntoScopeFolder(sourcePaths, destDirRaw, rootPrefix) {
 }
 
 /** Move files/folders into destDir (rename); same scope / nesting rules as copySourcesIntoScopeFolder. */
-async function moveSourcesIntoFolder(sourcePaths, destDirRaw, rootPrefix) {
+async function moveSourcesIntoFolder(sourcePaths, destDirRaw, rootPrefix, replaceExisting = false) {
   const v = await validateScopePasteDestination(destDirRaw, rootPrefix, {
     noDest: 'No destination folder.',
     destNotUnderRoot: 'Destination must stay under the configured root folder.',
@@ -387,6 +398,30 @@ async function moveSourcesIntoFolder(sourcePaths, destDirRaw, rootPrefix) {
 
     if (!isPathUnderRoot(destResolved, rootPrefix)) {
       return { ok: false, error: 'Move would place items outside the configured root folder.' };
+    }
+
+    let destOccupied = false;
+    try {
+      await fs.stat(destResolved);
+      destOccupied = true;
+    } catch (e) {
+      if (e.code !== 'ENOENT') return { ok: false, error: 'Destination check: ' + String(e.message || e) };
+    }
+
+    if (destOccupied) {
+      if (!replaceExisting) {
+        return {
+          ok: false,
+          code: 'EEXIST',
+          error: 'Already exists in destination folder: ' + base,
+          baseName: base,
+        };
+      }
+      try {
+        await fs.rm(destResolved, { recursive: true, force: true });
+      } catch (e) {
+        return { ok: false, error: 'Could not replace existing item: ' + String(e.message || e) };
+      }
     }
 
     const r = await renameWithBusyRetry(srcResolved, destResolved);
@@ -1185,7 +1220,7 @@ ipcMain.handle('cut-explorer-paste', async (_event, paths) => {
   return err ? { ok: false, error: err } : { ok: true };
 });
 
-ipcMain.handle('paste-clipboard-into-folder', async (event, { destFolder, rootPrefix }) => {
+ipcMain.handle('paste-clipboard-into-folder', async (event, { destFolder, rootPrefix, replaceExisting }) => {
   if (process.platform !== 'win32') return { ok: false, error: 'Clipboard file paste is only supported on Windows.' };
   let sources;
   try {
@@ -1194,7 +1229,7 @@ ipcMain.handle('paste-clipboard-into-folder', async (event, { destFolder, rootPr
     return { ok: false, error: String(e.message || e) };
   }
   if (!sources.length) return { ok: false, error: 'No files or folders in clipboard.' };
-  const r = await copySourcesIntoScopeFolder(sources, destFolder, rootPrefix);
+  const r = await copySourcesIntoScopeFolder(sources, destFolder, rootPrefix, !!replaceExisting);
   if (r.ok) event.sender.send('paths-mutated');
   return r;
 });
@@ -1430,14 +1465,14 @@ ipcMain.handle('rename-path', async (_event, { fromPath, toPath, rootPrefix }) =
   return renameWithBusyRetry(from, to);
 });
 
-ipcMain.handle('move-paths-into-folder', async (event, { sourcePaths, destFolder, rootPrefix }) => {
-  const r = await moveSourcesIntoFolder(sourcePaths, destFolder, rootPrefix);
+ipcMain.handle('move-paths-into-folder', async (event, { sourcePaths, destFolder, rootPrefix, replaceExisting }) => {
+  const r = await moveSourcesIntoFolder(sourcePaths, destFolder, rootPrefix, !!replaceExisting);
   if (r.ok) event.sender.send('paths-mutated');
   return r;
 });
 
-ipcMain.handle('copy-paths-into-folder', async (event, { sourcePaths, destFolder, rootPrefix }) => {
-  const r = await copySourcesIntoScopeFolder(sourcePaths, destFolder, rootPrefix);
+ipcMain.handle('copy-paths-into-folder', async (event, { sourcePaths, destFolder, rootPrefix, replaceExisting }) => {
+  const r = await copySourcesIntoScopeFolder(sourcePaths, destFolder, rootPrefix, !!replaceExisting);
   if (r.ok) event.sender.send('paths-mutated');
   return r;
 });
