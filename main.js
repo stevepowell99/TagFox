@@ -1,0 +1,1407 @@
+// TagBrowser — Electron main: window + IPC to Everything HTTP + open/rename files
+const { app, BrowserWindow, ipcMain, shell, Menu, clipboard, nativeImage } = require('electron');
+const { spawn, spawnSync, execFileSync } = require('child_process');
+const { pathToFileURL } = require('url');
+const fs = require('fs').promises;
+const fssync = require('fs');
+const os = require('os');
+const path = require('path');
+
+// Populates globalThis.TagBrowserTags (same bracket-tag rules as the renderer).
+require(path.join(__dirname, 'tags.js'));
+const TagBrowserTags = globalThis.TagBrowserTags;
+
+/** Open Drive web UI search — best-effort; matches names as stored on disk (pretty = tags stripped). */
+function googleDriveSearchUrlForPath(fullPath) {
+  const base = path.basename(String(fullPath || ''));
+  if (!base) return null;
+  const pretty =
+    TagBrowserTags && typeof TagBrowserTags.parseSegmentTags === 'function'
+      ? TagBrowserTags.parseSegmentTags(base).pretty
+      : base;
+  const q = String(pretty || base).trim();
+  if (!q) return null;
+  return `https://drive.google.com/drive/search?q=${encodeURIComponent(q)}`;
+}
+
+/** Normalize Everything HTTP JSON (shape varies slightly by version) into an array of row objects. */
+function rowsFromEverythingJson(data) {
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data.results)) return data.results;
+  if (data && typeof data === 'object') {
+    const vals = Object.values(data);
+    const looksLikeRow = (v) =>
+      v && typeof v === 'object' && ('name' in v || 'path' in v);
+    if (vals.length && vals.every(looksLikeRow)) return vals;
+  }
+  return [];
+}
+
+/** WinForms SetFileDropList — JSON array of absolute paths (UTF-8 file passed as arg). */
+const PS1_SET_CLIP_MULTI = `param([Parameter(Mandatory)][string]$JsonPath)
+try {
+  $raw = Get-Content -LiteralPath $JsonPath -Raw -Encoding UTF8
+  $paths = $raw | ConvertFrom-Json
+  if ($paths -isnot [System.Array]) { $paths = @($paths) }
+  if (-not $paths -or $paths.Count -lt 1) { throw 'No paths in JSON' }
+  Add-Type -AssemblyName System.Windows.Forms
+  $sc = New-Object System.Collections.Specialized.StringCollection
+  foreach ($p in $paths) { [void]$sc.Add([string]$p) }
+  if ($sc.Count -lt 1) { throw 'No paths after parse' }
+  [System.Windows.Forms.Clipboard]::SetFileDropList($sc)
+  exit 0
+} catch {
+  [Console]::Error.WriteLine($_.Exception.Message)
+  exit 1
+}`;
+
+/**
+ * Explorer paste (CF_HDROP via .NET). Pass one path or many.
+ * Returns null on success, or an error string.
+ */
+function copyPathsForExplorerPaste(pathsIn) {
+  if (process.platform !== 'win32') return 'Only available on Windows.';
+  const list = (Array.isArray(pathsIn) ? pathsIn : [pathsIn])
+    .map((p) => path.normalize(String(p || '').trim()))
+    .filter(Boolean);
+  if (!list.length) return 'No path.';
+  const psExe = process.env.SystemRoot
+    ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+    : 'powershell.exe';
+  const tmpPs1 = path.join(os.tmpdir(), `tagbrowser-hdrop-${process.pid}-${Date.now()}.ps1`);
+  const tmpJson = path.join(os.tmpdir(), `tagbrowser-hdrop-${process.pid}-${Date.now()}.json`);
+  try {
+    fssync.writeFileSync(tmpPs1, PS1_SET_CLIP_MULTI, 'utf8');
+    fssync.writeFileSync(tmpJson, JSON.stringify(list), 'utf8');
+    const r = spawnSync(psExe, ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', tmpPs1, tmpJson], {
+      windowsHide: true,
+      encoding: 'utf8',
+    });
+    if (r.status !== 0) {
+      const msg = [r.stderr, r.stdout].filter(Boolean).join(' ').trim();
+      return msg || 'Explorer paste: PowerShell failed (exit ' + r.status + ').';
+    }
+  } catch (e) {
+    return String(e.message || e);
+  } finally {
+    try {
+      fssync.unlinkSync(tmpPs1);
+    } catch (_) {}
+    try {
+      fssync.unlinkSync(tmpJson);
+    } catch (_) {}
+  }
+  return null;
+}
+
+/** Same as copy but marks clipboard as cut (Explorer paste moves). CF_HDROP + Preferred DropEffect = Move. */
+const PS1_SET_CLIP_CUT = `param([Parameter(Mandatory)][string]$JsonPath)
+try {
+  $raw = Get-Content -LiteralPath $JsonPath -Raw -Encoding UTF8
+  $paths = $raw | ConvertFrom-Json
+  if ($paths -isnot [System.Array]) { $paths = @($paths) }
+  if (-not $paths -or $paths.Count -lt 1) { throw 'No paths in JSON' }
+  Add-Type -AssemblyName System.Windows.Forms
+  $sc = New-Object System.Collections.Specialized.StringCollection
+  foreach ($p in $paths) { [void]$sc.Add([string]$p) }
+  $data = New-Object System.Windows.Forms.DataObject
+  $data.SetFileDropList($sc)
+  $move = [int][System.Windows.Forms.DragDropEffects]::Move
+  $ms = [System.IO.MemoryStream]::new([BitConverter]::GetBytes($move))
+  $data.SetData('Preferred DropEffect', $false, $ms)
+  [System.Windows.Forms.Clipboard]::SetDataObject($data, $true)
+  exit 0
+} catch {
+  [Console]::Error.WriteLine($_.Exception.Message)
+  exit 1
+}`;
+
+function cutPathsForExplorerPaste(pathsIn) {
+  if (process.platform !== 'win32') return 'Only available on Windows.';
+  const list = (Array.isArray(pathsIn) ? pathsIn : [pathsIn])
+    .map((p) => path.normalize(String(p || '').trim()))
+    .filter(Boolean);
+  if (!list.length) return 'No path.';
+  const psExe = process.env.SystemRoot
+    ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+    : 'powershell.exe';
+  const tmpPs1 = path.join(os.tmpdir(), `tagbrowser-cut-${process.pid}-${Date.now()}.ps1`);
+  const tmpJson = path.join(os.tmpdir(), `tagbrowser-cut-${process.pid}-${Date.now()}.json`);
+  try {
+    fssync.writeFileSync(tmpPs1, PS1_SET_CLIP_CUT, 'utf8');
+    fssync.writeFileSync(tmpJson, JSON.stringify(list), 'utf8');
+    const r = spawnSync(psExe, ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', tmpPs1, tmpJson], {
+      windowsHide: true,
+      encoding: 'utf8',
+    });
+    if (r.status !== 0) {
+      const msg = [r.stderr, r.stdout].filter(Boolean).join(' ').trim();
+      return msg || 'Explorer cut: PowerShell failed (exit ' + r.status + ').';
+    }
+  } catch (e) {
+    return String(e.message || e);
+  } finally {
+    try {
+      fssync.unlinkSync(tmpPs1);
+    } catch (_) {}
+    try {
+      fssync.unlinkSync(tmpJson);
+    } catch (_) {}
+  }
+  return null;
+}
+
+/** Read CF_HDROP-style file list from clipboard (WinForms); writes UTF-8 JSON array to OutJson. */
+const PS1_GET_CLIP_FILES = `param([Parameter(Mandatory)][string]$OutJson)
+try {
+  Add-Type -AssemblyName System.Windows.Forms
+  $list = [System.Windows.Forms.Clipboard]::GetFileDropList()
+  if ($null -eq $list -or $list.Count -lt 1) {
+    [System.IO.File]::WriteAllText($OutJson, '[]')
+    exit 0
+  }
+  $paths = New-Object System.Collections.ArrayList
+  foreach ($item in $list) { [void]$paths.Add([string]$item) }
+  $json = ($paths.ToArray() | ConvertTo-Json -Compress)
+  [System.IO.File]::WriteAllText($OutJson, $json)
+  exit 0
+} catch {
+  [Console]::Error.WriteLine($_.Exception.Message)
+  exit 1
+}`;
+
+/** Paths from Explorer clipboard (Windows only); empty if none. */
+function readClipboardFilePathsWin() {
+  const psExe = process.env.SystemRoot
+    ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+    : 'powershell.exe';
+  const tmpPs1 = path.join(os.tmpdir(), `tagbrowser-clip-read-${process.pid}-${Date.now()}.ps1`);
+  const tmpJson = path.join(os.tmpdir(), `tagbrowser-clip-read-${process.pid}-${Date.now()}.json`);
+  try {
+    fssync.writeFileSync(tmpPs1, PS1_GET_CLIP_FILES, 'utf8');
+    const r = spawnSync(psExe, ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', tmpPs1, tmpJson], {
+      windowsHide: true,
+      encoding: 'utf8',
+    });
+    if (r.status !== 0) {
+      const msg = [r.stderr, r.stdout].filter(Boolean).join(' ').trim();
+      throw new Error(msg || 'read clipboard paths failed');
+    }
+    const raw = fssync.readFileSync(tmpJson, 'utf8').replace(/^\uFEFF/, '').trim();
+    let arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) arr = arr != null && arr !== '' ? [arr] : [];
+    return arr.map((x) => path.normalize(String(x || '').trim())).filter(Boolean);
+  } finally {
+    try {
+      fssync.unlinkSync(tmpPs1);
+    } catch (_) {}
+    try {
+      fssync.unlinkSync(tmpJson);
+    } catch (_) {}
+  }
+}
+
+/** Copy files/folders from disk into destDir (recursive); honors rootPrefix like rename-path. */
+async function copySourcesIntoScopeFolder(sourcePaths, destDirRaw, rootPrefix) {
+  const destDir = normalizeRenameOperand(String(destDirRaw || ''));
+  if (!destDir) return { ok: false, error: 'No destination folder.' };
+  if (!isPathUnderRoot(destDir, rootPrefix)) {
+    return { ok: false, error: 'Destination must stay under the configured root folder.' };
+  }
+  let stDest;
+  try {
+    stDest = await fs.stat(destDir);
+  } catch {
+    return { ok: false, error: 'Scope folder does not exist or is not reachable.' };
+  }
+  if (!stDest.isDirectory()) return { ok: false, error: 'Scope path is not a folder.' };
+
+  const list = (Array.isArray(sourcePaths) ? sourcePaths : [])
+    .map((p) => path.normalize(String(p || '').trim()))
+    .filter(Boolean);
+  if (!list.length) return { ok: false, error: 'Nothing to paste.' };
+
+  for (const srcRaw of list) {
+    const src = path.normalize(String(srcRaw || '').trim());
+    try {
+      await fs.stat(src);
+    } catch {
+      return { ok: false, error: 'Source missing: ' + src };
+    }
+
+    const base = path.basename(src);
+    const dest = path.join(destDir, base);
+    const destResolved = path.resolve(dest);
+    const srcResolved = path.resolve(src);
+
+    if (destResolved.toLowerCase() === srcResolved.toLowerCase()) continue;
+
+    const wouldNestInsideSrc = (() => {
+      const rel = path.relative(srcResolved, destResolved);
+      return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+    })();
+    if (wouldNestInsideSrc) {
+      return { ok: false, error: 'Cannot paste a folder into itself or a subfolder of the selection.' };
+    }
+
+    if (!isPathUnderRoot(destResolved, rootPrefix)) {
+      return { ok: false, error: 'Paste would place files outside the configured root folder.' };
+    }
+
+    try {
+      await fs.cp(srcResolved, destResolved, { recursive: true, errorOnExist: true });
+    } catch (e) {
+      if (e && e.code === 'EEXIST') {
+        return { ok: false, error: 'Already exists in scope folder: ' + base };
+      }
+      return { ok: false, error: String(e.message || e) };
+    }
+  }
+  return { ok: true };
+}
+
+/** Move files/folders into destDir (rename); same scope / nesting rules as copySourcesIntoScopeFolder. */
+async function moveSourcesIntoFolder(sourcePaths, destDirRaw, rootPrefix) {
+  const destDir = normalizeRenameOperand(String(destDirRaw || ''));
+  if (!destDir) return { ok: false, error: 'No destination folder.' };
+  if (!isPathUnderRoot(destDir, rootPrefix)) {
+    return { ok: false, error: 'Destination must stay under the configured root folder.' };
+  }
+  let stDest;
+  try {
+    stDest = await fs.stat(destDir);
+  } catch {
+    return { ok: false, error: 'Destination folder does not exist or is not reachable.' };
+  }
+  if (!stDest.isDirectory()) return { ok: false, error: 'Destination is not a folder.' };
+
+  const list = (Array.isArray(sourcePaths) ? sourcePaths : [])
+    .map((p) => path.normalize(String(p || '').trim()))
+    .filter(Boolean);
+  if (!list.length) return { ok: false, error: 'Nothing to move.' };
+
+  for (const srcRaw of list) {
+    const src = path.normalize(String(srcRaw || '').trim());
+    try {
+      await fs.stat(src);
+    } catch {
+      return { ok: false, error: 'Source missing: ' + src };
+    }
+    if (!isPathUnderRoot(src, rootPrefix) && !isPathUnderShelf(src)) {
+      return { ok: false, error: 'Source must stay under the configured root folder.' };
+    }
+
+    const base = path.basename(src);
+    const dest = path.join(destDir, base);
+    const destResolved = path.resolve(dest);
+    const srcResolved = path.resolve(src);
+
+    if (destResolved.toLowerCase() === srcResolved.toLowerCase()) continue;
+
+    const wouldNestInsideSrc = (() => {
+      const rel = path.relative(srcResolved, destResolved);
+      return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+    })();
+    if (wouldNestInsideSrc) {
+      return { ok: false, error: 'Cannot move a folder into itself or a subfolder of the selection.' };
+    }
+
+    if (!isPathUnderRoot(destResolved, rootPrefix)) {
+      return { ok: false, error: 'Move would place items outside the configured root folder.' };
+    }
+
+    const r = await renameWithBusyRetry(srcResolved, destResolved);
+    if (!r.ok) return r;
+  }
+  return { ok: true };
+}
+
+/** Strip \\?\ / \\?\UNC\ so root compare matches ordinary paths from Everything. */
+function stripWinLongPath(p) {
+  const s = String(p);
+  if (process.platform !== 'win32') return s;
+  if (s.startsWith('\\\\?\\UNC\\')) return '\\\\' + s.slice('\\\\?\\UNC\\'.length);
+  if (s.startsWith('\\\\?\\')) return s.slice(4);
+  return s;
+}
+
+/**
+ * Paths from Everything HTTP often use forward slashes. shell.openPath + Windows handler lookup
+ * can show “Open with” if the path is not normalized like Explorer’s (backslashes).
+ */
+function normalizePathForShellOpen(p) {
+  let s = String(p || '').trim();
+  if (!s) return '';
+  if (process.platform === 'win32') s = stripWinLongPath(s);
+  return path.normalize(s);
+}
+
+/**
+ * Windows: same as typing a path after `start` in cmd — often avoids spurious “Open with” vs shell.openPath.
+ * Resolves with null if spawn ok; otherwise an error string (then caller can try shell.openPath).
+ */
+function openPathViaCmdStartWindows(absNormPath) {
+  return new Promise((resolve) => {
+    const comSpec =
+      process.env.ComSpec ||
+      (process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32', 'cmd.exe') : 'cmd.exe');
+    let settled = false;
+    const finish = (err) => {
+      if (settled) return;
+      settled = true;
+      resolve(err);
+    };
+    const child = spawn(comSpec, ['/d', '/c', 'start', '', absNormPath], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    child.on('error', (e) => finish(String(e.message || e)));
+    child.unref();
+    setImmediate(() => finish(null));
+  });
+}
+
+/** PPTX etc.: `start` / openPath can show “Open with” even when PDF works — match Explorer’s route first. */
+const WIN_OFFICE_OPEN_EXT = new Set([
+  'pptx',
+  'ppt',
+  'potx',
+  'ppsx',
+  'doc',
+  'docx',
+  'dotx',
+  'xls',
+  'xlsx',
+  'xlsm',
+  'xltx',
+]);
+
+/** REG_SZ / REG_EXPAND_SZ value from `reg query` stdout. */
+function winRegQueryParseLastDataLine(stdout) {
+  if (!stdout) return null;
+  for (const line of String(stdout).split(/\r?\n/)) {
+    const m = line.match(/\sREG_(?:EXPAND_)?SZ\s+(.+)$/);
+    if (m) return m[1].trim();
+  }
+  return null;
+}
+
+function winRegQueryVe(regKey) {
+  try {
+    const out = execFileSync('reg', ['query', regKey, '/ve'], {
+      encoding: 'utf8',
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
+    return winRegQueryParseLastDataLine(out);
+  } catch {
+    return null;
+  }
+}
+
+function winRegQueryV(regKey, valueName) {
+  try {
+    const out = execFileSync('reg', ['query', regKey, '/v', valueName], {
+      encoding: 'utf8',
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
+    return winRegQueryParseLastDataLine(out);
+  } catch {
+    return null;
+  }
+}
+
+/** Expand %ProgramFiles% etc. in REG_EXPAND_SZ command lines (partial). */
+function winExpandEnvString(s) {
+  return String(s).replace(/%([^%]+)%/g, (_, k) => (process.env[k] !== undefined ? process.env[k] : `%${k}%`));
+}
+
+/** Spawning these shows the “Once / Always” picker instead of the real app. */
+function winIsAssociationPickerStubExe(exePath) {
+  let s = String(exePath || '').trim();
+  if (s.startsWith('"') && s.endsWith('"')) s = s.slice(1, -1);
+  const base = path.basename(s).toLowerCase();
+  return (
+    base === 'openwith.exe' ||
+    base === 'launchwinapp.exe' ||
+    base === 'pickerhost.exe' ||
+    base === 'immersivecontrolpanel.exe'
+  );
+}
+
+/**
+ * Same command string `assoc` + `ftype` would use — often matches Explorer better than a lone ProgId key.
+ */
+function winOpenCommandTemplateViaAssocFtype(extNoDot) {
+  const dot = '.' + String(extNoDot || '').replace(/^\./, '').toLowerCase();
+  try {
+    const assocOut = execFileSync('cmd.exe', ['/d', '/c', 'assoc', dot], {
+      encoding: 'utf8',
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
+    const assocLine = String(assocOut)
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .find((l) => l.toLowerCase().startsWith(dot.toLowerCase() + '='));
+    if (!assocLine) return null;
+    const eq = assocLine.indexOf('=');
+    if (eq < 0) return null;
+    const ftypeName = assocLine.slice(eq + 1).trim();
+    if (!ftypeName) return null;
+    const ftOut = execFileSync('cmd.exe', ['/d', '/c', 'ftype', ftypeName], {
+      encoding: 'utf8',
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
+    const prefix = ftypeName + '=';
+    const ftLine = String(ftOut)
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .find((l) => l.toLowerCase().startsWith(prefix.toLowerCase()));
+    if (!ftLine) return null;
+    const i = ftLine.indexOf('=');
+    return i >= 0 ? ftLine.slice(i + 1).trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Default handler ProgId: UserChoice wins on Win10+, else HKCR\.ext. */
+function winProgIdForExtension(extNoDot) {
+  const dot = '.' + String(extNoDot || '').replace(/^\./, '').toLowerCase();
+  const fromUser =
+    winRegQueryV(
+      `HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\${dot}\\UserChoice`,
+      'ProgId'
+    ) || null;
+  if (fromUser) return fromUser;
+  return winRegQueryVe(`HKCR\\${dot}`) || null;
+}
+
+function winOpenCommandTemplateForProgId(progId) {
+  if (!progId) return null;
+  const id = String(progId).replace(/\//g, '\\');
+  return (
+    winRegQueryVe(`HKCR\\${id}\\shell\\open\\command`) || winRegQueryVe(`HKCR\\${id}\\Shell\\Open\\Command`)
+  );
+}
+
+/** Split remainder of command line respecting double quotes (after leading "exe" removed). */
+function winSplitArgsRespectingQuotes(argLine) {
+  const s = String(argLine || '').trim();
+  if (!s) return [];
+  const out = [];
+  let cur = '';
+  let inQ = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '"') {
+      inQ = !inQ;
+      cur += c;
+    } else if (!inQ && /\s/.test(c)) {
+      if (cur) {
+        const t = cur.trim();
+        out.push(/^"(.*)"$/.test(t) ? t.slice(1, -1) : t);
+        cur = '';
+      }
+    } else cur += c;
+  }
+  if (cur.trim()) {
+    const t = cur.trim();
+    out.push(/^"(.*)"$/.test(t) ? t.slice(1, -1) : t);
+  }
+  return out;
+}
+
+/**
+ * Run the same “open” command the shell would for this file type (from registry).
+ * Avoids Electron/ShellExecute paths that trigger Win11 “Once / Always” for some Office types.
+ */
+function winExpandOpenCommandPlaceholders(tail, filePath) {
+  // Wrap filePath in quotes so paths with spaces/parens survive arg splitting
+  const quoted = '"' + filePath + '"';
+  return String(tail || '')
+    .replace(/"%1"/gi, quoted)
+    .replace(/%1/gi, quoted)
+    .replace(/"%[uU]"/g, quoted)
+    .replace(/%[uU]/g, quoted)
+    .replace(/"%[lL]"/g, quoted)
+    .replace(/%[lL]/g, quoted)
+    .replace(/%\*/g, '')
+    .trim();
+}
+
+function winParseRegistryOpenCommand(templateRaw, filePath) {
+  const template = winExpandEnvString(String(templateRaw || '').trim());
+  if (!template) return null;
+  const m = /^"([^"]+)"\s*(.*)$/s.exec(template);
+  if (m) {
+    const exe = m[1];
+    let tail = winExpandOpenCommandPlaceholders(m[2] || '', filePath);
+    if (!tail) return { exe, args: [filePath] };
+    return { exe, args: winSplitArgsRespectingQuotes(tail) };
+  }
+  const sp = template.indexOf(' ');
+  if (sp > 0) {
+    const exe = template.slice(0, sp);
+    let tail = winExpandOpenCommandPlaceholders(template.slice(sp + 1), filePath);
+    if (!tail) return { exe, args: [filePath] };
+    return { exe, args: winSplitArgsRespectingQuotes(tail) };
+  }
+  return { exe: template, args: [filePath] };
+}
+
+function openPathViaSpawnDetached(exe, args) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (err) => {
+      if (settled) return;
+      settled = true;
+      resolve(err);
+    };
+    const child = spawn(exe, args, { detached: true, stdio: 'ignore', windowsHide: true });
+    child.on('error', (e) => finish(String(e.message || e)));
+    child.unref();
+    setImmediate(() => finish(null));
+  });
+}
+
+/** Try parsed open command; null = spawn ok, string = try next template / method. */
+async function openPathTryTemplateSpawn(tmpl, absNormPath) {
+  if (!tmpl || !String(tmpl).trim()) return 'Empty template';
+  const parsed = winParseRegistryOpenCommand(tmpl, absNormPath);
+  if (!parsed || !parsed.exe) return 'Bad parse';
+  if (winIsAssociationPickerStubExe(parsed.exe)) return 'Picker stub';
+  return openPathViaSpawnDetached(parsed.exe, parsed.args);
+}
+
+/** ProgId for http/https from UrlAssociations (Settings → Default browser / “choose by link type”). */
+function winProgIdForUrlScheme(schemeLower) {
+  const s = String(schemeLower || '')
+    .toLowerCase()
+    .replace(/:$/, '')
+    .replace(/[^a-z0-9+-]/g, '');
+  if (!s) return null;
+  return (
+    winRegQueryV(
+      `HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\${s}\\UserChoice`,
+      'ProgId'
+    ) || null
+  );
+}
+
+/** Spawn the registered browser with this URL (avoids Electron routing https → Edge). */
+async function openUrlViaRegisteredHandlerWindows(url) {
+  const u = String(url || '').trim();
+  if (!/^https?:\/\//i.test(u)) return 'Not an http(s) URL';
+  for (const sch of ['https', 'http']) {
+    const pid = winProgIdForUrlScheme(sch);
+    if (!pid) continue;
+    const tmpl = winOpenCommandTemplateForProgId(pid);
+    if (!tmpl) continue;
+    const err = await openPathTryTemplateSpawn(tmpl, u);
+    if (!err) return null;
+  }
+  return 'No UrlAssociations handler';
+}
+
+/**
+ * Open http(s) in the user’s real default browser (Win: UrlAssociations → spawn, then `start`, then Electron shell).
+ */
+async function openUrlInSystemDefaultBrowser(url) {
+  const u = String(url || '').trim();
+  if (!u) throw new Error('Empty URL');
+  if (process.platform === 'win32') {
+    const regErr = await openUrlViaRegisteredHandlerWindows(u);
+    if (!regErr) return;
+    await new Promise((resolve, reject) => {
+      const comSpec =
+        process.env.ComSpec ||
+        (process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32', 'cmd.exe') : 'cmd.exe');
+      const child = spawn(comSpec, ['/d', '/c', 'start', '', u], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+      child.on('error', (e) => reject(e));
+      child.unref();
+      setImmediate(() => resolve());
+    });
+    return;
+  }
+  await shell.openExternal(u);
+}
+
+/**
+ * Registry open\command for this extension; skip stub handlers that only show the picker.
+ * Per-extension UserChoice (Settings → default app → .pdf etc.) before assoc/ftype — assoc can lag (e.g. still Edge while UserChoice is Chrome).
+ */
+async function openPathViaRegistryOpenCommandWindows(absNormPath) {
+  const ext = path.extname(absNormPath).slice(1).toLowerCase();
+  if (!ext) return 'No extension';
+  const seen = new Set();
+  const templates = [];
+  const progId = winProgIdForExtension(ext);
+  const fromUserChoice = progId ? winOpenCommandTemplateForProgId(progId) : null;
+  if (fromUserChoice) {
+    templates.push(fromUserChoice);
+    seen.add(fromUserChoice);
+  }
+  const fromAssoc = winOpenCommandTemplateViaAssocFtype(ext);
+  if (fromAssoc && !seen.has(fromAssoc)) {
+    templates.push(fromAssoc);
+    seen.add(fromAssoc);
+  }
+  for (const tmpl of templates) {
+    const err = await openPathTryTemplateSpawn(tmpl, absNormPath);
+    if (!err) return null;
+  }
+  return 'No working open template';
+}
+
+/**
+ * Last-resort association path that still runs outside Electron’s shell helpers.
+ * (WindowsTerminal’s “open file” behavior; avoids shell.openExternal file:// picker on some setups.)
+ */
+function openPathViaPowershellInvokeItem(absNormPath) {
+  return new Promise((resolve) => {
+    const ps =
+      process.env.SystemRoot &&
+      path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+    if (!ps || !fssync.existsSync(ps)) {
+      resolve('No PowerShell');
+      return;
+    }
+    const esc = (s) => String(s).replace(/'/g, "''");
+    const script = `Invoke-Item -LiteralPath '${esc(absNormPath)}'`;
+    let settled = false;
+    const finish = (err) => {
+      if (settled) return;
+      settled = true;
+      resolve(err);
+    };
+    const child = spawn(ps, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-Command', script], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    child.on('error', (e) => finish(String(e.message || e)));
+    child.unref();
+    setImmediate(() => finish(null));
+  });
+}
+
+/** Open file/folder with default handler. shell.openPath (ShellExecuteW) is the primary method. */
+async function openPathWithFallback(fullPathRaw) {
+  const p = normalizePathForShellOpen(fullPathRaw);
+  if (!p) return 'Empty path.';
+
+  // shell.openPath = ShellExecuteW "open" — the standard Windows/macOS/Linux way
+  const shellErr = await shell.openPath(p);
+  if (!shellErr) return null;
+
+  // Fallbacks (Windows only) if ShellExecute failed
+  if (process.platform === 'win32') {
+    const ext = path.extname(p).slice(1).toLowerCase();
+    if (ext) {
+      const regErr = await openPathViaRegistryOpenCommandWindows(p);
+      if (!regErr) return null;
+      const psErr = await openPathViaPowershellInvokeItem(p);
+      if (!psErr) return null;
+    }
+    const startErr = await openPathViaCmdStartWindows(p);
+    return startErr || shellErr;
+  }
+  return shellErr;
+}
+
+/**
+ * One physical path for scope checks: Explorer / cloud sync may use junctions or aliases so two
+ * strings point at the same tree but path.relative would walk through "..".
+ */
+function canonicalPathForScopeCompare(absNormPath) {
+  const s = String(absNormPath || '').trim();
+  if (!s) return s;
+  const tryNative = () =>
+    typeof fssync.realpathSync.native === 'function'
+      ? fssync.realpathSync.native(s)
+      : fssync.realpathSync(s);
+  try {
+    return tryNative();
+  } catch (_) {
+    try {
+      return fssync.realpathSync(s);
+    } catch (_) {
+      try {
+        const dir = path.dirname(s);
+        const base = path.basename(s);
+        const rd =
+          typeof fssync.realpathSync.native === 'function'
+            ? fssync.realpathSync.native(dir)
+            : fssync.realpathSync(dir);
+        return path.join(rd, base);
+      } catch (_) {
+        return s;
+      }
+    }
+  }
+}
+
+function trimAbsPathForCompare(p) {
+  let x = path.normalize(String(p || ''));
+  x = stripWinLongPath(x);
+  while (x.length > 1 && x.endsWith(path.sep)) x = x.slice(0, -1);
+  if (process.platform === 'win32' && /^[a-zA-Z]:$/i.test(x)) x = x + path.sep;
+  return x;
+}
+
+/** True if fullPath is the root folder or a path inside it (handles long-path prefix + different drives). */
+function isPathUnderRoot(fullPath, rootRaw) {
+  const rootTrim = String(rootRaw || '').trim();
+  if (!rootTrim) return true;
+
+  let r = trimAbsPathForCompare(rootTrim);
+  let f = trimAbsPathForCompare(String(fullPath || ''));
+  if (!r) return true;
+
+  r = trimAbsPathForCompare(canonicalPathForScopeCompare(r));
+  f = trimAbsPathForCompare(canonicalPathForScopeCompare(f));
+
+  if (f.toLowerCase() === r.toLowerCase()) return true;
+
+  const rel = path.relative(r, f);
+  if (!rel) return true;
+  if (rel.startsWith('..')) return false;
+  if (path.isAbsolute(rel)) return false;
+  return true;
+}
+
+/** Staging folder for renderer “Shelf” (under userData). */
+function getShelfDirResolved() {
+  const d = path.normalize(path.join(app.getPath('userData'), 'TagBrowserShelf'));
+  try {
+    if (!fssync.existsSync(d)) fssync.mkdirSync(d, { recursive: true });
+  } catch (_) {}
+  return path.resolve(d);
+}
+
+function isPathUnderShelf(absPathRaw) {
+  try {
+    const shelf = trimAbsPathForCompare(canonicalPathForScopeCompare(getShelfDirResolved()));
+    const f = trimAbsPathForCompare(canonicalPathForScopeCompare(path.resolve(String(absPathRaw || '').trim())));
+    if (!f || !shelf) return false;
+    if (f.toLowerCase() === shelf.toLowerCase()) return true;
+    const rel = path.relative(shelf, f);
+    if (!rel || rel === '') return true;
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return false;
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/** Build GET URL for Everything HTTP server (json + path/size/date + optional flags). */
+function everythingSearchUrl(baseUrl, searchText, count, options) {
+  const o = options || {};
+  const u = new URL(baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`);
+  u.searchParams.set('search', searchText);
+  u.searchParams.set('json', '1');
+  u.searchParams.set('path_column', '1');
+  u.searchParams.set('size_column', '1');
+  u.searchParams.set('date_modified_column', '1');
+  u.searchParams.set('attributes_column', '1');
+  u.searchParams.set('count', String(Math.min(Math.max(Number(count) || 100, 1), 5000)));
+  u.searchParams.set('offset', String(Math.max(Number(o.offset) || 0, 0)));
+
+  if (o.case) u.searchParams.set('i', '1'); // match case (voidtools key i)
+  if (o.wholeword) u.searchParams.set('w', '1');
+  if (o.pathSearch) u.searchParams.set('p', '1');
+  if (o.regex) u.searchParams.set('r', '1');
+  if (o.diacritics) u.searchParams.set('m', '1');
+
+  const sort = o.sort || 'name';
+  if (['name', 'path', 'date_modified', 'size'].includes(sort)) u.searchParams.set('sort', sort);
+  u.searchParams.set('ascending', o.ascending === false || o.ascending === 0 ? '0' : '1');
+
+  return u.toString();
+}
+
+function createWindow() {
+  // `maximized` is not a BrowserWindow option — use maximize() so we get OS chrome, not fullscreen.
+  const win = new BrowserWindow({
+    width: 1480,
+    height: 820,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  win.loadFile(path.join(__dirname, 'index.html'));
+  win.webContents.setWindowOpenHandler(({ url: openUrl }) => {
+    try {
+      const u = new URL(openUrl);
+      if (u.protocol === 'http:' || u.protocol === 'https:') {
+        void openUrlInSystemDefaultBrowser(openUrl).catch(() => {});
+        return { action: 'deny' };
+      }
+    } catch {
+      /* non-URL */
+    }
+    return { action: 'allow' };
+  });
+  win.webContents.on('will-navigate', (event, navigationUrl) => {
+    try {
+      const u = new URL(navigationUrl);
+      if (u.protocol === 'http:' || u.protocol === 'https:') {
+        event.preventDefault();
+        void openUrlInSystemDefaultBrowser(navigationUrl).catch(() => {});
+      }
+    } catch {
+      /* ignore */
+    }
+  });
+  win.once('ready-to-show', () => {
+    win.maximize();
+    win.show();
+  });
+}
+
+app.whenReady().then(() => {
+  createWindow();
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
+
+// Everything HTTP request (runs in main so we avoid renderer CORS quirks)
+ipcMain.handle('everything-search', async (_event, payload) => {
+  const { baseUrl, searchText, httpUser, httpPassword, count, options } = payload;
+  const url = everythingSearchUrl(baseUrl, searchText, count, options);
+  const headers = {};
+  const user = (httpUser || '').trim();
+  const pass = (httpPassword || '').trim();
+  if (user || pass) {
+    const token = Buffer.from(`${user}:${pass}`, 'utf8').toString('base64');
+    headers.Authorization = `Basic ${token}`;
+  }
+  let res;
+  try {
+    res = await fetch(url, { headers });
+  } catch (e) {
+    return { ok: false, error: String(e.message || e), rows: [] };
+  }
+  if (!res.ok) {
+    return { ok: false, error: `HTTP ${res.status} ${res.statusText}`, rows: [] };
+  }
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    return {
+      ok: false,
+      error: 'Response was not JSON — check base URL/port and that the Everything HTTP server is enabled.',
+      rows: [],
+    };
+  }
+  return { ok: true, rows: rowsFromEverythingJson(data) };
+});
+
+ipcMain.handle('open-path', async (_event, fullPath) => {
+  return openPathWithFallback(fullPath);
+});
+
+ipcMain.handle('show-in-folder', async (_event, fullPath) => {
+  shell.showItemInFolder(fullPath);
+});
+
+/**
+ * Shell item menu: standard Electron pattern (Menu + shell + clipboard in main).
+ * Full Explorer.context menu would need native IContextMenu bindings — not in core Electron.
+ */
+ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFolder }) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const fp = path.normalize(String(filePath || '').trim());
+  if (!fp) return { ok: false, error: 'No path' };
+  const scopeAvail = Boolean(String(scopeFolder || '').trim());
+  const par = path.dirname(fp);
+  const fpPlain = stripWinLongPath(fp);
+  let isDir = false;
+  try {
+    const st = await fs.stat(fp);
+    isDir = st.isDirectory();
+  } catch {
+    /* path missing on disk — still offer copy/open actions */
+  }
+  const terminalCwd = isDir ? fp : par;
+  const baseName = path.basename(fp);
+  const pathFwdSlashes = fpPlain.replace(/\\/g, '/');
+  let fileUrl = '';
+  try {
+    fileUrl = pathToFileURL(fpPlain).href;
+  } catch {
+    fileUrl = '';
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (v) => {
+      if (settled) return;
+      settled = true;
+      resolve(v);
+    };
+
+    const copySubmenu = [];
+    if (process.platform === 'win32') {
+      copySubmenu.push({
+        label: 'Copy for Explorer paste',
+        click: () => {
+          const err = copyPathsForExplorerPaste([fp]);
+          if (err) {
+            event.sender.send('shell-action-error', err);
+            done({ ok: false, action: 'copyExplorer', error: err });
+            return;
+          }
+          done({ ok: true, action: 'copyExplorer' });
+        },
+      });
+    }
+    copySubmenu.push(
+      { label: 'Full path', click: () => { clipboard.writeText(fp); done({ ok: true, action: 'copyPath' }); } },
+      { label: 'Parent folder path', click: () => { clipboard.writeText(par); done({ ok: true, action: 'copyParent' }); } },
+      { label: 'Name only', click: () => { clipboard.writeText(baseName); done({ ok: true, action: 'copyName' }); } },
+      { label: 'Path with forward slashes', click: () => { clipboard.writeText(pathFwdSlashes); done({ ok: true, action: 'copyFwd' }); } },
+    );
+    if (fileUrl) {
+      copySubmenu.push({
+        label: 'File URL (file://…)',
+        click: () => {
+          clipboard.writeText(fileUrl);
+          done({ ok: true, action: 'copyFileUrl' });
+        },
+      });
+    }
+
+    /** @type {Electron.MenuItemConstructorOptions[]} */
+    const template = [
+      { label: 'Copy', submenu: copySubmenu },
+      { type: 'separator' },
+      {
+        label: 'Open',
+        click: () => {
+          void openPathWithFallback(fp).then((err) => {
+            if (err) event.sender.send('shell-action-error', err);
+            done({ ok: true, action: 'open' });
+          });
+        },
+      },
+      { label: 'Reveal in File Explorer', click: () => { shell.showItemInFolder(fp); done({ ok: true, action: 'reveal' }); } },
+      {
+        label: 'Search Google Drive for filename…',
+        click: () => {
+          done({ ok: true, action: 'driveSearch' });
+          const u = googleDriveSearchUrlForPath(fp);
+          if (!u) {
+            event.sender.send('shell-action-error', 'Could not build Google Drive search URL.');
+            return;
+          }
+          void openUrlInSystemDefaultBrowser(u).catch((e) => {
+            event.sender.send('shell-action-error', String(e.message || e));
+          });
+        },
+      },
+      { label: 'Rename…', click: () => done({ ok: true, action: 'rename' }) },
+    ];
+
+    if (process.platform === 'win32') {
+      template.push({
+        label: 'Open in Windows Terminal',
+        click: () => {
+          done({ ok: true, action: 'wt' });
+          const c = spawn('wt.exe', ['-d', terminalCwd], {
+            detached: true,
+            stdio: 'ignore',
+            windowsHide: true,
+          });
+          c.on('error', () => event.sender.send('shell-action-error', 'Windows Terminal (wt.exe) not available.'));
+          c.unref();
+        },
+      });
+      if (!isDir) {
+        template.push({
+          label: 'Edit with Notepad',
+          click: () => {
+            done({ ok: true, action: 'notepad' });
+            const c = spawn('notepad.exe', [fp], {
+              detached: true,
+              stdio: 'ignore',
+              windowsHide: true,
+            });
+            c.on('error', (e) => event.sender.send('shell-action-error', String(e.message || e)));
+            c.unref();
+          },
+        });
+      }
+    }
+
+    template.push(
+      { type: 'separator' },
+      {
+        label: 'New folder in scope…',
+        enabled: scopeAvail,
+        click: () => {
+          done({ ok: true, action: 'newFolderInScope' });
+        },
+      },
+      { type: 'separator' },
+      {
+        label: 'Move to Recycle Bin',
+        click: () => {
+          done({ ok: true, action: 'trash' });
+          void shell.trashItem(fp).then(
+            () => event.sender.send('paths-mutated'),
+            (e) => event.sender.send('shell-action-error', String(e.message || e))
+          );
+        },
+      }
+    );
+
+    const menu = Menu.buildFromTemplate(template);
+    menu.popup({
+      window: win || undefined,
+      x: Math.round(Number(x) || 0),
+      y: Math.round(Number(y) || 0),
+      callback: () => done({ ok: true, dismissed: true }),
+    });
+  });
+});
+
+ipcMain.handle('copy-explorer-paste', async (_event, paths) => {
+  const list = Array.isArray(paths) ? paths : paths ? [paths] : [];
+  const err = copyPathsForExplorerPaste(list);
+  return err ? { ok: false, error: err } : { ok: true };
+});
+
+ipcMain.handle('cut-explorer-paste', async (_event, paths) => {
+  const list = Array.isArray(paths) ? paths : paths ? [paths] : [];
+  const err = cutPathsForExplorerPaste(list);
+  return err ? { ok: false, error: err } : { ok: true };
+});
+
+ipcMain.handle('paste-clipboard-into-folder', async (event, { destFolder, rootPrefix }) => {
+  if (process.platform !== 'win32') return { ok: false, error: 'Clipboard file paste is only supported on Windows.' };
+  let sources;
+  try {
+    sources = readClipboardFilePathsWin();
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) };
+  }
+  if (!sources.length) return { ok: false, error: 'No files or folders in clipboard.' };
+  const r = await copySourcesIntoScopeFolder(sources, destFolder, rootPrefix);
+  if (r.ok) event.sender.send('paths-mutated');
+  return r;
+});
+
+ipcMain.handle('trash-paths', async (event, paths) => {
+  const list = Array.isArray(paths) ? paths : [];
+  const errs = [];
+  for (const raw of list) {
+    const fp = path.normalize(String(raw || '').trim());
+    if (!fp) continue;
+    try {
+      await shell.trashItem(fp);
+    } catch (e) {
+      errs.push(fp + ': ' + String(e.message || e));
+    }
+  }
+  if (errs.length) return { ok: false, error: errs.join('; ') };
+  event.sender.send('paths-mutated');
+  return { ok: true };
+});
+
+/** Subfolders only (breadcrumb sibling picker). */
+ipcMain.handle('list-child-folders', async (_event, { parentPath }) => {
+  let p = path.normalize(String(parentPath || '').trim());
+  if (!p) return { ok: false, error: 'No folder', folders: [] };
+  if (/^[a-zA-Z]:$/i.test(p)) p += '\\';
+  let entries;
+  try {
+    entries = await fs.readdir(p, { withFileTypes: true });
+  } catch (e) {
+    return { ok: false, error: String(e.message || e), folders: [] };
+  }
+  const folders = [];
+  for (const d of entries) {
+    if (!d.isDirectory()) continue;
+    const name = d.name;
+    if (name === '.' || name === '..') continue;
+    folders.push({ name, fullPath: path.join(p, name) });
+  }
+  folders.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }));
+  return { ok: true, folders };
+});
+
+/** One path segment for a new folder name (no separators / Windows-forbidden chars). */
+function sanitizeFolderNameSegment(raw) {
+  let t = String(raw ?? '').trim();
+  t = t.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').replace(/\s+/g, ' ').trim();
+  if (!t || t === '.' || t === '..') return '';
+  if (t.length > 120) t = t.slice(0, 120);
+  return t;
+}
+
+ipcMain.handle('create-empty-folder', async (event, { parentFolder, nameSegment, rootPrefix }) => {
+  const parent = normalizeRenameOperand(String(parentFolder || '').trim());
+  if (!parent) return { ok: false, error: 'No parent folder.' };
+  if (!isPathUnderRoot(parent, rootPrefix)) {
+    return { ok: false, error: 'Parent must stay under the configured root folder.' };
+  }
+  let st;
+  try {
+    st = await fs.stat(parent);
+  } catch {
+    return { ok: false, error: 'Parent folder does not exist or is not reachable.' };
+  }
+  if (!st.isDirectory()) return { ok: false, error: 'Parent is not a folder.' };
+  const base = sanitizeFolderNameSegment(nameSegment);
+  if (!base) return { ok: false, error: 'Invalid or empty folder name after sanitizing.' };
+  const dest = normalizeRenameOperand(path.join(parent, base));
+  if (!isPathUnderRoot(dest, rootPrefix)) {
+    return { ok: false, error: 'New folder would be outside the configured root folder.' };
+  }
+  try {
+    await fs.mkdir(dest, { recursive: false });
+  } catch (e) {
+    if (e && e.code === 'EEXIST') return { ok: false, error: 'Something with that name already exists.' };
+    return { ok: false, error: String(e.message || e) };
+  }
+  event.sender.send('paths-mutated');
+  return { ok: true, path: dest };
+});
+
+/** Native drag to Explorer / other apps; call from renderer dragstart (sync). */
+/** Renderer lost keyboard to OS/chrome after some button clicks — pull focus back into the page. */
+ipcMain.on('tagbrowser-focus-web-contents', (event) => {
+  event.sender.focus();
+});
+
+/** 1×1 PNG — Windows startDrag with empty icon often fails; use on all platforms. */
+const START_DRAG_ICON = nativeImage.createFromDataURL(
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+);
+
+ipcMain.on('start-drag-files', (event, paths) => {
+  const list = Array.isArray(paths)
+    ? paths.map((p) => path.normalize(String(p || '').trim())).filter(Boolean)
+    : [];
+  if (!list.length) return;
+  try {
+    event.sender.startDrag({ files: list, icon: START_DRAG_ICON });
+  } catch (e) {
+    console.error('startDrag', e);
+  }
+});
+
+/** No trailing sep (except drive root C:\) — trailing \\ on folders can confuse fs.rename on Windows. */
+function normalizeRenameOperand(p) {
+  let s = path.normalize(String(p || '').trim());
+  if (!s) return s;
+  if (/[\\/]$/.test(s)) {
+    const trimmed = s.replace(/[/\\]+$/, '');
+    if (/^[a-zA-Z]:$/.test(trimmed)) s = trimmed + '\\';
+    else s = trimmed || s;
+  }
+  return s;
+}
+
+/** Windows extended-length paths for rename (helps Drive/OneDrive and long paths). */
+function toWinLongRenamePath(absNorm) {
+  const s = absNorm.replace(/\//g, '\\');
+  if (s.startsWith('\\\\?\\')) return s;
+  if (s.startsWith('\\\\')) return '\\\\?\\UNC\\' + s.slice(2);
+  return '\\\\?\\' + s;
+}
+
+/** True when a quick retry may succeed (locks, cloud sync — Drive often uses EPERM, not only EBUSY). */
+function isRenameRetryableError(e) {
+  if (!e) return false;
+  if (e.code === 'EBUSY') return true;
+  if (process.platform === 'win32' && (e.code === 'EPERM' || e.code === 'EACCES')) return true;
+  return /EBUSY|resource busy|locked|EPERM/i.test(String(e.message || e));
+}
+
+async function delay(ms) {
+  await new Promise((r) => setTimeout(r, ms));
+}
+
+async function renameAttemptWithBusyRetry(from, to) {
+  const max = 5;
+  let lastErr;
+  for (let i = 0; i < max; i++) {
+    try {
+      await fs.rename(from, to);
+      return { ok: true, err: null };
+    } catch (e) {
+      lastErr = e;
+      if (isRenameRetryableError(e) && i < max - 1) {
+        await delay(120 + i * 180);
+        continue;
+      }
+      break;
+    }
+  }
+  return { ok: false, err: lastErr };
+}
+
+/** fs.rename with EBUSY retries; on ENOENT (Win) retry with \\?\ long paths. */
+async function renameWithBusyRetry(fromRaw, toRaw) {
+  const fromN = normalizeRenameOperand(fromRaw);
+  const toN = normalizeRenameOperand(toRaw);
+
+  let r = await renameAttemptWithBusyRetry(fromN, toN);
+  if (r.ok) return { ok: true };
+
+  // Long-path form sometimes succeeds where normal paths fail (virtual/cloud drivers, long names).
+  const code = r.err && r.err.code;
+  const tryLong =
+    process.platform === 'win32' &&
+    (code === 'ENOENT' || code === 'EPERM' || code === 'EACCES' || code === 'EBUSY');
+  if (tryLong) {
+    const a = toWinLongRenamePath(path.resolve(fromN));
+    const b = toWinLongRenamePath(path.resolve(toN));
+    if (a !== fromN || b !== toN) {
+      r = await renameAttemptWithBusyRetry(a, b);
+      if (r.ok) return { ok: true };
+    }
+  }
+
+  let msg = String(r.err.message || r.err);
+  if (isRenameRetryableError(r.err)) {
+    msg +=
+      ' If it keeps failing: close Explorer windows in that folder, terminals with cwd there, and IDE workspace roots on that path; cloud drives often lock folders briefly.';
+  }
+  if (r.err && (r.err.code === 'EPERM' || r.err.code === 'EACCES')) {
+    msg +=
+      ' EPERM on Google Drive / OneDrive usually means the sync client still has the folder: wait until the folder is fully synced and not “in use”, try pausing sync briefly, ensure no upload is in progress, or rename from drive.google.com / onedrive.com instead of the local folder.';
+  } else if (r.err && r.err.code === 'ENOENT') {
+    msg +=
+      ' If the item is in Google Drive / OneDrive, wait for sync or open the folder offline; then run Search again so paths match disk.';
+  }
+  return { ok: false, error: msg };
+}
+
+// Rename file or folder on disk; both paths must be under rootPrefix when that is set.
+ipcMain.handle('rename-path', async (_event, { fromPath, toPath, rootPrefix }) => {
+  const from = normalizeRenameOperand(String(fromPath || ''));
+  const to = normalizeRenameOperand(String(toPath || ''));
+  if (!from || !to) return { ok: false, error: 'Missing path' };
+  if (!isPathUnderRoot(from, rootPrefix) || !isPathUnderRoot(to, rootPrefix)) {
+    return { ok: false, error: 'Path must stay under the configured root folder.' };
+  }
+  return renameWithBusyRetry(from, to);
+});
+
+ipcMain.handle('move-paths-into-folder', async (event, { sourcePaths, destFolder, rootPrefix }) => {
+  const r = await moveSourcesIntoFolder(sourcePaths, destFolder, rootPrefix);
+  if (r.ok) event.sender.send('paths-mutated');
+  return r;
+});
+
+ipcMain.handle('copy-paths-into-folder', async (event, { sourcePaths, destFolder, rootPrefix }) => {
+  const r = await copySourcesIntoScopeFolder(sourcePaths, destFolder, rootPrefix);
+  if (r.ok) event.sender.send('paths-mutated');
+  return r;
+});
+
+ipcMain.handle('shelf-state', async () => {
+  const dir = getShelfDirResolved();
+  try {
+    const ents = await fs.readdir(dir, { withFileTypes: true });
+    const entries = ents
+      .map((e) => ({
+        name: e.name,
+        fullPath: path.join(dir, e.name),
+        isDirectory: e.isDirectory(),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    return { ok: true, path: dir, entries };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e), path: dir, entries: [] };
+  }
+});
+
+ipcMain.handle('clear-shelf', async (event) => {
+  const dir = getShelfDirResolved();
+  try {
+    const names = await fs.readdir(dir);
+    for (const n of names) {
+      await fs.rm(path.join(dir, n), { recursive: true, force: true });
+    }
+    event.sender.send('paths-mutated');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) };
+  }
+});
+
+// Read/write readme and markdown: no root check — results can sit outside “Limit to folder” (e.g. parent: scope); renames stay guarded.
+ipcMain.handle('read-text-file', async (_event, { fullPath }) => {
+  const fp = path.normalize(String(fullPath || ''));
+  if (!fp) return { ok: false, error: 'Missing path' };
+  try {
+    const text = await fs.readFile(fp, 'utf8');
+    return { ok: true, text };
+  } catch (e) {
+    if (e.code === 'ENOENT') return { ok: false, code: 'ENOENT', error: String(e.message || e) };
+    return { ok: false, error: String(e.message || e) };
+  }
+});
+
+/** Binary read for PDF / Office previews in the renderer (base64). */
+ipcMain.handle('read-file-buffer', async (_event, { fullPath }) => {
+  const fp = path.normalize(String(fullPath || ''));
+  if (!fp) return { ok: false, error: 'Missing path' };
+  const maxBytes = 50 * 1024 * 1024;
+  try {
+    const st = await fs.stat(fp);
+    if (st.isDirectory()) return { ok: false, error: 'Not a file' };
+    if (st.size > maxBytes) return { ok: false, error: 'File too large for preview (max 50 MB).' };
+    const buf = await fs.readFile(fp);
+    return { ok: true, base64: buf.toString('base64') };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) };
+  }
+});
+
+ipcMain.handle('write-text-file', async (_event, { fullPath, text }) => {
+  const fp = path.normalize(String(fullPath || ''));
+  if (!fp) return { ok: false, error: 'Missing path' };
+  try {
+    await fs.writeFile(fp, String(text ?? ''), 'utf8');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) };
+  }
+});
+
+// Create empty readme.md in folder if missing.
+ipcMain.handle('ensure-readme', async (_event, { folderPath }) => {
+  const dir = path.normalize(String(folderPath || '').trim().replace(/[/\\]+$/, ''));
+  if (!dir) return { ok: false, error: 'Missing folder' };
+  const readmePath = path.join(dir, 'readme.md');
+  try {
+    await fs.access(readmePath);
+    return { ok: true, path: readmePath, created: false };
+  } catch {
+    await fs.writeFile(readmePath, '', 'utf8');
+    return { ok: true, path: readmePath, created: true };
+  }
+});
