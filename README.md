@@ -39,7 +39,7 @@ With **Regex** off, active tags are also sent to Everything so you can find matc
 
 Each row has **⋯** — a main-process context menu (`Menu`, `shell`, `clipboard`).
 
-**Copy** submenu: full path, parent path, **name only**, forward slashes, **file://** URL. Then **Open**, **Reveal in File Explorer**, **Search Google Drive for filename…**, **Open in Windows Terminal**, **Edit with Notepad** (files), **Delete** (confirmation; Windows Recycle Bin). *Explorer paste from copied files* (`CF_HDROP`) is not available in this Electron stack — paths only.
+**Copy** submenu: full path, parent path, **name only**, forward slashes, **file://** URL, and on Windows **Copy for Explorer paste** (`CF_HDROP`). **Paste** from Explorer into a scope folder is supported on Windows. Then **Open**, **Reveal in File Explorer**, **Search Google Drive for filename…**, **Open in Windows Terminal**, **Edit with Notepad** (files), **Delete** (confirmation; Windows Recycle Bin).
 
 ## Layout
 
@@ -47,7 +47,7 @@ Drag the **splitter** between the main area and the **Viewer** (width saved). Dr
 
 ## Search options
 
-The **query** and **Settings** fields update results live (debounced). Toggles map to Everything: case, whole word, path, regex, diacritics. **Folders only** / **Files only** append `folder:` / `file:`; only one at a time ([docs](https://www.voidtools.com/support/everything/searching/)).
+The **query** and **Settings** fields update results live (debounced). Toggles map to Everything: case, whole word, path, regex, diacritics. Next to the search row, **Both** / **Folders only** / **Files only** pick what Everything returns (`folder:` / `file:` when narrowed; [docs](https://www.voidtools.com/support/everything/searching/)).
 
 **Sort** uses column headers; order is sent to Everything. **Sort folders with files** (Settings, default on) merges folders and files by that column; off keeps Everything’s usual folders-first order.
 

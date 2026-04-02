@@ -582,14 +582,17 @@
           <input type="password" id="httpPassword" class="form-control form-control-sm" autocomplete="current-password" />
         </div>
         <div class="col-12">
+          <label class="form-label small mb-1 d-block text-muted">Results list (when search shows files and folders)</label>
           <div class="form-check mb-0">
             <input class="form-check-input" type="checkbox" id="optSortFoldersWithFiles" checked autocomplete="off" />
-            <label
-              class="form-check-label"
-              for="optSortFoldersWithFiles"
-              title="On (default): sort folders and files together by the active column. Off: Everything’s default order (usually folders first)."
-              >Sort folders with files</label
+            <label class="form-check-label" for="optSortFoldersWithFiles"
+              title="On: one sorted list mixing folders and files. Off: Everything’s default (all folders, then all files for that sort)."
+              >Sort folders with files (interleave in table)</label
             >
+            <div class="form-text text-muted small">
+              Off — you still get both types when <strong>Both</strong> is selected next to the search bar; folders appear first, then files, which can look like “only folders” until you scroll.
+              On — folders and files share one order by the active column. With <strong>Both</strong>, the app runs two Everything queries (folder / file) so large lists still get both kinds up to the max-results cap.
+            </div>
           </div>
         </div>
       </div>
@@ -680,10 +683,12 @@
         <label class="btn btn-outline-secondary btn-sm" for="optCase">Match case</label>
         <input type="checkbox" class="btn-check" id="optPath" autocomplete="off" />
         <label class="btn btn-outline-secondary btn-sm" for="optPath">Match path</label>
-        <input type="checkbox" class="btn-check" id="optFoldersOnly" autocomplete="off" />
-        <label class="btn btn-outline-secondary btn-sm" for="optFoldersOnly" title="Everything: folder: — folders only">Folders only</label>
-        <input type="checkbox" class="btn-check" id="optFilesOnly" autocomplete="off" />
-        <label class="btn btn-outline-secondary btn-sm" for="optFilesOnly" title="Everything: file: — files only">Files only</label>
+        <input type="radio" class="btn-check" name="tagFoxFileFolderFilter" id="optFilterBoth" value="both" autocomplete="off" checked />
+        <label class="btn btn-outline-secondary btn-sm" for="optFilterBoth" title="Everything: no file:/folder: modifier — files and folders">Both</label>
+        <input type="radio" class="btn-check" name="tagFoxFileFolderFilter" id="optFilterFolders" value="folders" autocomplete="off" />
+        <label class="btn btn-outline-secondary btn-sm" for="optFilterFolders" title="Everything: folder: — folders only">Folders only</label>
+        <input type="radio" class="btn-check" name="tagFoxFileFolderFilter" id="optFilterFiles" value="files" autocomplete="off" />
+        <label class="btn btn-outline-secondary btn-sm" for="optFilterFiles" title="Everything: file: — files only">Files only</label>
         <div class="search-opts-advanced-cluster ms-auto d-inline-flex align-items-center gap-1 flex-nowrap">
           <div
             id="searchOptsAdvancedPanel"
@@ -1062,7 +1067,7 @@
                     </tr>
                     <tr>
                       <td><kbd>Ctrl</kbd>+<kbd>F</kbd></td>
-                      <td>Cycle <strong>Files only</strong> → <strong>Folders only</strong> → off (both)</td>
+                      <td>Cycle result type: <strong>Both</strong> → <strong>Files only</strong> → <strong>Folders only</strong> → <strong>Both</strong></td>
                     </tr>
                     <tr>
                       <td><kbd>Ctrl</kbd>+<kbd>C</kbd> · <kbd>X</kbd> · <kbd>V</kbd></td>
@@ -1154,7 +1159,7 @@
               <h3 class="fs-6 text-secondary mb-2">Advanced options and toggles</h3>
               <ul class="mb-3 ps-3">
                 <li><strong>Settings</strong> (toolbar): Everything base URL, <strong>Scope folder</strong>, max hits, HTTP auth, <strong>Sort folders with files</strong>.</li>
-                <li>Under the search row: case, whole word, match path, regex, diacritics; <strong>Folders only</strong> / <strong>Files only</strong> — off = both types; at most one of these can be on.</li>
+                <li>Under the search row: case, whole word, match path, regex, diacritics; <strong>Both</strong> / <strong>Folders only</strong> / <strong>Files only</strong> (mutually exclusive). Settings → <strong>Sort folders with files</strong> controls whether folders and files are interleaved in the table.</li>
                 <li><strong>Hide “dot” folders</strong> trims the list of paths that run through segments like <code>.git</code> or <code>.vscode</code> (see the checkbox tooltip—leaf dotfiles such as <code>.env</code> are not hidden).</li>
               </ul>
             </div>
@@ -1233,6 +1238,10 @@
   <script src="tags.js"></script>
   <script>
     const T = window.TagBrowserTags;
+    /** Pretty filename for one path segment (strip bracket tags). */
+    function segmentPretty(name) {
+      return T.parseSegmentTags(name).pretty;
+    }
     if (window.__tagBrowserCdnOk === false) throw new Error('CDN vendor load failed');
     const LS = {
       baseUrl: 'tagBrowserBaseUrl',
@@ -2221,7 +2230,7 @@
       }
       const norm = normalizeFolderPathForEverything(scopeRaw).replace(/[/\\]+$/, '');
       const seg = T.baseName(norm);
-      const pretty = (T.parseSegmentTags(seg).pretty || seg || 'folder').trim();
+      const pretty = (segmentPretty(seg) || seg || 'folder').trim();
       q.placeholder = 'Search inside ' + pretty;
     }
 
@@ -2401,38 +2410,56 @@
       parentBtn.focus();
     }
 
-    /** One level: folder rows + hover/focus opens deeper flyout; click applies scope. */
-    function populateBreadcrumbSubfolderFlyoutAtDepth(flyEl, folders, subBtnToggle, depth) {
-      flyEl.innerHTML = '';
-      flyEl._subBtnToggle = subBtnToggle;
+    /**
+     * Shared folder rows for breadcrumb ▾ menus and nested flyouts (click = scope; hover = deeper flyout).
+     * @param {HTMLElement} ulEl
+     * @param {Array<{name:string,fullPath:string}>} folders
+     * @param {HTMLElement} toggleBtn — Bootstrap dropdown toggle (hide on pick).
+     * @param {number} openFlyoutAtDepth — arg to openBreadcrumbSubfolderFlyoutForPath (0 = from main dropdowns).
+     * @param {{ highlightPathNorm?: string, onMouseLeaveRow?: () => void }} [opts]
+     */
+    function appendBreadcrumbFolderListItems(ulEl, folders, toggleBtn, openFlyoutAtDepth, opts) {
+      const o = opts || {};
       for (const f of folders) {
         const li = document.createElement('li');
         const b = document.createElement('button');
         b.type = 'button';
         b.className = 'dropdown-item py-1';
-        b.textContent = T.parseSegmentTags(f.name).pretty;
+        if (o.highlightPathNorm) {
+          const fpNorm = f.fullPath.replace(/[/\\]+$/, '').toLowerCase();
+          if (fpNorm === o.highlightPathNorm) b.classList.add('active');
+        }
+        b.textContent = segmentPretty(f.name);
         b.title = f.fullPath;
         li.dataset.breadcrumbFlyoutPath = f.fullPath;
         b.addEventListener('click', async (ev) => {
           ev.preventDefault();
           ev.stopPropagation();
           hideBreadcrumbSubfolderFlyout();
-          const inst = bootstrap.Dropdown.getInstance(subBtnToggle);
+          const inst = bootstrap.Dropdown.getInstance(toggleBtn);
           if (inst) inst.hide();
           await applySearchScopeAndRefresh(normalizeFolderPathForEverything(f.fullPath));
         });
         const onEnterRow = () => {
           cancelBreadcrumbFlyoutHideTimer();
-          void openBreadcrumbSubfolderFlyoutForPath(f.fullPath, li, subBtnToggle, depth + 1);
+          void openBreadcrumbSubfolderFlyoutForPath(f.fullPath, li, toggleBtn, openFlyoutAtDepth);
         };
         li.addEventListener('mouseenter', onEnterRow);
         li.addEventListener('focusin', (ev) => {
           if (ev.target === b) onEnterRow();
         });
-        // Mouseleave on each row fights nested panels (gap → timer hides all). Rely on ul mouseleave + outside pointer.
+        if (o.onMouseLeaveRow) li.addEventListener('mouseleave', o.onMouseLeaveRow);
         li.appendChild(b);
-        flyEl.appendChild(li);
+        ulEl.appendChild(li);
       }
+    }
+
+    /** One level: folder rows + hover/focus opens deeper flyout; click applies scope. */
+    function populateBreadcrumbSubfolderFlyoutAtDepth(flyEl, folders, subBtnToggle, depth) {
+      flyEl.innerHTML = '';
+      flyEl._subBtnToggle = subBtnToggle;
+      // Nested flyout: no per-row mouseleave (gap → timer); rely on ul mouseleave + outside pointer.
+      appendBreadcrumbFolderListItems(flyEl, folders, subBtnToggle, depth + 1, {});
       flyEl.classList.add('is-open');
       positionBreadcrumbFlyoutAtDepth(depth);
     }
@@ -2622,36 +2649,10 @@
                 menu.appendChild(li0);
                 return;
               }
-              for (const f of folders) {
-                const li = document.createElement('li');
-                const b = document.createElement('button');
-                b.type = 'button';
-                b.className = 'dropdown-item py-1';
-                const fpNorm = f.fullPath.replace(/[/\\]+$/, '').toLowerCase();
-                if (fpNorm === targetChildNorm) b.classList.add('active');
-                b.textContent = T.parseSegmentTags(f.name).pretty;
-                b.title = f.fullPath;
-                li.dataset.breadcrumbFlyoutPath = f.fullPath;
-                b.addEventListener('click', async (ev) => {
-                  ev.preventDefault();
-                  ev.stopPropagation();
-                  hideBreadcrumbSubfolderFlyout();
-                  const inst = bootstrap.Dropdown.getInstance(ddBtn);
-                  if (inst) inst.hide();
-                  await applySearchScopeAndRefresh(normalizeFolderPathForEverything(f.fullPath));
-                });
-                const onEnterPeerRow = () => {
-                  cancelBreadcrumbFlyoutHideTimer();
-                  void openBreadcrumbSubfolderFlyoutForPath(f.fullPath, li, ddBtn, 0);
-                };
-                li.addEventListener('mouseenter', onEnterPeerRow);
-                li.addEventListener('focusin', (ev) => {
-                  if (ev.target === b) onEnterPeerRow();
-                });
-                li.addEventListener('mouseleave', scheduleHideBreadcrumbSubfolderFlyout);
-                li.appendChild(b);
-                menu.appendChild(li);
-              }
+              appendBreadcrumbFolderListItems(menu, folders, ddBtn, 0, {
+                highlightPathNorm: targetChildNorm,
+                onMouseLeaveRow: scheduleHideBreadcrumbSubfolderFlyout,
+              });
             })();
           });
 
@@ -2738,34 +2739,9 @@
             subMenu.appendChild(li0);
             return;
           }
-          for (const f of folders) {
-            const li = document.createElement('li');
-            const b = document.createElement('button');
-            b.type = 'button';
-            b.className = 'dropdown-item py-1';
-            b.textContent = T.parseSegmentTags(f.name).pretty;
-            b.title = f.fullPath;
-            li.dataset.breadcrumbFlyoutPath = f.fullPath;
-            b.addEventListener('click', async (ev) => {
-              ev.preventDefault();
-              ev.stopPropagation();
-              hideBreadcrumbSubfolderFlyout();
-              const inst = bootstrap.Dropdown.getInstance(subBtn);
-              if (inst) inst.hide();
-              await applySearchScopeAndRefresh(normalizeFolderPathForEverything(f.fullPath));
-            });
-            const onEnterMainRow = () => {
-              cancelBreadcrumbFlyoutHideTimer();
-              void openBreadcrumbSubfolderFlyoutForPath(f.fullPath, li, subBtn, 0);
-            };
-            li.addEventListener('mouseenter', onEnterMainRow);
-            li.addEventListener('focusin', (ev) => {
-              if (ev.target === b) onEnterMainRow();
-            });
-            li.addEventListener('mouseleave', scheduleHideBreadcrumbSubfolderFlyout);
-            li.appendChild(b);
-            subMenu.appendChild(li);
-          }
+          appendBreadcrumbFolderListItems(subMenu, folders, subBtn, 0, {
+            onMouseLeaveRow: scheduleHideBreadcrumbSubfolderFlyout,
+          });
         })();
       });
       subDd.appendChild(subBtn);
@@ -4164,6 +4140,22 @@
       return new Set([s.toLowerCase()]);
     }
 
+    /** Result-type filter radios: both | folders | files (legacy: two checkboxes in localStorage). */
+    function fileFolderFilterMode() {
+      if (document.getElementById('optFilterFolders').checked) return 'folders';
+      if (document.getElementById('optFilterFiles').checked) return 'files';
+      return 'both';
+    }
+    function setFileFolderFilterMode(mode) {
+      const both = document.getElementById('optFilterBoth');
+      const folders = document.getElementById('optFilterFolders');
+      const files = document.getElementById('optFilterFiles');
+      if (!both || !folders || !files) return;
+      both.checked = mode === 'both';
+      folders.checked = mode === 'folders';
+      files.checked = mode === 'files';
+    }
+
     function loadSettings() {
       migrateLocalStorageFromLegacy();
       loadTagStore();
@@ -4178,11 +4170,12 @@
       document.getElementById('optPath').checked = localStorage.getItem(LS.optPath) === '1';
       document.getElementById('optRegex').checked = localStorage.getItem(LS.optRegex) === '1';
       document.getElementById('optDiacritics').checked = localStorage.getItem(LS.optDiacritics) === '1';
-      document.getElementById('optFoldersOnly').checked = localStorage.getItem(LS.foldersOnly) === '1';
-      document.getElementById('optFilesOnly').checked = localStorage.getItem(LS.filesOnly) === '1';
-      if (document.getElementById('optFoldersOnly').checked && document.getElementById('optFilesOnly').checked) {
-        document.getElementById('optFilesOnly').checked = false;
-      }
+      const legacyFolders = localStorage.getItem(LS.foldersOnly) === '1';
+      const legacyFiles = localStorage.getItem(LS.filesOnly) === '1';
+      let ffMode = 'both';
+      if (legacyFolders) ffMode = 'folders';
+      else if (legacyFiles) ffMode = 'files';
+      setFileFolderFilterMode(ffMode);
       sortColumn = localStorage.getItem(LS.sortBy) || 'name';
       if (!['name', 'path', 'date_modified', 'size'].includes(sortColumn)) sortColumn = 'name';
       sortAsc = localStorage.getItem(LS.optAsc) !== '0';
@@ -4203,8 +4196,9 @@
       localStorage.setItem(LS.optPath, document.getElementById('optPath').checked ? '1' : '0');
       localStorage.setItem(LS.optRegex, document.getElementById('optRegex').checked ? '1' : '0');
       localStorage.setItem(LS.optDiacritics, document.getElementById('optDiacritics').checked ? '1' : '0');
-      localStorage.setItem(LS.foldersOnly, document.getElementById('optFoldersOnly').checked ? '1' : '0');
-      localStorage.setItem(LS.filesOnly, document.getElementById('optFilesOnly').checked ? '1' : '0');
+      const ff = fileFolderFilterMode();
+      localStorage.setItem(LS.foldersOnly, ff === 'folders' ? '1' : '0');
+      localStorage.setItem(LS.filesOnly, ff === 'files' ? '1' : '0');
       localStorage.setItem(LS.sortBy, sortColumn);
       localStorage.setItem(LS.optAsc, sortAsc ? '1' : '0');
       localStorage.setItem(
@@ -4241,8 +4235,8 @@
         optPath: document.getElementById('optPath').checked,
         optRegex: document.getElementById('optRegex').checked,
         optDiacritics: document.getElementById('optDiacritics').checked,
-        optFoldersOnly: document.getElementById('optFoldersOnly').checked,
-        optFilesOnly: document.getElementById('optFilesOnly').checked,
+        optFoldersOnly: fileFolderFilterMode() === 'folders',
+        optFilesOnly: fileFolderFilterMode() === 'files',
         optHideDotFolders: document.getElementById('optHideDotFolders').checked,
         optSortFoldersWithFiles: document.getElementById('optSortFoldersWithFiles').checked,
         sortColumn: sortColumn,
@@ -4313,11 +4307,10 @@
       document.getElementById('optPath').checked = !!s.optPath;
       document.getElementById('optRegex').checked = !!s.optRegex;
       document.getElementById('optDiacritics').checked = !!s.optDiacritics;
-      document.getElementById('optFoldersOnly').checked = !!s.optFoldersOnly;
-      document.getElementById('optFilesOnly').checked = !!s.optFilesOnly;
-      if (document.getElementById('optFoldersOnly').checked && document.getElementById('optFilesOnly').checked) {
-        document.getElementById('optFilesOnly').checked = false;
-      }
+      if (s.optFoldersOnly && s.optFilesOnly) setFileFolderFilterMode('both');
+      else if (s.optFoldersOnly) setFileFolderFilterMode('folders');
+      else if (s.optFilesOnly) setFileFolderFilterMode('files');
+      else setFileFolderFilterMode('both');
       document.getElementById('optHideDotFolders').checked = !!s.optHideDotFolders;
       document.getElementById('optSortFoldersWithFiles').checked = s.optSortFoldersWithFiles !== false;
       sortColumn = s.sortColumn && ['name', 'path', 'date_modified', 'size'].includes(s.sortColumn) ? s.sortColumn : 'name';
@@ -5176,25 +5169,50 @@
       const rec = document.getElementById('folderSearchRecursive').checked;
       let searchText = composeScopedEverythingSearch(rootFolder, query, rec);
       searchText = appendActiveTagToEverythingQuery(searchText);
-      if (document.getElementById('optFoldersOnly').checked) {
+      const ff = fileFolderFilterMode();
+      if (ff === 'folders') {
         searchText = (searchText.trim() + ' folder:').trim();
-      } else if (document.getElementById('optFilesOnly').checked) {
+      } else if (ff === 'files') {
         searchText = (searchText.trim() + ' file:').trim();
       }
       const count = document.getElementById('maxResults').value;
+      const cap = Math.min(5000, Math.max(1, parseInt(String(count).trim(), 10) || 200));
       const httpUser = document.getElementById('httpUser').value;
       const httpPassword = document.getElementById('httpPassword').value;
       const options = searchOptionsFromUI();
 
+      const payload = { baseUrl, count, httpUser, httpPassword, options };
+      const doSearch = (st) => window.tagBrowser.search({ ...payload, searchText: st });
+
       status.textContent = 'Searching…';
-      const res = await window.tagBrowser.search({
-        baseUrl,
-        searchText,
-        count,
-        httpUser,
-        httpPassword,
-        options,
-      });
+
+      // Everything returns folders first; one request can fill the whole cap with folders and never return files.
+      // Split query when we want both types interleaved: up to `count` folders + up to `count` files, merge/sort, then slice to cap.
+      const wantFolderFileSplit =
+        ff === 'both' && document.getElementById('optSortFoldersWithFiles').checked;
+
+      let res;
+      if (wantFolderFileSplit) {
+        const base = searchText.trim();
+        const [rFo, rFi] = await Promise.all([
+          doSearch((base + ' folder:').trim()),
+          doSearch((base + ' file:').trim()),
+        ]);
+        if (rFo.ok && rFi.ok) {
+          lastRows = (rFo.rows || []).concat(rFi.rows || []);
+          applyClientSortMergeFoldersFiles();
+          if (lastRows.length > cap) lastRows = lastRows.slice(0, cap);
+          status.textContent = lastRows.length ? lastRows.length + ' result(s)' : 'No results';
+          await syncSelectionAfterSearch();
+          renderTagBar();
+          renderTable();
+          scheduleTagDiscovery();
+          return;
+        }
+        res = await doSearch(base);
+      } else {
+        res = await doSearch(searchText);
+      }
 
       if (!res.ok) {
         lastRows = [];
@@ -5280,14 +5298,15 @@
       document.getElementById('btnCreateTodoMd').click();
     });
 
-    ['folderSearchRecursive', 'optCase', 'optWholeWord', 'optPath', 'optRegex', 'optDiacritics', 'optFoldersOnly', 'optFilesOnly'].forEach((id) => {
+    document.querySelectorAll('input[name="tagFoxFileFolderFilter"]').forEach((el) => {
+      el.addEventListener('change', () => {
+        saveSettings();
+        scheduleSearch();
+        commitSearchHistoryNow();
+      });
+    });
+    ['folderSearchRecursive', 'optCase', 'optWholeWord', 'optPath', 'optRegex', 'optDiacritics'].forEach((id) => {
       document.getElementById(id).addEventListener('change', () => {
-        if (id === 'optFoldersOnly' && document.getElementById('optFoldersOnly').checked) {
-          document.getElementById('optFilesOnly').checked = false;
-        }
-        if (id === 'optFilesOnly' && document.getElementById('optFilesOnly').checked) {
-          document.getElementById('optFoldersOnly').checked = false;
-        }
         saveSettings();
         if (id === 'folderSearchRecursive') renderScopeBreadcrumb();
         scheduleSearch();
@@ -5647,12 +5666,11 @@
       if (err) status.textContent = 'Open failed: ' + err;
     }
 
-    /** Ctrl+Enter: scope to parent of selected row (row ▲ button). */
+    /** Ctrl+Enter / ← : scope to parent of selected row (row ▲). Uses selectedRow when the path isn’t in lastRows (synthetic scope row). */
     async function keyboardScopeParentOfSelection() {
       if (!selectedFullPath) return;
-      const row = findRowByFullPath(selectedFullPath);
-      if (!row) return;
-      const fp = fullPathForRow(row);
+      const row = selectedRow || findRowByFullPath(selectedFullPath);
+      const fp = row ? fullPathForRow(row) : selectedFullPath;
       const parentForScope = normalizeFolderPathForEverything(T.parentDir(fp));
       if (!parentForScope) return;
       await applySearchScopeAndRefresh(parentForScope);
@@ -5734,22 +5752,12 @@
             : 'Cut ' + paths.length + ' items — paste in Explorer to move them.';
     }
 
-    /** Ctrl+F: cycle Files only → Folders only → neither (same as the toolbar toggles). */
+    /** Ctrl+F: cycle Both → Files only → Folders only → Both. */
     function cycleFilesFoldersFilter() {
-      const fo = document.getElementById('optFoldersOnly');
-      const fi = document.getElementById('optFilesOnly');
-      const folders = fo.checked;
-      const files = fi.checked;
-      if (!files && !folders) {
-        fi.checked = true;
-        fo.checked = false;
-      } else if (files && !folders) {
-        fi.checked = false;
-        fo.checked = true;
-      } else {
-        fi.checked = false;
-        fo.checked = false;
-      }
+      const m = fileFolderFilterMode();
+      if (m === 'both') setFileFolderFilterMode('files');
+      else if (m === 'files') setFileFolderFilterMode('folders');
+      else setFileFolderFilterMode('both');
       saveSettings();
       scheduleSearch();
       commitSearchHistoryNow();
@@ -5994,7 +6002,7 @@
         return;
       }
 
-      /* → on a folder row: scope into that folder; ← : go to parent scope */
+      /* → on a folder row: scope into that folder; ← : parent of highlighted row (same as row ▲) */
       if (e.key === 'ArrowRight') {
         if (!selectedFullPath) return;
         const row = findRowByFullPath(selectedFullPath);

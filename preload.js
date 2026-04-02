@@ -33,8 +33,6 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   createEmptyFolder: (payload) => ipcRenderer.invoke('create-empty-folder', payload),
   shelfState: () => ipcRenderer.invoke('shelf-state'),
   clearShelf: () => ipcRenderer.invoke('clear-shelf'),
-  getGlobalFocusHotkey: () => ipcRenderer.invoke('get-global-focus-hotkey'),
-  setGlobalFocusHotkey: (accelerator) => ipcRenderer.invoke('set-global-focus-hotkey', accelerator),
   setPathsMutatedHandler: (fn) => {
     onPathsMutated = typeof fn === 'function' ? fn : null;
   },

@@ -37,6 +37,40 @@ function rowsFromEverythingJson(data) {
   return [];
 }
 
+/** PowerShell.exe path (Windows). */
+function windowsPowerShellExe() {
+  return process.env.SystemRoot
+    ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+    : 'powershell.exe';
+}
+
+/**
+ * Write ps1Body to a temp script, run `-File script arg`, delete script.
+ * Returns null on success, or an error string.
+ */
+function runPowershellScriptFileWithArg(ps1Body, argForScript, failMsgPrefix) {
+  const psExe = windowsPowerShellExe();
+  const tmpPs1 = path.join(os.tmpdir(), `tagbrowser-ps-${process.pid}-${Date.now()}.ps1`);
+  try {
+    fssync.writeFileSync(tmpPs1, ps1Body, 'utf8');
+    const r = spawnSync(psExe, ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', tmpPs1, argForScript], {
+      windowsHide: true,
+      encoding: 'utf8',
+    });
+    if (r.status !== 0) {
+      const msg = [r.stderr, r.stdout].filter(Boolean).join(' ').trim();
+      return msg || failMsgPrefix + ' (exit ' + r.status + ').';
+    }
+  } catch (e) {
+    return String(e.message || e);
+  } finally {
+    try {
+      fssync.unlinkSync(tmpPs1);
+    } catch (_) {}
+  }
+  return null;
+}
+
 /** WinForms SetFileDropList — JSON array of absolute paths (UTF-8 file passed as arg). */
 const PS1_SET_CLIP_MULTI = `param([Parameter(Mandatory)][string]$JsonPath)
 try {
@@ -65,28 +99,14 @@ function copyPathsForExplorerPaste(pathsIn) {
     .map((p) => path.normalize(String(p || '').trim()))
     .filter(Boolean);
   if (!list.length) return 'No path.';
-  const psExe = process.env.SystemRoot
-    ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
-    : 'powershell.exe';
-  const tmpPs1 = path.join(os.tmpdir(), `tagbrowser-hdrop-${process.pid}-${Date.now()}.ps1`);
   const tmpJson = path.join(os.tmpdir(), `tagbrowser-hdrop-${process.pid}-${Date.now()}.json`);
   try {
-    fssync.writeFileSync(tmpPs1, PS1_SET_CLIP_MULTI, 'utf8');
     fssync.writeFileSync(tmpJson, JSON.stringify(list), 'utf8');
-    const r = spawnSync(psExe, ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', tmpPs1, tmpJson], {
-      windowsHide: true,
-      encoding: 'utf8',
-    });
-    if (r.status !== 0) {
-      const msg = [r.stderr, r.stdout].filter(Boolean).join(' ').trim();
-      return msg || 'Explorer paste: PowerShell failed (exit ' + r.status + ').';
-    }
+    const err = runPowershellScriptFileWithArg(PS1_SET_CLIP_MULTI, tmpJson, 'Explorer paste: PowerShell failed');
+    if (err) return err;
   } catch (e) {
     return String(e.message || e);
   } finally {
-    try {
-      fssync.unlinkSync(tmpPs1);
-    } catch (_) {}
     try {
       fssync.unlinkSync(tmpJson);
     } catch (_) {}
@@ -122,28 +142,14 @@ function cutPathsForExplorerPaste(pathsIn) {
     .map((p) => path.normalize(String(p || '').trim()))
     .filter(Boolean);
   if (!list.length) return 'No path.';
-  const psExe = process.env.SystemRoot
-    ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
-    : 'powershell.exe';
-  const tmpPs1 = path.join(os.tmpdir(), `tagbrowser-cut-${process.pid}-${Date.now()}.ps1`);
   const tmpJson = path.join(os.tmpdir(), `tagbrowser-cut-${process.pid}-${Date.now()}.json`);
   try {
-    fssync.writeFileSync(tmpPs1, PS1_SET_CLIP_CUT, 'utf8');
     fssync.writeFileSync(tmpJson, JSON.stringify(list), 'utf8');
-    const r = spawnSync(psExe, ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', tmpPs1, tmpJson], {
-      windowsHide: true,
-      encoding: 'utf8',
-    });
-    if (r.status !== 0) {
-      const msg = [r.stderr, r.stdout].filter(Boolean).join(' ').trim();
-      return msg || 'Explorer cut: PowerShell failed (exit ' + r.status + ').';
-    }
+    const err = runPowershellScriptFileWithArg(PS1_SET_CLIP_CUT, tmpJson, 'Explorer cut: PowerShell failed');
+    if (err) return err;
   } catch (e) {
     return String(e.message || e);
   } finally {
-    try {
-      fssync.unlinkSync(tmpPs1);
-    } catch (_) {}
     try {
       fssync.unlinkSync(tmpJson);
     } catch (_) {}
@@ -172,53 +178,61 @@ try {
 
 /** Paths from Explorer clipboard (Windows only); empty if none. */
 function readClipboardFilePathsWin() {
-  const psExe = process.env.SystemRoot
-    ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
-    : 'powershell.exe';
-  const tmpPs1 = path.join(os.tmpdir(), `tagbrowser-clip-read-${process.pid}-${Date.now()}.ps1`);
   const tmpJson = path.join(os.tmpdir(), `tagbrowser-clip-read-${process.pid}-${Date.now()}.json`);
   try {
-    fssync.writeFileSync(tmpPs1, PS1_GET_CLIP_FILES, 'utf8');
-    const r = spawnSync(psExe, ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', tmpPs1, tmpJson], {
-      windowsHide: true,
-      encoding: 'utf8',
-    });
-    if (r.status !== 0) {
-      const msg = [r.stderr, r.stdout].filter(Boolean).join(' ').trim();
-      throw new Error(msg || 'read clipboard paths failed');
-    }
+    const syncErr = runPowershellScriptFileWithArg(PS1_GET_CLIP_FILES, tmpJson, 'read clipboard paths failed');
+    if (syncErr) throw new Error(syncErr);
     const raw = fssync.readFileSync(tmpJson, 'utf8').replace(/^\uFEFF/, '').trim();
     let arr = JSON.parse(raw);
     if (!Array.isArray(arr)) arr = arr != null && arr !== '' ? [arr] : [];
     return arr.map((x) => path.normalize(String(x || '').trim())).filter(Boolean);
   } finally {
     try {
-      fssync.unlinkSync(tmpPs1);
-    } catch (_) {}
-    try {
       fssync.unlinkSync(tmpJson);
     } catch (_) {}
   }
 }
 
-/** Copy files/folders from disk into destDir (recursive); honors rootPrefix like rename-path. */
-async function copySourcesIntoScopeFolder(sourcePaths, destDirRaw, rootPrefix) {
+function normalizeSourcePathsList(sourcePaths) {
+  return (Array.isArray(sourcePaths) ? sourcePaths : [])
+    .map((p) => path.normalize(String(p || '').trim()))
+    .filter(Boolean);
+}
+
+function wouldNestDestInsideSrc(srcResolved, destResolved) {
+  const rel = path.relative(srcResolved, destResolved);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+/** Shared dest folder checks for paste/move into scope. */
+async function validateScopePasteDestination(destDirRaw, rootPrefix, err) {
   const destDir = normalizeRenameOperand(String(destDirRaw || ''));
-  if (!destDir) return { ok: false, error: 'No destination folder.' };
+  if (!destDir) return { ok: false, error: err.noDest };
   if (!isPathUnderRoot(destDir, rootPrefix)) {
-    return { ok: false, error: 'Destination must stay under the configured root folder.' };
+    return { ok: false, error: err.destNotUnderRoot };
   }
   let stDest;
   try {
     stDest = await fs.stat(destDir);
   } catch {
-    return { ok: false, error: 'Scope folder does not exist or is not reachable.' };
+    return { ok: false, error: err.destMissing };
   }
-  if (!stDest.isDirectory()) return { ok: false, error: 'Scope path is not a folder.' };
+  if (!stDest.isDirectory()) return { ok: false, error: err.destNotDir };
+  return { ok: true, destDir };
+}
 
-  const list = (Array.isArray(sourcePaths) ? sourcePaths : [])
-    .map((p) => path.normalize(String(p || '').trim()))
-    .filter(Boolean);
+/** Copy files/folders from disk into destDir (recursive); honors rootPrefix like rename-path. */
+async function copySourcesIntoScopeFolder(sourcePaths, destDirRaw, rootPrefix) {
+  const v = await validateScopePasteDestination(destDirRaw, rootPrefix, {
+    noDest: 'No destination folder.',
+    destNotUnderRoot: 'Destination must stay under the configured root folder.',
+    destMissing: 'Scope folder does not exist or is not reachable.',
+    destNotDir: 'Scope path is not a folder.',
+  });
+  if (!v.ok) return v;
+  const destDir = v.destDir;
+
+  const list = normalizeSourcePathsList(sourcePaths);
   if (!list.length) return { ok: false, error: 'Nothing to paste.' };
 
   for (const srcRaw of list) {
@@ -236,11 +250,7 @@ async function copySourcesIntoScopeFolder(sourcePaths, destDirRaw, rootPrefix) {
 
     if (destResolved.toLowerCase() === srcResolved.toLowerCase()) continue;
 
-    const wouldNestInsideSrc = (() => {
-      const rel = path.relative(srcResolved, destResolved);
-      return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
-    })();
-    if (wouldNestInsideSrc) {
+    if (wouldNestDestInsideSrc(srcResolved, destResolved)) {
       return { ok: false, error: 'Cannot paste a folder into itself or a subfolder of the selection.' };
     }
 
@@ -262,22 +272,16 @@ async function copySourcesIntoScopeFolder(sourcePaths, destDirRaw, rootPrefix) {
 
 /** Move files/folders into destDir (rename); same scope / nesting rules as copySourcesIntoScopeFolder. */
 async function moveSourcesIntoFolder(sourcePaths, destDirRaw, rootPrefix) {
-  const destDir = normalizeRenameOperand(String(destDirRaw || ''));
-  if (!destDir) return { ok: false, error: 'No destination folder.' };
-  if (!isPathUnderRoot(destDir, rootPrefix)) {
-    return { ok: false, error: 'Destination must stay under the configured root folder.' };
-  }
-  let stDest;
-  try {
-    stDest = await fs.stat(destDir);
-  } catch {
-    return { ok: false, error: 'Destination folder does not exist or is not reachable.' };
-  }
-  if (!stDest.isDirectory()) return { ok: false, error: 'Destination is not a folder.' };
+  const v = await validateScopePasteDestination(destDirRaw, rootPrefix, {
+    noDest: 'No destination folder.',
+    destNotUnderRoot: 'Destination must stay under the configured root folder.',
+    destMissing: 'Destination folder does not exist or is not reachable.',
+    destNotDir: 'Destination is not a folder.',
+  });
+  if (!v.ok) return v;
+  const destDir = v.destDir;
 
-  const list = (Array.isArray(sourcePaths) ? sourcePaths : [])
-    .map((p) => path.normalize(String(p || '').trim()))
-    .filter(Boolean);
+  const list = normalizeSourcePathsList(sourcePaths);
   if (!list.length) return { ok: false, error: 'Nothing to move.' };
 
   for (const srcRaw of list) {
@@ -298,11 +302,7 @@ async function moveSourcesIntoFolder(sourcePaths, destDirRaw, rootPrefix) {
 
     if (destResolved.toLowerCase() === srcResolved.toLowerCase()) continue;
 
-    const wouldNestInsideSrc = (() => {
-      const rel = path.relative(srcResolved, destResolved);
-      return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
-    })();
-    if (wouldNestInsideSrc) {
+    if (wouldNestDestInsideSrc(srcResolved, destResolved)) {
       return { ok: false, error: 'Cannot move a folder into itself or a subfolder of the selection.' };
     }
 
@@ -336,15 +336,17 @@ function normalizePathForShellOpen(p) {
   return path.normalize(s);
 }
 
+function getCmdExe() {
+  return process.env.ComSpec || (process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32', 'cmd.exe') : 'cmd.exe');
+}
+
 /**
  * Windows: same as typing a path after `start` in cmd — often avoids spurious “Open with” vs shell.openPath.
  * Resolves with null if spawn ok; otherwise an error string (then caller can try shell.openPath).
  */
 function openPathViaCmdStartWindows(absNormPath) {
   return new Promise((resolve) => {
-    const comSpec =
-      process.env.ComSpec ||
-      (process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32', 'cmd.exe') : 'cmd.exe');
+    const comSpec = getCmdExe();
     let settled = false;
     const finish = (err) => {
       if (settled) return;
@@ -362,21 +364,6 @@ function openPathViaCmdStartWindows(absNormPath) {
   });
 }
 
-/** PPTX etc.: `start` / openPath can show “Open with” even when PDF works — match Explorer’s route first. */
-const WIN_OFFICE_OPEN_EXT = new Set([
-  'pptx',
-  'ppt',
-  'potx',
-  'ppsx',
-  'doc',
-  'docx',
-  'dotx',
-  'xls',
-  'xlsx',
-  'xlsm',
-  'xltx',
-]);
-
 /** REG_SZ / REG_EXPAND_SZ value from `reg query` stdout. */
 function winRegQueryParseLastDataLine(stdout) {
   if (!stdout) return null;
@@ -387,22 +374,14 @@ function winRegQueryParseLastDataLine(stdout) {
   return null;
 }
 
-function winRegQueryVe(regKey) {
+/** valueName null/'' → `/ve`; else `/v valueName`. */
+function winRegQuery(regKey, valueName) {
   try {
-    const out = execFileSync('reg', ['query', regKey, '/ve'], {
-      encoding: 'utf8',
-      windowsHide: true,
-      stdio: ['pipe', 'pipe', 'ignore'],
-    });
-    return winRegQueryParseLastDataLine(out);
-  } catch {
-    return null;
-  }
-}
-
-function winRegQueryV(regKey, valueName) {
-  try {
-    const out = execFileSync('reg', ['query', regKey, '/v', valueName], {
+    const args =
+      valueName == null || valueName === ''
+        ? ['query', regKey, '/ve']
+        : ['query', regKey, '/v', String(valueName)];
+    const out = execFileSync('reg', args, {
       encoding: 'utf8',
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'ignore'],
@@ -473,19 +452,19 @@ function winOpenCommandTemplateViaAssocFtype(extNoDot) {
 function winProgIdForExtension(extNoDot) {
   const dot = '.' + String(extNoDot || '').replace(/^\./, '').toLowerCase();
   const fromUser =
-    winRegQueryV(
+    winRegQuery(
       `HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\${dot}\\UserChoice`,
       'ProgId'
     ) || null;
   if (fromUser) return fromUser;
-  return winRegQueryVe(`HKCR\\${dot}`) || null;
+  return winRegQuery(`HKCR\\${dot}`, null) || null;
 }
 
 function winOpenCommandTemplateForProgId(progId) {
   if (!progId) return null;
   const id = String(progId).replace(/\//g, '\\');
   return (
-    winRegQueryVe(`HKCR\\${id}\\shell\\open\\command`) || winRegQueryVe(`HKCR\\${id}\\Shell\\Open\\Command`)
+    winRegQuery(`HKCR\\${id}\\shell\\open\\command`, null) || winRegQuery(`HKCR\\${id}\\Shell\\Open\\Command`, null)
   );
 }
 
@@ -586,10 +565,8 @@ function winProgIdForUrlScheme(schemeLower) {
     .replace(/[^a-z0-9+-]/g, '');
   if (!s) return null;
   return (
-    winRegQueryV(
-      `HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\${s}\\UserChoice`,
-      'ProgId'
-    ) || null
+    winRegQuery(`HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\${s}\\UserChoice`, 'ProgId') ||
+    null
   );
 }
 
@@ -618,10 +595,7 @@ async function openUrlInSystemDefaultBrowser(url) {
     const regErr = await openUrlViaRegisteredHandlerWindows(u);
     if (!regErr) return;
     await new Promise((resolve, reject) => {
-      const comSpec =
-        process.env.ComSpec ||
-        (process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32', 'cmd.exe') : 'cmd.exe');
-      const child = spawn(comSpec, ['/d', '/c', 'start', '', u], {
+      const child = spawn(getCmdExe(), ['/d', '/c', 'start', '', u], {
         detached: true,
         stdio: 'ignore',
         windowsHide: true,
@@ -668,10 +642,8 @@ async function openPathViaRegistryOpenCommandWindows(absNormPath) {
  */
 function openPathViaPowershellInvokeItem(absNormPath) {
   return new Promise((resolve) => {
-    const ps =
-      process.env.SystemRoot &&
-      path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-    if (!ps || !fssync.existsSync(ps)) {
+    const ps = windowsPowerShellExe();
+    if (!fssync.existsSync(ps)) {
       resolve('No PowerShell');
       return;
     }
