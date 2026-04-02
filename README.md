@@ -9,6 +9,17 @@ Small Electron UI for [Voidtools Everything](https://www.voidtools.com/) HTTP se
 3. Open **Settings** and set **Everything base URL**. Optionally set **Scope folder** so the app starts in a particular directory—that path is your **current folder** (same idea people sometimes call “scope”).
 4. Press **F1** or the **?** button for in-app help. **Ctrl+/** (**⌘+/** on Mac) focuses the search box; plain **/** does the same when no dialog is open.
 
+## Reloading during development
+
+TagFox does **not** ship with an application menu, so **Ctrl+Shift+R** (Chrome “hard reload”) is **not** wired up. Edits behave like this:
+
+| Changed files | What to do |
+|---------------|------------|
+| `index.html`, `tags.js` (renderer) | Close the window or quit the app, then run **`npm start` again**. You can try **Ctrl+R** first; if the UI still looks stale, full restart is reliable. |
+| `preload.js`, `main.js` | **Quit the app** and **`npm start` again** (those load only at process start). |
+
+Optional: **Ctrl+Shift+I** opens DevTools. With the **Network** tab open, enable **Disable cache**, then **Ctrl+R** — that can help for renderer assets, but a full restart remains the simple default on Windows.
+
 ## Windows installer (electron-builder)
 
 From this folder after `npm install`: `npm run dist`. The NSIS setup executable is written to `dist/`. Builds are **not** code-signed, so Windows Smart Screen may warn recipients.
@@ -22,16 +33,23 @@ From this folder after `npm install`: `npm run dist`. The NSIS setup executable 
 
 ## Tag syntax
 
-Use one bracket block in the **last** `[ … ]` pair of a segment name, comma-separated:
+Use one block in the **last** `[ ( … ) ]` pair of a segment: comma-separated tags inside **parentheses**:
 
-- File: `Notes[draft,review].md` — table title shows as `Notes.md`; tags are `draft` and `review`.
-- Folder: `Project[2024,clientA]` — tags apply to that folder segment.
+- File: `Notes[(draft,review)].md` — title shows as `Notes.md`; tags are `draft` and `review`.
+- Folder: `Project[(2024,clientA)]` — tags apply to that folder segment.
+
+Plain `[draft]` without inner `()` is **not** a TagFox tag (treated as part of the filename). Only `[(draft)]` counts.
 
 **Tags** on a row opens a modal; **Add** (or removing a chip) **renames on disk** at once. When **Scope folder** is set in Settings, renames are required to stay under that path (check in the main process).
 
 ## Tag bar
 
-Buttons are tags seen in results plus **remembered** tags (local store, max 40). Choosing a tag saves it; the **active** tag filter is restored next launch. Counts show `0` when a tag is absent from the latest results. **Clear tag filter** only clears the filter.
+**Settings → Scope folder** is the Everything search prefix and the rename-safety root (same path as the breadcrumb); it is not “ignored.” The tag bar lists tags from **`[(…)]`** blocks in names (discovered via a full-index scan for `[(`, plus remembered tags). Plain `[foo]` without parens is ignored by that scan.
+
+Buttons are tags seen in results plus **remembered** tags (local store, max 40). Choosing a tag saves it; the **active** tag filter is restored next launch. A number in parentheses counts rows in the **current results list** (after filters) that carry that tag—capped by **Max results**. If there is no number, the tag is not on any row in that list. Use **Clear all tags** or toggle pills off to drop the filter.
+
+- **↻** (right of the tag row): re-runs the main search, then the same **full-index** `[(…)]` scan (up to **Max results**, large cap in the main process).
+- **Rescan all tags**: runs that scan again and **prunes** remembered / active tags missing from the result (ghost cleanup). Automatic scans after each search **do not** prune, so caps cannot silently wipe your list.
 
 With **Regex** off, active tags are also sent to Everything so you can find matches before results load. With **Regex** on, tag filtering is **client-side** on the current list.
 

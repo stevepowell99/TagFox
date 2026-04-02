@@ -422,7 +422,15 @@
     .name-badges .badge { flex-shrink: 0; font-weight: normal; }
     .tag-pill-x { line-height: 1; padding: 0 !important; min-width: 1em; }
     /* Hash-based tag colours on toolbar (inline background/border also set in JS). */
-    #tagBar .tag-bar-pill { font-weight: 500; border-style: solid; }
+    #tagBar .tag-bar-pill { font-weight: 500; border-style: solid; border-width: 1px; box-sizing: border-box; }
+    /* Thicker border must not shrink the visible fill: with border-box, +1px border eats the bg unless padding is reduced. */
+    #tagBar .tag-bar-pill.tag-bar-pill-active {
+      border-width: 2px;
+      padding-top: calc(var(--bs-btn-padding-y) - 1px);
+      padding-bottom: calc(var(--bs-btn-padding-y) - 1px);
+      padding-left: calc(var(--bs-btn-padding-x) - 1px);
+      padding-right: calc(var(--bs-btn-padding-x) - 1px);
+    }
     #tagBar .tag-bar-pill:focus-visible { box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.35); }
     #resultsTable thead th.sortable-th { cursor: pointer; user-select: none; white-space: nowrap; position: relative; }
     #resultsTable thead th.sortable-th:hover { background-color: var(--bs-secondary-bg); }
@@ -469,14 +477,19 @@
       opacity: 0.72;
       flex-shrink: 0;
     }
-    /* Sit above .sticky-top table thead (Bootstrap z-index 1020) so sibling menus aren’t clipped. */
+    /*
+      Stacking (low → high): table .sticky-top 1020; tag row + search opts 1040–1050; breadcrumb 1095+
+      (child menus cannot beat a later sibling if parents tie — breadcrumb row must be > .search-opts-bar).
+      Modals 1100/1110; theater 1990+.
+    */
     .scope-breadcrumb-row {
       position: relative;
-      z-index: 1080;
+      z-index: 1095;
     }
     /* Modal open: drop back so backdrop + dimmer cover the bar (was stacking “above” the overlay). */
     body.modal-open .scope-breadcrumb-row,
-    body.modal-open .search-opts-bar {
+    body.modal-open .search-opts-bar,
+    body.modal-open .tag-toolbar-row {
       z-index: 0;
     }
     #breadcrumbBar .dropdown-menu {
@@ -504,12 +517,16 @@
     ul.breadcrumb-folder-flyout.is-open {
       display: block;
     }
-    /* Same as breadcrumb: above #resultsTable .sticky-top thead (z-index 1020). */
+    .tag-toolbar-row {
+      position: relative;
+      z-index: 1045;
+    }
+    /* Below breadcrumb popovers; above sticky thead (1020). */
     .search-opts-bar {
       position: relative;
-      z-index: 1080;
+      z-index: 1040;
     }
-    /* Modals + backdrop: above breadcrumb/toolbar stacking (1080–1090). Bootstrap default ~1055. */
+    /* Modals + backdrop: above app toolbars (≤1099). Bootstrap default ~1055. */
     .modal-backdrop {
       z-index: 1100;
     }
@@ -616,6 +633,27 @@
             </div>
           </div>
         </div>
+        <div class="col-12">
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <div class="form-check mb-0">
+              <input class="form-check-input" type="checkbox" id="optSearchDebug" autocomplete="off" />
+              <label class="form-check-label" for="optSearchDebug">Search debug logging</label>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnCopySearchDebug">Copy debug log</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnClearSearchDebug">Clear debug log</button>
+          </div>
+          <div class="form-text text-muted small">
+            Captures request params, response counts, fallback decisions, and sort output for path/date troubleshooting.
+          </div>
+          <textarea
+            id="searchDebugLog"
+            class="form-control form-control-sm font-monospace mt-1"
+            rows="8"
+            readonly
+            spellcheck="false"
+            placeholder="Search debug log appears here when enabled."
+          ></textarea>
+        </div>
       </div>
     </div>
   </div>
@@ -659,7 +697,7 @@
         </div>
       </div>
 
-      <div class="mb-2 d-flex flex-wrap gap-1 align-items-center small">
+      <div class="mb-2 tag-toolbar-row d-flex flex-wrap gap-1 align-items-center small">
         <div id="tagBar" class="d-flex flex-wrap gap-1 align-items-center flex-grow-1 min-w-0"></div>
         <button
           type="button"
@@ -672,7 +710,7 @@
         </button>
       </div>
 
-      <!-- Search + new Title[TODO].md: share one row (search flexes, MD block fixed natural width). -->
+      <!-- Search + new Title[(TODO)].md -->
       <div class="d-flex align-items-center gap-2 mb-2 min-w-0" style="flex-wrap: wrap">
         <div class="input-group input-group-sm min-w-0" style="flex: 1 1 45%">
           <button type="button" class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0 flex-shrink-0" style="width: 2rem" id="btnClearQuery" title="Clear search text" aria-label="Clear search text">
@@ -681,7 +719,7 @@
           <input type="text" id="query" class="form-control" placeholder="" autocomplete="off" />
         </div>
         <div class="d-flex align-items-center gap-1 flex-shrink-0">
-          <label class="small text-muted mb-0 flex-shrink-0" for="newMdTitleInput" title="Creates Title[TODO].md in the scope folder">New .md</label>
+          <label class="small text-muted mb-0 flex-shrink-0" for="newMdTitleInput" title="Creates Title[(TODO)].md in the scope folder">New .md</label>
           <input
             type="text"
             id="newMdTitleInput"
@@ -690,7 +728,7 @@
             placeholder="Title"
             autocomplete="off"
           />
-          <button type="button" class="btn btn-sm btn-outline-primary flex-shrink-0" id="btnCreateTodoMd" title="Creates Title[TODO].md in the scope folder">
+          <button type="button" class="btn btn-sm btn-outline-primary flex-shrink-0" id="btnCreateTodoMd" title="Creates Title[(TODO)].md in the scope folder">
             Create
           </button>
         </div>
@@ -810,8 +848,10 @@
           </colgroup>
           <thead class="table-light sticky-top">
             <tr>
-              <th class="align-middle text-center py-1" title="Select rows. Drag = in-app. Shelf “OS drag” or Alt+drag = Explorer files.">
+              <th class="align-middle text-center py-1 position-relative" title="Select rows. Drag = in-app. Shelf “OS drag” or Alt+drag = Explorer files.">
                 <input type="checkbox" class="form-check-input m-0" id="chkSelectAllResults" autocomplete="off" aria-label="Select all in list" />
+                <!-- boundary 0 = checkbox column ↔ Name (idx 1 on Name is Name ↔ Path) -->
+                <span class="th-resize" data-resize-idx="0" title="Drag to resize"></span>
               </th>
               <th class="sortable-th" data-sort="name" title="Sort by name"><span class="sort-label">Name</span><span class="th-resize" data-resize-idx="1"></span></th>
               <th class="sortable-th" data-sort="path" title="Sort by path"><span class="sort-label">Path</span><span class="th-resize" data-resize-idx="2"></span></th>
@@ -923,9 +963,9 @@
             <input type="text" id="tagModalInput" class="form-control" list="tagModalExistingTags" placeholder="New tag (type here)" autocomplete="off" />
             <button type="button" class="btn btn-outline-primary" id="tagModalAddBtn">Add</button>
           </div>
-          <!-- Existing […] tags in scope + remembered tags (browser autocomplete dropdown). -->
+          <!-- Existing [(…)] tags + remembered (datalist). -->
           <datalist id="tagModalExistingTags"></datalist>
-          <p class="small text-muted mb-0">Tags live in the last <code>[ … ]</code> block of the name. <strong>Add</strong> or remove a chip renames on disk immediately.</p>
+          <p class="small text-muted mb-0">Tags live in the last <code>[( … )]</code> block of the segment name. <strong>Add</strong> or remove a chip renames on disk immediately.</p>
           <p id="tagModalFeedback" class="small mb-0 mt-2" aria-live="assertive"></p>
         </div>
         <div class="modal-footer py-2">
@@ -1169,7 +1209,7 @@
               </ul>
               <h3 class="fs-6 text-secondary mb-2">Tags</h3>
               <ul class="mb-3 ps-3">
-                <li>Names can carry tags in one bracket block in each segment, e.g. <code>Notes[draft,review].md</code>. Chips in the bar filter the result list (several tags mean <strong>all</strong> must match).</li>
+                <li>Tags use <code>[(t1,t2)]</code> inside a segment, e.g. <code>Notes[(draft,review)].md</code>. Plain <code>[text]</code> without parentheses is not a tag. Bar filters are AND.</li>
               </ul>
               <h3 class="fs-6 text-secondary mb-2">Results, drag, shelf</h3>
               <ul class="mb-3 ps-3">
@@ -1292,9 +1332,11 @@
       favFolders: 'tagBrowserFavFolders',
       scopeFolderHistory: 'tagBrowserScopeFolderHist',
       tagStore: 'tagBrowserTagStore',
+      knownBracketTags: 'tagBrowserKnownBracketTags',
       activeTagFilter: 'tagBrowserActiveTag',
       hideDotFolders: 'tagBrowserHideDotFolders',
       sortFoldersWithFiles: 'tagBrowserSortFoldersWithFiles',
+      searchDebug: 'tagBrowserSearchDebug',
       helpModalTab: 'tagBrowserHelpModalTab',
     };
 
@@ -1333,8 +1375,11 @@
     }
 
     const TAG_STORE_MAX = 40;
-    /** Persisted tags for filter buttons (key lowercased, display as first seen). */
+    const KNOWN_BRACKET_TAGS_MAX = 5000;
+    /** MRU subset (40) for search history / datalist order hint — not the tag bar source of truth. */
     let tagStoreOrder = [];
+    /** Global `[(…)]` tag names: rescan + adds; not scope-local (LS + userData JSON). */
+    let knownBracketTagsList = [];
     let tagPrefsDiskTimer = null;
 
     /** JSON snapshot for userData/tagBrowser-tag-prefs.json (stable; not tied to file:// path). */
@@ -1343,6 +1388,7 @@
         v: 1,
         savedAt: Date.now(),
         tagStore: tagStoreOrder.slice(0, TAG_STORE_MAX),
+        knownBracketTags: knownBracketTagsList.slice(0, KNOWN_BRACKET_TAGS_MAX),
         activeFilter: [...activeTagKeys].sort(),
       };
     }
@@ -1358,19 +1404,36 @@
 
     /** After localStorage load: overlay tags from userData file if present (Electron); else seed file from LS. */
     function applyTagPrefsFromUserDataFile() {
-      if (!window.tagBrowser || typeof window.tagBrowser.tagPrefsReadSync !== 'function') return;
+      if (!window.tagBrowser || typeof window.tagBrowser.tagPrefsReadSync !== 'function') {
+        searchDebugLog('tagPrefs.skip', { reason: 'no tagPrefsReadSync bridge' });
+        return;
+      }
       const raw = window.tagBrowser.tagPrefsReadSync();
       if (!raw || !String(raw).trim()) {
+        searchDebugLog('tagPrefs.skip', { reason: 'empty or missing prefs JSON on disk' });
         scheduleTagPrefsDiskSync();
         return;
       }
       let snap;
       try {
         snap = JSON.parse(raw);
-      } catch {
+      } catch (e) {
+        searchDebugLog('tagPrefs.skip', { reason: 'JSON.parse failed', err: String(e && e.message ? e.message : e) });
         return;
       }
-      if (!snap || typeof snap !== 'object') return;
+      if (!snap || typeof snap !== 'object') {
+        searchDebugLog('tagPrefs.skip', { reason: 'parsed snap not an object' });
+        return;
+      }
+      searchDebugLog('tagPrefs.disk.parse', {
+        hasTagStore: Array.isArray(snap.tagStore),
+        tagStoreLen: Array.isArray(snap.tagStore) ? snap.tagStore.length : 0,
+        knownKey: 'knownBracketTags' in snap,
+        knownIsArray: Array.isArray(snap.knownBracketTags),
+        knownLen: Array.isArray(snap.knownBracketTags) ? snap.knownBracketTags.length : null,
+        skipKnownBecauseEmpty: Array.isArray(snap.knownBracketTags) && snap.knownBracketTags.length === 0,
+        activeFilterLen: Array.isArray(snap.activeFilter) ? snap.activeFilter.length : 0,
+      });
       if (Array.isArray(snap.tagStore)) {
         const next = [];
         const seen = new Set();
@@ -1388,11 +1451,33 @@
         tagStoreOrder = next;
         saveTagStore();
       }
+      // Ignore [] — old snapshots wrote empty arrays and wiped localStorage-seeded lists; bar uses knownBracketTagsList only.
+      if (Array.isArray(snap.knownBracketTags) && snap.knownBracketTags.length > 0) {
+        const kn = [];
+        const seen = new Set();
+        for (const x of snap.knownBracketTags) {
+          if (!x || typeof x !== 'object') continue;
+          let k = typeof x.key === 'string' && String(x.key).trim() ? String(x.key).trim().toLowerCase() : '';
+          const d0 = String(x.display || x.key || '').trim();
+          if (!k && d0) k = d0.toLowerCase();
+          if (!k || seen.has(k)) continue;
+          seen.add(k);
+          kn.push({ key: k, display: d0 || k });
+        }
+        if (kn.length > KNOWN_BRACKET_TAGS_MAX) kn.splice(KNOWN_BRACKET_TAGS_MAX);
+        knownBracketTagsList = kn;
+        saveKnownBracketTags();
+      }
       if (Array.isArray(snap.activeFilter)) {
         activeTagKeys = new Set(snap.activeFilter.map((x) => String(x).trim().toLowerCase()).filter(Boolean));
         persistActiveTagFilter();
       }
       scheduleTagPrefsDiskSync();
+      searchDebugLog('tagPrefs.apply.after', {
+        knownBracketTagsListLen: knownBracketTagsList.length,
+        tagStoreOrderLen: tagStoreOrder.length,
+        activeTagKeys: activeTagKeys.size,
+      });
     }
 
     let propsPanePx = 300;
@@ -1457,14 +1542,16 @@
       dt.setData(TAG_BROWSER_PATHS_DRAG_TYPE, JSON.stringify(arr));
       dt.effectAllowed = 'copyMove';
     }
-    /** Paths-with-brackets in current scope only (ignores query box) — powers tag bar so you can search by tag you haven’t hit yet. */
+    /** Last tag scan: Everything r=1 + `\\[\\(` so we only index `[(…)]` blocks, not every `[`. */
     let tagDiscoveryRows = [];
-    let tagDiscoveryDebounceTimer = null;
+    /** Last non-empty scan — keeps tag pills when a later scan fails, returns empty, or races navigation. */
+    let tagDiscoveryRowsLastGood = [];
     let sortColumn = 'name';
     let sortAsc = true;
     let searchDebounceTimer = null;
-    /** Incremented on each runSearch — drop async completions so stale HTTP responses cannot overwrite a newer search. */
-    let searchGeneration = 0;
+    const SEARCH_DEBUG_MAX = 3500;
+    let searchDebugLines = [];
+    let searchRunSeq = 0;
     /** Recent search UI state (query, scope, tag, toggles, sort) for Alt+← / Alt+→ and toolbar buttons. */
     const SEARCH_HIST_MAX = 50;
     const SEARCH_HIST_DEBOUNCE_MS = 450;
@@ -1771,24 +1858,15 @@
       return 'hsl(' + hue + ', 42%, 86%)';
     }
 
-    /** Tag bar toggle: active = strong fill + white text; inactive = light pill matching table badges. */
-    function tagBarPillInlineStyle(tagKey, active) {
+    /** Tag bar pill colours (important beats Bootstrap .btn). Active filter = thicker border only (.tag-bar-pill-active). */
+    function applyTagBarPillStyle(el, tagKey) {
       const hue = tagHueFromKey(tagKey);
-      if (active) {
-        return {
-          backgroundColor: 'hsl(' + hue + ', 52%, 40%)',
-          color: '#fff',
-          borderColor: 'hsl(' + hue + ', 52%, 26%)',
-        };
-      }
-      return {
-        backgroundColor: 'hsl(' + hue + ', 42%, 86%)',
-        color: '#212529',
-        borderColor: 'hsl(' + hue + ', 38%, 58%)',
-      };
+      el.style.setProperty('background-color', 'hsl(' + hue + ', 42%, 86%)', 'important');
+      el.style.setProperty('color', '#212529', 'important');
+      el.style.setProperty('border-color', 'hsl(' + hue + ', 38%, 58%)', 'important');
     }
 
-    /** Remove one […] tag from path via rename (results / props; no modal). */
+    /** Remove one tag chip from segment via rename (results / props; no modal). */
     async function removeTagFromPathOneItem(fullPath, tagDisplay) {
       if (tagRenameBusy) return;
       const fp = String(fullPath || '').trim();
@@ -2024,6 +2102,7 @@
       saveSettings();
       renderScopeBreadcrumb();
       await runSearchNow();
+      await runTagDiscoverySearchInner(false);
       commitSearchHistoryNow();
     }
 
@@ -2065,17 +2144,11 @@
       void runSearchNow();
     }
 
-    /** Re-fill tag-modal datalist + quick-add buttons (≤12) from results / tag store. */
+    /** Re-fill tag-modal datalist + quick-add (≤12) from global known tags (not current search scope). */
     function refreshTagModalDatalist() {
       const dl = document.getElementById('tagModalExistingTags');
       const quick = document.getElementById('tagModalQuickTags');
       if (!dl || !quick) return;
-      const forTagCounting = mergeUniqueRowsByPath(
-        rowsRespectingHideDotFolders(lastRows),
-        rowsRespectingHideDotFolders(tagDiscoveryRows),
-        fullPathForRow
-      );
-      const counts = forTagCounting.length ? T.aggregateTagCountsFromRows(forTagCounting, fullPathForRow) : new Map();
       const seen = new Set();
       const labels = [];
       const addLabel = (disp) => {
@@ -2086,8 +2159,7 @@
         seen.add(k);
         labels.push(d);
       };
-      for (const [, info] of counts) addLabel(info.display);
-      for (const t of tagStoreOrder) addLabel(t.display);
+      for (const t of knownBracketTagsList) addLabel(t.display);
       labels.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
       dl.innerHTML = '';
       for (const text of labels) {
@@ -2119,7 +2191,7 @@
       await runSearchNow();
       if (pathRenames && pathRenames.length) {
         patchResultRowsAfterRenames(pathRenames);
-        applyClientSortMergeFoldersFiles();
+        sortLastRowsForDisplay(true);
         await syncSelectionAfterSearch();
         renderTagBar();
         renderTable();
@@ -2442,7 +2514,8 @@
         if (d === 0) ul.id = 'breadcrumbSubfolderFlyout';
         ul.className = 'breadcrumb-folder-flyout small shadow';
         ul.dataset.breadcrumbFlyoutDepth = String(d);
-        ul.style.zIndex = String(1095 + d);
+        /* Stay below .modal-backdrop (1100); uncapped 1095+d reaches 1119 at max depth. */
+        ul.style.zIndex = String(Math.min(1095 + d, 1099));
         ul.addEventListener('mouseenter', cancelBreadcrumbFlyoutHideTimer);
         ul.addEventListener('mouseleave', scheduleHideBreadcrumbSubfolderFlyout);
         ul.addEventListener('scroll', () => repositionBreadcrumbFlyoutChain());
@@ -3596,30 +3669,35 @@
       return q ? parentTok + ' ' + q : parentTok;
     }
 
-    /**
-     * Background refresh: any path in scope whose name contains “[…]” (bracket tags).
-     * Ignores the search box, Files/Folders-only toggles, and active tag — so the tag bar lists what you can search next.
-     */
-    function scheduleTagDiscovery() {
-      if (tagDiscoveryDebounceTimer) clearTimeout(tagDiscoveryDebounceTimer);
-      tagDiscoveryDebounceTimer = setTimeout(() => {
-        tagDiscoveryDebounceTimer = null;
-        void runTagDiscoverySearch();
-      }, 450);
+    /** Full-index bracket scan after each main search (same query regardless of current folder). */
+    function kickTagDiscoveryAfterSearch() {
+      searchDebugLog('tagDiscovery.kick', {});
+      void runTagDiscoverySearchInner(false);
     }
 
-    async function runTagDiscoverySearch() {
+    /** pruneDeadRemembered: ghost cleanup on “Rescan all tags” only. */
+    async function runTagDiscoverySearchInner(pruneDeadRemembered) {
+      const statusEl = document.getElementById('status');
       const baseUrl = document.getElementById('baseUrl').value.trim() || 'http://127.0.0.1';
-      const rootFolder = document.getElementById('rootFolder').value.trim();
-      const rec = document.getElementById('folderSearchRecursive').checked;
-      const countCap = Math.min(5000, Math.max(1, parseInt(document.getElementById('maxResults').value, 10) || 200));
+      const mr = Math.max(1, parseInt(document.getElementById('maxResults').value, 10) || 200);
+      const countCap = Math.min(50000, Math.max(5000, mr));
       const httpUser = document.getElementById('httpUser').value;
       const httpPassword = document.getElementById('httpPassword').value;
-      let searchText = composeScopedEverythingSearch(rootFolder, 'regex:\\[', rec);
       const ui = searchOptionsFromUI();
+      // r=1: require `[(` so plain `[foobar]` noise is excluded; TagFox tags are `[(t1,t2)]`.
+      const bracketDiscoveryQuery = '\\[\\(';
+      searchDebugLog('tagDiscovery.request', {
+        prune: pruneDeadRemembered,
+        searchText: bracketDiscoveryQuery,
+        countCap,
+        baseUrl,
+        hideDotFolders: !!document.getElementById('optHideDotFolders')?.checked,
+        hasSearchBridge: !!(window.tagBrowser && typeof window.tagBrowser.search === 'function'),
+        knownTagsBeforeScan: knownBracketTagsList.length,
+      });
       const res = await window.tagBrowser.search({
         baseUrl,
-        searchText,
+        searchText: bracketDiscoveryQuery,
         count: String(countCap),
         httpUser,
         httpPassword,
@@ -3633,13 +3711,84 @@
           ascending: true,
         },
       });
+      const rawRows = Array.isArray(res && res.rows) ? res.rows : [];
+      searchDebugLog('tagDiscovery.response', {
+        ok: !!(res && res.ok),
+        rawRows: rawRows.length,
+        err: res && res.ok ? '' : (res && res.error) || 'unknown',
+        resKeys: res && typeof res === 'object' ? Object.keys(res).slice(0, 14) : [],
+      });
       if (!res.ok) {
-        tagDiscoveryRows = [];
+        if (statusEl) statusEl.textContent = 'Tag scan failed: ' + (res.error || 'unknown error');
         renderTagBar();
         return;
       }
-      tagDiscoveryRows = rowsRespectingHideDotFolders(res.rows || []);
+      const discRows = rowsRespectingHideDotFolders(rawRows);
+      searchDebugLog('tagDiscovery.rowsPipe', {
+        rawLen: rawRows.length,
+        afterHideDotLen: discRows.length,
+        droppedByHideDot: rawRows.length - discRows.length,
+        sampleRaw: rawRows.slice(0, 3).map(searchDebugTagRowDigest),
+        sampleFiltered: discRows.slice(0, 3).map(searchDebugTagRowDigest),
+      });
+      tagDiscoveryRows = discRows;
+      if (discRows.length) tagDiscoveryRowsLastGood = discRows;
+      absorbKnownBracketTagsFromScanRows(discRows);
+      searchDebugLog('tagDiscovery.afterAbsorb', { knownBracketTagsListLen: knownBracketTagsList.length });
+      let fullScanActiveChanged = false;
+      if (pruneDeadRemembered) {
+        const countsFromDisc =
+          discRows.length > 0 ? T.aggregateTagCountsFromRows(discRows, fullPathForRow) : new Map();
+        searchDebugLog('tagDiscovery.prune', {
+          countsFromDiscSize: countsFromDisc.size,
+          keysSample: [...countsFromDisc.keys()].slice(0, 24),
+        });
+        let storeChanged = false;
+        const nextStore = tagStoreOrder.filter((t) => {
+          const hit = countsFromDisc.get(t.key);
+          if (hit && hit.count > 0) return true;
+          storeChanged = true;
+          return false;
+        });
+        let knownChanged = false;
+        const nextKnown = knownBracketTagsList.filter((t) => {
+          const hit = countsFromDisc.get(t.key);
+          if (hit && hit.count > 0) return true;
+          knownChanged = true;
+          return false;
+        });
+        if (knownChanged) {
+          knownBracketTagsList = nextKnown;
+          saveKnownBracketTags();
+          scheduleTagPrefsDiskSync();
+        }
+        if (storeChanged) {
+          tagStoreOrder = nextStore;
+          saveTagStore();
+          scheduleTagPrefsDiskSync();
+        }
+        for (const k of [...activeTagKeys]) {
+          const hit = countsFromDisc.get(k);
+          if (!hit || hit.count < 1) {
+            activeTagKeys.delete(k);
+            fullScanActiveChanged = true;
+          }
+        }
+        if (fullScanActiveChanged) persistActiveTagFilter();
+        if (statusEl) {
+          const n = discRows.length;
+          const extra =
+            storeChanged || knownChanged || fullScanActiveChanged ? ' Dropped tags not in this scan.' : '';
+          statusEl.textContent = 'Tag scan: ' + n + ' path(s) with [(…)] tag block (full index).' + extra;
+        }
+      }
       renderTagBar();
+      if (pruneDeadRemembered && fullScanActiveChanged) renderTable();
+    }
+
+    /** pruneDeadRemembered true = “Rescan all tags”. false = awaitable (Hide .folders). */
+    async function runTagDiscoverySearch(pruneDeadRemembered) {
+      await runTagDiscoverySearchInner(pruneDeadRemembered);
     }
 
     /** Escape tag text for one Everything regex:… clause (modifiers off; global Regex UI off). */
@@ -3647,7 +3796,7 @@
       return String(s || '').replace(/[\\^$.|?*+()[\]{}]/g, '\\$&');
     }
 
-    /** One (?i)regex:… clause for a bracket tag list (same as rowHasTag semantics). */
+    /** One (?i)regex:… clause for `[(t1,t2)]` lists (same as rowHasTag / pathHasTag). */
     function tagKeyToEverythingBracketRegex(lowerKey) {
       const t = String(lowerKey || '').trim().toLowerCase();
       if (!t) return '';
@@ -3655,7 +3804,7 @@
       if (!inner) inner = t.replace(/[^a-z0-9_-]/gi, '');
       if (!inner) return '';
       const esc = escapeEverythingRegexFragment(inner);
-      return '(?i)\\[(?:[^,\\]]*,)*' + esc + '(?:,[^\\]]*)?\\]';
+      return '(?i)\\[\\((?:[^,)]*,)*' + esc + '(?:,[^)]*)?\\)\\]';
     }
 
     /** Narrow Everything: AND of one regex: clause per active tag (skipped when Regex is on). */
@@ -3667,6 +3816,17 @@
         if (re) out = (out + ' regex:' + re).trim();
       }
       return out;
+    }
+
+    /**
+     * Hide .folders: exclude paths that pass through a \.segment\ or /.segment/ (like .git). Lone leaf files \.env stay (no sep after segment).
+     * Needs path matching — runSearch sets pathSearch true when this is appended. Skipped if global Regex is on (whole query is one pattern).
+     */
+    function appendHideDotFoldersToEverythingQuery(searchText) {
+      if (!document.getElementById('optHideDotFolders').checked) return searchText;
+      if (document.getElementById('optRegex').checked) return searchText;
+      const clause = ' !regex:(?:\\\\|/)\\.[^\\\\/]+(?:\\\\|/)';
+      return (String(searchText || '').trim() + clause).trim();
     }
 
     function formatSize(n) {
@@ -3699,6 +3859,11 @@
 
     function pathNormKey(fp) {
       return String(fp || '').replace(/[/\\]+$/, '').toLowerCase();
+    }
+
+    /** Stable sort key for path column: one separator style + lower case (localeCompare numeric breaks badly on full paths). */
+    function pathSortKey(row) {
+      return pathNormKey(fullPathForRow(row)).replace(/\//g, '\\');
     }
 
     function toggleCheckPath(fp, on) {
@@ -4092,6 +4257,22 @@
       return dir + sep + name;
     }
 
+    /** Search-debug: one row’s path + basename tag-parse (Everything row shapes vary). */
+    function searchDebugTagRowDigest(row) {
+      if (!row) return null;
+      const fp = fullPathForRow(row);
+      const base = T.baseName(fp);
+      const parsed = T.parseSegmentTags(base);
+      return {
+        name: row.name,
+        path: row.path,
+        fullPath: fp,
+        base,
+        parsedTags: parsed.tags,
+        rowKeys: Object.keys(row).slice(0, 16),
+      };
+    }
+
     /** Everything index can lag after many renames; align lastRows / tagDiscoveryRows + check map with paths we just wrote. */
     function patchResultRowsAfterRenames(pairs) {
       if (!pairs || !pairs.length) return;
@@ -4111,6 +4292,7 @@
         };
         for (const row of lastRows) patchOne(row);
         for (const row of tagDiscoveryRows) patchOne(row);
+        for (const row of tagDiscoveryRowsLastGood) patchOne(row);
         if (checkedPathsMap.has(fromK)) {
           checkedPathsMap.delete(fromK);
           checkedPathsMap.set(pathNormKey(toRaw), toRaw);
@@ -4129,60 +4311,70 @@
       return n * 1000;
     }
 
-    /**
-     * Everything returns folders-then-files per sort column; when Settings “Sort folders with files” is on,
-     * re-order lastRows by the active column in one combined list (path / name / size / modified).
-     */
-    function applyClientSortMergeFoldersFiles() {
-      if (!document.getElementById('optSortFoldersWithFiles').checked || !lastRows.length) return;
-      const mul = sortAsc ? 1 : -1;
-      const tieBreak = (a, b) => {
-        const pa = pathNormKey(fullPathForRow(a));
-        const pb = pathNormKey(fullPathForRow(b));
-        return pa.localeCompare(pb, undefined, { numeric: true, sensitivity: 'base' });
+    /** One comparator for all client-side re-ordering; tie-break by path so sort is deterministic. */
+    function compareRowsBySort(a, b, col, asc) {
+      const mul = asc ? 1 : -1;
+      const pa = pathSortKey(a);
+      const pb = pathSortKey(b);
+      const byPath = () => {
+        if (pa < pb) return -mul;
+        if (pa > pb) return mul;
+        return 0;
       };
-      if (sortColumn === 'path') {
-        lastRows.sort((a, b) => {
-          const c =
-            mul *
-            pathNormKey(fullPathForRow(a)).localeCompare(pathNormKey(fullPathForRow(b)), undefined, {
-              numeric: true,
-              sensitivity: 'base',
-            });
-          return c || tieBreak(a, b);
-        });
-        return;
+
+      if (col === 'path') return byPath();
+      if (col === 'name') {
+        const na = String(a.name || '');
+        const nb = String(b.name || '');
+        const c = mul * na.localeCompare(nb, undefined, { numeric: true, sensitivity: 'base' });
+        return c || byPath();
       }
-      if (sortColumn === 'name') {
-        lastRows.sort((a, b) => {
-          const na = String(a.name || '');
-          const nb = String(b.name || '');
-          const c = mul * na.localeCompare(nb, undefined, { numeric: true, sensitivity: 'base' });
-          return c || tieBreak(a, b);
-        });
-        return;
+      if (col === 'size') {
+        const sa = Number(a.size);
+        const sb = Number(b.size);
+        const va = Number.isFinite(sa) ? sa : 0;
+        const vb = Number.isFinite(sb) ? sb : 0;
+        if (va < vb) return -mul;
+        if (va > vb) return mul;
+        return byPath();
       }
-      if (sortColumn === 'size') {
-        lastRows.sort((a, b) => {
-          const sa = Number(a.size);
-          const sb = Number(b.size);
-          const va = Number.isFinite(sa) ? sa : 0;
-          const vb = Number.isFinite(sb) ? sb : 0;
-          if (va < vb) return -mul;
-          if (va > vb) return mul;
-          return tieBreak(a, b);
-        });
-        return;
+      if (col === 'date_modified') {
+        const da = rowModifiedSortKey(a);
+        const db = rowModifiedSortKey(b);
+        if (da < db) return -mul;
+        if (da > db) return mul;
+        return byPath();
       }
-      if (sortColumn === 'date_modified') {
-        lastRows.sort((a, b) => {
-          const da = rowModifiedSortKey(a);
-          const db = rowModifiedSortKey(b);
-          if (da < db) return -mul;
-          if (da > db) return mul;
-          return tieBreak(a, b);
-        });
-      }
+      return byPath();
+    }
+
+    function sortRowsForDisplay(rows, col, asc) {
+      if (!Array.isArray(rows) || !rows.length) return;
+      rows.sort((a, b) => compareRowsBySort(a, b, col, asc));
+    }
+
+    /**
+     * Client-side re-ordering when needed:
+     * - Path: plain string order on pathSortKey (same as sorting full paths as strings).
+     * - Both + interleave: after folder: + file: merge, one sort then cap.
+     * - force: server-direction fallback or post-merge.
+     */
+    function sortLastRowsForDisplay(force) {
+      if (!lastRows.length) return;
+      const mergedFolderFileLists =
+        fileFolderFilterMode() === 'both' && document.getElementById('optSortFoldersWithFiles').checked;
+      if (!force && !mergedFolderFileLists && sortColumn !== 'path') return;
+      const before = lastRows.length;
+      sortRowsForDisplay(lastRows, sortColumn, sortAsc);
+      searchDebugLog('sortLastRowsForDisplay', {
+        force: !!force,
+        mergedFolderFileLists,
+        col: sortColumn,
+        asc: sortAsc,
+        count: before,
+        first: lastRows.slice(0, 3).map((r) => fullPathForRow(r)),
+        last: lastRows.slice(-3).map((r) => fullPathForRow(r)),
+      });
     }
 
     function rowIsFolder(row) {
@@ -4206,7 +4398,7 @@
       return false;
     }
 
-    /** Apply Advanced “Hide .folders” client-side (Everything still returns full set). */
+    /** Hide .folders client-side (tag scan, global Regex+hide, or safety if server clause mismatches). */
     function rowsRespectingHideDotFolders(rows) {
       if (!document.getElementById('optHideDotFolders').checked) return rows;
       return rows.filter((r) => !pathUnderDotFolder(fullPathForRow(r), rowIsFolder(r)));
@@ -4242,11 +4434,114 @@
       localStorage.setItem(LS.tagStore, JSON.stringify(tagStoreOrder.slice(0, TAG_STORE_MAX)));
     }
 
+    function saveKnownBracketTags() {
+      localStorage.setItem(
+        LS.knownBracketTags,
+        JSON.stringify(knownBracketTagsList.slice(0, KNOWN_BRACKET_TAGS_MAX))
+      );
+    }
+
+    function loadKnownBracketTags() {
+      try {
+        const raw = localStorage.getItem(LS.knownBracketTags);
+        const a = raw ? JSON.parse(raw) : [];
+        knownBracketTagsList = Array.isArray(a)
+          ? a
+              .filter((x) => {
+                if (!x || typeof x !== 'object') return false;
+                if (typeof x.key === 'string' && String(x.key).trim()) return true;
+                return !!String(x.display || '').trim();
+              })
+              .map((x) => {
+                const hasKey = typeof x.key === 'string' && String(x.key).trim();
+                let k = hasKey ? String(x.key).trim().toLowerCase() : '';
+                const d = String(x.display || x.key || '').trim() || k;
+                if (!k && d) k = d.toLowerCase();
+                return { key: k, display: d || k };
+              })
+              .filter((x) => x.key)
+          : [];
+        if (knownBracketTagsList.length > KNOWN_BRACKET_TAGS_MAX) {
+          knownBracketTagsList = knownBracketTagsList.slice(0, KNOWN_BRACKET_TAGS_MAX);
+        }
+      } catch (_) {
+        knownBracketTagsList = [];
+      }
+      if (!knownBracketTagsList.length && tagStoreOrder.length) {
+        knownBracketTagsList = tagStoreOrder.map((t) => ({ key: t.key, display: t.display }));
+        saveKnownBracketTags();
+      }
+      searchDebugLog('tags.loadKnownFromLS', {
+        knownLen: knownBracketTagsList.length,
+        tagStoreLen: tagStoreOrder.length,
+      });
+    }
+
+    /** Add tag to global list (creating a tag on disk or toggling filter). */
+    function ensureKnownBracketTag(key, display) {
+      const k = String(key || '').trim().toLowerCase();
+      if (!k) return;
+      const d = String(display || key).trim() || k;
+      if (knownBracketTagsList.some((t) => t.key === k)) return;
+      knownBracketTagsList.push({ key: k, display: d });
+      if (knownBracketTagsList.length > KNOWN_BRACKET_TAGS_MAX) {
+        knownBracketTagsList = knownBracketTagsList.slice(0, KNOWN_BRACKET_TAGS_MAX);
+      }
+      saveKnownBracketTags();
+      scheduleTagPrefsDiskSync();
+    }
+
+    /** Append tag names from scan rows (full-index `\\[\\(` + r=1). */
+    function absorbKnownBracketTagsFromScanRows(rows) {
+      if (!rows || !rows.length) {
+        searchDebugLog('tags.absorb.skip', { reason: 'no rows', knownLen: knownBracketTagsList.length });
+        return;
+      }
+      const knownBefore = knownBracketTagsList.length;
+      const tagModOk = !!(window.TagBrowserTags && T && typeof T.aggregateTagCountsFromRows === 'function');
+      const m = tagModOk ? T.aggregateTagCountsFromRows(rows, fullPathForRow) : new Map();
+      const have = new Set(knownBracketTagsList.map((t) => t.key));
+      let added = 0;
+      let changed = false;
+      for (const [k, info] of m) {
+        if (have.has(k)) continue;
+        have.add(k);
+        knownBracketTagsList.push({ key: k, display: info.display });
+        added++;
+        changed = true;
+      }
+      searchDebugLog('tags.absorb', {
+        rowCount: rows.length,
+        aggregateMapSize: m.size,
+        aggregateKeysSample: [...m.keys()].slice(0, 30),
+        tagModuleOk: tagModOk,
+        newEntriesPushed: added,
+        knownBefore,
+        knownAfter: knownBracketTagsList.length,
+        sampleRows: rows.slice(0, 4).map(searchDebugTagRowDigest),
+      });
+      if (rows.length && m.size === 0) {
+        searchDebugLog('tags.absorb.emptyMap', {
+          message:
+            'Rows returned but aggregateTagCountsFromRows produced no tags — check fullPath/name vs bracket segment parsing.',
+          digests: rows.slice(0, 10).map(searchDebugTagRowDigest),
+        });
+      }
+      if (changed) {
+        if (knownBracketTagsList.length > KNOWN_BRACKET_TAGS_MAX) {
+          knownBracketTagsList = knownBracketTagsList.slice(0, KNOWN_BRACKET_TAGS_MAX);
+        }
+        saveKnownBracketTags();
+        scheduleTagPrefsDiskSync();
+      }
+    }
+
     /** User chose this tag as filter — keep it in the bar across later searches. */
     function rememberTag(key, display) {
       const k = String(key || '').trim().toLowerCase();
       if (!k) return;
       const d = String(display || key).trim() || k;
+      ensureKnownBracketTag(k, d);
       tagStoreOrder = tagStoreOrder.filter((t) => t.key !== k);
       tagStoreOrder.unshift({ key: k, display: d });
       if (tagStoreOrder.length > TAG_STORE_MAX) tagStoreOrder = tagStoreOrder.slice(0, TAG_STORE_MAX);
@@ -4254,18 +4549,9 @@
       scheduleTagPrefsDiskSync();
     }
 
-    /** Re-query Everything for main results + regex:\\[ tag discovery; kept tags stay in the bar. */
+    /** Re-query Everything; tag scan runs at end of runSearch. */
     async function refreshTagsBarAndScan() {
-      if (tagDiscoveryDebounceTimer) {
-        clearTimeout(tagDiscoveryDebounceTimer);
-        tagDiscoveryDebounceTimer = null;
-      }
       await runSearchNow();
-      if (tagDiscoveryDebounceTimer) {
-        clearTimeout(tagDiscoveryDebounceTimer);
-        tagDiscoveryDebounceTimer = null;
-      }
-      await runTagDiscoverySearch();
     }
 
     function persistActiveTagFilter() {
@@ -4308,6 +4594,7 @@
     function loadSettings() {
       migrateLocalStorageFromLegacy();
       loadTagStore();
+      loadKnownBracketTags();
       document.getElementById('baseUrl').value =
         localStorage.getItem(LS.baseUrl) || 'http://127.0.0.1';
       document.getElementById('rootFolder').value = localStorage.getItem(LS.rootFolder) || '';
@@ -4332,8 +4619,15 @@
         localStorage.getItem(LS.folderSearchRecursive) !== '0';
       document.getElementById('optHideDotFolders').checked = localStorage.getItem(LS.hideDotFolders) === '1';
       document.getElementById('optSortFoldersWithFiles').checked = localStorage.getItem(LS.sortFoldersWithFiles) !== '0';
+      document.getElementById('optSearchDebug').checked = localStorage.getItem(LS.searchDebug) === '1';
       activeTagKeys = activeTagKeysFromStored(localStorage.getItem(LS.activeTagFilter));
       applyTagPrefsFromUserDataFile();
+      for (const t of tagStoreOrder) ensureKnownBracketTag(t.key, t.display);
+      searchDebugLog('tags.loadSettings.tail', {
+        knownLen: knownBracketTagsList.length,
+        tagStoreLen: tagStoreOrder.length,
+      });
+      searchDebugRender();
     }
 
     function saveSettings() {
@@ -4360,6 +4654,7 @@
         LS.sortFoldersWithFiles,
         document.getElementById('optSortFoldersWithFiles').checked ? '1' : '0'
       );
+      localStorage.setItem(LS.searchDebug, document.getElementById('optSearchDebug').checked ? '1' : '0');
       persistActiveTagFilter();
     }
 
@@ -4373,6 +4668,67 @@
         sort: sortColumn,
         ascending: sortAsc,
       };
+    }
+
+    function isSearchDebugOn() {
+      return !!document.getElementById('optSearchDebug')?.checked;
+    }
+
+    function searchDebugStamp() {
+      const d = new Date();
+      const pad2 = (n) => String(n).padStart(2, '0');
+      const pad3 = (n) => String(n).padStart(3, '0');
+      return (
+        d.getFullYear() +
+        '-' +
+        pad2(d.getMonth() + 1) +
+        '-' +
+        pad2(d.getDate()) +
+        ' ' +
+        pad2(d.getHours()) +
+        ':' +
+        pad2(d.getMinutes()) +
+        ':' +
+        pad2(d.getSeconds()) +
+        '.' +
+        pad3(d.getMilliseconds())
+      );
+    }
+
+    function searchDebugRender() {
+      const box = document.getElementById('searchDebugLog');
+      if (!box) return;
+      box.value = searchDebugLines.join('\n');
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function searchDebugClear() {
+      searchDebugLines = [];
+      searchDebugRender();
+    }
+
+    function searchDebugLog(eventName, payload) {
+      if (!isSearchDebugOn()) return;
+      let detail = '';
+      try {
+        detail = payload == null ? '' : ' ' + JSON.stringify(payload);
+      } catch {
+        detail = ' [unserializable payload]';
+      }
+      const line = `[${searchDebugStamp()}] ${eventName}${detail}`;
+      searchDebugLines.push(line);
+      if (searchDebugLines.length > SEARCH_DEBUG_MAX) {
+        searchDebugLines = searchDebugLines.slice(searchDebugLines.length - SEARCH_DEBUG_MAX);
+      }
+      searchDebugRender();
+      try {
+        console.debug(line);
+      } catch (_) {}
+    }
+
+    /** Keep request options aligned with UI; direction fallback is handled explicitly in runSearch when needed. */
+    function everythingOptionsForRequest() {
+      return searchOptionsFromUI();
     }
 
     function serializeSearchState() {
@@ -4660,57 +5016,80 @@
       span.className = 'text-muted me-1';
       span.textContent = 'Tags:';
       el.appendChild(span);
-      const forTagCounting = mergeUniqueRowsByPath(
-        rowsRespectingHideDotFolders(lastRows),
-        rowsRespectingHideDotFolders(tagDiscoveryRows),
-        fullPathForRow
-      );
+      const appendRescanAllTags = () => {
+        const rescan = document.createElement('button');
+        rescan.type = 'button';
+        rescan.className = 'btn btn-sm btn-outline-secondary';
+        rescan.textContent = 'Rescan all tags';
+        rescan.title =
+          'Re-run full-index [(…)] scan and remove remembered/active tags missing from this scan. Each search also refreshes the scan.';
+        rescan.addEventListener('click', () => {
+          void (async () => {
+            rescan.disabled = true;
+            try {
+              await runTagDiscoverySearch(true);
+              refreshTagModalDatalist();
+            } finally {
+              rescan.disabled = false;
+            }
+          })();
+        });
+        el.appendChild(rescan);
+      };
+      // Counts match the visible table (filteredRows), not merged tag-scan rows.
+      const forTagCounting = rowsRespectingHideDotFolders(filteredRows());
       const counts = forTagCounting.length ? T.aggregateTagCountsFromRows(forTagCounting, fullPathForRow) : new Map();
-      // Saved tags always show (label from store; count from current rows or 0).
-      const merged = new Map();
-      for (const t of tagStoreOrder) {
+      // Pill set = global knownBracketTagsList order; numbers = tag hits in this result list.
+      const entries = [];
+      const pillKeys = new Set();
+      for (const t of knownBracketTagsList) {
+        if (!t || !t.key) continue;
+        pillKeys.add(t.key);
         const hit = counts.get(t.key);
-        merged.set(t.key, { display: t.display, count: hit ? hit.count : 0 });
+        entries.push({ key: t.key, display: t.display, count: hit ? hit.count : 0 });
       }
       for (const ak of activeTagKeys) {
-        if (!merged.has(ak)) {
-          const hit = counts.get(ak);
-          merged.set(ak, { display: ak, count: hit ? hit.count : 0 });
-        }
+        if (pillKeys.has(ak)) continue;
+        pillKeys.add(ak);
+        const hit = counts.get(ak);
+        entries.push({ key: ak, display: hit && hit.display ? hit.display : ak, count: hit ? hit.count : 0 });
       }
-      for (const [key, info] of counts) {
-        if (!merged.has(key)) merged.set(key, { display: info.display, count: info.count });
-      }
-      if (!merged.size) {
+      searchDebugLog('tags.renderTagBar', {
+        pillEntries: entries.length,
+        knownListLen: knownBracketTagsList.length,
+        tagStoreLen: tagStoreOrder.length,
+        activeTagKeys: activeTagKeys.size,
+        countsMapSize: counts.size,
+        forTagCountingRows: forTagCounting.length,
+        discRowsLen: tagDiscoveryRows.length,
+        discLastGoodLen: tagDiscoveryRowsLastGood.length,
+        lastRowsLen: lastRows.length,
+        knownKeysSample: knownBracketTagsList.slice(0, 20).map((t) => t.key),
+      });
+      if (!entries.length) {
         const s = document.createElement('span');
         s.className = 'text-muted';
         s.textContent =
-          '(no […] tags in this scope yet — set Scope folder, raise max results, or wait for tag scan)';
+          'No bracket tags in your list yet. Add one from the tags dialog, toggle a filter, or use Rescan all tags.';
         el.appendChild(s);
+        appendRescanAllTags();
         updateEmptyResultsPulseHints(filteredRows().length === 0);
         return;
       }
-      const ordered = [];
-      const seen = new Set();
-      for (const t of tagStoreOrder) {
-        if (merged.has(t.key)) {
-          ordered.push([t.key, merged.get(t.key)]);
-          seen.add(t.key);
-        }
-      }
-      const rest = [...merged.entries()].filter(([k]) => !seen.has(k));
-      rest.sort((a, b) => b[1].count - a[1].count || a[1].display.localeCompare(b[1].display));
-      const sorted = ordered.concat(rest);
-      for (const [key, info] of sorted) {
+      for (const info of entries) {
+        const key = info.key;
         const b = document.createElement('button');
         b.type = 'button';
         b.dataset.tagKey = key;
         const on = activeTagKeys.has(key);
-        b.className = 'btn btn-sm tag-bar-pill';
-        Object.assign(b.style, tagBarPillInlineStyle(key, on));
-        b.textContent = info.display + ' (' + info.count + ')';
+        b.className = 'btn btn-sm tag-bar-pill' + (on ? ' tag-bar-pill-active' : '');
+        applyTagBarPillStyle(b, key);
+        b.textContent = info.count > 0 ? info.display + ' (' + info.count + ')' : info.display;
         b.title =
-          'Toggle this […] tag: multiple tags combine with AND. When Regex is off, each adds an Everything regex: clause. Any tag on turns Recursive. Count = matches in scope (up to max).';
+          'Toggle [(…)] tag filter (AND). Regex off: adds an Everything regex: clause; any tag on turns Recursive. ' +
+          (info.count > 0
+            ? 'Number = rows in the current result list with this tag (same cap as Max results).'
+            : 'No rows with this tag in the current list—try Rescan all tags or broaden search.');
         b.addEventListener('click', () => {
           void (async () => {
             if (activeTagKeys.has(key)) activeTagKeys.delete(key);
@@ -4745,20 +5124,24 @@
         });
         el.appendChild(b);
       }
-      const clr = document.createElement('button');
-      clr.type = 'button';
-      clr.className = 'btn btn-sm btn-outline-secondary';
-      clr.textContent = 'Clear tag filter';
-      clr.disabled = activeTagKeys.size === 0;
-      clr.addEventListener('click', () => {
-        void (async () => {
-          activeTagKeys.clear();
-          persistActiveTagFilter();
-          await runSearchNow();
-          commitSearchHistoryNow();
-        })();
-      });
-      el.appendChild(clr);
+      if (activeTagKeys.size) {
+        const clearTags = document.createElement('button');
+        clearTags.type = 'button';
+        clearTags.className = 'btn btn-sm btn-outline-secondary ms-2';
+        clearTags.textContent = 'Clear all tags';
+        clearTags.title = 'Turn off every active tag filter at once.';
+        clearTags.addEventListener('click', () => {
+          void (async () => {
+            activeTagKeys.clear();
+            persistActiveTagFilter();
+            await runSearchNow();
+            commitSearchHistoryNow();
+            updateEmptyResultsPulseHints(filteredRows().length === 0);
+          })();
+        });
+        el.appendChild(clearTags);
+      }
+      appendRescanAllTags();
       updateEmptyResultsPulseHints(filteredRows().length === 0);
     }
 
@@ -4804,7 +5187,12 @@
       pruneCheckedPaths();
       const rows = filteredRows();
       const suffix = activeTagKeys.size ? ' (filtered)' : '';
-      status.textContent = rows.length ? rows.length + ' row(s)' + suffix : 'No rows' + suffix;
+      const rawN = lastRows.length;
+      // Hide .folders / tag filter shrink the list after Everything’s cap — show both so path ▲/▼ “missing rows” isn’t mistaken for truncation at 10.
+      const visN = rows.length;
+      if (!visN) status.textContent = 'No rows' + suffix;
+      else if (visN === rawN) status.textContent = visN + ' row(s)' + suffix;
+      else status.textContent = visN + ' / ' + rawN + ' row(s)' + suffix;
       const showPathTreeGutter =
         document.getElementById('folderSearchRecursive').checked && sortColumn === 'path';
 
@@ -5340,7 +5728,7 @@
     }
 
     async function runSearch() {
-      const myGen = ++searchGeneration;
+      const runId = ++searchRunSeq;
       const status = document.getElementById('status');
       saveSettings();
       const baseUrl = document.getElementById('baseUrl').value.trim() || 'http://127.0.0.1';
@@ -5355,61 +5743,157 @@
       } else if (ff === 'files') {
         searchText = (searchText.trim() + ' file:').trim();
       }
+      searchText = appendHideDotFoldersToEverythingQuery(searchText);
       const count = document.getElementById('maxResults').value;
       const cap = Math.min(5000, Math.max(1, parseInt(String(count).trim(), 10) || 200));
       const httpUser = document.getElementById('httpUser').value;
       const httpPassword = document.getElementById('httpPassword').value;
-      const options = searchOptionsFromUI();
+      const baseSearchOpts = everythingOptionsForRequest();
+      const hideDotServer =
+        document.getElementById('optHideDotFolders').checked &&
+        !document.getElementById('optRegex').checked;
+      const options = hideDotServer ? { ...baseSearchOpts, pathSearch: true } : baseSearchOpts;
+      const makeDoSearch = (opts) => {
+        const payload = { baseUrl, count, httpUser, httpPassword, options: opts };
+        return (st) => window.tagBrowser.search({ ...payload, searchText: st });
+      };
+      const doSearch = makeDoSearch(options);
 
-      const payload = { baseUrl, count, httpUser, httpPassword, options };
-      const doSearch = (st) => window.tagBrowser.search({ ...payload, searchText: st });
+      const directionCanMisbehave = (opts) =>
+        (opts.sort === 'path' && opts.ascending === true) || (opts.sort === 'date_modified' && opts.ascending === false);
+      const countLooksWrongForDirection = (rowsLen) =>
+        cap > 40 && rowsLen >= 0 && rowsLen < Math.max(3, Math.floor(cap * 0.2));
+      const pickRows = (res) => (res && Array.isArray(res.rows) ? res.rows : []);
+      const shouldSwitchDirection = (baseRowsLen, altRowsLen) => altRowsLen >= Math.max(baseRowsLen + 5, baseRowsLen * 2);
+      searchDebugLog('runSearch.start', {
+        runId,
+        sortColumn,
+        sortAsc,
+        ff,
+        interleave: document.getElementById('optSortFoldersWithFiles').checked,
+        cap,
+        query,
+        searchText,
+        hideDotServer,
+        options,
+      });
+
+      async function doSearchWithDirectionFallback(st) {
+        const t0 = performance.now();
+        searchDebugLog('search.request.base', { runId, searchText: st, options });
+        const baseRes = await doSearch(st);
+        const baseRows = pickRows(baseRes);
+        searchDebugLog('search.response.base', {
+          runId,
+          searchText: st,
+          ok: !!(baseRes && baseRes.ok),
+          rows: baseRows.length,
+          ms: Math.round(performance.now() - t0),
+          err: baseRes && baseRes.ok ? '' : (baseRes && baseRes.error) || 'unknown',
+        });
+        if (!baseRes || !baseRes.ok) return { ok: false, error: (baseRes && baseRes.error) || 'Search failed', rows: [] };
+        let rows = baseRows;
+        let usedFallbackSort = false;
+        if (directionCanMisbehave(options) && countLooksWrongForDirection(rows.length)) {
+          const altOptions = { ...options, ascending: !options.ascending };
+          const altDoSearch = makeDoSearch(altOptions);
+          const t1 = performance.now();
+          searchDebugLog('search.request.alt', { runId, searchText: st, altOptions });
+          const altRes = await altDoSearch(st);
+          if (altRes && altRes.ok) {
+            const altRows = pickRows(altRes);
+            searchDebugLog('search.response.alt', {
+              runId,
+              searchText: st,
+              rows: altRows.length,
+              ms: Math.round(performance.now() - t1),
+            });
+            if (shouldSwitchDirection(rows.length, altRows.length)) {
+              rows = altRows;
+              usedFallbackSort = true;
+              searchDebugLog('search.fallback.useAlt', {
+                runId,
+                searchText: st,
+                baseRows: baseRows.length,
+                altRows: altRows.length,
+              });
+            }
+          } else {
+            searchDebugLog('search.response.altError', {
+              runId,
+              searchText: st,
+              err: (altRes && altRes.error) || 'alt failed',
+            });
+          }
+        }
+        return { ok: true, rows, usedFallbackSort };
+      }
 
       status.textContent = 'Searching…';
 
-      // Without split, Everything lists all folders then all files — one type can fill the max-results cap.
-      // Interleave: folder: + file: queries, merge, client sort, slice. Running them in parallel caused short/partial path results on huge indexes; sequential keeps interleaving without that bug.
+      // Both + interleave: folder:/file: so one pool isn’t “all folders first” from Everything; merge then string-sort paths and cap.
       const wantFolderFileSplit =
         ff === 'both' && document.getElementById('optSortFoldersWithFiles').checked;
+      searchDebugLog('runSearch.branch', { runId, wantFolderFileSplit });
 
       let res;
       if (wantFolderFileSplit) {
         const base = searchText.trim();
-        const rFo = await doSearch((base + ' folder:').trim());
-        if (myGen !== searchGeneration) return;
-        const rFi = await doSearch((base + ' file:').trim());
-        if (myGen !== searchGeneration) return;
+        const rFo = await doSearchWithDirectionFallback((base + ' folder:').trim());
+        const rFi = await doSearchWithDirectionFallback((base + ' file:').trim());
+        searchDebugLog('runSearch.split.results', {
+          runId,
+          foldersOk: !!rFo.ok,
+          filesOk: !!rFi.ok,
+          folderRows: (rFo.rows || []).length,
+          fileRows: (rFi.rows || []).length,
+        });
         if (rFo.ok && rFi.ok) {
           lastRows = (rFo.rows || []).concat(rFi.rows || []);
-          applyClientSortMergeFoldersFiles();
+          searchDebugLog('runSearch.split.concat', { runId, concatRows: lastRows.length });
+          sortLastRowsForDisplay(true);
           if (lastRows.length > cap) lastRows = lastRows.slice(0, cap);
+          searchDebugLog('runSearch.split.final', {
+            runId,
+            finalRows: lastRows.length,
+            first: lastRows.slice(0, 3).map((r) => fullPathForRow(r)),
+            last: lastRows.slice(-3).map((r) => fullPathForRow(r)),
+          });
           status.textContent = lastRows.length ? lastRows.length + ' result(s)' : 'No results';
           await syncSelectionAfterSearch();
           renderTagBar();
           renderTable();
-          scheduleTagDiscovery();
+          kickTagDiscoveryAfterSearch();
           return;
         }
-        res = await doSearch(base);
+        res = await doSearchWithDirectionFallback(base);
       } else {
-        res = await doSearch(searchText);
+        res = await doSearchWithDirectionFallback(searchText);
       }
 
-      if (myGen !== searchGeneration) return;
       if (!res.ok) {
         lastRows = [];
+        searchDebugLog('runSearch.error', { runId, err: res.error || 'Search failed' });
         status.textContent = res.error || 'Search failed';
         await syncSelectionAfterSearch();
         renderTagBar();
         renderTable();
         return;
       }
-      lastRows = res.rows;
-      applyClientSortMergeFoldersFiles();
+      lastRows = Array.isArray(res.rows) ? res.rows : [];
+      sortLastRowsForDisplay(!!res.usedFallbackSort);
+      searchDebugLog('runSearch.single.final', {
+        runId,
+        usedFallbackSort: !!res.usedFallbackSort,
+        rows: lastRows.length,
+        first: lastRows.slice(0, 3).map((r) => fullPathForRow(r)),
+        last: lastRows.slice(-3).map((r) => fullPathForRow(r)),
+      });
       status.textContent = lastRows.length ? lastRows.length + ' result(s)' : 'No results';
       await syncSelectionAfterSearch();
       renderTagBar();
       renderTable();
-      scheduleTagDiscovery();
+      kickTagDiscoveryAfterSearch();
     }
 
     const resultsThead = document.getElementById('resultsTable').querySelector('thead');
@@ -5441,6 +5925,14 @@
     document.getElementById('query').addEventListener('input', () => {
       scheduleSearch();
       scheduleSearchHistoryCommit();
+    });
+    // Electron/Windows: sometimes the page keeps rendering but keyboard focus is stuck in window chrome.
+    // Re-focus webContents first so mouse clicks on query always place caret in the box.
+    document.getElementById('query').addEventListener('pointerdown', () => {
+      pullWebContentsKeyboardFocus();
+    });
+    document.getElementById('query').addEventListener('focus', () => {
+      pullWebContentsKeyboardFocus();
     });
     document.getElementById('query').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) void runSearchNow();
@@ -5508,7 +6000,7 @@
       }
       void syncSelectionAfterSearch();
       renderTable();
-      void runTagDiscoverySearch();
+      void runTagDiscoverySearch(false);
       commitSearchHistoryNow();
     });
 
@@ -5543,6 +6035,26 @@
       saveSettings();
       commitSearchHistoryNow();
       void runSearchNow();
+    });
+    document.getElementById('optSearchDebug').addEventListener('change', () => {
+      saveSettings();
+      if (isSearchDebugOn()) searchDebugLog('debug.enabled', { on: true });
+    });
+    document.getElementById('btnClearSearchDebug').addEventListener('click', () => {
+      searchDebugClear();
+      searchDebugLog('debug.cleared', {});
+    });
+    document.getElementById('btnCopySearchDebug').addEventListener('click', async () => {
+      const text = searchDebugLines.join('\n');
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        const status = document.getElementById('status');
+        if (status) status.textContent = 'Debug log copied.';
+      } catch (_) {
+        const status = document.getElementById('status');
+        if (status) status.textContent = 'Could not copy debug log.';
+      }
     });
 
     document.getElementById('chkSelectAllResults').addEventListener('change', (e) => {

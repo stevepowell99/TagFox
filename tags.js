@@ -1,6 +1,6 @@
-// Bracket tags in path segments: name[tag1,tag2].ext
+// TagFox tags: only name[(t1,t2)].ext — plain name[foo].ext is literal text, not tags.
 (function (global) {
-  /** One path segment: "file[a,b].pdf" -> pretty file.pdf, tags [a,b] */
+  /** "file[(a,b)].pdf" -> pretty file.pdf, tags [a,b]. "file[noise].pdf" -> pretty unchanged, tags []. */
   function parseSegmentTags(component) {
     if (!component) return { pretty: '', tags: [], raw: '' };
     const raw = component;
@@ -8,10 +8,14 @@
     if (lb < 0) return { pretty: component, tags: [], raw };
     const rb = component.indexOf(']', lb);
     if (rb < 0) return { pretty: component, tags: [], raw };
-    const before = component.slice(0, lb);
     const inner = component.slice(lb + 1, rb);
+    if (!(inner.startsWith('(') && inner.endsWith(')'))) {
+      return { pretty: component, tags: [], raw };
+    }
+    const before = component.slice(0, lb);
     const after = component.slice(rb + 1);
-    const tags = inner
+    const listBody = inner.slice(1, -1);
+    const tags = listBody
       .split(',')
       .map((t) => t.trim())
       .filter(Boolean);
@@ -54,13 +58,18 @@
     return false;
   }
 
-  /** Build new segment string with tag list (empty list drops bracket block). */
+  /** Only `[(…)]` is edited; other `[text]` is left alone (insert `[(tags)]` before .ext or at end). */
   function buildTaggedComponent(component, tags) {
     const lb = component.lastIndexOf('[');
     const rb = lb >= 0 ? component.indexOf(']', lb) : -1;
     let before;
     let afterBracket;
+    let isTagFoxBlock = false;
     if (lb >= 0 && rb > lb) {
+      const inner = component.slice(lb + 1, rb);
+      isTagFoxBlock = inner.startsWith('(') && inner.endsWith(')');
+    }
+    if (isTagFoxBlock) {
       before = component.slice(0, lb);
       afterBracket = component.slice(rb + 1);
     } else {
@@ -83,7 +92,7 @@
       seen.add(k);
       uniq.push(s);
     }
-    const block = uniq.length ? `[${uniq.join(',')}]` : '';
+    const block = uniq.length ? `[(${uniq.join(',')})]` : '';
     return before + block + afterBracket;
   }
 

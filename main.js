@@ -136,6 +136,42 @@ try {
   exit 1
 }`;
 
+/** Same-folder rename only — JSON: { "from": "full\\\\path\\\\old", "newLeaf": "newName" }. Drive/OneDrive friendly. */
+const PS1_RENAME_SAME_DIR = `param([Parameter(Mandatory)][string]$JsonPath)
+try {
+  $raw = Get-Content -LiteralPath $JsonPath -Raw -Encoding UTF8
+  $j = $raw | ConvertFrom-Json
+  $from = [string]$j.from
+  $newLeaf = [string]$j.newLeaf
+  if (-not $from -or $newLeaf -eq $null -or $newLeaf -eq '') { throw 'Missing from or newLeaf' }
+  Rename-Item -LiteralPath $from -NewName $newLeaf -ErrorAction Stop
+  exit 0
+} catch {
+  [Console]::Error.WriteLine($_.Exception.Message)
+  exit 1
+}`;
+
+/** Node fs.rename often EPERM on virtualized cloud folders; PowerShell uses the same shell stack as Explorer. */
+function renameSameDirViaPowershell(fromRaw, toRaw) {
+  if (process.platform !== 'win32') return 'Not Windows.';
+  const from = path.resolve(normalizeRenameOperand(String(fromRaw || '')));
+  const to = path.resolve(normalizeRenameOperand(String(toRaw || '')));
+  if (!from || !to) return 'Missing path.';
+  if (path.dirname(from).toLowerCase() !== path.dirname(to).toLowerCase()) return 'Paths must share the same parent folder.';
+  const newLeaf = path.basename(to);
+  const tmpJson = path.join(os.tmpdir(), `tagbrowser-rename-${process.pid}-${Date.now()}.json`);
+  try {
+    fssync.writeFileSync(tmpJson, JSON.stringify({ from, newLeaf }), 'utf8');
+    return runPowershellScriptFileWithArg(PS1_RENAME_SAME_DIR, tmpJson, 'Rename-Item');
+  } catch (e) {
+    return String(e.message || e);
+  } finally {
+    try {
+      fssync.unlinkSync(tmpJson);
+    } catch (_) {}
+  }
+}
+
 function cutPathsForExplorerPaste(pathsIn) {
   if (process.platform !== 'win32') return 'Only available on Windows.';
   const list = (Array.isArray(pathsIn) ? pathsIn : [pathsIn])
@@ -797,7 +833,7 @@ function everythingSearchUrl(baseUrl, searchText, count, options) {
   u.searchParams.set('size_column', '1');
   u.searchParams.set('date_modified_column', '1');
   u.searchParams.set('attributes_column', '1');
-  u.searchParams.set('count', String(Math.min(Math.max(Number(count) || 100, 1), 5000)));
+  u.searchParams.set('count', String(Math.min(Math.max(Number(count) || 100, 1), 50000)));
   u.searchParams.set('offset', String(Math.max(Number(o.offset) || 0, 0)));
 
   if (o.case) u.searchParams.set('i', '1'); // match case (voidtools key i)
@@ -893,7 +929,6 @@ ipcMain.handle('tag-prefs-write', async (_e, payload) => {
   }
 });
 
-// Everything HTTP request (runs in main so we avoid renderer CORS quirks)
 ipcMain.handle('everything-search', async (_event, payload) => {
   const { baseUrl, searchText, httpUser, httpPassword, count, options } = payload;
   const url = everythingSearchUrl(baseUrl, searchText, count, options);
@@ -1284,7 +1319,7 @@ async function renameAttemptWithBusyRetry(from, to) {
   return { ok: false, err: lastErr };
 }
 
-/** fs.rename with EBUSY retries; on ENOENT (Win) retry with \\?\ long paths. */
+/** fs.rename with busy retries; `\\?\` retry only after ENOENT (long paths), never after permission/sync errors. */
 async function renameWithBusyRetry(fromRaw, toRaw) {
   const fromN = normalizeRenameOperand(fromRaw);
   const toN = normalizeRenameOperand(toRaw);
@@ -1292,11 +1327,17 @@ async function renameWithBusyRetry(fromRaw, toRaw) {
   let r = await renameAttemptWithBusyRetry(fromN, toN);
   if (r.ok) return { ok: true };
 
-  // Long-path form sometimes succeeds where normal paths fail (virtual/cloud drivers, long names).
   const code = r.err && r.err.code;
-  const tryLong =
-    process.platform === 'win32' &&
-    (code === 'ENOENT' || code === 'EPERM' || code === 'EACCES' || code === 'EBUSY');
+  let psTail = '';
+  // Drive/OneDrive: Node's libuv rename often returns EPERM while Explorer/shell succeeds — try same-dir Rename-Item.
+  if (process.platform === 'win32' && (code === 'EPERM' || code === 'EACCES' || code === 'EBUSY')) {
+    const psErr = renameSameDirViaPowershell(fromN, toN);
+    if (!psErr) return { ok: true };
+    psTail = ' PowerShell Rename-Item: ' + psErr;
+  }
+
+  // Only ENOENT: `\\?\` can fix missing/not-found on MAX_PATH; avoid for EPERM/EACCES/EBUSY (sync locks).
+  const tryLong = process.platform === 'win32' && code === 'ENOENT';
   if (tryLong) {
     const a = toWinLongRenamePath(path.resolve(fromN));
     const b = toWinLongRenamePath(path.resolve(toN));
@@ -1306,7 +1347,7 @@ async function renameWithBusyRetry(fromRaw, toRaw) {
     }
   }
 
-  let msg = String(r.err.message || r.err);
+  let msg = String(r.err.message || r.err) + psTail;
   if (isRenameRetryableError(r.err)) {
     msg +=
       ' If it keeps failing: close Explorer windows in that folder, terminals with cwd there, and IDE workspace roots on that path; cloud drives often lock folders briefly.';
