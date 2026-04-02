@@ -41,6 +41,14 @@ Each row has **⋯** — a main-process context menu (`Menu`, `shell`, `clipboar
 
 **Copy** submenu: full path, parent path, **name only**, forward slashes, **file://** URL, and on Windows **Copy for Explorer paste** (`CF_HDROP`). **Paste** from Explorer into a scope folder is supported on Windows. Then **Open**, **Reveal in File Explorer**, **Search Google Drive for filename…**, **Open in Windows Terminal**, **Edit with Notepad** (files), **Delete** (confirmation; Windows Recycle Bin).
 
+## Drag and drop
+
+- **Normal drag** (no modifier): move or copy within TagFox — onto folder rows, the breadcrumb, or the **Shelf** strip (`Shift` for copy). This uses the in-page drag protocol only.
+- **External targets** (File Explorer, Word, etc. that need real files): on Windows/Electron you must use **Alt+drag** — hold **Alt** and start dragging from a result row or a **Shelf** chip. That uses the OS native file drag (`CF_HDROP`). A plain drag does **not** supply that, so external apps may see no usable file data.
+- **OS drag** (Shelf toolbar button): arms **one** upcoming row or chip drag to use the same native path as **Alt+drag**, so you can avoid holding Alt for that single gesture.
+
+Normal and native drags cannot be combined in one gesture: native drag blocks the UI thread until you drop, which is why in-app moves stay on the default path and Explorer-style drops need Alt or **OS drag**.
+
 ## Layout
 
 Drag the **splitter** between the main area and the **Viewer** (width saved). Drag column header **right edges** in the results table to resize columns (saved).

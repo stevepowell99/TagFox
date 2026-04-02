@@ -39,4 +39,8 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   setShellActionErrorHandler: (fn) => {
     onShellActionError = typeof fn === 'function' ? fn : null;
   },
+  /** Tag bar persistence in userData (read before first paint — sync IPC). */
+  tagPrefsReadSync: () => ipcRenderer.sendSync('tag-prefs-read-sync'),
+  tagPrefsWrite: (payload) => ipcRenderer.invoke('tag-prefs-write', payload),
+  tagPrefsWriteSync: (payload) => ipcRenderer.sendSync('tag-prefs-write-sync', payload),
 });

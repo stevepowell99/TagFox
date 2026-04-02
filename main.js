@@ -760,6 +760,18 @@ function getShelfDirResolved() {
   return path.resolve(d);
 }
 
+/** Tag bar + active filter — stored under userData so it survives different app folders (file:// localStorage is path-scoped). */
+function tagBrowserTagPrefsPath() {
+  return path.join(app.getPath('userData'), 'tagBrowser-tag-prefs.json');
+}
+
+function writeTagBrowserTagPrefs(payload) {
+  const p = tagBrowserTagPrefsPath();
+  const dir = path.dirname(p);
+  if (!fssync.existsSync(dir)) fssync.mkdirSync(dir, { recursive: true });
+  fssync.writeFileSync(p, JSON.stringify(payload), 'utf8');
+}
+
 function isPathUnderShelf(absPathRaw) {
   try {
     const shelf = trimAbsPathForCompare(canonicalPathForScopeCompare(getShelfDirResolved()));
@@ -852,6 +864,33 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+ipcMain.on('tag-prefs-read-sync', (event) => {
+  try {
+    const p = tagBrowserTagPrefsPath();
+    event.returnValue = fssync.existsSync(p) ? fssync.readFileSync(p, 'utf8') : '';
+  } catch {
+    event.returnValue = '';
+  }
+});
+
+ipcMain.on('tag-prefs-write-sync', (event, payload) => {
+  try {
+    writeTagBrowserTagPrefs(payload);
+    event.returnValue = true;
+  } catch {
+    event.returnValue = false;
+  }
+});
+
+ipcMain.handle('tag-prefs-write', async (_e, payload) => {
+  try {
+    writeTagBrowserTagPrefs(payload);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) };
+  }
 });
 
 // Everything HTTP request (runs in main so we avoid renderer CORS quirks)
@@ -1159,7 +1198,7 @@ ipcMain.handle('create-empty-folder', async (event, { parentFolder, nameSegment,
   return { ok: true, path: dest };
 });
 
-/** Native drag to Explorer / other apps; call from renderer dragstart (sync). */
+/** Native Explorer drag: startDrag is synchronous on Windows (blocks until drop) — renderer uses sendSync; keep for Alt+drag only so normal HTML5 DnD still runs. */
 /** Renderer lost keyboard to OS/chrome after some button clicks — pull focus back into the page. */
 ipcMain.on('tagbrowser-focus-web-contents', (event) => {
   event.sender.focus();
@@ -1170,15 +1209,27 @@ const START_DRAG_ICON = nativeImage.createFromDataURL(
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
 );
 
+/** Trailing \\ trimmed for HDROP; sendSync needs returnValue. (existsSync dropped — cloud placeholders / index lag.) */
 ipcMain.on('start-drag-files', (event, paths) => {
-  const list = Array.isArray(paths)
-    ? paths.map((p) => path.normalize(String(p || '').trim())).filter(Boolean)
-    : [];
-  if (!list.length) return;
   try {
-    event.sender.startDrag({ files: list, icon: START_DRAG_ICON });
+    const raw = Array.isArray(paths) ? paths : [];
+    const list = raw
+      .map((p) => normalizeRenameOperand(String(p || '').trim()))
+      .filter((s) => s && path.isAbsolute(s));
+    if (!list.length) {
+      console.warn('start-drag-files: no absolute paths', raw);
+      return;
+    }
+    /* Single-file API is more reliable on some Windows targets; `files` for multi. */
+    const payload =
+      list.length === 1
+        ? { file: list[0], icon: START_DRAG_ICON }
+        : { files: list, icon: START_DRAG_ICON };
+    event.sender.startDrag(payload);
   } catch (e) {
     console.error('startDrag', e);
+  } finally {
+    event.returnValue = null;
   }
 });
 

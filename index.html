@@ -173,6 +173,12 @@
       max-width: min(78vh, 920px);
     }
     #shelfDropZone.shelf-drag-over { outline: 2px dashed var(--bs-primary); outline-offset: 1px; }
+    /* Drop listeners on #appShelf — outside .app-shelf-rot transform (Chromium DnD breaks on rotated ancestors). */
+    #appShelf.shelf-aside-drag-over {
+      outline: 2px dashed var(--bs-primary);
+      outline-offset: -2px;
+      box-shadow: inset 0 0 0 1px rgba(var(--bs-primary-rgb), 0.35);
+    }
     .shelf-chip { cursor: grab; max-width: 10rem; overflow: hidden; text-overflow: ellipsis; }
     /* Empty-results hints: strong pulses at first, then die down to static (no glow) over 20s. */
     @keyframes empty-hint-btn-decay {
@@ -374,6 +380,12 @@
     }
     #resultsTable { table-layout: fixed; width: 100%; font-size: 0.875rem; }
     #resultsTable td { vertical-align: middle; }
+    /* Checkbox column: minimal horizontal padding so it doesn’t look oversized */
+    #resultsTable thead th:first-child,
+    #resultsTable tbody td:first-child {
+      padding-left: 0.35rem;
+      padding-right: 0.35rem;
+    }
     .col-path { max-width: 0; vertical-align: middle; }
     /* Show end of path; ellipsis eats the start (rtl wrapper + ltr path) */
     .path-ellip-start {
@@ -409,6 +421,9 @@
     .name-badges-title { min-width: 0; }
     .name-badges .badge { flex-shrink: 0; font-weight: normal; }
     .tag-pill-x { line-height: 1; padding: 0 !important; min-width: 1em; }
+    /* Hash-based tag colours on toolbar (inline background/border also set in JS). */
+    #tagBar .tag-bar-pill { font-weight: 500; border-style: solid; }
+    #tagBar .tag-bar-pill:focus-visible { box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.35); }
     #resultsTable thead th.sortable-th { cursor: pointer; user-select: none; white-space: nowrap; position: relative; }
     #resultsTable thead th.sortable-th:hover { background-color: var(--bs-secondary-bg); }
     #resultsTable thead th .th-resize {
@@ -423,8 +438,14 @@
       white-space: pre-wrap;
       word-break: break-word;
     }
-    /* Block double-clicks while a tag rename IPC is in flight */
-    #tagModal.tag-renaming .modal-content { pointer-events: none; opacity: 0.88; }
+    /* Block chip/quick/Add/Close while rename IPC runs — keep #tagModalInput typable (whole .modal-content none swallows clicks on the input in Chromium). */
+    #tagModal.tag-renaming .modal-header,
+    #tagModal.tag-renaming .modal-footer,
+    #tagModal.tag-renaming #tagModalPath,
+    #tagModal.tag-renaming #tagModalBulkHint,
+    #tagModal.tag-renaming #tagModalChips,
+    #tagModal.tag-renaming #tagModalQuickTags,
+    #tagModal.tag-renaming #tagModalAddBtn { pointer-events: none; opacity: 0.88; }
     /* RHS title + image preview */
     #propTitleBlock { border-bottom: 1px solid var(--bs-border-color); padding-bottom: 0.5rem; margin-bottom: 0.5rem; }
     #propDisplayName { line-height: 1.25; }
@@ -591,7 +612,7 @@
             >
             <div class="form-text text-muted small">
               Off — you still get both types when <strong>Both</strong> is selected next to the search bar; folders appear first, then files, which can look like “only folders” until you scroll.
-              On — folders and files share one order by the active column. With <strong>Both</strong>, the app runs two Everything queries (folder / file) so large lists still get both kinds up to the max-results cap.
+              On — folders and files share one order by the active column. With <strong>Both</strong>, the app runs two Everything queries (folder / file), merges, and sorts; those requests run one after another so large path-sorted lists stay complete.
             </div>
           </div>
         </div>
@@ -757,7 +778,7 @@
               style="min-height: 2rem"
             >
               <span id="shelfEmptyHint" class="text-muted"
-                >Drop rows/files (move; Shift+copy). Drag chips to rows or breadcrumb.</span
+                >Drop here (move; Shift+copy). Drag rows for in-app. “OS drag” or Alt+drag → Explorer files.</span
               >
               <div id="shelfChips" class="d-flex flex-wrap align-items-center gap-1"></div>
             </div>
@@ -767,21 +788,29 @@
             <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0" id="btnShelfOpen" title="Open Shelf folder in Explorer">
               Open
             </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary flex-shrink-0"
+              id="btnShelfOsDrag"
+              title="Arm the next row or Shelf-chip drag as a real OS file drag (Explorer). Normal drags stay in-app."
+            >
+              OS drag
+            </button>
           </div>
         </aside>
         <div id="resultsWrap" class="results-wrap card shadow-sm flex-grow-1 min-w-0 min-h-0" tabindex="-1" role="region" aria-label="Search results">
         <table class="table table-sm mb-0" id="resultsTable">
           <colgroup>
-            <col style="width:3%" />
+            <col style="width:2%" />
             <col style="width:14%" />
-            <col style="width:44.5%" />
+            <col style="width:45.5%" />
             <col style="width:7%" />
             <col style="width:9%" />
             <col style="width:22.5%" />
           </colgroup>
           <thead class="table-light sticky-top">
             <tr>
-              <th class="align-middle text-center py-1" title="Select rows; drag row from name/path/etc. (not buttons) — in-app or Explorer.">
+              <th class="align-middle text-center py-1" title="Select rows. Drag = in-app. Shelf “OS drag” or Alt+drag = Explorer files.">
                 <input type="checkbox" class="form-check-input m-0" id="chkSelectAllResults" autocomplete="off" aria-label="Select all in list" />
               </th>
               <th class="sortable-th" data-sort="name" title="Sort by name"><span class="sort-label">Name</span><span class="th-resize" data-resize-idx="1"></span></th>
@@ -1144,7 +1173,7 @@
               </ul>
               <h3 class="fs-6 text-secondary mb-2">Results, drag, shelf</h3>
               <ul class="mb-3 ps-3">
-                <li>Checkboxes on rows drive bulk actions. Drag rows onto a folder row or a breadcrumb segment to <strong>move</strong>; hold <kbd>Shift</kbd> while dropping to <strong>copy</strong>. The same drag works to Explorer or other apps. The vertical <strong>shelf</strong> follows the same rules.</li>
+                <li>Checkboxes on rows drive bulk actions. Drag rows onto a folder row or a breadcrumb segment to <strong>move</strong>; hold <kbd>Shift</kbd> while dropping to <strong>copy</strong>. <kbd>Alt</kbd>+drag starts an OS file drag (Explorer, etc.). The vertical <strong>shelf</strong> follows the same rules.</li>
                 <li>Column headers sort (sent to Everything). Use the header edges to resize columns.</li>
               </ul>
               <h3 class="fs-6 text-secondary mb-2">Viewer</h3>
@@ -1306,11 +1335,70 @@
     const TAG_STORE_MAX = 40;
     /** Persisted tags for filter buttons (key lowercased, display as first seen). */
     let tagStoreOrder = [];
+    let tagPrefsDiskTimer = null;
+
+    /** JSON snapshot for userData/tagBrowser-tag-prefs.json (stable; not tied to file:// path). */
+    function tagPrefsSnapshotForDisk() {
+      return {
+        v: 1,
+        savedAt: Date.now(),
+        tagStore: tagStoreOrder.slice(0, TAG_STORE_MAX),
+        activeFilter: [...activeTagKeys].sort(),
+      };
+    }
+
+    function scheduleTagPrefsDiskSync() {
+      if (!window.tagBrowser || typeof window.tagBrowser.tagPrefsWrite !== 'function') return;
+      if (tagPrefsDiskTimer) clearTimeout(tagPrefsDiskTimer);
+      tagPrefsDiskTimer = setTimeout(() => {
+        tagPrefsDiskTimer = null;
+        void window.tagBrowser.tagPrefsWrite(tagPrefsSnapshotForDisk());
+      }, 80);
+    }
+
+    /** After localStorage load: overlay tags from userData file if present (Electron); else seed file from LS. */
+    function applyTagPrefsFromUserDataFile() {
+      if (!window.tagBrowser || typeof window.tagBrowser.tagPrefsReadSync !== 'function') return;
+      const raw = window.tagBrowser.tagPrefsReadSync();
+      if (!raw || !String(raw).trim()) {
+        scheduleTagPrefsDiskSync();
+        return;
+      }
+      let snap;
+      try {
+        snap = JSON.parse(raw);
+      } catch {
+        return;
+      }
+      if (!snap || typeof snap !== 'object') return;
+      if (Array.isArray(snap.tagStore)) {
+        const next = [];
+        const seen = new Set();
+        for (const x of snap.tagStore) {
+          if (!x || typeof x !== 'object') continue;
+          let k = typeof x.key === 'string' && String(x.key).trim() ? String(x.key).trim().toLowerCase() : '';
+          const d0 = String(x.display || x.key || '').trim();
+          if (!k && d0) k = d0.toLowerCase();
+          if (!k) continue;
+          if (seen.has(k)) continue;
+          seen.add(k);
+          next.push({ key: k, display: d0 || k });
+        }
+        if (next.length > TAG_STORE_MAX) next.splice(TAG_STORE_MAX);
+        tagStoreOrder = next;
+        saveTagStore();
+      }
+      if (Array.isArray(snap.activeFilter)) {
+        activeTagKeys = new Set(snap.activeFilter.map((x) => String(x).trim().toLowerCase()).filter(Boolean));
+        persistActiveTagFilter();
+      }
+      scheduleTagPrefsDiskSync();
+    }
 
     let propsPanePx = 300;
     /** Percent widths for results table cols (sum 100) */
     /** Table col %: chk, name, path, size, modified, actions — path-weighted defaults. */
-    const COL_PERCENT_DEFAULT = [3, 14, 44.5, 7, 9, 22.5];
+    const COL_PERCENT_DEFAULT = [2, 14, 45.5, 7, 9, 22.5];
     /** Previous shipped 6-col default (wide merged grab+chk); upgrade to COL_PERCENT_DEFAULT once. */
     const COL_PERCENT_WIDE_CHK_DEFAULT = [5.5, 14, 42, 7, 9, 22.5];
     /** Old 7-col layout (grab+chk+…); merge grab+chk widths when migrating localStorage. */
@@ -1320,8 +1408,10 @@
     let lastRows = [];
     /** HTML5 drag payload for moving rows onto folder rows in the results table. */
     const TAG_BROWSER_PATHS_DRAG_TYPE = 'application/x-tagbrowser-paths';
-    /** Electron startDrag: dragover often has no Files/custom types until drop; keep paths for internal targets. */
+    /** startDrag path: OS sets no custom MIME on dragover; stash until dragend. Not used for normal HTML5 drags. */
     let tagBrowserActiveNativeDragPaths = null;
+    /** One-shot: next row/Shelf-chip drag uses OS file drag (Explorer); normal drag stays HTML5 for in-app. */
+    let tagBrowserNextOsFileDrag = false;
 
     function dataTransferHasTagBrowserPaths(dt) {
       try {
@@ -1360,12 +1450,21 @@
       }
       return [];
     }
+
+    /** In-app drag only: custom MIME (no text/uri-list — targets often treat file: URLs as links / “package”). */
+    function setDataTransferTagBrowserHtml5Paths(dt, paths) {
+      const arr = Array.isArray(paths) ? paths : [];
+      dt.setData(TAG_BROWSER_PATHS_DRAG_TYPE, JSON.stringify(arr));
+      dt.effectAllowed = 'copyMove';
+    }
     /** Paths-with-brackets in current scope only (ignores query box) — powers tag bar so you can search by tag you haven’t hit yet. */
     let tagDiscoveryRows = [];
     let tagDiscoveryDebounceTimer = null;
     let sortColumn = 'name';
     let sortAsc = true;
     let searchDebounceTimer = null;
+    /** Incremented on each runSearch — drop async completions so stale HTTP responses cannot overwrite a newer search. */
+    let searchGeneration = 0;
     /** Recent search UI state (query, scope, tag, toggles, sort) for Alt+← / Alt+→ and toolbar buttons. */
     const SEARCH_HIST_MAX = 50;
     const SEARCH_HIST_DEBOUNCE_MS = 450;
@@ -1658,12 +1757,35 @@
       return url;
     }
 
-    function tagColorCss(tag) {
+    /** Stable hue 0–359 from tag identity (lowercase so “Foo” matches “foo”). */
+    function tagHueFromKey(tagKeyOrDisplay) {
+      const s = String(tagKeyOrDisplay || '').trim().toLowerCase();
       let h = 0;
-      const s = String(tag);
       for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
-      const hue = Math.abs(h) % 360;
-      return 'hsl(' + hue + ', 38%, 88%)';
+      return Math.abs(h) % 360;
+    }
+
+    /** Light fill for row pills, breadcrumb badges, modal chips (same hash as tag bar). */
+    function tagColorCss(tagKeyOrDisplay) {
+      const hue = tagHueFromKey(tagKeyOrDisplay);
+      return 'hsl(' + hue + ', 42%, 86%)';
+    }
+
+    /** Tag bar toggle: active = strong fill + white text; inactive = light pill matching table badges. */
+    function tagBarPillInlineStyle(tagKey, active) {
+      const hue = tagHueFromKey(tagKey);
+      if (active) {
+        return {
+          backgroundColor: 'hsl(' + hue + ', 52%, 40%)',
+          color: '#fff',
+          borderColor: 'hsl(' + hue + ', 52%, 26%)',
+        };
+      }
+      return {
+        backgroundColor: 'hsl(' + hue + ', 42%, 86%)',
+        color: '#212529',
+        borderColor: 'hsl(' + hue + ', 38%, 58%)',
+      };
     }
 
     /** Remove one […] tag from path via rename (results / props; no modal). */
@@ -1868,9 +1990,10 @@
         let d = ((ev.clientX - startX) / tw) * 100;
         let a = startP[boundaryIdx] + d;
         let b = startP[boundaryIdx + 1] - d;
-        if (a < 3) {
-          b -= 3 - a;
-          a = 3;
+        const minLeft = boundaryIdx === 0 ? 2 : 3;
+        if (a < minLeft) {
+          b -= minLeft - a;
+          a = minLeft;
         }
         if (b < 3) {
           a -= 3 - b;
@@ -3812,77 +3935,93 @@
         const chip = document.createElement('span');
         chip.className = 'badge bg-secondary shelf-chip align-middle';
         chip.textContent = ent.name;
-        chip.title = ent.fullPath + (ent.isDirectory ? ' (folder)' : '');
+        chip.title =
+          ent.fullPath +
+          (ent.isDirectory ? ' (folder)' : '') +
+          ' — in-app drag; OS drag / Alt+drag → Explorer';
         chip.draggable = true;
         chip.addEventListener('dragstart', (e) => {
-          // Electron: native drag → Explorer + in-app (see tagBrowserActiveNativeDragPaths).
-          if (window.tagBrowser.startDragFiles) {
+          const wantOs = e.altKey || tagBrowserNextOsFileDrag;
+          if (window.tagBrowser.startDragFiles && wantOs) {
+            tagBrowserNextOsFileDrag = false;
             e.preventDefault();
             tagBrowserActiveNativeDragPaths = [ent.fullPath];
             window.tagBrowser.startDragFiles([ent.fullPath]);
             return;
           }
-          e.dataTransfer.setData(TAG_BROWSER_PATHS_DRAG_TYPE, JSON.stringify([ent.fullPath]));
-          e.dataTransfer.effectAllowed = 'copyMove';
+          if (tagBrowserNextOsFileDrag) tagBrowserNextOsFileDrag = false;
+          setDataTransferTagBrowserHtml5Paths(e.dataTransfer, [ent.fullPath]);
         });
         chips.appendChild(chip);
       }
     }
 
     function bindShelfDrop() {
-      const zone = document.getElementById('shelfDropZone');
-      if (!zone || zone.dataset.shelfBound === '1') return;
-      zone.dataset.shelfBound = '1';
+      const aside = document.getElementById('appShelf');
+      if (!aside || aside.dataset.shelfDropBound === '1') return;
+      aside.dataset.shelfDropBound = '1';
 
-      zone.addEventListener('dragover', (e) => {
-        if (!dataTransferHasTagBrowserOrFiles(e.dataTransfer)) return;
+      function shelfAllowsDt(dt) {
+        return dataTransferHasTagBrowserOrFiles(dt);
+      }
+
+      aside.addEventListener('dragenter', (e) => {
+        if (!shelfAllowsDt(e.dataTransfer)) return;
+        e.preventDefault();
+      });
+      aside.addEventListener('dragover', (e) => {
+        if (!shelfAllowsDt(e.dataTransfer)) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = e.shiftKey ? 'copy' : 'move';
-        zone.classList.add('shelf-drag-over');
+        aside.classList.add('shelf-aside-drag-over');
       });
-      zone.addEventListener('dragleave', (e) => {
-        if (!zone.contains(e.relatedTarget)) zone.classList.remove('shelf-drag-over');
+      aside.addEventListener('dragleave', (e) => {
+        if (!aside.contains(e.relatedTarget)) aside.classList.remove('shelf-aside-drag-over');
       });
-      zone.addEventListener('drop', async (e) => {
-        zone.classList.remove('shelf-drag-over');
+      aside.addEventListener('drop', (e) => {
+        aside.classList.remove('shelf-aside-drag-over');
         const paths = collectPathsForShelfDrop(e.dataTransfer);
         if (!paths.length) return;
         e.preventDefault();
         e.stopPropagation();
-        const st = await window.tagBrowser.shelfState();
-        if (!st.ok) {
-          document.getElementById('status').textContent = st.error || 'Shelf unavailable';
-          return;
-        }
-        const destKey = pathNormKey(st.path);
-        const filtered = paths.filter((p) => pathNormKey(p) !== destKey);
-        if (!filtered.length) return;
-
-        const status = document.getElementById('status');
         const copy = e.shiftKey;
-        let r;
-        if (copy) {
-          r = await window.tagBrowser.copyPathsIntoFolder({
-            sourcePaths: filtered,
-            destFolder: st.path,
-            rootPrefix: '',
-          });
-        } else {
-          if (!window.tagBrowser.movePathsIntoFolder) {
-            status.textContent = 'Move not available.';
-            return;
-          }
-          r = await window.tagBrowser.movePathsIntoFolder({
-            sourcePaths: filtered,
-            destFolder: st.path,
-            rootPrefix: '',
-          });
-        }
-        status.textContent = r.ok
-          ? copy
-            ? 'Copied to Shelf.'
-            : 'Moved to Shelf.'
-          : r.error || (copy ? 'Shelf copy failed' : 'Shelf move failed');
+        setTimeout(() => {
+          void (async () => {
+            const st = await window.tagBrowser.shelfState();
+            if (!st.ok) {
+              document.getElementById('status').textContent = st.error || 'Shelf unavailable';
+              return;
+            }
+            const destKey = pathNormKey(st.path);
+            const filtered = paths.filter((p) => pathNormKey(p) !== destKey);
+            if (!filtered.length) return;
+
+            const status = document.getElementById('status');
+            let r;
+            if (copy) {
+              r = await window.tagBrowser.copyPathsIntoFolder({
+                sourcePaths: filtered,
+                destFolder: st.path,
+                rootPrefix: '',
+              });
+            } else {
+              if (!window.tagBrowser.movePathsIntoFolder) {
+                status.textContent = 'Move not available.';
+                return;
+              }
+              r = await window.tagBrowser.movePathsIntoFolder({
+                sourcePaths: filtered,
+                destFolder: st.path,
+                rootPrefix: '',
+              });
+            }
+            status.textContent = r.ok
+              ? copy
+                ? 'Copied to Shelf.'
+                : 'Moved to Shelf.'
+              : r.error || (copy ? 'Shelf copy failed' : 'Shelf move failed');
+          })();
+        }, 40);
       });
     }
 
@@ -4079,11 +4218,19 @@
         const a = raw ? JSON.parse(raw) : [];
         tagStoreOrder = Array.isArray(a)
           ? a
-              .filter((x) => x && typeof x.key === 'string' && String(x.key).trim())
-              .map((x) => ({
-                key: String(x.key).trim().toLowerCase(),
-                display: String(x.display || x.key).trim() || String(x.key).trim(),
-              }))
+              .filter((x) => {
+                if (!x || typeof x !== 'object') return false;
+                if (typeof x.key === 'string' && String(x.key).trim()) return true;
+                return !!String(x.display || '').trim();
+              })
+              .map((x) => {
+                const hasKey = typeof x.key === 'string' && String(x.key).trim();
+                let k = hasKey ? String(x.key).trim().toLowerCase() : '';
+                const d = String(x.display || x.key || '').trim() || k;
+                if (!k && d) k = d.toLowerCase();
+                return { key: k, display: d || k };
+              })
+              .filter((x) => x.key)
           : [];
         if (tagStoreOrder.length > TAG_STORE_MAX) tagStoreOrder = tagStoreOrder.slice(0, TAG_STORE_MAX);
       } catch (_) {
@@ -4104,6 +4251,7 @@
       tagStoreOrder.unshift({ key: k, display: d });
       if (tagStoreOrder.length > TAG_STORE_MAX) tagStoreOrder = tagStoreOrder.slice(0, TAG_STORE_MAX);
       saveTagStore();
+      scheduleTagPrefsDiskSync();
     }
 
     /** Re-query Everything for main results + regex:\\[ tag discovery; kept tags stay in the bar. */
@@ -4123,6 +4271,7 @@
     function persistActiveTagFilter() {
       if (activeTagKeys.size) localStorage.setItem(LS.activeTagFilter, JSON.stringify([...activeTagKeys].sort()));
       else localStorage.removeItem(LS.activeTagFilter);
+      scheduleTagPrefsDiskSync();
     }
 
     /** Restore tag filter from JSON array or legacy plain string. */
@@ -4184,6 +4333,7 @@
       document.getElementById('optHideDotFolders').checked = localStorage.getItem(LS.hideDotFolders) === '1';
       document.getElementById('optSortFoldersWithFiles').checked = localStorage.getItem(LS.sortFoldersWithFiles) !== '0';
       activeTagKeys = activeTagKeysFromStored(localStorage.getItem(LS.activeTagFilter));
+      applyTagPrefsFromUserDataFile();
     }
 
     function saveSettings() {
@@ -4210,6 +4360,7 @@
         LS.sortFoldersWithFiles,
         document.getElementById('optSortFoldersWithFiles').checked ? '1' : '0'
       );
+      persistActiveTagFilter();
     }
 
     function searchOptionsFromUI() {
@@ -4554,7 +4705,9 @@
         const b = document.createElement('button');
         b.type = 'button';
         b.dataset.tagKey = key;
-        b.className = 'btn btn-sm ' + (activeTagKeys.has(key) ? 'btn-primary' : 'btn-outline-primary');
+        const on = activeTagKeys.has(key);
+        b.className = 'btn btn-sm tag-bar-pill';
+        Object.assign(b.style, tagBarPillInlineStyle(key, on));
         b.textContent = info.display + ' (' + info.count + ')';
         b.title =
           'Toggle this […] tag: multiple tags combine with AND. When Regex is off, each adds an Everything regex: clause. Any tag on turns Recursive. Count = matches in scope (up to max).';
@@ -4834,14 +4987,16 @@
             return;
           }
           const paths = pathsForRowDrag(fp);
-          if (window.tagBrowser.startDragFiles) {
+          const wantOs = e.altKey || tagBrowserNextOsFileDrag;
+          if (window.tagBrowser.startDragFiles && wantOs) {
+            tagBrowserNextOsFileDrag = false;
             e.preventDefault();
             tagBrowserActiveNativeDragPaths = paths.slice();
             window.tagBrowser.startDragFiles(paths);
             return;
           }
-          e.dataTransfer.setData(TAG_BROWSER_PATHS_DRAG_TYPE, JSON.stringify(paths));
-          e.dataTransfer.effectAllowed = 'copyMove';
+          if (tagBrowserNextOsFileDrag) tagBrowserNextOsFileDrag = false;
+          setDataTransferTagBrowserHtml5Paths(e.dataTransfer, paths);
         });
         tr.addEventListener('click', (e) => {
           if (e.target.closest('button')) return;
@@ -4857,6 +5012,16 @@
           }
           resultsShiftRangeAnchorIdx = null;
           setSelection(row, fp);
+        });
+        // File rows: double-click opens with default app (same as Enter). Folders: unchanged (single-click scopes).
+        tr.addEventListener('dblclick', (e) => {
+          if (e.target.closest('button')) return;
+          if (e.target.closest('input[type="checkbox"]')) return;
+          if (rowIsFolder(row)) return;
+          e.preventDefault();
+          resultsShiftRangeAnchorIdx = null;
+          setSelection(row, fp);
+          void keyboardActivateSelection();
         });
 
         tbody.appendChild(tr);
@@ -4893,7 +5058,9 @@
       wrap.innerHTML = '';
       modalTags.forEach((tag, idx) => {
         const span = document.createElement('span');
-        span.className = 'badge text-bg-secondary align-middle me-1';
+        span.className = 'badge align-middle me-1';
+        span.style.backgroundColor = tagColorCss(tag);
+        span.style.color = '#212529';
         span.appendChild(document.createTextNode(tag + ' '));
         const x = document.createElement('button');
         x.type = 'button';
@@ -5010,6 +5177,9 @@
       } finally {
         tagRenameBusy = false;
         document.getElementById('tagModal')?.classList.remove('tag-renaming');
+        if (document.getElementById('tagModal')?.classList.contains('show')) {
+          document.getElementById('tagModalInput')?.focus();
+        }
       }
     }
 
@@ -5049,6 +5219,7 @@
         if (!any) setTagApplyFeedback('Tag already on all items.');
         else {
           setTagApplyFeedback('Saved.');
+          rememberTag(low, tag);
           await refreshAfterTagsSaved(pathPairs);
           rebuildModalTagsUnion();
           renderModalChips();
@@ -5061,6 +5232,9 @@
       } finally {
         tagRenameBusy = false;
         document.getElementById('tagModal')?.classList.remove('tag-renaming');
+        if (document.getElementById('tagModal')?.classList.contains('show')) {
+          document.getElementById('tagModalInput')?.focus();
+        }
       }
     }
 
@@ -5092,6 +5266,8 @@
       if (!ok) {
         modalTags.pop();
         renderModalChips();
+      } else {
+        rememberTag(low, raw);
       }
     }
 
@@ -5157,10 +5333,14 @@
       } finally {
         tagRenameBusy = false;
         document.getElementById('tagModal')?.classList.remove('tag-renaming');
+        if (document.getElementById('tagModal')?.classList.contains('show')) {
+          document.getElementById('tagModalInput')?.focus();
+        }
       }
     }
 
     async function runSearch() {
+      const myGen = ++searchGeneration;
       const status = document.getElementById('status');
       saveSettings();
       const baseUrl = document.getElementById('baseUrl').value.trim() || 'http://127.0.0.1';
@@ -5186,18 +5366,18 @@
 
       status.textContent = 'Searching…';
 
-      // Everything returns folders first; one request can fill the whole cap with folders and never return files.
-      // Split query when we want both types interleaved: up to `count` folders + up to `count` files, merge/sort, then slice to cap.
+      // Without split, Everything lists all folders then all files — one type can fill the max-results cap.
+      // Interleave: folder: + file: queries, merge, client sort, slice. Running them in parallel caused short/partial path results on huge indexes; sequential keeps interleaving without that bug.
       const wantFolderFileSplit =
         ff === 'both' && document.getElementById('optSortFoldersWithFiles').checked;
 
       let res;
       if (wantFolderFileSplit) {
         const base = searchText.trim();
-        const [rFo, rFi] = await Promise.all([
-          doSearch((base + ' folder:').trim()),
-          doSearch((base + ' file:').trim()),
-        ]);
+        const rFo = await doSearch((base + ' folder:').trim());
+        if (myGen !== searchGeneration) return;
+        const rFi = await doSearch((base + ' file:').trim());
+        if (myGen !== searchGeneration) return;
         if (rFo.ok && rFi.ok) {
           lastRows = (rFo.rows || []).concat(rFi.rows || []);
           applyClientSortMergeFoldersFiles();
@@ -5214,6 +5394,7 @@
         res = await doSearch(searchText);
       }
 
+      if (myGen !== searchGeneration) return;
       if (!res.ok) {
         lastRows = [];
         status.textContent = res.error || 'Search failed';
@@ -6033,19 +6214,53 @@
       true
     );
 
-    document.addEventListener('dragend', () => {
-      document.querySelectorAll('#resultsTable tbody tr.results-drag-over').forEach((tr) =>
-        tr.classList.remove('results-drag-over')
-      );
-      document.getElementById('resultsWrap')?.classList.remove('results-scope-drop-over');
-      document.querySelectorAll('#breadcrumbBar [data-drop-path].results-drag-over').forEach((n) =>
-        n.classList.remove('results-drag-over')
-      );
-      const sz = document.getElementById('shelfDropZone');
-      if (sz) sz.classList.remove('shelf-drag-over');
-    });
+    /* Bootstrap 5.x: hide only tooltips on the dragged row/chip (global scan is slow and can upset DnD). */
+    document.addEventListener(
+      'dragstart',
+      (e) => {
+        const root =
+          e.target.closest?.('#resultsTable tbody tr') || e.target.closest?.('.shelf-chip');
+        if (!root) return;
+        root.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {
+          const tip = bootstrap.Tooltip.getInstance(el);
+          if (tip) tip.hide();
+        });
+      },
+      true
+    );
+
+    document.addEventListener(
+      'dragend',
+      () => {
+        document.querySelectorAll('#resultsTable tbody tr.results-drag-over').forEach((tr) =>
+          tr.classList.remove('results-drag-over')
+        );
+        document.getElementById('resultsWrap')?.classList.remove('results-scope-drop-over');
+        document.querySelectorAll('#breadcrumbBar [data-drop-path].results-drag-over').forEach((n) =>
+          n.classList.remove('results-drag-over')
+        );
+        document.getElementById('appShelf')?.classList.remove('shelf-aside-drag-over');
+        /* Defer clearing native paths: sync clear on dragend ran before dragover/drop (capture listener) and blocked drops. */
+        const pathsRef = tagBrowserActiveNativeDragPaths;
+        setTimeout(() => {
+          if (tagBrowserActiveNativeDragPaths === pathsRef) tagBrowserActiveNativeDragPaths = null;
+        }, 400);
+      },
+      true
+    );
 
     loadSettings();
+    window.addEventListener('beforeunload', () => {
+      if (tagPrefsDiskTimer) {
+        clearTimeout(tagPrefsDiskTimer);
+        tagPrefsDiskTimer = null;
+      }
+      if (window.tagBrowser && typeof window.tagBrowser.tagPrefsWriteSync === 'function') {
+        try {
+          window.tagBrowser.tagPrefsWriteSync(tagPrefsSnapshotForDisk());
+        } catch (_) {}
+      }
+    });
     {
       const rf = document.getElementById('rootFolder').value.trim();
       if (rf) rememberScopeFolderHistory(normalizeFolderPathForEverything(rf));
@@ -6056,9 +6271,6 @@
     document.getElementById('btnSearchHistFwd').addEventListener('click', () => void goSearchHistory(1));
     renderScopeBreadcrumb();
     bindResultsTableDragDrop();
-    document.addEventListener('dragend', () => {
-      tagBrowserActiveNativeDragPaths = null;
-    }, true);
     document.addEventListener(
       'pointerdown',
       (e) => {
@@ -6125,6 +6337,11 @@
       const st = await window.tagBrowser.shelfState();
       if (st.ok) void window.tagBrowser.openPath(st.path);
       else document.getElementById('status').textContent = st.error || 'Shelf unavailable';
+    });
+    document.getElementById('btnShelfOsDrag').addEventListener('click', () => {
+      tagBrowserNextOsFileDrag = true;
+      document.getElementById('status').textContent =
+        'Next row or Shelf-chip drag: OS files (Explorer). Drag without this stays in-app.';
     });
     document.getElementById('btnShelfClear').addEventListener('click', async () => {
       if (!confirm('Remove everything from Shelf?')) return;
