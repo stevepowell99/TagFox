@@ -767,9 +767,9 @@
         <div id="resultsWrap" class="results-wrap card shadow-sm flex-grow-1 min-w-0 min-h-0" tabindex="-1" role="region" aria-label="Search results">
         <table class="table table-sm mb-0" id="resultsTable">
           <colgroup>
-            <col style="width:5.5%" />
+            <col style="width:3%" />
             <col style="width:14%" />
-            <col style="width:42%" />
+            <col style="width:44.5%" />
             <col style="width:7%" />
             <col style="width:9%" />
             <col style="width:22.5%" />
@@ -1154,7 +1154,7 @@
               <h3 class="fs-6 text-secondary mb-2">Advanced options and toggles</h3>
               <ul class="mb-3 ps-3">
                 <li><strong>Settings</strong> (toolbar): Everything base URL, <strong>Scope folder</strong>, max hits, HTTP auth, <strong>Sort folders with files</strong>.</li>
-                <li>Under the search row: case, whole word, match path, regex, diacritics; <strong>Folders only</strong> / <strong>Files only</strong> (mutually exclusive).</li>
+                <li>Under the search row: case, whole word, match path, regex, diacritics; <strong>Folders only</strong> / <strong>Files only</strong> — off = both types; at most one of these can be on.</li>
                 <li><strong>Hide “dot” folders</strong> trims the list of paths that run through segments like <code>.git</code> or <code>.vscode</code> (see the checkbox tooltip—leaf dotfiles such as <code>.env</code> are not hidden).</li>
               </ul>
             </div>
@@ -1301,7 +1301,9 @@
     let propsPanePx = 300;
     /** Percent widths for results table cols (sum 100) */
     /** Table col %: chk, name, path, size, modified, actions — path-weighted defaults. */
-    const COL_PERCENT_DEFAULT = [5.5, 14, 42, 7, 9, 22.5];
+    const COL_PERCENT_DEFAULT = [3, 14, 44.5, 7, 9, 22.5];
+    /** Previous shipped 6-col default (wide merged grab+chk); upgrade to COL_PERCENT_DEFAULT once. */
+    const COL_PERCENT_WIDE_CHK_DEFAULT = [5.5, 14, 42, 7, 9, 22.5];
     /** Old 7-col layout (grab+chk+…); merge grab+chk widths when migrating localStorage. */
     const COL_PERCENT_LEGACY_SHIPPED_7 = [2.5, 3, 17, 26, 8, 11, 32.5];
     let colPercent = COL_PERCENT_DEFAULT.slice();
@@ -1826,8 +1828,13 @@
                 }
               }
             } else if (raw.length === 6) {
-              const sum = raw.reduce((a, b) => a + b, 0);
-              if (sum > 99 && sum < 101) colPercent = raw;
+              if (raw.every((n, i) => Math.abs(n - COL_PERCENT_WIDE_CHK_DEFAULT[i]) < 0.06)) {
+                colPercent = COL_PERCENT_DEFAULT.slice();
+                localStorage.setItem(LS.tableCols, JSON.stringify(colPercent));
+              } else {
+                const sum = raw.reduce((a, b) => a + b, 0);
+                if (sum > 99 && sum < 101) colPercent = raw;
+              }
             }
           }
         }
@@ -5839,6 +5846,8 @@
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
         e.preventDefault();
+        // Key repeat would cycle Folders ↔ Files and skip the "both off" (files+folders) step.
+        if (e.repeat) return;
         cycleFilesFoldersFilter();
         return;
       }
