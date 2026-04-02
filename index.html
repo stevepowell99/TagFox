@@ -433,7 +433,7 @@
     #tagBar .tag-bar-pill { font-weight: 500; border-style: solid; border-width: 1px; box-sizing: border-box; }
     /* Thicker border must not shrink the visible fill: with border-box, extra border eats the bg unless padding is reduced. */
     #tagBar .tag-bar-pill.tag-bar-pill-active {
-      border-width: 10px;
+      border-width: 7px;
       padding-top: calc(var(--bs-btn-padding-y) - 2px);
       padding-bottom: calc(var(--bs-btn-padding-y) - 2px);
       padding-left: calc(var(--bs-btn-padding-x) - 2px);
@@ -590,7 +590,11 @@
       color: var(--fav-search-fg);
       background-color: var(--fav-search-bg);
       border-color: var(--fav-search-border);
-      font-weight: 500;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      justify-content: center;
+      min-width: 1.75rem;
+      padding: 0.2rem 0.45rem;
     }
     #favSearchesBar .fav-search-chip-group > .fav-search-chip-go:hover {
       color: #27272a;
@@ -601,29 +605,6 @@
       color: #18181b;
       background-color: #e4e4e7;
       border-color: #a1a1aa;
-    }
-    #favSearchesBar .fav-search-chip-slot {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 1.15rem;
-      height: 1.15rem;
-      padding: 0 0.28rem;
-      font-size: 0.68rem;
-      font-weight: 600;
-      font-variant-numeric: tabular-nums;
-      line-height: 1;
-      color: #52525b;
-      background: #e4e4e7;
-      border: 1px solid #d4d4d8;
-      border-radius: 999px;
-      flex-shrink: 0;
-    }
-    #favSearchesBar .fav-search-chip-group .fav-search-tag-badge {
-      background-color: #e4e4e7 !important;
-      color: #3f3f46 !important;
-      border: 1px solid #d4d4d8;
-      font-weight: 500;
     }
     .tag-toolbar-row {
       position: relative;
@@ -1409,6 +1390,7 @@
               <h3 class="fs-6 text-secondary mt-3 mb-2">Search</h3>
               <ul class="mb-3 ps-3">
                 <li>The box under the breadcrumb filters what Everything returns. Results update as you type (debounced). <kbd>Enter</kbd> forces a refresh.</li>
+                <li><strong>Tip:</strong> In the search box, Everything treats <code>!foo</code> as “exclude things that match <code>foo</code>”.</li>
                 <li><strong>Clear</strong> beside the box only clears the query text.</li>
                 <li><strong>Recursive</strong> includes subfolders; off limits to immediate children of the <strong>current folder</strong>.</li>
                 <li>
@@ -1430,7 +1412,7 @@
                   The <strong>folder + heart</strong> button stores the present <strong>current folder</strong>. Chips recall it; <strong>×</strong> removes a favourite.
                 </li>
                 <li>
-                  The <strong>search + bookmark</strong> button stores the full snapshot used for <strong>search history</strong> (query, folder, tags, Recursive and other match toggles, Advanced options, sort). Numbered grey chips restore a search at once — no subfolder ▾ menus.
+                  The <strong>search + bookmark</strong> button stores the full snapshot used for <strong>search history</strong> (query, folder, tags, Recursive and other match toggles, Advanced options, sort). Saved searches show as <strong>numbers only</strong> on grey buttons; hover for details, or use <kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>9</kbd>. No subfolder ▾ menus.
                 </li>
                 <li>The <strong>clock</strong> menu lists folders you have scoped to recently (same as <kbd>Ctrl</kbd>+<kbd>L</kbd>).</li>
               </ul>
@@ -2749,22 +2731,6 @@
       return lines.join('\n');
     }
 
-    /** Short label on the pill (query or scope hint + tag badges). */
-    function favouriteSearchPillMainText(s) {
-      let q = (s.query != null ? String(s.query) : '').trim();
-      if (!q) {
-        const raw = (s.rootFolder != null ? String(s.rootFolder) : '').trim();
-        if (raw) {
-          const n = raw.replace(/[/\\]+$/, '');
-          const base = T.baseName(n) || n;
-          q = '· ' + (segmentPretty(base) || base);
-        } else q = '(no query)';
-      }
-      const max = 28;
-      if (q.length > max) return q.slice(0, max - 1) + '…';
-      return q;
-    }
-
     function renderFavSearchesBar() {
       const el = document.getElementById('favSearchesBar');
       if (!el) return;
@@ -2775,27 +2741,17 @@
         row.className = 'd-inline-flex align-items-stretch';
         const grp = document.createElement('div');
         grp.className = 'btn-group btn-group-sm fav-search-chip-group';
+        const n = idx + 1;
         const go = document.createElement('button');
         go.type = 'button';
-        go.className = 'btn btn-sm fav-search-chip-go d-inline-flex align-items-center flex-wrap gap-1 text-start';
-        const lead = document.createElement('span');
-        lead.className = 'd-inline-flex align-items-center gap-1';
-        const slotEl = document.createElement('span');
-        slotEl.className = 'fav-search-chip-slot';
-        slotEl.textContent = String(idx + 1);
-        slotEl.setAttribute('aria-hidden', 'true');
-        lead.appendChild(slotEl);
-        const nm = document.createElement('span');
-        nm.textContent = favouriteSearchPillMainText(s);
-        lead.appendChild(nm);
-        go.appendChild(lead);
-        const tagKeys = Array.isArray(s.activeTagKeys) ? [...s.activeTagKeys].filter(Boolean).sort() : [];
-        for (const tag of tagKeys) {
-          const b = document.createElement('span');
-          b.className = 'badge fav-search-tag-badge';
-          b.textContent = tag;
-          go.appendChild(b);
-        }
+        go.className = 'btn btn-sm fav-search-chip-go d-inline-flex align-items-center';
+        go.textContent = String(n);
+        const a11y =
+          'Restore saved search ' +
+          n +
+          (idx < 9 ? ' (keyboard Ctrl+' + n + ')' : '') +
+          '. Hover for query, scope, and filters.';
+        go.setAttribute('aria-label', a11y);
         go.title = favouriteSearchTooltip(s, idx);
         go.addEventListener('click', () => void applyFavouriteSearchState(s));
         grp.appendChild(go);
