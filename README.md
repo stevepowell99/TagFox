@@ -20,14 +20,12 @@ Small Electron UI for [Voidtools Everything](https://www.voidtools.com/) HTTP se
 
 ## Reloading during development
 
-TagFox does **not** ship with an application menu, so **Ctrl+Shift+R** (Chrome “hard reload”) is **not** wired up. Edits behave like this:
+**View** menu (menu bar: **Alt** on Windows, or the app menu on macOS): **Reload** (**Ctrl+R**), **Force reload** / hard reload (**Ctrl+Shift+R**), extra hard reload (**Ctrl+F5**, **Ctrl+Shift+F5**), **Toggle DevTools** (**Ctrl+Shift+I**). The menu bar is hidden by default on Windows; **Alt** toggles it.
 
 | Changed files | What to do |
 |---------------|------------|
-| `index.html`, `tags.js` (renderer) | Close the window or quit the app, then run **`npm start` again**. You can try **Ctrl+R** first; if the UI still looks stale, full restart is reliable. |
+| `index.html`, `styles.css`, `tags.js`, `renderer.js` (renderer) | **Ctrl+Shift+R**, **Ctrl+F5**, or **Ctrl+Shift+F5** to hard reload; if the UI still looks stale, **`npm start` again**. |
 | `preload.js`, `main.js` | **Quit the app** and **`npm start` again** (those load only at process start). |
-
-Optional: **Ctrl+Shift+I** opens DevTools. With the **Network** tab open, enable **Disable cache**, then **Ctrl+R** — that can help for renderer assets, but a full restart remains the simple default on Windows.
 
 ## Windows installer (electron-builder)
 

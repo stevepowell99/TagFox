@@ -927,12 +927,53 @@ function everythingSearchUrl(baseUrl, searchText, count, options) {
   return u.toString();
 }
 
+/** Windows/Linux: without an app menu, Electron does not bind reload / hard-reload accelerators. */
+function installApplicationMenu() {
+  const isMac = process.platform === 'darwin';
+  const hardReload = (_item, focusedWindow) => {
+    const w = focusedWindow || BrowserWindow.getFocusedWindow();
+    if (w && !w.isDestroyed()) w.webContents.reloadIgnoringCache();
+  };
+  const viewSubmenu /** @type {Electron.MenuItemConstructorOptions[]} */ = [
+    { role: 'reload' },
+    { role: 'forceReload' },
+    { label: 'Hard reload', accelerator: 'CmdOrCtrl+F5', click: hardReload },
+    // Same action; second accelerator (no extra row — hidden item still registers the shortcut).
+    { label: 'Hard reload', accelerator: 'CmdOrCtrl+Shift+F5', visible: false, click: hardReload },
+    { type: 'separator' },
+    { role: 'toggleDevTools' },
+  ];
+  const template /** @type {Electron.MenuItemConstructorOptions[]} */ = isMac
+    ? [
+        {
+          label: app.name,
+          submenu: [
+            { role: 'about' },
+            { type: 'separator' },
+            { role: 'services' },
+            { type: 'separator' },
+            { role: 'hide' },
+            { role: 'hideOthers' },
+            { type: 'separator' },
+            { role: 'quit' },
+          ],
+        },
+        { label: 'View', submenu: viewSubmenu },
+      ]
+    : [
+        { label: 'File', submenu: [{ role: 'quit' }] },
+        { label: 'View', submenu: viewSubmenu },
+      ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 function createWindow() {
   // `maximized` is not a BrowserWindow option — use maximize() so we get OS chrome, not fullscreen.
   const win = new BrowserWindow({
     width: 1480,
     height: 820,
     show: false,
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -970,6 +1011,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  installApplicationMenu();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -1047,6 +1089,123 @@ ipcMain.handle('show-in-folder', async (_event, fullPath) => {
   shell.showItemInFolder(fullPath);
 });
 
+/** ─── Google Drive “.gdoc / .gsheet / .gslides” shortcuts → child window (docs.google.com) ─── */
+let googleWorkspaceWin = null;
+
+function targetUrlFromGoogleDriveShortcut(fullPath, rawText) {
+  const text = String(rawText || '')
+    .replace(/^\uFEFF/, '')
+    .trim();
+  if (!text) return null;
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!data || typeof data !== 'object') return null;
+  const u = typeof data.url === 'string' ? data.url.trim() : '';
+  if (u && /^https?:\/\//i.test(u)) return u;
+  const id = typeof data.doc_id === 'string' ? data.doc_id.trim() : '';
+  if (!id) return null;
+  const ext = path.extname(String(fullPath || '')).toLowerCase();
+  if (ext === '.gsheet') return `https://docs.google.com/spreadsheets/d/${id}/edit`;
+  if (ext === '.gslides') return `https://docs.google.com/presentation/d/${id}/edit`;
+  return `https://docs.google.com/document/d/${id}/edit`;
+}
+
+function isAllowedGoogleWorkspaceUrl(u) {
+  try {
+    const { protocol, hostname } = new URL(String(u || '').trim());
+    if (protocol !== 'https:' && protocol !== 'http:') return false;
+    const h = hostname.toLowerCase();
+    return h === 'docs.google.com' || h === 'drive.google.com';
+  } catch {
+    return false;
+  }
+}
+
+function openGoogleWorkspaceEditorWindow(parentWin, targetUrl) {
+  const url = String(targetUrl || '').trim();
+  if (!isAllowedGoogleWorkspaceUrl(url)) return { ok: false, error: 'Not a Google Docs/Drive URL.' };
+  if (googleWorkspaceWin && !googleWorkspaceWin.isDestroyed()) {
+    void googleWorkspaceWin.loadURL(url);
+    googleWorkspaceWin.focus();
+    return { ok: true };
+  }
+  googleWorkspaceWin = new BrowserWindow({
+    parent: parentWin || undefined,
+    width: 1180,
+    height: 820,
+    show: false,
+    webPreferences: {
+      partition: 'persist:tagfox-google-workspace',
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  googleWorkspaceWin.setMenuBarVisibility(false);
+  googleWorkspaceWin.once('ready-to-show', () => {
+    if (googleWorkspaceWin && !googleWorkspaceWin.isDestroyed()) googleWorkspaceWin.show();
+  });
+  googleWorkspaceWin.on('closed', () => {
+    googleWorkspaceWin = null;
+  });
+  void googleWorkspaceWin.loadURL(url);
+  return { ok: true };
+}
+
+/** shell.openPath, but Google shortcuts open in the in-app workspace window when parseable. */
+async function openPathOrGoogleWorkspaceShortcut(wc, fullPathRaw) {
+  const p = normalizePathForShellOpen(fullPathRaw);
+  if (!p) return 'Empty path.';
+  const ext = path.extname(p).toLowerCase();
+  if (['.gdoc', '.gsheet', '.gslides'].includes(ext)) {
+    try {
+      const st = await fs.stat(p);
+      if (st.isFile() && st.size <= 65536) {
+        const raw = await fs.readFile(p, 'utf8');
+        const url = targetUrlFromGoogleDriveShortcut(p, raw);
+        if (url) {
+          const parent = BrowserWindow.fromWebContents(wc);
+          const r = openGoogleWorkspaceEditorWindow(parent, url);
+          if (r.ok) return null;
+          if (r && r.error) return r.error;
+        }
+      }
+    } catch (e) {
+      if (e && e.code === 'ENOENT') return 'File not found.';
+    }
+  }
+  return openPathWithFallback(fullPathRaw);
+}
+
+ipcMain.handle('google-workspace-shortcut-url', async (_event, { fullPath }) => {
+  const fp = path.normalize(String(fullPath || ''));
+  if (!fp) return { ok: false, error: 'Missing path' };
+  const ext = path.extname(fp).toLowerCase();
+  if (!['.gdoc', '.gsheet', '.gslides'].includes(ext)) {
+    return { ok: false, error: 'Not a Google Workspace shortcut.' };
+  }
+  try {
+    const st = await fs.stat(fp);
+    if (!st.isFile()) return { ok: false, error: 'Not a file' };
+    if (st.size > 65536) return { ok: false, error: 'Shortcut file unexpectedly large.' };
+    const raw = await fs.readFile(fp, 'utf8');
+    const url = targetUrlFromGoogleDriveShortcut(fp, raw);
+    if (!url) return { ok: false, error: 'Could not read Google link from shortcut.' };
+    return { ok: true, url };
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return { ok: false, error: 'File not found.' };
+    return { ok: false, error: String(e.message || e) };
+  }
+});
+
+ipcMain.handle('open-google-workspace-window', async (event, { url }) => {
+  const parent = BrowserWindow.fromWebContents(event.sender);
+  return openGoogleWorkspaceEditorWindow(parent, url);
+});
+
 /**
  * Shell item menu: standard Electron pattern (Menu + shell + clipboard in main).
  * Full Explorer.context menu would need native IContextMenu bindings — not in core Electron.
@@ -1068,6 +1227,8 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
   const terminalCwd = isDir ? fp : par;
   const baseName = path.basename(fp);
   const pathFwdSlashes = fpPlain.replace(/\\/g, '/');
+  const shortcutExt = path.extname(fp).toLowerCase();
+  const isGoogleShortcutFile = !isDir && ['.gdoc', '.gsheet', '.gslides'].includes(shortcutExt);
   let fileUrl = '';
   try {
     fileUrl = pathToFileURL(fpPlain).href;
@@ -1083,7 +1244,7 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
       resolve(v);
     };
 
-    /** Copy* entries at top level (was a submenu). */
+    /** Clipboard + path strings — shown under a “Copy” submenu. */
     const copyItems = [];
     if (process.platform === 'win32') {
       copyItems.push({
@@ -1117,12 +1278,12 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
 
     /** @type {Electron.MenuItemConstructorOptions[]} */
     const template = [
-      ...copyItems,
+      { label: 'Copy', submenu: copyItems },
       { type: 'separator' },
       {
-        label: 'Open',
+        label: isGoogleShortcutFile ? 'Open in app window' : 'Open',
         click: () => {
-          void openPathWithFallback(fp).then((err) => {
+          void openPathOrGoogleWorkspaceShortcut(event.sender, fp).then((err) => {
             if (err) event.sender.send('shell-action-error', err);
             done({ ok: true, action: 'open' });
           });
@@ -1526,11 +1687,12 @@ ipcMain.handle('read-text-file', async (_event, { fullPath }) => {
 ipcMain.handle('read-file-buffer', async (_event, { fullPath }) => {
   const fp = path.normalize(String(fullPath || ''));
   if (!fp) return { ok: false, error: 'Missing path' };
-  const maxBytes = 50 * 1024 * 1024;
+  // Office / PDF previews load the whole file into memory (base64 → renderer); big spreadsheets need headroom.
+  const maxBytes = 100 * 1024 * 1024;
   try {
     const st = await fs.stat(fp);
     if (st.isDirectory()) return { ok: false, error: 'Not a file' };
-    if (st.size > maxBytes) return { ok: false, error: 'File too large for preview (max 50 MB).' };
+    if (st.size > maxBytes) return { ok: false, error: 'File too large for preview (max 100 MB).' };
     const buf = await fs.readFile(fp);
     return { ok: true, base64: buf.toString('base64') };
   } catch (e) {
@@ -1561,96 +1723,4 @@ ipcMain.handle('ensure-readme', async (_event, { folderPath }) => {
     await fs.writeFile(readmePath, '', 'utf8');
     return { ok: true, path: readmePath, created: true };
   }
-});
-
-/** ─── Google Drive “.gdoc / .gsheet / .gslides” shortcuts → child window (docs.google.com) ─── */
-let googleWorkspaceWin = null;
-
-function targetUrlFromGoogleDriveShortcut(fullPath, rawText) {
-  const text = String(rawText || '')
-    .replace(/^\uFEFF/, '')
-    .trim();
-  if (!text) return null;
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    return null;
-  }
-  if (!data || typeof data !== 'object') return null;
-  const u = typeof data.url === 'string' ? data.url.trim() : '';
-  if (u && /^https?:\/\//i.test(u)) return u;
-  const id = typeof data.doc_id === 'string' ? data.doc_id.trim() : '';
-  if (!id) return null;
-  const ext = path.extname(String(fullPath || '')).toLowerCase();
-  if (ext === '.gsheet') return `https://docs.google.com/spreadsheets/d/${id}/edit`;
-  if (ext === '.gslides') return `https://docs.google.com/presentation/d/${id}/edit`;
-  return `https://docs.google.com/document/d/${id}/edit`;
-}
-
-function isAllowedGoogleWorkspaceUrl(u) {
-  try {
-    const { protocol, hostname } = new URL(String(u || '').trim());
-    if (protocol !== 'https:' && protocol !== 'http:') return false;
-    const h = hostname.toLowerCase();
-    return h === 'docs.google.com' || h === 'drive.google.com';
-  } catch {
-    return false;
-  }
-}
-
-function openGoogleWorkspaceEditorWindow(parentWin, targetUrl) {
-  const url = String(targetUrl || '').trim();
-  if (!isAllowedGoogleWorkspaceUrl(url)) return { ok: false, error: 'Not a Google Docs/Drive URL.' };
-  if (googleWorkspaceWin && !googleWorkspaceWin.isDestroyed()) {
-    void googleWorkspaceWin.loadURL(url);
-    googleWorkspaceWin.focus();
-    return { ok: true };
-  }
-  googleWorkspaceWin = new BrowserWindow({
-    parent: parentWin || undefined,
-    width: 1180,
-    height: 820,
-    show: false,
-    webPreferences: {
-      partition: 'persist:tagfox-google-workspace',
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-  googleWorkspaceWin.setMenuBarVisibility(false);
-  googleWorkspaceWin.once('ready-to-show', () => {
-    if (googleWorkspaceWin && !googleWorkspaceWin.isDestroyed()) googleWorkspaceWin.show();
-  });
-  googleWorkspaceWin.on('closed', () => {
-    googleWorkspaceWin = null;
-  });
-  void googleWorkspaceWin.loadURL(url);
-  return { ok: true };
-}
-
-ipcMain.handle('google-workspace-shortcut-url', async (_event, { fullPath }) => {
-  const fp = path.normalize(String(fullPath || ''));
-  if (!fp) return { ok: false, error: 'Missing path' };
-  const ext = path.extname(fp).toLowerCase();
-  if (!['.gdoc', '.gsheet', '.gslides'].includes(ext)) {
-    return { ok: false, error: 'Not a Google Workspace shortcut.' };
-  }
-  try {
-    const st = await fs.stat(fp);
-    if (!st.isFile()) return { ok: false, error: 'Not a file' };
-    if (st.size > 65536) return { ok: false, error: 'Shortcut file unexpectedly large.' };
-    const raw = await fs.readFile(fp, 'utf8');
-    const url = targetUrlFromGoogleDriveShortcut(fp, raw);
-    if (!url) return { ok: false, error: 'Could not read Google link from shortcut.' };
-    return { ok: true, url };
-  } catch (e) {
-    if (e && e.code === 'ENOENT') return { ok: false, error: 'File not found.' };
-    return { ok: false, error: String(e.message || e) };
-  }
-});
-
-ipcMain.handle('open-google-workspace-window', async (event, { url }) => {
-  const parent = BrowserWindow.fromWebContents(event.sender);
-  return openGoogleWorkspaceEditorWindow(parent, url);
 });

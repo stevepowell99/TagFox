@@ -15,7 +15,9 @@
       "main.js",
       "preload.js",
       "index.html",
+      "styles.css",
       "tags.js",
+      "renderer.js",
       "package.json"
     ],
     "win": {
