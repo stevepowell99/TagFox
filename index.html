@@ -93,6 +93,10 @@
       letter-spacing: 0.04em; color: #71717a; background: #fff; border-bottom-width: 2px;
     }
     #resultsTable tbody tr { border-bottom-color: #f0f0f3; }
+    /* Folder rows: soft tint from folder icon hue for tree readability. */
+    #resultsTable tbody tr.results-folder-row td {
+      background-color: rgba(217, 119, 6, 0.10);
+    }
     /* no hover highlight on result rows — selection highlight (table-active) is enough */
     #resultsTable tbody tr.table-active { box-shadow: inset 3px 0 0 var(--tb-accent); }
     .results-wrap.card {
@@ -125,7 +129,27 @@
     .app-shell { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
     .app-main { flex: 1; display: flex; min-height: 0; }
     .center-wrap { flex: 1; min-width: 12rem; display: flex; flex-direction: column; min-height: 0; }
-    .center-panel { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; padding: 0.5rem; }
+    .center-panel {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      padding: 0.5rem 0.5rem 0.5rem 1rem;
+    }
+    /* Fixed-width first column so favourite icons, clears, and tag icon stack; content after lines up. */
+    .tagfox-toolbar-lead {
+      flex: 0 0 2rem;
+      width: 2rem;
+      min-width: 2rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    /* Plain X clears (scope + query): tiny negative margin so their column lines up with the 2rem leads. */
+    .tagfox-toolbar-clear.btn {
+      margin-left: -0.125rem;
+    }
     .props-panel { flex-shrink: 0; min-height: 0; min-width: 200px; max-width: 90vw; }
     /* Draggable vertical panes */
     .split-v {
@@ -177,6 +201,9 @@
       gap: 0.5rem;
       white-space: nowrap;
       max-width: min(78vh, 920px);
+    }
+    #shelfDropZone {
+      min-width: 14rem; /* easy drop target along the rotated strip */
     }
     #shelfDropZone.shelf-drag-over { outline: 2px dashed var(--bs-primary); outline-offset: 1px; }
     /* Drop listeners on #appShelf — outside .app-shelf-rot transform (Chromium DnD breaks on rotated ancestors). */
@@ -666,19 +693,38 @@
     #propsAside.props-theater #pdfFrame {
       min-height: 72vh;
     }
+    /* Bootstrap tooltips for toolbar chrome (see refreshTagFoxChromeTooltips). */
+    .tooltip.tagfox-ui-tooltip .tooltip-inner {
+      text-align: left;
+      max-width: min(22rem, 92vw);
+    }
+    /* Appended to body — sit above toolbars/theater/modals so tips don’t wedge under stacked UI */
+    body > .tooltip {
+      z-index: 50000;
+      pointer-events: none;
+    }
   </style>
 </head>
 <body class="app-shell bg-body-secondary">
   <button type="button" id="propsTheaterBackdrop" class="props-theater-backdrop d-none" aria-label="Close expanded viewer" title="Close"></button>
   <!-- Top chrome -->
   <header class="border-bottom bg-body px-2 py-2 d-flex align-items-center justify-content-between flex-shrink-0">
-    <span class="h6 mb-0">🦊 TagFox</span>
     <div class="d-flex align-items-center gap-1">
       <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSearchHistBack" title="Previous search (Alt+←)" aria-label="Previous search state">←</button>
       <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSearchHistFwd" title="Next search (Alt+→)" aria-label="Next search state">→</button>
       <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#helpModal" title="Help (F1)" aria-label="Help">?</button>
-      <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#settingsPanel" aria-expanded="false">Settings</button>
+      <button
+        type="button"
+        class="btn btn-sm btn-outline-secondary"
+        data-bs-toggle="collapse"
+        data-bs-target="#settingsPanel"
+        aria-expanded="false"
+        title="Show or hide Settings (Everything URL, scope folder, max results, HTTP auth, list options)"
+      >
+        Settings
+      </button>
     </div>
+    <span class="h6 mb-0">🦊 TagFox</span>
   </header>
 
   <!-- Collapsible Everything + app settings -->
@@ -708,6 +754,12 @@
           <label class="form-label small mb-0" for="httpPassword">HTTP password</label>
           <input type="password" id="httpPassword" class="form-control form-control-sm" autocomplete="current-password" />
         </div>
+        <div class="col-12 d-flex align-items-center gap-2 flex-wrap border-top pt-2 mt-1">
+          <span class="text-muted small mb-0">Shelf</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="btnShelfOpen" title="Open the Shelf staging folder in File Explorer">
+            Open
+          </button>
+        </div>
         <div class="col-12">
           <label class="form-label small mb-1 d-block text-muted">Results list (when search shows files and folders)</label>
           <div class="form-check mb-0">
@@ -728,8 +780,8 @@
               <input class="form-check-input" type="checkbox" id="optSearchDebug" autocomplete="off" />
               <label class="form-check-label" for="optSearchDebug">Search debug logging</label>
             </div>
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnCopySearchDebug">Copy debug log</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnClearSearchDebug">Clear debug log</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnCopySearchDebug" title="Copy the search debug log to the clipboard">Copy debug log</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnClearSearchDebug" title="Clear the in-memory search debug log">Clear debug log</button>
           </div>
           <div class="form-text text-muted small">
             Captures request params, response counts, fallback decisions, and sort output for path/date troubleshooting.
@@ -752,7 +804,7 @@
     <!-- Search + results -->
     <div class="center-panel">
       <div class="mb-1 d-flex flex-wrap gap-1 align-items-center small tagfox-fav-toolbar-row">
-        <span class="text-muted flex-shrink-0 d-inline-flex align-items-center" title="Favourites" aria-label="Favourites">
+        <span class="tagfox-toolbar-lead text-muted" title="Favourites" aria-label="Favourites">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
             <path
               d="m8 2.748-.717-.737C5.6.281 2.514.878 1.4 3.053c-.523 1.023-.641 2.5.314 4.385.92 1.815 2.834 3.989 6.286 6.357 3.452-2.368 5.365-4.542 6.286-6.357 1.054-1.885.833-3.362.314-4.385C13.486.878 10.4.28 8.717 2.01L8 2.748zM8 15C-7.333 4.868 3.279-3.04 7.824 1.143c.06.055.119.112.176.171a3.12 3.12 0 0 1 .176-.17C12.72-3.042 23.333 4.867 8 15z"
@@ -762,26 +814,20 @@
         <div id="favFoldersBar" class="d-flex flex-wrap gap-1 align-items-center"></div>
         <button
           type="button"
-          class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center gap-1 px-2 fav-toolbar-save-pair"
-          style="height: 2rem; min-width: 2.75rem"
+          class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
+          style="width: 2rem; height: 2rem"
           id="btnSaveFavouriteFolder"
           title="Save current folder to favourites (Settings — Scope folder)"
           aria-label="Save current folder to favourites"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
-            <path
-              d="M1 3.5A1.5 1.5 0 0 1 2.5 2h2.764c.958 0 1.76.56 2.311 1.184C7.985 3.648 8.548 4 9 4h4.5A1.5 1.5 0 0 1 15 5.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12.5v-9z"
-            />
-          </svg>
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
-            <path
-              d="m8 2.748-.717-.737C5.6.281 2.514.878 1.4 3.053c-.523 1.023-.641 2.5.314 4.385.92 1.815 2.834 3.989 6.286 6.357 3.452-2.368 5.365-4.542 6.286-6.357 1.054-1.885.833-3.362.314-4.385C13.486.878 10.4.28 8.717 2.01L8 2.748zM8 15C-7.333 4.868 3.279-3.04 7.824 1.143c.06.055.119.112.176.171a3.12 3.12 0 0 1 .176-.17C12.72-3.042 23.333 4.867 8 15z"
-            />
+            <path d="M2 1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4.5a.5.5 0 0 0-.11-.326l-2.5-2.5A.5.5 0 0 0 12.5 1H2zm0 1h10.5l2 2H14v10H2V2z" />
+            <path d="M5.5 13a.5.5 0 0 1 .5-.5h4a.5.5 0 0 1 0 1h-4a.5.5 0 0 1-.5-.5zm-2-1a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1h-6a.5.5 0 0 1-.5-.5z" />
           </svg>
         </button>
       </div>
       <div class="mb-2 d-flex flex-wrap gap-1 align-items-center small tagfox-fav-toolbar-row">
-        <span class="text-muted flex-shrink-0 d-inline-flex align-items-center" title="Saved searches" aria-label="Saved searches">
+        <span class="tagfox-toolbar-lead text-muted" title="Saved searches" aria-label="Saved searches">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
             <path
               d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"
@@ -791,28 +837,22 @@
         <div id="favSearchesBar" class="d-flex flex-wrap gap-1 align-items-center"></div>
         <button
           type="button"
-          class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center gap-1 px-2 fav-toolbar-save-pair"
-          style="height: 2rem; min-width: 2.75rem"
+          class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
+          style="width: 2rem; height: 2rem"
           id="btnSaveFavouriteSearch"
           title="Save current search (query, scope, tags, filters, Advanced, sort — same snapshot as search history)"
           aria-label="Save current search to favourites"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
-            <path
-              d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"
-            />
-          </svg>
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
-            <path
-              d="M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v13.5a.5.5 0 0 1-.777.416L8 13.101 2.777 18.416A.5.5 0 0 1 2 18V2zm2-1a1 1 0 0 0-1 1v12.566l5.223-3.809a.5.5 0 0 1 .554 0L13 14.566V2a1 1 0 0 0-1-1H4z"
-            />
+            <path d="M2 1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4.5a.5.5 0 0 0-.11-.326l-2.5-2.5A.5.5 0 0 0 12.5 1H2zm0 1h10.5l2 2H14v10H2V2z" />
+            <path d="M5.5 13a.5.5 0 0 1 .5-.5h4a.5.5 0 0 1 0 1h-4a.5.5 0 0 1-.5-.5zm-2-1a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1h-6a.5.5 0 0 1-.5-.5z" />
           </svg>
         </button>
       </div>
 
       <!-- Clear scope (icon) + scope trail -->
-      <div class="d-flex flex-wrap align-items-center gap-2 mb-2 scope-breadcrumb-row">
-        <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0" style="width: 2rem; height: 2rem" id="btnClearScope" disabled title="Clear scope folder (Settings)" aria-label="Clear scope folder">
+      <div class="d-flex flex-wrap align-items-center gap-1 mb-2 scope-breadcrumb-row">
+        <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0 tagfox-toolbar-clear" style="width: 2rem; height: 2rem" id="btnClearScope" disabled title="Clear scope folder (Settings)" aria-label="Clear scope folder">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854Z"/></svg>
         </button>
         <div
@@ -838,27 +878,20 @@
       </div>
 
       <div class="mb-2 tag-toolbar-row d-flex flex-wrap gap-1 align-items-center small">
-        <div id="tagBar" class="d-flex flex-wrap gap-1 align-items-center flex-grow-1 min-w-0"></div>
-        <button
-          type="button"
-          class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
-          style="width: 2rem; height: 2rem"
-          id="btnRefreshTags"
-          title="Refresh tag counts: re-run main search and bracket-tag discovery (saved tags are kept)"
-          aria-label="Refresh tag list"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
-            <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z" />
-            <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.02 1.82a.25.25 0 0 1 0 .364L8.41 4.658A.25.25 0 0 1 8 4.466z" />
+        <span class="tagfox-toolbar-lead text-muted flex-shrink-0" title="Tags" aria-label="Tags">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M6 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm-1 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" />
+            <path d="M2 2v13.5A1.5 1.5 0 0 0 3.5 17h9a1.5 1.5 0 0 0 1.5-1.5V9.294l-6.5-6.5A1.5 1.5 0 0 0 6.5 2H2zm7.5 1 5.5 5.5v7.793l-6.5-6.5V3.5z" />
           </svg>
-        </button>
+        </span>
+        <div id="tagBar" class="d-flex flex-wrap gap-1 align-items-center flex-grow-1 min-w-0"></div>
       </div>
 
       <!-- Search + new Title[(TODO)].md -->
       <div class="d-flex align-items-center gap-2 mb-2 min-w-0" style="flex-wrap: wrap">
         <div id="queryInputGroup" class="input-group input-group-sm min-w-0" style="flex: 1 1 45%">
-          <button type="button" class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0 flex-shrink-0" style="width: 2rem" id="btnClearQuery" title="Clear search text" aria-label="Clear search text">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>
+          <button type="button" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0 flex-shrink-0 tagfox-toolbar-clear" style="width: 2rem; height: 2rem" id="btnClearQuery" title="Clear search text" aria-label="Clear search text">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854Z"/></svg>
           </button>
           <input type="text" id="query" class="form-control" placeholder="" autocomplete="off" />
         </div>
@@ -925,6 +958,42 @@
 
       <div class="d-flex align-items-center justify-content-between gap-2 mb-1">
         <div id="status" class="small text-muted min-w-0 flex-grow-1" aria-live="polite"></div>
+        <div class="dropdown">
+          <button
+            type="button"
+            class="btn btn-sm btn-link text-secondary flex-shrink-0 p-0 d-inline-flex align-items-center justify-content-center text-decoration-none status-bar-columns-btn"
+            style="width: 2.2rem; min-height: 1.5rem"
+            id="btnStatusColumns"
+            data-bs-toggle="dropdown"
+            data-bs-auto-close="outside"
+            title="Choose visible columns"
+            aria-label="Choose visible columns"
+          >
+            Cols
+          </button>
+          <div class="dropdown-menu dropdown-menu-end p-2 shadow-sm" id="statusColumnsMenu" style="min-width: 12rem">
+            <div class="form-check mb-1">
+              <input class="form-check-input" type="checkbox" id="colVisName" data-col-idx="1" checked />
+              <label class="form-check-label small" for="colVisName">Name</label>
+            </div>
+            <div class="form-check mb-1">
+              <input class="form-check-input" type="checkbox" id="colVisPath" data-col-idx="2" checked />
+              <label class="form-check-label small" for="colVisPath">Path</label>
+            </div>
+            <div class="form-check mb-1">
+              <input class="form-check-input" type="checkbox" id="colVisSize" data-col-idx="3" checked />
+              <label class="form-check-label small" for="colVisSize">Size</label>
+            </div>
+            <div class="form-check mb-1">
+              <input class="form-check-input" type="checkbox" id="colVisModified" data-col-idx="4" checked />
+              <label class="form-check-label small" for="colVisModified">Modified</label>
+            </div>
+            <div class="form-check mb-0">
+              <input class="form-check-input" type="checkbox" id="colVisActions" data-col-idx="5" checked />
+              <label class="form-check-label small" for="colVisActions">Actions</label>
+            </div>
+          </div>
+        </div>
         <button
           type="button"
           class="btn btn-sm btn-link text-secondary flex-shrink-0 p-0 d-inline-flex align-items-center justify-content-center text-decoration-none status-bar-scope-up"
@@ -945,30 +1014,30 @@
         <button type="button" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0 row-clip-btn" style="width:2rem;height:2rem" id="btnBulkClip" title="Copy selected for Explorer paste (Windows)" aria-label="Copy for Explorer paste">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>
         </button>
-        <button type="button" class="btn btn-sm btn-outline-danger" id="btnBulkTrash">Delete</button>
-        <button type="button" class="btn btn-sm btn-outline-primary" id="btnBulkTags">Tags</button>
-        <button type="button" class="btn btn-sm btn-link py-0" id="btnBulkClearSel">Clear selection</button>
+        <button type="button" class="btn btn-sm btn-outline-danger" id="btnBulkTrash" title="Move checked or highlighted rows to the Recycle Bin (confirmation)">
+          Delete
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="btnBulkTags" title="Edit bracket-tag names for all checked rows (or the highlighted row if none checked)">
+          Tags
+        </button>
+        <button type="button" class="btn btn-sm btn-link py-0" id="btnBulkClearSel" title="Uncheck every row in the results list">
+          Clear selection
+        </button>
       </div>
 
       <div class="results-with-shelf">
         <aside id="appShelf" class="app-shelf border-end bg-body small" aria-label="Shelf staging area">
           <div class="app-shelf-rot">
-            <span class="text-muted fw-semibold flex-shrink-0">Shelf</span>
             <div
               id="shelfDropZone"
-              class="d-inline-flex flex-wrap align-items-center gap-1 rounded border border-dashed px-2 py-1 bg-body-secondary min-w-0"
+              class="d-inline-flex flex-wrap align-items-center gap-1 rounded border border-dashed px-2 py-1 bg-body-secondary"
               style="min-height: 2rem"
             >
-              <span id="shelfEmptyHint" class="text-muted"
-                >Drop here (move; Shift+copy). Drag rows for in-app. “OS drag” or Alt+drag → Explorer files.</span
-              >
+              <span id="shelfEmptyHint" class="text-muted fw-semibold">Shelf</span>
               <div id="shelfChips" class="d-flex flex-wrap align-items-center gap-1"></div>
             </div>
             <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0" id="btnShelfClear" title="Delete everything in Shelf">
               Clear
-            </button>
-            <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0" id="btnShelfOpen" title="Open Shelf folder in Explorer">
-              Open
             </button>
             <button
               type="button"
@@ -1072,9 +1141,18 @@
           </div>
 
           <div id="mdFileBlock" class="d-none border-top pt-2">
-            <div class="fw-semibold mb-1">Markdown file</div>
+            <div class="fw-semibold mb-1">Markdown / text file</div>
             <textarea id="mdFileEditor" class="form-control form-control-sm font-monospace mb-1" rows="8"></textarea>
             <div id="mdFilePreview" class="prop-md-preview border rounded p-2 bg-light small mb-1"></div>
+          </div>
+
+          <div id="gdocWorkspaceBlock" class="d-none border-top pt-2">
+            <div class="fw-semibold mb-1" id="gdocWorkspaceTitle">Google Workspace</div>
+            <p class="small text-muted mb-1">
+              Opens the linked document in an app window (sign in once; session is saved). Use <strong>Open</strong> in the row menu for your default browser instead.
+            </p>
+            <p id="gdocWorkspaceUrl" class="small text-break font-monospace mb-2"></p>
+            <button type="button" id="btnOpenGoogleWorkspace" class="btn btn-sm btn-primary">Open in app window</button>
           </div>
 
           <div id="textFileBlock" class="d-none border-top pt-2">
@@ -1295,6 +1373,10 @@
                       <td>Check or uncheck the current row</td>
                     </tr>
                     <tr>
+                      <td><kbd>Ctrl</kbd>+<kbd>A</kbd> (<kbd>⌘</kbd>+<kbd>A</kbd> on Mac)</td>
+                      <td>Select all <strong>visible</strong> rows (same as the header checkbox). Not when typing in a field</td>
+                    </tr>
+                    <tr>
                       <td>Type letters</td>
                       <td>Jump to first row whose name starts with what you typed</td>
                     </tr>
@@ -1334,6 +1416,10 @@
                     <tr>
                       <td><kbd>Ctrl</kbd>+<kbd>F</kbd></td>
                       <td>Cycle result type: <strong>Both</strong> → <strong>Files only</strong> → <strong>Folders only</strong> → <strong>Both</strong></td>
+                    </tr>
+                    <tr>
+                      <td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd></td>
+                      <td>Copy the <strong>full path</strong> as text (highlighted row, or all <strong>checked</strong> rows — one path per line). Not when typing in a field</td>
                     </tr>
                     <tr>
                       <td><kbd>Ctrl</kbd>+<kbd>C</kbd> · <kbd>X</kbd> · <kbd>V</kbd></td>
@@ -1409,15 +1495,19 @@
               <h3 class="fs-6 text-secondary mb-2">Favourites and recent folders</h3>
               <ul class="mb-3 ps-3">
                 <li>
-                  The <strong>folder + heart</strong> button stores the present <strong>current folder</strong>. Chips recall it; <strong>×</strong> removes a favourite.
+                  The <strong>save (diskette)</strong> button after folder favourites stores the present <strong>current folder</strong>. Chips recall it; <strong>×</strong> removes a favourite.
                 </li>
                 <li>
-                  The <strong>search + bookmark</strong> button stores the full snapshot used for <strong>search history</strong> (query, folder, tags, Recursive and other match toggles, Advanced options, sort). Saved searches show as <strong>numbers only</strong> on grey buttons; hover for details, or use <kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>9</kbd>. No subfolder ▾ menus.
+                  The same <strong>save</strong> icon after saved searches stores the full snapshot used for <strong>search history</strong> (query, folder, tags, Recursive and other match toggles, Advanced options, sort). Saved searches show as <strong>numbers only</strong> on grey buttons; hover for details, or use <kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>9</kbd>. No subfolder ▾ menus.
                 </li>
                 <li>The <strong>clock</strong> menu lists folders you have scoped to recently (same as <kbd>Ctrl</kbd>+<kbd>L</kbd>).</li>
               </ul>
               <h3 class="fs-6 text-secondary mb-2">Tags</h3>
               <ul class="mb-3 ps-3">
+                <li>The tag toolbar row starts with a <strong>tag icon</strong> (no “Tags:” text).</li>
+                <li>
+                  <strong>↻</strong> at the end of the tag row re-runs the main Everything search, then runs a full-index <code>[(…)]</code> scan and <strong>prunes</strong> remembered / active tag filters that do not appear in that scan (ghost cleanup). Ordinary searches refresh discovery without pruning.
+                </li>
                 <li>Tags use <code>[(t1,t2)]</code> inside a segment, e.g. <code>Notes[(draft,review)].md</code>. Plain <code>[text]</code> without parentheses is not a tag. Bar filters are AND.</li>
               </ul>
               <h3 class="fs-6 text-secondary mb-2">Results, drag, shelf</h3>
@@ -1431,11 +1521,13 @@
               <h3 class="fs-6 text-secondary mb-2">Viewer</h3>
               <ul class="mb-3 ps-3">
                 <li>The right-hand <strong>Viewer</strong> shows details for the highlighted row. With no row selected, it can still show the <strong>current folder</strong> (e.g. <code>readme.md</code>).</li>
-                <li>It previews common types (PDF, images, Markdown, JSON/text, Office where supported). Very large files may not preview.</li>
+                <li><code>.md</code> and <code>.txt</code> open in the text editor with preview/autosave. <code>.gdoc</code> / <code>.gsheet</code> / <code>.gslides</code> shortcuts can open Google in a child window. It also previews PDF, images, JSON/text, and some Office types. Very large files may not preview.</li>
               </ul>
               <h3 class="fs-6 text-secondary mb-2">Row menu (⋯)</h3>
               <ul class="mb-3 ps-3">
-                <li>Copy paths, open or reveal on disk, search the cloud by filename, rename (<kbd>F2</kbd>), new folder, <strong>delete</strong> (confirmation), Notepad/Terminal where relevant. For many names, use <kbd>Ctrl</kbd>+<kbd>H</kbd> after checking rows.</li>
+                <li>
+                  The menu leads with <strong>copy</strong> actions (Explorer paste, full path, parent, name, forward slashes, <code>file://</code> when relevant), then <strong>Open</strong>, reveal, Drive search, etc. Same full-path text as <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> on checked or highlighted rows.
+                </li>
               </ul>
               <h3 class="fs-6 text-secondary mb-2">Advanced options and toggles</h3>
               <ul class="mb-3 ps-3">
@@ -1552,6 +1644,7 @@
       hideDotFolders: 'tagBrowserHideDotFolders',
       sortFoldersWithFiles: 'tagBrowserSortFoldersWithFiles',
       searchDebug: 'tagBrowserSearchDebug',
+      tableColVisible: 'tagBrowserTableColVisible',
       helpModalTab: 'tagBrowserHelpModalTab',
     };
 
@@ -1709,6 +1802,10 @@
     /** Old 7-col layout (grab+chk+…); merge grab+chk widths when migrating localStorage. */
     const COL_PERCENT_LEGACY_SHIPPED_7 = [2.5, 3, 17, 26, 8, 11, 32.5];
     let colPercent = COL_PERCENT_DEFAULT.slice();
+    /** Column visibility: chk, name, path, size, modified, actions. */
+    const COL_VISIBLE_DEFAULT = [true, true, true, true, true, true];
+    const COL_VISIBLE_TOGGLE_INDEXES = [1, 2, 3, 4, 5];
+    let colVisible = COL_VISIBLE_DEFAULT.slice();
 
     let lastRows = [];
     /** HTML5 drag payload for moving rows onto folder rows in the results table. */
@@ -1810,7 +1907,7 @@
     let resultsShiftRangeAnchorIdx = null;
     let activeReadmePath = null;
     let activeMdPath = null;
-    /** RHS .md editor: path the textarea belongs to + debounced write */
+    /** RHS .md / .txt editor: path the textarea belongs to + debounced write */
     let mdAutosaveTimer = null;
     let mdAutosaveTargetPath = null;
     const MD_AUTOSAVE_MS = 450;
@@ -1877,12 +1974,14 @@
       return PROPS_PREVIEW_DEBOUNCE_LIGHT_MS;
     }
 
-    /** Extensions shown as read-only text in the props panel (not .md — that uses the editor). */
+    /** Google Drive desktop shortcuts → Viewer opens linked URL in a child BrowserWindow. */
+    const GOOGLE_SHORTCUT_EXT = new Set(['gdoc', 'gsheet', 'gslides']);
+
+    /** Extensions shown as read-only text in the props panel (not .md / .txt — those use the editor). */
     const TEXT_PREVIEW_EXT = new Set([
       'json',
       'jsonl',
       'ndjson',
-      'txt',
       'text',
       'log',
       'csv',
@@ -2276,9 +2375,53 @@
       applyTableColWidths();
     }
 
+    function loadColVisibilityFromStorage() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(LS.tableColVisible) || 'null');
+        if (Array.isArray(parsed) && parsed.length === 6) {
+          const arr = parsed.map((v) => !!v);
+          if (COL_VISIBLE_TOGGLE_INDEXES.some((i) => arr[i])) colVisible = arr;
+        }
+      } catch (_) {}
+      syncColumnVisibilityMenu();
+      applyTableColumnVisibility();
+    }
+
+    function persistColVisibilityToStorage() {
+      localStorage.setItem(LS.tableColVisible, JSON.stringify(colVisible));
+    }
+
     function applyTableColWidths() {
       document.querySelectorAll('#resultsTable col').forEach((c, i) => {
         if (colPercent[i] != null) c.style.width = colPercent[i] + '%';
+      });
+    }
+
+    function syncColumnVisibilityMenu() {
+      const menu = document.getElementById('statusColumnsMenu');
+      if (!menu) return;
+      menu.querySelectorAll('input[data-col-idx]').forEach((el) => {
+        const idx = Number(el.getAttribute('data-col-idx'));
+        if (!Number.isInteger(idx)) return;
+        el.checked = colVisible[idx] !== false;
+      });
+    }
+
+    function applyTableColumnVisibility() {
+      const table = document.getElementById('resultsTable');
+      if (!table) return;
+      const cols = table.querySelectorAll('col');
+      const ths = table.querySelectorAll('thead th');
+      for (let i = 0; i < 6; i++) {
+        const vis = colVisible[i] !== false;
+        if (cols[i]) cols[i].style.display = vis ? '' : 'none';
+        if (ths[i]) ths[i].style.display = vis ? '' : 'none';
+      }
+      table.querySelectorAll('tbody tr').forEach((tr) => {
+        const cells = tr.children;
+        for (let i = 0; i < Math.min(6, cells.length); i++) {
+          cells[i].style.display = colVisible[i] !== false ? '' : 'none';
+        }
       });
     }
 
@@ -2450,24 +2593,75 @@
       return s.split('\\').filter(Boolean);
     }
 
-    /** How deep under scope folder (1 = child of scope folder). 0 if no scope or path outside scope. */
-    function pathDepthUnderScopeForTree(fp) {
-      const scope = currentScopeFolderPath();
-      if (!scope) return 0;
-      const sParts = pathSegmentsForTree(scope);
-      const pParts = pathSegmentsForTree(fp);
-      if (!pParts.length) return 0;
-      let k = 0;
-      while (
-        k < sParts.length &&
-        k < pParts.length &&
-        sParts[k].toLowerCase() === pParts[k].toLowerCase()
-      ) {
-        k++;
+    /** Path folder grouping is active only for recursive + path sort + mode includes folders. */
+    function shouldShowPathFolderGrouping() {
+      const recursive = !!document.getElementById('folderSearchRecursive')?.checked;
+      return recursive && sortColumn === 'path' && fileFolderFilterMode() !== 'files';
+    }
+
+    /** Parent-dir segments for one result row (files and folders both use parent of full path). */
+    function parentSegmentsForRow(row) {
+      const fp = fullPathForRow(row);
+      const parent = String(T.parentDir(fp) || '').trim().replace(/[/\\]+$/, '');
+      return pathSegmentsForTree(parent);
+    }
+
+    /** Common prefix length for two arrays (case-insensitive). */
+    function commonPrefixLen(a, b) {
+      const aa = Array.isArray(a) ? a : [];
+      const bb = Array.isArray(b) ? b : [];
+      let i = 0;
+      while (i < aa.length && i < bb.length && String(aa[i]).toLowerCase() === String(bb[i]).toLowerCase()) i++;
+      return i;
+    }
+
+    /** Longest common prefix length over a list of segment arrays. */
+    function segmentArraysCommonPrefixLen(arrs) {
+      if (!Array.isArray(arrs) || arrs.length === 0) return 0;
+      let n = arrs[0].length;
+      for (let i = 1; i < arrs.length; i++) {
+        n = Math.min(n, commonPrefixLen(arrs[0], arrs[i]));
+        if (n === 0) break;
       }
-      if (k < sParts.length) return 0;
-      const depth = pParts.length - k;
-      return depth > 0 ? depth : 0;
+      return n;
+    }
+
+    /** Expand visible rows with synthetic folder rows for path grouping (rows stay fully interactive). */
+    function buildPathGroupedDisplayRows(rows) {
+      const src = Array.isArray(rows) ? rows : [];
+      if (!shouldShowPathFolderGrouping() || !src.length) return src;
+      const parentSegsList = src.map((r) => parentSegmentsForRow(r));
+      const stripPrefixLen = segmentArraysCommonPrefixLen(parentSegsList);
+      const sameParentFolder = parentSegsList.every((parts) => parts.length === stripPrefixLen);
+      const out = [];
+      let prevRelParent = [];
+      for (let rowIdx = 0; rowIdx < src.length; rowIdx++) {
+        const row = src[rowIdx];
+        const absParts = parentSegsList[rowIdx];
+        const relParts = absParts.slice(stripPrefixLen);
+        if (sameParentFolder) {
+          if (rowIdx === 0 && absParts.length) {
+            const fullDir = absParts.join('\\');
+            const synthetic = syntheticFolderRow(fullDir);
+            synthetic.__pathTreeDepthUi = 1;
+            out.push(synthetic);
+          }
+          row.__pathTreeDepthUi = 2;
+        } else {
+          const l = commonPrefixLen(prevRelParent, relParts);
+          for (let j = l; j < relParts.length; j++) {
+            const absCount = stripPrefixLen + j + 1;
+            const fullDir = absParts.slice(0, absCount).join('\\');
+            const synthetic = syntheticFolderRow(fullDir);
+            synthetic.__pathTreeDepthUi = j + 1;
+            out.push(synthetic);
+          }
+          row.__pathTreeDepthUi = relParts.length + 1;
+        }
+        out.push(row);
+        prevRelParent = relParts;
+      }
+      return out;
     }
 
     /** Parent directory chain under scope (empty string = item sits in scope root). */
@@ -2598,6 +2792,7 @@
         li.appendChild(b);
         ul.appendChild(li);
       }
+      refreshTagFoxChromeTooltips(ul);
     }
 
     function renderFavFoldersBar() {
@@ -2671,6 +2866,7 @@
         row.appendChild(rm);
         el.appendChild(row);
       }
+      refreshTagFoxChromeTooltips(el);
     }
 
     function loadFavouriteSearches() {
@@ -2727,6 +2923,22 @@
       lines.push('Hide .folders: ' + !!s.optHideDotFolders);
       lines.push('Sort folders with files (Settings): ' + (s.optSortFoldersWithFiles !== false));
       lines.push('Sort: ' + (s.sortColumn || 'name') + ' ' + (s.sortAsc !== false ? 'asc' : 'desc'));
+      if (Array.isArray(s.colVisible) && s.colVisible.length === 6) {
+        const map = [
+          ['Name', s.colVisible[1]],
+          ['Path', s.colVisible[2]],
+          ['Size', s.colVisible[3]],
+          ['Modified', s.colVisible[4]],
+          ['Actions', s.colVisible[5]],
+        ];
+        lines.push(
+          'Columns: ' +
+            map
+              .filter((x) => !!x[1])
+              .map((x) => x[0])
+              .join(', ')
+        );
+      }
       lines.push('Advanced panel: ' + (s.advancedPanelOpen ? 'open' : 'closed'));
       return lines.join('\n');
     }
@@ -2774,6 +2986,7 @@
         row.appendChild(rm);
         el.appendChild(row);
       });
+      refreshTagFoxChromeTooltips(el);
     }
 
     /** Search box hint: last segment of scope (pretty title), or entire-index wording when scope empty. */
@@ -3331,6 +3544,7 @@
       el.appendChild(subWrap);
       syncStatusBarParentScopeButton();
       renderedScopeBreadcrumbKey = currentScopeBreadcrumbKey();
+      refreshTagFoxChromeTooltips(document.getElementById('breadcrumbBar'));
     }
 
     function mdPreviewHtml(md) {
@@ -3787,6 +4001,8 @@
       if (imageBlock) imageBlock.classList.add('d-none');
       const textFileBlock = document.getElementById('textFileBlock');
       if (textFileBlock) textFileBlock.classList.add('d-none');
+      const gdocWorkspaceBlock = document.getElementById('gdocWorkspaceBlock');
+      if (gdocWorkspaceBlock) gdocWorkspaceBlock.classList.add('d-none');
       document.getElementById('propsEmpty').classList.remove('d-none');
       document.getElementById('propsDetails').classList.add('d-none');
       activeReadmePath = null;
@@ -3816,7 +4032,7 @@
       return String(p || '').replace(/[/\\]+$/, '').toLowerCase();
     }
 
-    /** Before Recycle: drop MD/readme editor binding to trashed paths so a later flushMdFileAutosave() cannot recreate the file. */
+    /** Before Recycle: drop .md/.txt/readme editor binding to trashed paths so a later flushMdFileAutosave() cannot recreate the file. */
     function detachViewerEditorsForTrashedPaths(trashedPaths) {
       const ancestors = (trashedPaths || []).map((x) => propsPathKey(x)).filter(Boolean);
       if (!ancestors.length) return;
@@ -3838,7 +4054,7 @@
       if (hitsOpenPath(activeReadmePath)) activeReadmePath = null;
     }
 
-    /** After external delete (e.g. context menu): clear MD/readme targets if those files are gone (avoids flush recreating them). */
+    /** After external delete (e.g. context menu): clear .md/.txt/readme targets if those files are gone (avoids flush recreating them). */
     async function detachViewerEditorsIfOpenTargetsGone() {
       if (mdAutosaveTargetPath) {
         const r = await window.tagBrowser.readTextFile({ fullPath: mdAutosaveTargetPath });
@@ -3888,6 +4104,10 @@
         return;
       }
       let row = findRowByFullPath(selectedFullPath);
+      if (!row) {
+        const vis = listRowsForUi();
+        row = vis.find((r) => fullPathForRow(r) === selectedFullPath) || null;
+      }
       if (row) {
         selectedRow = row;
       } else {
@@ -3935,6 +4155,7 @@
       const officeBlock = document.getElementById('officeBlock');
       const imageBlock = document.getElementById('imageBlock');
       const textFileBlock = document.getElementById('textFileBlock');
+      const gdocWorkspaceBlock = document.getElementById('gdocWorkspaceBlock');
       const propPh = document.getElementById('propPlaceholder');
 
       const propPath = propsTargetPath();
@@ -3949,6 +4170,7 @@
       details.classList.remove('d-none');
       readmeBlock.classList.add('d-none');
       mdFileBlock.classList.add('d-none');
+      if (gdocWorkspaceBlock) gdocWorkspaceBlock.classList.add('d-none');
       if (pdfBlock) pdfBlock.classList.add('d-none');
       if (officeBlock) officeBlock.classList.add('d-none');
       if (imageBlock) imageBlock.classList.add('d-none');
@@ -3981,6 +4203,7 @@
       const officeBlock = document.getElementById('officeBlock');
       const imageBlock = document.getElementById('imageBlock');
       const textFileBlock = document.getElementById('textFileBlock');
+      const gdocWorkspaceBlock = document.getElementById('gdocWorkspaceBlock');
 
       if (!targetFp || !targetRow) return;
 
@@ -3990,7 +4213,7 @@
       const base = T.baseName(targetFp);
       const parsedTitle = T.parseSegmentTags(base);
       const ext = /\.[^.]+$/.test(base) ? base.slice(base.lastIndexOf('.') + 1).toLowerCase() : '';
-      const isMd = !rowIsFolder(targetRow) && /\.md$/i.test(base);
+      const isMdOrTxt = !rowIsFolder(targetRow) && /\.(md|txt)$/i.test(base);
 
       propPh.classList.add('d-none');
 
@@ -4001,21 +4224,54 @@
         return;
       }
 
-      if (isMd) {
+      if (isMdOrTxt) {
         activeReadmePath = null;
         document.getElementById('btnCreateReadme').classList.add('d-none');
         mdFileBlock.classList.remove('d-none');
-        activeMdPath = targetFp;
-        const r = await window.tagBrowser.readTextFile({ fullPath: targetFp });
-        if (!propsViewStill(targetFp)) return;
         const ed = document.getElementById('mdFileEditor');
-        if (r.ok) {
-          ed.value = r.text;
+        mdAutosaveTargetPath = null;
+        const rTxt = await window.tagBrowser.readTextFile({ fullPath: targetFp });
+        if (!propsViewStill(targetFp)) return;
+        if (rTxt.ok) {
+          ed.value = rTxt.text;
+          mdAutosaveTargetPath = targetFp;
         } else {
-          ed.value = '/* read error: ' + (r.error || '') + ' */';
+          ed.value = '/* read error: ' + (rTxt.error || '') + ' */';
         }
-        mdAutosaveTargetPath = targetFp;
+        activeMdPath = mdAutosaveTargetPath ? targetFp : null;
         document.getElementById('mdFilePreview').innerHTML = mdPreviewHtml(ed.value);
+        return;
+      }
+
+      if (GOOGLE_SHORTCUT_EXT.has(ext) && window.tagBrowser.googleWorkspaceShortcutUrl) {
+        activeReadmePath = null;
+        activeMdPath = null;
+        mdAutosaveTargetPath = null;
+        if (!gdocWorkspaceBlock) {
+          propPh.classList.remove('d-none');
+          propPh.textContent = 'Google shortcut UI missing.';
+          return;
+        }
+        gdocWorkspaceBlock.classList.remove('d-none');
+        const titleEl = document.getElementById('gdocWorkspaceTitle');
+        if (titleEl) {
+          titleEl.textContent =
+            ext === 'gsheet' ? 'Google Sheet' : ext === 'gslides' ? 'Google Slides' : 'Google Doc';
+        }
+        const urlEl = document.getElementById('gdocWorkspaceUrl');
+        const btnGw = document.getElementById('btnOpenGoogleWorkspace');
+        const rGw = await window.tagBrowser.googleWorkspaceShortcutUrl({ fullPath: targetFp });
+        if (!propsViewStill(targetFp)) return;
+        if (!urlEl || !btnGw) return;
+        if (!rGw.ok) {
+          urlEl.textContent = rGw.error || 'Could not read shortcut.';
+          btnGw.classList.add('d-none');
+          delete btnGw.dataset.url;
+        } else {
+          urlEl.textContent = rGw.url;
+          btnGw.classList.remove('d-none');
+          btnGw.dataset.url = rGw.url;
+        }
         return;
       }
 
@@ -4274,6 +4530,13 @@
       focusResultsWrapAfterListSelection();
     }
 
+    /** Selected row object when possible (works for synthetic rows not present in lastRows). */
+    function selectedRowForActions() {
+      if (!selectedFullPath) return null;
+      if (selectedRow && fullPathForRow(selectedRow) === selectedFullPath) return selectedRow;
+      return findRowByFullPath(selectedFullPath);
+    }
+
     /** Everything: quoted path prefix + query (recursive / in-tree search). */
     function buildEverythingSearch(rootFolder, userQuery) {
       const q = (userQuery || '').trim();
@@ -4521,7 +4784,7 @@
       const bulk = getCheckedPathsArr();
       if (bulk.length) return bulk;
       if (selectedFullPath) {
-        const row = findRowByFullPath(selectedFullPath);
+        const row = selectedRowForActions();
         if (row) return [fullPathForRow(row)];
       }
       return [];
@@ -4774,10 +5037,13 @@
       const hint = document.getElementById('shelfEmptyHint');
       if (!zone || !chips || !hint || !window.tagBrowser.shelfState) return;
       const r = await window.tagBrowser.shelfState();
-      zone.title = r.ok ? 'Staging folder: ' + r.path : String(r.error || '');
+      const shelfDropHelp =
+        'Drop here (move; Shift+copy). Drag rows for in-app. “OS drag” or Alt+drag → Explorer files.';
+      zone.title = r.ok ? shelfDropHelp + ' Staging folder: ' + r.path : shelfDropHelp + ' ' + String(r.error || 'Shelf unavailable');
       chips.innerHTML = '';
       if (!r.ok || !r.entries.length) {
         hint.classList.remove('d-none');
+        refreshTagFoxChromeTooltips(zone);
         return;
       }
       hint.classList.add('d-none');
@@ -4804,6 +5070,8 @@
         });
         chips.appendChild(chip);
       }
+      refreshTagFoxChromeTooltips(zone);
+      refreshTagFoxChromeTooltips(chips);
     }
 
     function bindShelfDrop() {
@@ -4905,7 +5173,7 @@
     function updateSelectAllCheckboxState() {
       const h = document.getElementById('chkSelectAllResults');
       if (!h) return;
-      const vis = filteredRows();
+      const vis = listRowsForUi();
       const n = vis.length;
       let c = 0;
       for (const row of vis) {
@@ -4913,6 +5181,19 @@
       }
       h.checked = n > 0 && c === n;
       h.indeterminate = c > 0 && c < n;
+    }
+
+    /** Check every row in the current visible list (same as header “select all”; respects tag / hide-.folder filters). */
+    function selectAllVisibleResultRows() {
+      resultsShiftRangeAnchorIdx = null;
+      const vis = listRowsForUi();
+      if (!vis.length) return;
+      for (const row of vis) {
+        toggleCheckPath(fullPathForRow(row), true);
+      }
+      updateSelectAllCheckboxState();
+      syncResultsRowCheckboxStates();
+      setSelection(vis[vis.length - 1], fullPathForRow(vis[vis.length - 1]));
     }
 
     /** Dedupe by path for merging main results + tag-discovery rows. */
@@ -5234,11 +5515,6 @@
       scheduleTagPrefsDiskSync();
     }
 
-    /** Re-query Everything; tag scan runs at end of runSearch. */
-    async function refreshTagsBarAndScan() {
-      await runSearchNow();
-    }
-
     function persistActiveTagFilter() {
       if (activeTagKeys.size) localStorage.setItem(LS.activeTagFilter, JSON.stringify([...activeTagKeys].sort()));
       else localStorage.removeItem(LS.activeTagFilter);
@@ -5437,6 +5713,7 @@
         optSortFoldersWithFiles: document.getElementById('optSortFoldersWithFiles').checked,
         sortColumn: sortColumn,
         sortAsc: sortAsc,
+        colVisible: colVisible.slice(),
         advancedPanelOpen: !!(advPanel && !advPanel.hasAttribute('hidden')),
       };
     }
@@ -5513,6 +5790,14 @@
       document.getElementById('optSortFoldersWithFiles').checked = s.optSortFoldersWithFiles !== false;
       sortColumn = s.sortColumn && ['name', 'path', 'date_modified', 'size'].includes(s.sortColumn) ? s.sortColumn : 'name';
       sortAsc = s.sortAsc !== false;
+      if (Array.isArray(s.colVisible) && s.colVisible.length === 6) {
+        const next = s.colVisible.map((v) => !!v);
+        if (COL_VISIBLE_TOGGLE_INDEXES.some((i) => next[i])) colVisible = next;
+      } else {
+        colVisible = COL_VISIBLE_DEFAULT.slice();
+      }
+      syncColumnVisibilityMenu();
+      applyTableColumnVisibility();
       const panel = document.getElementById('searchOptsAdvancedPanel');
       const advBtn = document.getElementById('btnToggleSearchOptsAdvanced');
       if (panel && advBtn) {
@@ -5684,6 +5969,11 @@
       });
     }
 
+    /** Visible rows in the table UI (includes synthetic folder rows in path-group mode). */
+    function listRowsForUi() {
+      return buildPathGroupedDisplayRows(filteredRows());
+    }
+
     function clearEmptyResultsPulseHintClasses() {
       document.getElementById('queryInputGroup')?.classList.remove('pulse-hint');
       document.getElementById('query')?.classList.remove('pulse-hint');
@@ -5748,7 +6038,7 @@
 
     /** After a successful Everything response with zero visible rows: replay decay pulse (fingerprint would otherwise skip). */
     function pulseEmptyResultHintsAfterSearchOk() {
-      if (filteredRows().length > 0) return;
+      if (listRowsForUi().length > 0) return;
       updateEmptyResultsPulseHints(true, { forceRestart: true });
     }
 
@@ -5765,27 +6055,23 @@
         '<path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.02 1.82a.25.25 0 0 1 0 .364L8.41 4.658A.25.25 0 0 1 8 4.466z"/>' +
         '</svg>';
       const svgClear15 =
-        '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">' +
-        '<path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>' +
-        '<path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/>' +
+        '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">' +
+        '<path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854Z"/>' +
         '</svg>';
-      const span = document.createElement('span');
-      span.className = 'text-muted me-1';
-      span.textContent = 'Tags:';
-      el.appendChild(span);
       const appendRescanAllTags = () => {
         const rescan = document.createElement('button');
         rescan.type = 'button';
         rescan.className = tagBarIconBtnClass;
         rescan.style.cssText = tagBarIconBtnSize;
         rescan.innerHTML = svgRescan15;
-        rescan.setAttribute('aria-label', 'Rescan tags');
+        rescan.setAttribute('aria-label', 'Refresh search and rescan all tags');
         rescan.title =
-          'Re-run full-index [(…)] scan and drop remembered/active tags missing from this scan. Each search also refreshes the scan.';
+          'Re-run the main Everything search, then a full-index [(…)] bracket-tag scan. Prunes remembered or active tag filters that do not appear in that scan. (Each ordinary search also refreshes tag discovery, without pruning.)';
         rescan.addEventListener('click', () => {
           void (async () => {
             rescan.disabled = true;
             try {
+              await runSearchNow();
               await runTagDiscoverySearch(true);
               refreshTagModalDatalist();
             } finally {
@@ -5832,7 +6118,7 @@
           'No bracket tags in your list yet. Add one from the tags dialog, toggle a filter, or use Rescan.';
         el.appendChild(s);
         appendRescanAllTags();
-        updateEmptyResultsPulseHints(filteredRows().length === 0);
+        updateEmptyResultsPulseHints(listRowsForUi().length === 0);
         return;
       }
       function appendTagFilterCombineToggle(barEl) {
@@ -5946,13 +6232,98 @@
             persistActiveTagFilter();
             await runSearchNow();
             commitSearchHistoryNow();
-            updateEmptyResultsPulseHints(filteredRows().length === 0);
+            updateEmptyResultsPulseHints(listRowsForUi().length === 0);
           })();
         });
         el.appendChild(clearTags);
       }
       appendRescanAllTags();
-      updateEmptyResultsPulseHints(filteredRows().length === 0);
+      updateEmptyResultsPulseHints(listRowsForUi().length === 0);
+      refreshTagFoxChromeTooltips(document.getElementById('tagBar'));
+    }
+
+    /** Hide every Bootstrap tooltip (optionally keep one trigger). Optional hard DOM purge removes every body tooltip node. */
+    function tagfoxHideAllBootstrapTooltips(exceptTrigger, hardDomPurge = false) {
+      if (!window.bootstrap || !bootstrap.Tooltip) return;
+      document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {
+        if (exceptTrigger && el === exceptTrigger) return;
+        const inst = bootstrap.Tooltip.getInstance(el);
+        if (inst) inst.hide();
+      });
+      requestAnimationFrame(() => {
+        document.querySelectorAll('body > .tooltip').forEach((tipEl) => {
+          if (hardDomPurge || !tipEl.classList.contains('show')) tipEl.remove();
+        });
+      });
+    }
+
+    /** Move tooltip text off native title to prevent Chromium's sticky default tooltip bubble. */
+    function normalizeTooltipTitleAttr(el) {
+      const rawTitle = el.getAttribute('title');
+      if (rawTitle && String(rawTitle).trim()) {
+        el.setAttribute('data-bs-title', rawTitle);
+        el.removeAttribute('title');
+        return rawTitle;
+      }
+      return el.getAttribute('data-bs-title') || el.getAttribute('data-bs-original-title') || '';
+    }
+
+    /** One-time: solo tooltip, dismiss on outside click / scroll / blur / modal; peel stuck DOM. */
+    function installTagFoxTooltipGuardsOnce() {
+      if (installTagFoxTooltipGuardsOnce._ok) return;
+      installTagFoxTooltipGuardsOnce._ok = true;
+      document.body.addEventListener(
+        'show.bs.tooltip',
+        (e) => {
+          tagfoxHideAllBootstrapTooltips(e.target, false);
+        },
+        true
+      );
+      document.body.addEventListener(
+        'hidden.bs.tooltip',
+        () => {
+          requestAnimationFrame(() => {
+            document.querySelectorAll('body > .tooltip:not(.show)').forEach((tipEl) => tipEl.remove());
+          });
+        },
+        true
+      );
+      document.addEventListener(
+        'pointerdown',
+        (e) => {
+          if (e.target.closest?.('[data-bs-toggle="tooltip"]')) return;
+          if (e.target.closest?.('.tooltip')) return;
+          tagfoxHideAllBootstrapTooltips(null, true);
+        },
+        true
+      );
+      document.addEventListener('scroll', () => tagfoxHideAllBootstrapTooltips(null, true), true);
+      window.addEventListener('blur', () => tagfoxHideAllBootstrapTooltips(null, true));
+      document.addEventListener('dragstart', () => tagfoxHideAllBootstrapTooltips(null, true), true);
+    }
+
+    /** Bootstrap tooltips for UI chrome; skips results grid and non-tooltip Bootstrap widgets. */
+    function refreshTagFoxChromeTooltips(root) {
+      if (!root || !window.bootstrap || !bootstrap.Tooltip) return;
+      root.querySelectorAll('[title], [data-bs-title]').forEach((el) => {
+        if (el.closest('#resultsTable')) return;
+        const dbt = el.getAttribute('data-bs-toggle');
+        if (dbt && dbt !== 'tooltip') return;
+        const t = normalizeTooltipTitleAttr(el);
+        if (!t || !String(t).trim()) return;
+        if (el.tagName === 'TEXTAREA') return;
+        try {
+          const inst = bootstrap.Tooltip.getInstance(el);
+          if (inst) inst.dispose();
+          el.setAttribute('data-bs-toggle', 'tooltip');
+          new bootstrap.Tooltip(el, {
+            container: 'body',
+            customClass: 'tagfox-ui-tooltip',
+            trigger: 'hover',
+            animation: false,
+          });
+        } catch (_) {}
+      });
     }
 
     /** Bootstrap JS tooltip for one table cell (full plain-text; container body avoids clipping). */
@@ -5960,7 +6331,8 @@
       td.setAttribute('data-bs-toggle', 'tooltip');
       td.setAttribute('data-bs-placement', 'top');
       td.setAttribute('data-bs-custom-class', 'results-cell-tooltip');
-      td.title = String(text ?? '');
+      td.setAttribute('data-bs-title', String(text ?? ''));
+      td.removeAttribute('title');
     }
 
     /** Keyboard ↑/↓: move highlight only — avoids full renderTable() (O(n) per key). */
@@ -5996,19 +6368,20 @@
       tbody.innerHTML = '';
       pruneCheckedPaths();
       const rows = filteredRows();
+      const rowsForDisplay = buildPathGroupedDisplayRows(rows);
       const suffix = activeTagKeys.size ? ' (filtered)' : '';
       const rawN = lastRows.length;
       // Hide .folders / tag filter shrink the list after Everything’s cap — show both so path ▲/▼ “missing rows” isn’t mistaken for truncation at 10.
-      const visN = rows.length;
+      const visN = rowsForDisplay.length;
       if (!visN) status.textContent = 'No rows' + suffix;
       else if (visN === rawN) status.textContent = visN + ' row(s)' + suffix;
       else status.textContent = visN + ' / ' + rawN + ' row(s)' + suffix;
-      const showPathTreeGutter =
-        document.getElementById('folderSearchRecursive').checked && sortColumn === 'path';
-
-      for (const row of rows) {
+      const showPathFolderGrouping = shouldShowPathFolderGrouping();
+      const showPathTreeGutter = document.getElementById('folderSearchRecursive').checked && sortColumn === 'path';
+      for (const row of rowsForDisplay) {
         const fp = fullPathForRow(row);
         const tr = document.createElement('tr');
+        if (rowIsFolder(row)) tr.classList.add('results-folder-row');
 
         const tdCb = document.createElement('td');
         tdCb.className = 'align-middle text-center';
@@ -6035,7 +6408,7 @@
         {
           const nameInner = renderNameCell(row, parsedName);
           if (showPathTreeGutter) {
-            const dep = pathDepthUnderScopeForTree(fp);
+            const dep = showPathFolderGrouping ? Number(row.__pathTreeDepthUi) || 1 : parentSegmentsForRow(row).length;
             if (dep > 1) {
               const outer = document.createElement('div');
               outer.className = 'd-flex align-items-center min-w-0';
@@ -6160,7 +6533,7 @@
         bindCellTooltip(tdDate, dateStr);
         bindCellTooltip(
           tdAct,
-          'Parent folder — set scope to containing folder\nOpen — file: default app; folder: show in Explorer\nClipboard — Explorer paste (Windows)\n⋯ — copy path, Drive search, delete, …\nTags — tag editor'
+          'Parent folder — set scope to containing folder\nOpen — file: default app; folder: show in Explorer\nClipboard — Explorer paste (Windows)\n⋯ — copy actions + Drive search, delete, …\nTags — tag editor'
         );
 
         tr.appendChild(tdCb);
@@ -6216,11 +6589,12 @@
         tbody.appendChild(tr);
       }
       tbody.querySelectorAll('td[data-bs-toggle="tooltip"]').forEach((td) => {
-        new bootstrap.Tooltip(td, { container: 'body' });
+        new bootstrap.Tooltip(td, { container: 'body', trigger: 'hover', animation: false });
       });
+      applyTableColumnVisibility();
       syncResultsSelectionHighlight();
       updateSelectAllCheckboxState();
-      updateEmptyResultsPulseHints(rows.length === 0);
+      updateEmptyResultsPulseHints(rowsForDisplay.length === 0);
     }
 
     function rebuildModalTagsUnion() {
@@ -6740,7 +7114,7 @@
     document.getElementById('query').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) void runSearchNow();
       // Leave the field and highlight first hit so ↑/↓/Enter work on the list next.
-      if (e.key === 'ArrowDown' && filteredRows().length) {
+      if (e.key === 'ArrowDown' && listRowsForUi().length) {
         e.preventDefault();
         moveResultsSelectionToEdge(false);
         e.target.blur();
@@ -6779,8 +7153,6 @@
       status.textContent = 'Search saved.';
     });
 
-    document.getElementById('btnRefreshTags').addEventListener('click', () => void refreshTagsBarAndScan());
-
     document.getElementById('btnCreateTodoMd').addEventListener('click', () => void createTodoMdInScope());
     document.getElementById('newMdTitleInput').addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
@@ -6811,7 +7183,7 @@
     document.getElementById('optHideDotFolders').addEventListener('change', () => {
       saveSettings();
       if (document.getElementById('optHideDotFolders').checked && selectedFullPath) {
-        const row = findRowByFullPath(selectedFullPath);
+        const row = selectedRowForActions();
         if (row && pathUnderDotFolder(selectedFullPath, rowIsFolder(row))) {
           selectedRow = null;
           selectedFullPath = null;
@@ -6843,6 +7215,23 @@
       scheduleSearchHistoryCommit();
     });
     document.getElementById('btnStatusScopeParent').addEventListener('click', () => void goToParentScopeFolder());
+    document.getElementById('statusColumnsMenu').addEventListener('change', (e) => {
+      const t = e.target;
+      if (!t || t.type !== 'checkbox') return;
+      const idx = Number(t.getAttribute('data-col-idx'));
+      if (!Number.isInteger(idx) || !COL_VISIBLE_TOGGLE_INDEXES.includes(idx)) return;
+      const next = !!t.checked;
+      if (!next) {
+        const kept = COL_VISIBLE_TOGGLE_INDEXES.some((i) => i !== idx && colVisible[i] !== false);
+        if (!kept) {
+          t.checked = true;
+          return;
+        }
+      }
+      colVisible[idx] = next;
+      persistColVisibilityToStorage();
+      applyTableColumnVisibility();
+    });
     document.getElementById('btnClearQuery').addEventListener('click', () => {
       document.getElementById('query').value = '';
       scheduleSearch();
@@ -6880,12 +7269,15 @@
     document.getElementById('chkSelectAllResults').addEventListener('change', (e) => {
       resultsShiftRangeAnchorIdx = null;
       const on = e.target.checked;
-      const vis = filteredRows();
+      const vis = listRowsForUi();
       for (const row of vis) {
         toggleCheckPath(fullPathForRow(row), on);
       }
-      if (on && vis.length) setSelection(vis[vis.length - 1], fullPathForRow(vis[vis.length - 1]));
-      else renderTable();
+      updateSelectAllCheckboxState();
+      if (on && vis.length) {
+        syncResultsRowCheckboxStates();
+        setSelection(vis[vis.length - 1], fullPathForRow(vis[vis.length - 1]));
+      } else renderTable();
     });
     document.getElementById('btnBulkClip').addEventListener('click', async () => {
       const status = document.getElementById('status');
@@ -6968,6 +7360,15 @@
     });
     document.getElementById('mdFileEditor').addEventListener('blur', () => void flushMdFileAutosave());
 
+    document.getElementById('btnOpenGoogleWorkspace').addEventListener('click', async () => {
+      const btn = document.getElementById('btnOpenGoogleWorkspace');
+      const u = btn && btn.dataset && btn.dataset.url;
+      const status = document.getElementById('status');
+      if (!u || !window.tagBrowser.openGoogleWorkspaceWindow) return;
+      const r = await window.tagBrowser.openGoogleWorkspaceWindow({ url: u });
+      if (status) status.textContent = r.ok ? 'Opened in app window.' : (r.error || 'Open failed');
+    });
+
     document.getElementById('btnSaveReadme').addEventListener('click', async () => {
       const status = document.getElementById('status');
       if (!activeReadmePath) return;
@@ -7034,7 +7435,7 @@
       if (document.querySelector('.modal.show')) return;
       if (isTypingTarget(document.activeElement)) return;
       pullWebContentsKeyboardFocus();
-      const rows = filteredRows();
+      const rows = listRowsForUi();
       if (selectedFullPath && rows.length) document.getElementById('resultsWrap')?.focus({ preventScroll: true });
       else focusQueryBox(false);
     }
@@ -7082,7 +7483,7 @@
 
     function moveResultsSelection(delta) {
       resultsShiftRangeAnchorIdx = null;
-      const rows = filteredRows();
+      const rows = listRowsForUi();
       if (!rows.length) return;
       let idx = navFocusIndexInFilteredRows(rows);
       if (idx < 0) idx = delta > 0 ? 0 : rows.length - 1;
@@ -7097,7 +7498,7 @@
 
     /** Shift+↑/↓: check every visible row between anchor and new focus (inclusive). */
     function moveResultsSelectionWithShift(delta) {
-      const rows = filteredRows();
+      const rows = listRowsForUi();
       if (!rows.length) return;
       let curIdx = navFocusIndexInFilteredRows(rows);
       if (curIdx < 0) curIdx = delta > 0 ? 0 : rows.length - 1;
@@ -7127,7 +7528,7 @@
     /** Jump selection to first (false) or last (true) visible row. */
     function moveResultsSelectionToEdge(isEnd) {
       resultsShiftRangeAnchorIdx = null;
-      const rows = filteredRows();
+      const rows = listRowsForUi();
       if (!rows.length) return;
       const row = rows[isEnd ? rows.length - 1 : 0];
       setSelection(row, fullPathForRow(row));
@@ -7144,7 +7545,7 @@
       clearTimeout(_typeAheadTimer);
       _typeAheadBuf += ch.toLowerCase();
       _typeAheadTimer = setTimeout(() => { _typeAheadBuf = ''; }, 800);
-      const rows = filteredRows();
+      const rows = listRowsForUi();
       const match = rows.find(r => (r.name || '').toLowerCase().startsWith(_typeAheadBuf));
       if (match) {
         resultsShiftRangeAnchorIdx = null;
@@ -7193,7 +7594,7 @@
     /** Enter: folder → scope; file → default app (matches row click intent for files). */
     async function keyboardActivateSelection() {
       if (!selectedFullPath) return;
-      const row = findRowByFullPath(selectedFullPath);
+      const row = selectedRowForActions();
       if (!row) return;
       const fp = fullPathForRow(row);
       const status = document.getElementById('status');
@@ -7229,7 +7630,7 @@
     function toggleKeyboardRowCheckbox() {
       if (!selectedFullPath) return;
       resultsShiftRangeAnchorIdx = null;
-      const row = findRowByFullPath(selectedFullPath);
+      const row = selectedRowForActions();
       if (!row) return;
       const fp = fullPathForRow(row);
       toggleCheckPath(fp, !isCheckedPath(fp));
@@ -7242,7 +7643,7 @@
       const status = document.getElementById('status');
       let p = getCheckedPathsArr();
       if (!p.length && selectedFullPath) {
-        const row = findRowByFullPath(selectedFullPath);
+        const row = selectedRowForActions();
         if (row) p = [fullPathForRow(row)];
       }
       if (!p.length) return;
@@ -7261,7 +7662,7 @@
       const status = document.getElementById('status');
       let paths = getCheckedPathsArr();
       if (!paths.length && selectedFullPath) {
-        const row = findRowByFullPath(selectedFullPath);
+        const row = selectedRowForActions();
         if (row) paths = [fullPathForRow(row)];
       }
       if (!paths.length) return;
@@ -7274,11 +7675,30 @@
             : 'Copied ' + paths.length + ' items for Explorer paste.';
     }
 
+    /** Ctrl+Shift+C / ⌘+Shift+C: plain-text full paths (same strings as ⋯ → Full path); multiple checked → newline-separated. */
+    async function keyboardCopyFullPathsText() {
+      const status = document.getElementById('status');
+      let paths = getCheckedPathsArr();
+      if (!paths.length && selectedFullPath) {
+        const row = selectedRowForActions();
+        if (row) paths = [fullPathForRow(row)];
+      }
+      if (!paths.length) return;
+      const text = paths.join('\n');
+      try {
+        await navigator.clipboard.writeText(text);
+        status.textContent =
+          paths.length === 1 ? 'Copied full path.' : 'Copied ' + paths.length + ' full paths.';
+      } catch (_) {
+        status.textContent = 'Could not copy paths.';
+      }
+    }
+
     async function cutShortcutExplorerFiles() {
       const status = document.getElementById('status');
       let paths = getCheckedPathsArr();
       if (!paths.length && selectedFullPath) {
-        const row = findRowByFullPath(selectedFullPath);
+        const row = selectedRowForActions();
         if (row) paths = [fullPathForRow(row)];
       }
       if (!paths.length) return;
@@ -7349,6 +7769,20 @@
         e.preventDefault();
         const hm = document.getElementById('helpModal');
         if (hm) bootstrap.Modal.getOrCreateInstance(hm).show();
+        return;
+      }
+      if (modC && !e.shiftKey && (e.key === 'a' || e.key === 'A')) {
+        if (document.querySelector('.modal.show')) return;
+        if (isTypingTarget(e.target)) return;
+        e.preventDefault();
+        selectAllVisibleResultRows();
+        return;
+      }
+      if (modC && e.shiftKey && (e.key === 'c' || e.key === 'C')) {
+        if (document.querySelector('.modal.show')) return;
+        if (isTypingTarget(e.target)) return;
+        e.preventDefault();
+        void keyboardCopyFullPathsText();
         return;
       }
       if (modC && (e.key === 'c' || e.key === 'C')) {
@@ -7565,7 +7999,7 @@
       /* → on a folder row: scope into that folder; ← : parent of highlighted row (same as row ▲) */
       if (e.key === 'ArrowRight') {
         if (!selectedFullPath) return;
-        const row = findRowByFullPath(selectedFullPath);
+        const row = selectedRowForActions();
         if (row && rowIsFolder(row)) {
           e.preventDefault();
           void applySearchScopeAndRefresh(normalizeFolderPathForEverything(fullPathForRow(row)));
@@ -7709,6 +8143,7 @@
     // Any Bootstrap modal: clear breadcrumb ▾ + chained flyouts so nothing sits above the dimmer.
     document.querySelectorAll('.modal').forEach((modalEl) => {
       modalEl.addEventListener('show.bs.modal', () => {
+        tagfoxHideAllBootstrapTooltips();
         hideBreadcrumbSubfolderFlyout();
         document
           .querySelectorAll('#breadcrumbBar [data-bs-toggle="dropdown"], #favFoldersBar [data-bs-toggle="dropdown"]')
@@ -7719,6 +8154,7 @@
         if (modalEl.id === 'helpModal') restoreHelpModalTab();
       });
     });
+    installTagFoxTooltipGuardsOnce();
     bindBreadcrumbBarDragDrop();
     bindShelfDrop();
     document.getElementById('btnShelfOpen').addEventListener('click', async () => {
@@ -7739,6 +8175,7 @@
     });
     loadPaneWidthsFromStorage();
     loadColWidthsFromStorage();
+    loadColVisibilityFromStorage();
     bindVerticalSplitters();
     document.getElementById('propsTheaterBackdrop').addEventListener('click', () => setPropsTheaterMode(false));
     document.getElementById('btnPropsTheaterToggle').addEventListener('click', () => togglePropsTheaterMode());
@@ -7748,7 +8185,7 @@
     renderTagBar();
     renderTable();
     scheduleSearch();
-    void renderShelf();
+    void renderShelf().then(() => refreshTagFoxChromeTooltips(document.body));
     requestAnimationFrame(() => requestAnimationFrame(focusSearchBox));
     window.addEventListener('focus', () => requestAnimationFrame(focusSearchBox));
   </script>

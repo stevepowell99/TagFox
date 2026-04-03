@@ -57,8 +57,7 @@ Plain `[draft]` without inner `()` is **not** a TagFox tag (treated as part of t
 
 Buttons are tags seen in results plus **remembered** tags (local store, max 40). Choosing a tag saves it; the **active** tag filter is restored next launch. A number in parentheses counts rows in the **current results list** (after filters) that carry that tag—capped by **Max results**. If there is no number, the tag is not on any row in that list. Use **Clear all tags** or toggle pills off to drop the filter.
 
-- **↻** (right of the tag row): re-runs the main search, then the same **full-index** `[(…)]` scan (up to **Max results**, large cap in the main process).
-- **Rescan all tags**: runs that scan again and **prunes** remembered / active tags missing from the result (ghost cleanup). Automatic scans after each search **do not** prune, so caps cannot silently wipe your list.
+- **↻** (end of the tag pill row): re-runs the main search, then the same **full-index** `[(…)]` scan and **prunes** remembered / active tags missing from that scan (ghost cleanup). Ordinary searches also refresh tag discovery **without** pruning, so caps cannot silently wipe your list.
 
 With **Regex** off, active tags are also sent to Everything so you can find matches before results load. With **Regex** on, tag filtering is **client-side** on the current list.
 
@@ -66,13 +65,14 @@ With **Regex** off, active tags are also sent to Everything so you can find matc
 
 Each row has **⋯** — a main-process context menu (`Menu`, `shell`, `clipboard`).
 
-**Copy** submenu: full path, parent path, **name only**, forward slashes, **file://** URL, and on Windows **Copy for Explorer paste** (`CF_HDROP`). **Paste** from Explorer into a scope folder is supported on Windows. Then **Open**, **Reveal in File Explorer**, **Search Google Drive for filename…**, **Open in Windows Terminal**, **Edit with Notepad** (files), **Delete** (confirmation; Windows Recycle Bin).
+The menu opens with those **copy** actions (no nested submenu): on Windows **Copy for Explorer paste** (`CF_HDROP`), **full path**, parent path, **name only**, forward slashes, **file://** when applicable. **Ctrl+Shift+C** (⌘+Shift+C on Mac) copies the same full path(s) as text for the highlighted row or all checked rows (one line each). **Paste** from Explorer into a scope folder is supported on Windows. Then **Open**, **Reveal in File Explorer**, **Search Google Drive for filename…**, **Open in Windows Terminal**, **Edit with Notepad** (files), **Delete** (confirmation; Windows Recycle Bin).
 
 ## Drag and drop
 
 - **Normal drag** (no modifier): move or copy within TagFox — onto folder rows, the breadcrumb, or the **Shelf** strip (`Shift` for copy). This uses the in-page drag protocol only.
 - **External targets** (File Explorer, Word, etc. that need real files): on Windows/Electron you must use **Alt+drag** — hold **Alt** and start dragging from a result row or a **Shelf** chip. That uses the OS native file drag (`CF_HDROP`). A plain drag does **not** supply that, so external apps may see no usable file data.
 - **OS drag** (Shelf toolbar button): arms **one** upcoming row or chip drag to use the same native path as **Alt+drag**, so you can avoid holding Alt for that single gesture.
+- **Open** the Shelf staging folder on disk from **Settings** (Shelf row).
 
 Normal and native drags cannot be combined in one gesture: native drag blocks the UI thread until you drop, which is why in-app moves stay on the default path and Explorer-style drops need Alt or **OS drag**.
 
@@ -90,6 +90,6 @@ The **query** and **Settings** fields update results live (debounced). Toggles m
 
 ## Viewer
 
-The **Viewer** shows path, type, size, modified. **Folders**: `readme.md` editor with Markdown preview ([marked](https://marked.js.org/)). **PDF**, Office where supported ([mammoth](https://github.com/mwilliamson/mammoth.js), [SheetJS](https://sheetjs.com/) via CDN). Large files may not preview.
+The **Viewer** shows path, type, size, modified. **Folders**: `readme.md` editor with Markdown preview ([marked](https://marked.js.org/)). **`.md` / `.txt`**: same editor + preview/autosave (UTF-8). **`.gdoc` / `.gsheet` / `.gslides`** (Google Drive shortcuts): **Open in app window** loads Docs/Sheets/Slides in a child Electron window (persistent login partition). **PDF** and other Office types where supported ([mammoth](https://github.com/mwilliamson/mammoth.js) / [SheetJS](https://sheetjs.com/) via CDN; legacy `.doc` stays “use Open”). Large files may not preview.
 
 Read/write uses UTF-8. **Tags / rename** still requires paths under **Scope folder** when that field is set.

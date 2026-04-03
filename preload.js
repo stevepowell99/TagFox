@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   readTextFile: (payload) => ipcRenderer.invoke('read-text-file', payload),
   readFileBuffer: (payload) => ipcRenderer.invoke('read-file-buffer', payload),
   writeTextFile: (payload) => ipcRenderer.invoke('write-text-file', payload),
+  googleWorkspaceShortcutUrl: (payload) => ipcRenderer.invoke('google-workspace-shortcut-url', payload),
+  openGoogleWorkspaceWindow: (payload) => ipcRenderer.invoke('open-google-workspace-window', payload),
   ensureReadme: (payload) => ipcRenderer.invoke('ensure-readme', payload),
   showItemActionsMenu: (payload) => ipcRenderer.invoke('show-item-actions-menu', payload),
   copyExplorerPaste: (paths) => ipcRenderer.invoke('copy-explorer-paste', paths),

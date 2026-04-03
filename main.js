@@ -1083,9 +1083,10 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
       resolve(v);
     };
 
-    const copySubmenu = [];
+    /** Copy* entries at top level (was a submenu). */
+    const copyItems = [];
     if (process.platform === 'win32') {
-      copySubmenu.push({
+      copyItems.push({
         label: 'Copy for Explorer paste',
         click: () => {
           const err = copyPathsForExplorerPaste([fp]);
@@ -1098,14 +1099,14 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
         },
       });
     }
-    copySubmenu.push(
+    copyItems.push(
       { label: 'Full path', click: () => { clipboard.writeText(fp); done({ ok: true, action: 'copyPath' }); } },
       { label: 'Parent folder path', click: () => { clipboard.writeText(par); done({ ok: true, action: 'copyParent' }); } },
       { label: 'Name only', click: () => { clipboard.writeText(baseName); done({ ok: true, action: 'copyName' }); } },
       { label: 'Path with forward slashes', click: () => { clipboard.writeText(pathFwdSlashes); done({ ok: true, action: 'copyFwd' }); } },
     );
     if (fileUrl) {
-      copySubmenu.push({
+      copyItems.push({
         label: 'File URL (file://…)',
         click: () => {
           clipboard.writeText(fileUrl);
@@ -1116,7 +1117,7 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
 
     /** @type {Electron.MenuItemConstructorOptions[]} */
     const template = [
-      { label: 'Copy', submenu: copySubmenu },
+      ...copyItems,
       { type: 'separator' },
       {
         label: 'Open',
@@ -1560,4 +1561,96 @@ ipcMain.handle('ensure-readme', async (_event, { folderPath }) => {
     await fs.writeFile(readmePath, '', 'utf8');
     return { ok: true, path: readmePath, created: true };
   }
+});
+
+/** ─── Google Drive “.gdoc / .gsheet / .gslides” shortcuts → child window (docs.google.com) ─── */
+let googleWorkspaceWin = null;
+
+function targetUrlFromGoogleDriveShortcut(fullPath, rawText) {
+  const text = String(rawText || '')
+    .replace(/^\uFEFF/, '')
+    .trim();
+  if (!text) return null;
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!data || typeof data !== 'object') return null;
+  const u = typeof data.url === 'string' ? data.url.trim() : '';
+  if (u && /^https?:\/\//i.test(u)) return u;
+  const id = typeof data.doc_id === 'string' ? data.doc_id.trim() : '';
+  if (!id) return null;
+  const ext = path.extname(String(fullPath || '')).toLowerCase();
+  if (ext === '.gsheet') return `https://docs.google.com/spreadsheets/d/${id}/edit`;
+  if (ext === '.gslides') return `https://docs.google.com/presentation/d/${id}/edit`;
+  return `https://docs.google.com/document/d/${id}/edit`;
+}
+
+function isAllowedGoogleWorkspaceUrl(u) {
+  try {
+    const { protocol, hostname } = new URL(String(u || '').trim());
+    if (protocol !== 'https:' && protocol !== 'http:') return false;
+    const h = hostname.toLowerCase();
+    return h === 'docs.google.com' || h === 'drive.google.com';
+  } catch {
+    return false;
+  }
+}
+
+function openGoogleWorkspaceEditorWindow(parentWin, targetUrl) {
+  const url = String(targetUrl || '').trim();
+  if (!isAllowedGoogleWorkspaceUrl(url)) return { ok: false, error: 'Not a Google Docs/Drive URL.' };
+  if (googleWorkspaceWin && !googleWorkspaceWin.isDestroyed()) {
+    void googleWorkspaceWin.loadURL(url);
+    googleWorkspaceWin.focus();
+    return { ok: true };
+  }
+  googleWorkspaceWin = new BrowserWindow({
+    parent: parentWin || undefined,
+    width: 1180,
+    height: 820,
+    show: false,
+    webPreferences: {
+      partition: 'persist:tagfox-google-workspace',
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  googleWorkspaceWin.setMenuBarVisibility(false);
+  googleWorkspaceWin.once('ready-to-show', () => {
+    if (googleWorkspaceWin && !googleWorkspaceWin.isDestroyed()) googleWorkspaceWin.show();
+  });
+  googleWorkspaceWin.on('closed', () => {
+    googleWorkspaceWin = null;
+  });
+  void googleWorkspaceWin.loadURL(url);
+  return { ok: true };
+}
+
+ipcMain.handle('google-workspace-shortcut-url', async (_event, { fullPath }) => {
+  const fp = path.normalize(String(fullPath || ''));
+  if (!fp) return { ok: false, error: 'Missing path' };
+  const ext = path.extname(fp).toLowerCase();
+  if (!['.gdoc', '.gsheet', '.gslides'].includes(ext)) {
+    return { ok: false, error: 'Not a Google Workspace shortcut.' };
+  }
+  try {
+    const st = await fs.stat(fp);
+    if (!st.isFile()) return { ok: false, error: 'Not a file' };
+    if (st.size > 65536) return { ok: false, error: 'Shortcut file unexpectedly large.' };
+    const raw = await fs.readFile(fp, 'utf8');
+    const url = targetUrlFromGoogleDriveShortcut(fp, raw);
+    if (!url) return { ok: false, error: 'Could not read Google link from shortcut.' };
+    return { ok: true, url };
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return { ok: false, error: 'File not found.' };
+    return { ok: false, error: String(e.message || e) };
+  }
+});
+
+ipcMain.handle('open-google-workspace-window', async (event, { url }) => {
+  const parent = BrowserWindow.fromWebContents(event.sender);
+  return openGoogleWorkspaceEditorWindow(parent, url);
 });
