@@ -1441,7 +1441,7 @@
         'Recency: ' +
           (s.recencyFilter && s.recencyFilter !== 'all' ? String(s.recencyFilter) + ' (modified)' : 'all')
       );
-      lines.push('Hide .folders: ' + !!s.optHideDotFolders);
+      lines.push('Hide . / ~: ' + !!s.optHideDotFolders);
       lines.push('Sort folders with files (Settings): ' + (s.optSortFoldersWithFiles !== false));
       lines.push('Sort: ' + (s.sortColumn || 'name') + ' ' + (s.sortAsc !== false ? 'asc' : 'desc'));
       {
@@ -3225,7 +3225,7 @@
       if (pruneDeadRemembered && fullScanActiveChanged) renderTable();
     }
 
-    /** pruneDeadRemembered true = “Rescan all tags”. false = awaitable (Hide .folders). */
+    /** pruneDeadRemembered true = “Rescan all tags”. false = awaitable (Hide . / ~). */
     async function runTagDiscoverySearch(pruneDeadRemembered) {
       await runTagDiscoverySearchInner(pruneDeadRemembered);
     }
@@ -3265,14 +3265,21 @@
       return out;
     }
 
+    /** Google Drive for Desktop: real files live under this virtual segment — must not count as a “dot folder”. */
+    function isGoogleDriveShortcutTargetsSegment(seg) {
+      return String(seg || '').toLowerCase() === '.shortcut-targets-by-id';
+    }
+
     /**
-     * Hide .folders: exclude paths that pass through a \.segment\ or /.segment/ (like .git). Lone leaf files \.env stay (no sep after segment).
+     * Hide . / ~: paths through .segment\, basenames .*, or any ~segment\ (Office ~$ locks, etc.).
      * Needs path matching — runSearch sets pathSearch true when this is appended. Skipped if global Regex is on (whole query is one pattern).
      */
     function appendHideDotFoldersToEverythingQuery(searchText) {
       if (!document.getElementById('optHideDotFolders').checked) return searchText;
       if (document.getElementById('optRegex').checked) return searchText;
-      const clause = ' !regex:(?:\\\\|/)\\.[^\\\\/]+(?:\\\\|/)';
+      /* Exclude `.shortcut-targets-by-id` from the “bad dot segment” match (Drive on H:\ etc.). */
+      const clause =
+        ' !regex:(?:(?:\\\\|/)\\.(?!shortcut-targets-by-id(?:\\\\|/|$))[^\\\\/]+(?:\\\\|/)|(?:\\\\|/)\\.(?!shortcut-targets-by-id$)[^\\\\/]+$|(?:\\\\|/)~(?:[^\\\\/]+)?(?:(?:\\\\|/)|$))';
       return (String(searchText || '').trim() + clause).trim();
     }
 
@@ -3772,7 +3779,7 @@
           checkedPathsMap.delete(k);
           continue;
         }
-        if (hideDot && pathUnderDotFolder(fp, rowIsFolder(row))) checkedPathsMap.delete(k);
+        if (hideDot && pathUnderDotFolder(fp)) checkedPathsMap.delete(k);
       }
       updateBulkBar();
     }
@@ -3969,26 +3976,23 @@
       return t === 'folder' || row.type === 2 || row.type === '2';
     }
 
-    /** Path passes through a .folder segment (.git, .vscode) or row is that folder; excludes leaf dotfiles only (.env). */
-    function pathUnderDotFolder(fp, isFolderRow) {
+    /** True if any path segment is .name or ~name (.git, .env, ~$temp); .. segments ignored. */
+    function pathUnderDotFolder(fp) {
       const raw = String(fp || '').trim();
       if (!raw) return false;
       const parts = raw.replace(/\//g, '\\').split('\\').filter((p) => p !== '' && p !== '.');
-      for (let i = 0; i < parts.length; i++) {
-        const seg = parts[i];
+      for (const seg of parts) {
         if (seg === '..') continue;
-        if (!seg.startsWith('.')) continue;
-        const isLast = i === parts.length - 1;
-        if (isLast && !isFolderRow) continue;
-        return true;
+        if (isGoogleDriveShortcutTargetsSegment(seg)) continue;
+        if (seg.startsWith('.') || seg.startsWith('~')) return true;
       }
       return false;
     }
 
-    /** Hide .folders client-side (tag scan, global Regex+hide, or safety if server clause mismatches). */
+    /** Hide . / ~ client-side (tag scan, global Regex+hide, or safety if server clause mismatches). */
     function rowsRespectingHideDotFolders(rows) {
       if (!document.getElementById('optHideDotFolders').checked) return rows;
-      return rows.filter((r) => !pathUnderDotFolder(fullPathForRow(r), rowIsFolder(r)));
+      return rows.filter((r) => !pathUnderDotFolder(fullPathForRow(r)));
     }
 
     function loadTagStore() {
@@ -5091,7 +5095,7 @@
       const suffix =
         activeTagKeys.size || recencyFilterMode() !== 'all' ? ' (filtered)' : '';
       const rawN = lastRows.length;
-      // Hide .folders / tag filter shrink the list after Everything’s cap — show both so path ▲/▼ “missing rows” isn’t mistaken for truncation at 10.
+      // Hide . / ~ / tag filter shrink the list after Everything’s cap — show both so path ▲/▼ “missing rows” isn’t mistaken for truncation at 10.
       const visN = rowsForDisplay.length;
       if (!visN) status.textContent = 'No rows' + suffix;
       else if (visN === rawN) status.textContent = visN + ' row(s)' + suffix;
@@ -5951,7 +5955,7 @@
       saveSettings();
       if (document.getElementById('optHideDotFolders').checked && selectedFullPath) {
         const row = selectedRowForActions();
-        if (row && pathUnderDotFolder(selectedFullPath, rowIsFolder(row))) {
+        if (row && pathUnderDotFolder(selectedFullPath)) {
           selectedRow = null;
           selectedFullPath = null;
           void flushMdFileAutosave();

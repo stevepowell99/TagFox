@@ -221,7 +221,7 @@
         </div>
       </div>
 
-      <!-- Folder scope + Everything toggles; Advanced = match case/path, whole word, regex, diacritics, dot-folder filter (fly-out, far right). -->
+      <!-- Folder scope + Everything toggles; Advanced = match case/path, whole word, regex, diacritics, hide . / ~ (fly-out, far right). -->
       <div class="search-opts-bar d-flex flex-wrap align-items-center gap-1 mb-2 w-100">
         <input type="checkbox" class="btn-check" id="folderSearchRecursive" checked autocomplete="off" />
         <label class="btn btn-outline-secondary btn-sm" for="folderSearchRecursive" title="On: this folder and subfolders. Off: immediate children only (Everything parent:)">Recursive</label>
@@ -276,7 +276,7 @@
             <input type="checkbox" class="btn-check" id="optDiacritics" autocomplete="off" />
             <label class="btn btn-outline-secondary btn-sm" for="optDiacritics">Diacritics</label>
             <input type="checkbox" class="btn-check" id="optHideDotFolders" autocomplete="off" />
-            <label class="btn btn-outline-secondary btn-sm" for="optHideDotFolders" title="Hide paths under segments like .git / .vscode (subfolders too). Leaf dotfiles (e.g. .env) in normal folders stay listed.">Hide .folders</label>
+            <label class="btn btn-outline-secondary btn-sm" for="optHideDotFolders" title="Hide any path segment named .anything or ~anything (.git, .env, ~$ Office locks, folders named ~…). Parent .. segments ignored.">Hide . / ~</label>
           </div>
           <button
             type="button"
@@ -284,7 +284,7 @@
             id="btnToggleSearchOptsAdvanced"
             aria-expanded="false"
             aria-controls="searchOptsAdvancedPanel"
-            title="Show or hide match case, match path, whole word, regex, diacritics, dot-folder filter"
+            title="Show or hide match case, match path, whole word, regex, diacritics, hide . / ~"
           >
             Advanced
           </button>
@@ -874,7 +874,7 @@
               <ul class="mb-3 ps-3">
                 <li><strong>Settings</strong> (toolbar): Everything base URL, <strong>Scope folder</strong>, max hits, HTTP auth, <strong>Sort folders with files</strong>.</li>
                 <li>Under the search row: <strong>Advanced</strong> holds match case, match path, whole word, regex, and diacritics; <strong>Both</strong> / <strong>Folders only</strong> / <strong>Files only</strong> (mutually exclusive). Settings → <strong>Sort folders with files</strong> controls whether folders and files are interleaved in the table.</li>
-                <li><strong>Hide “dot” folders</strong> trims the list of paths that run through segments like <code>.git</code> or <code>.vscode</code> (see the checkbox tooltip—leaf dotfiles such as <code>.env</code> are not hidden).</li>
+                <li><strong>Hide . / ~</strong> drops paths with any segment starting with <code>.</code> or <code>~</code> (e.g. <code>.git</code>, <code>.env</code>, <code>~$…</code> Office locks). <code>..</code> parent segments are ignored.</li>
               </ul>
             </div>
             <div class="tab-pane fade" id="help-pane-getting-started" role="tabpanel" aria-labelledby="help-tab-getting-started">

@@ -1429,8 +1429,8 @@ ipcMain.handle('list-child-folders', async (_event, { parentPath }) => {
     if (!d.isDirectory()) continue;
     const name = d.name;
     if (name === '.' || name === '..') continue;
-    /* Breadcrumb flyouts: hide dotfolders (.git, etc.); listing is dirs-only so no dotfiles here. */
-    if (name.startsWith('.')) continue;
+    /* Breadcrumb flyouts: hide dotfolders (.git, etc.); allow Google Drive’s `.shortcut-targets-by-id`. */
+    if (name.startsWith('.') && name.toLowerCase() !== '.shortcut-targets-by-id') continue;
     folders.push({ name, fullPath: path.join(p, name) });
   }
   folders.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }));
