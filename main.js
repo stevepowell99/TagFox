@@ -123,6 +123,122 @@ function copyPathsForExplorerPaste(pathsIn) {
   return null;
 }
 
+/**
+ * Create a .lnk beside the target, Explorer-style: "name - Shortcut.lnk", "name - Shortcut (2).lnk", …
+ */
+function createExplorerShortcutLnkWin(targetPathRaw) {
+  if (process.platform !== 'win32') return { ok: false, error: 'Only available on Windows.' };
+  const targetPath = path.normalize(String(targetPathRaw || '').trim());
+  if (!targetPath) return { ok: false, error: 'No path.' };
+  let isDir = false;
+  try {
+    const st = fssync.statSync(targetPath);
+    isDir = st.isDirectory();
+  } catch {
+    return { ok: false, error: 'Path not found.' };
+  }
+  const parent = path.dirname(targetPath);
+  const baseName = path.basename(targetPath);
+  const stem = `${baseName} - Shortcut`;
+  let lnkPath = path.join(parent, `${stem}.lnk`);
+  for (let n = 2; fssync.existsSync(lnkPath); n++) {
+    lnkPath = path.join(parent, `${stem} (${n}).lnk`);
+  }
+  const workingDir = isDir ? targetPath : parent;
+  const psExe = windowsPowerShellExe();
+  const r = spawnSync(
+    psExe,
+    [
+      '-NoProfile',
+      '-STA',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-Command',
+      '$ErrorActionPreference="Stop"; $ws=New-Object -ComObject WScript.Shell; $s=$ws.CreateShortcut($env:TAGFOX_LNK); $s.TargetPath=$env:TAGFOX_TARGET; $s.WorkingDirectory=$env:TAGFOX_CWD; $s.Save()',
+    ],
+    {
+      windowsHide: true,
+      encoding: 'utf8',
+      env: { ...process.env, TAGFOX_LNK: lnkPath, TAGFOX_TARGET: targetPath, TAGFOX_CWD: workingDir },
+    }
+  );
+  if (r.status !== 0) {
+    const msg = [r.stderr, r.stdout].filter(Boolean).join(' ').trim();
+    return { ok: false, error: msg || 'Create shortcut failed.' };
+  }
+  return { ok: true, lnkPath };
+}
+
+/** Windows Explorer “Properties” dialog (shell verb). */
+function openShellPropertiesWin(targetPathRaw) {
+  if (process.platform !== 'win32') return 'Only available on Windows.';
+  const targetPath = path.normalize(String(targetPathRaw || '').trim());
+  if (!targetPath) return 'No path.';
+  const psExe = windowsPowerShellExe();
+  const r = spawnSync(
+    psExe,
+    [
+      '-NoProfile',
+      '-STA',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-Command',
+      '$ErrorActionPreference="Stop"; Start-Process -LiteralPath $env:TAGFOX_PROP -Verb properties',
+    ],
+    {
+      windowsHide: true,
+      encoding: 'utf8',
+      env: { ...process.env, TAGFOX_PROP: targetPath },
+    }
+  );
+  if (r.status !== 0) {
+    const msg = [r.stderr, r.stdout].filter(Boolean).join(' ').trim();
+    return msg || 'Properties failed.';
+  }
+  return null;
+}
+
+/**
+ * Read TargetPath from a Windows .lnk (WScript.Shell). isDirectory when target exists and is a folder.
+ */
+function resolveShellShortcutLnkWin(lnkPathRaw) {
+  if (process.platform !== 'win32') return { ok: false, error: 'Windows only.' };
+  const lnk = path.normalize(String(lnkPathRaw || '').trim());
+  if (!lnk) return { ok: false, error: 'No path.' };
+  if (path.extname(lnk).toLowerCase() !== '.lnk') return { ok: false, error: 'Not a .lnk file.' };
+  const psExe = windowsPowerShellExe();
+  const cmd = [
+    '$ErrorActionPreference="Stop"',
+    '$sh=New-Object -ComObject WScript.Shell',
+    '$s=$sh.CreateShortcut([string]$env:TAGFOX_LNK)',
+    '$t=[string]$s.TargetPath',
+    'if([string]::IsNullOrWhiteSpace($t)){exit 2}',
+    '$t=$t.Trim()',
+    '$dir=$false',
+    'if(Test-Path -LiteralPath $t -PathType Container){$dir=$true}',
+    '(@{targetPath=$t;isDirectory=[bool]$dir}|ConvertTo-Json -Compress)',
+  ].join(';');
+  const r = spawnSync(psExe, ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-Command', cmd], {
+    windowsHide: true,
+    encoding: 'utf8',
+    env: { ...process.env, TAGFOX_LNK: lnk },
+  });
+  if (r.status === 2) return { ok: false, error: 'Shortcut has no target.' };
+  if (r.status !== 0) {
+    const msg = [r.stderr, r.stdout].filter(Boolean).join(' ').trim();
+    return { ok: false, error: msg || 'Could not read shortcut.' };
+  }
+  let j;
+  try {
+    j = JSON.parse(String(r.stdout || '').trim());
+  } catch {
+    return { ok: false, error: 'Invalid shortcut output.' };
+  }
+  const targetPath = path.normalize(String(j.targetPath || ''));
+  if (!targetPath) return { ok: false, error: 'Empty target.' };
+  return { ok: true, targetPath, isDirectory: !!j.isDirectory };
+}
+
 /** Same as copy but marks clipboard as cut (Explorer paste moves). CF_HDROP + Preferred DropEffect = Move. */
 const PS1_SET_CLIP_CUT = `param([Parameter(Mandatory)][string]$JsonPath)
 try {
@@ -1800,6 +1916,8 @@ ipcMain.handle('open-url-default-browser', async (_event, { url }) => {
   }
 });
 
+ipcMain.handle('resolve-shell-shortcut', async (_event, { fullPath }) => resolveShellShortcutLnkWin(fullPath));
+
 /**
  * Shell item menu: standard Electron pattern (Menu + shell + clipboard in main).
  * Full Explorer.context menu would need native IContextMenu bindings — not in core Electron.
@@ -1838,45 +1956,103 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
       resolve(v);
     };
 
-    /** Clipboard + path strings — shown under a “Copy” submenu. */
-    const copyItems = [];
+    /** One tall menu: disabled rows = section titles (Electron has no native section headers). */
+    /** @type {Electron.MenuItemConstructorOptions[]} */
+    const template = [{ label: 'Clipboard', enabled: false }];
     if (process.platform === 'win32') {
-      copyItems.push({
-        label: 'Copy for Explorer paste',
-        click: () => {
-          const err = copyPathsForExplorerPaste([fp]);
-          if (err) {
-            event.sender.send('shell-action-error', err);
-            done({ ok: false, action: 'copyExplorer', error: err });
-            return;
-          }
-          done({ ok: true, action: 'copyExplorer' });
+      template.push(
+        {
+          label: 'Copy',
+          click: () => {
+            const err = copyPathsForExplorerPaste([fp]);
+            if (err) {
+              event.sender.send('shell-action-error', err);
+              done({ ok: false, action: 'copyExplorer', error: err });
+              return;
+            }
+            done({ ok: true, action: 'copyExplorer' });
+          },
         },
-      });
+        {
+          label: 'Cut',
+          click: () => {
+            const err = cutPathsForExplorerPaste([fp]);
+            if (err) {
+              event.sender.send('shell-action-error', err);
+              done({ ok: false, action: 'cutExplorer', error: err });
+              return;
+            }
+            done({ ok: true, action: 'cutExplorer' });
+          },
+        },
+        {
+          /* Creates .lnk beside item, then Cut on that .lnk (Explorer move when pasted — no spare .lnk left behind). */
+          label: 'Copy as shortcut',
+          click: () => {
+            const cr = createExplorerShortcutLnkWin(fp);
+            if (!cr.ok) {
+              event.sender.send('shell-action-error', cr.error);
+              done({ ok: false, action: 'copyAsShortcut', error: cr.error });
+              return;
+            }
+            const err = cutPathsForExplorerPaste([cr.lnkPath]);
+            if (err) {
+              event.sender.send('shell-action-error', err);
+              done({ ok: false, action: 'copyAsShortcut', error: err });
+              return;
+            }
+            event.sender.send('paths-mutated');
+            done({ ok: true, action: 'copyAsShortcut' });
+          },
+        },
+        {
+          label: 'Put shortcut on shelf',
+          click: () => {
+            void (async () => {
+              const cr = createExplorerShortcutLnkWin(fp);
+              if (!cr.ok) {
+                event.sender.send('shell-action-error', cr.error);
+                done({ ok: false, action: 'shelfShortcut', error: cr.error });
+                return;
+              }
+              const mv = await movePathsToShelf([cr.lnkPath]);
+              if (!mv.ok) {
+                event.sender.send('shell-action-error', mv.error);
+                done({ ok: false, action: 'shelfShortcut', error: mv.error });
+                return;
+              }
+              event.sender.send('paths-mutated');
+              done({ ok: true, action: 'shelfShortcut' });
+            })();
+          },
+        }
+      );
     }
-    copyItems.push(
-      { label: 'Full path', click: () => { clipboard.writeText(fp); done({ ok: true, action: 'copyPath' }); } },
-      { label: 'Parent folder path', click: () => { clipboard.writeText(par); done({ ok: true, action: 'copyParent' }); } },
-      { label: 'Name only', click: () => { clipboard.writeText(baseName); done({ ok: true, action: 'copyName' }); } },
-      { label: 'Path with forward slashes', click: () => { clipboard.writeText(pathFwdSlashes); done({ ok: true, action: 'copyFwd' }); } },
+    template.push(
+      { label: 'Copy full path', click: () => { clipboard.writeText(fp); done({ ok: true, action: 'copyPath' }); } },
+      { label: 'Copy parent folder path', click: () => { clipboard.writeText(par); done({ ok: true, action: 'copyParent' }); } },
+      { label: 'Copy name only', click: () => { clipboard.writeText(baseName); done({ ok: true, action: 'copyName' }); } },
+      { label: 'Copy path with forward slashes', click: () => { clipboard.writeText(pathFwdSlashes); done({ ok: true, action: 'copyFwd' }); } },
     );
     if (fileUrl) {
-      copyItems.push({
-        label: 'File URL (file://…)',
+      template.push({
+        label: 'Copy file URL (file://…)',
         click: () => {
           clipboard.writeText(fileUrl);
           done({ ok: true, action: 'copyFileUrl' });
         },
       });
     }
-
-    /** @type {Electron.MenuItemConstructorOptions[]} */
-    const template = [
-      { label: 'Copy', submenu: copyItems },
+    template.push(
       { type: 'separator' },
+      { label: 'Open and explore', enabled: false },
       {
         label: isGoogleShortcutFile ? 'Open in app window' : 'Open',
         click: () => {
+          if (!isDir && path.extname(fp).toLowerCase() === '.lnk') {
+            done({ ok: true, action: 'followShellShortcut', filePath: fp });
+            return;
+          }
           void openPathOrGoogleWorkspaceShortcut(event.sender, fp).then((err) => {
             if (err) event.sender.send('shell-action-error', err);
             done({ ok: true, action: 'open' });
@@ -1884,8 +2060,41 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
         },
       },
       { label: 'Reveal in File Explorer', click: () => { shell.showItemInFolder(fp); done({ ok: true, action: 'reveal' }); } },
+    );
+    if (process.platform === 'win32') {
+      template.push(
+        {
+          label: 'Create shortcut',
+          click: () => {
+            const cr = createExplorerShortcutLnkWin(fp);
+            if (!cr.ok) {
+              event.sender.send('shell-action-error', cr.error);
+              done({ ok: false, action: 'createShortcut', error: cr.error });
+              return;
+            }
+            event.sender.send('paths-mutated');
+            done({ ok: true, action: 'createShortcut' });
+          },
+        },
+        {
+          label: 'Properties',
+          click: () => {
+            const err = openShellPropertiesWin(fp);
+            if (err) {
+              event.sender.send('shell-action-error', err);
+              done({ ok: false, action: 'properties', error: err });
+              return;
+            }
+            done({ ok: true, action: 'properties' });
+          },
+        }
+      );
+    }
+    template.push(
+      { type: 'separator' },
+      { label: 'Search', enabled: false },
       {
-        label: 'Search Google Drive for filename…',
+        label: 'Google Drive for filename…',
         click: () => {
           done({ ok: true, action: 'driveSearch' });
           const u = googleDriveSearchUrlForPath(fp);
@@ -1898,23 +2107,28 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
           });
         },
       },
+      { type: 'separator' },
+      { label: 'Edit', enabled: false },
       { label: 'Rename…', click: () => done({ ok: true, action: 'rename' }) },
-    ];
-
+    );
     if (process.platform === 'win32') {
-      template.push({
-        label: 'Open in Windows Terminal',
-        click: () => {
-          done({ ok: true, action: 'wt' });
-          const c = spawn('wt.exe', ['-d', terminalCwd], {
-            detached: true,
-            stdio: 'ignore',
-            windowsHide: true,
-          });
-          c.on('error', () => event.sender.send('shell-action-error', 'Windows Terminal (wt.exe) not available.'));
-          c.unref();
+      template.push(
+        { type: 'separator' },
+        { label: 'Windows', enabled: false },
+        {
+          label: 'Open in Windows Terminal',
+          click: () => {
+            done({ ok: true, action: 'wt' });
+            const c = spawn('wt.exe', ['-d', terminalCwd], {
+              detached: true,
+              stdio: 'ignore',
+              windowsHide: true,
+            });
+            c.on('error', () => event.sender.send('shell-action-error', 'Windows Terminal (wt.exe) not available.'));
+            c.unref();
+          },
         },
-      });
+      );
       if (!isDir) {
         template.push({
           label: 'Edit with Notepad',
@@ -1931,9 +2145,9 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
         });
       }
     }
-
     template.push(
       { type: 'separator' },
+      { label: 'Folder', enabled: false },
       {
         label: 'New folder in scope…',
         enabled: scopeAvail,
@@ -1942,6 +2156,7 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
         },
       },
       { type: 'separator' },
+      { label: 'Delete', enabled: false },
       {
         label: 'Move to Recycle Bin',
         click: () => {
@@ -1951,7 +2166,7 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
             (e) => event.sender.send('shell-action-error', String(e.message || e))
           );
         },
-      }
+      },
     );
 
     const menu = Menu.buildFromTemplate(template);
@@ -2277,6 +2492,48 @@ ipcMain.handle('copy-paths-into-folder', async (event, { sourcePaths, destFolder
   if (r.ok) event.sender.send('paths-mutated');
   return r;
 });
+
+/** Move files into staging shelf (userData); bypasses scope root — used for “shortcut on shelf”. */
+async function movePathsToShelf(sourcePaths) {
+  const shelf = getShelfDirResolved();
+  const list = normalizeSourcePathsList(sourcePaths);
+  if (!list.length) return { ok: false, error: 'Nothing to move.' };
+  let st;
+  try {
+    st = await fs.stat(shelf);
+  } catch {
+    return { ok: false, error: 'Shelf folder missing.' };
+  }
+  if (!st.isDirectory()) return { ok: false, error: 'Shelf is not a folder.' };
+  for (const srcRaw of list) {
+    const src = path.resolve(String(srcRaw || '').trim());
+    try {
+      const stS = await fs.stat(src);
+      if (stS.isDirectory()) return { ok: false, error: 'Use files only for shelf shortcuts.' };
+    } catch {
+      return { ok: false, error: 'Source missing: ' + src };
+    }
+    const u = await uniqueDestPathInDir(shelf, path.basename(src));
+    if (!u.ok) return u;
+    const dest = u.destResolved;
+    try {
+      await fs.rename(src, dest);
+    } catch (e) {
+      if (e && e.code === 'EXDEV') {
+        try {
+          await fs.copyFile(src, dest);
+          await fs.unlink(src);
+        } catch (e2) {
+          return { ok: false, error: String(e2.message || e2) };
+        }
+      } else {
+        const r = await renameWithBusyRetry(src, dest);
+        if (!r.ok) return { ok: false, error: r.error || 'Move to shelf failed.' };
+      }
+    }
+  }
+  return { ok: true };
+}
 
 ipcMain.handle('shelf-state', async () => {
   const dir = getShelfDirResolved();

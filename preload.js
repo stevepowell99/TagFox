@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   openGoogleWorkspaceWindow: (payload) => ipcRenderer.invoke('open-google-workspace-window', payload),
   openUrlDefaultBrowser: (payload) => ipcRenderer.invoke('open-url-default-browser', payload),
   resolveFolderViewerDoc: (payload) => ipcRenderer.invoke('resolve-folder-viewer-doc', payload),
+  resolveShellShortcut: (payload) => ipcRenderer.invoke('resolve-shell-shortcut', payload),
   showItemActionsMenu: (payload) => ipcRenderer.invoke('show-item-actions-menu', payload),
   copyExplorerPaste: (paths) => ipcRenderer.invoke('copy-explorer-paste', paths),
   cutExplorerPaste: (paths) => ipcRenderer.invoke('cut-explorer-paste', paths),

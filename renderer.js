@@ -13,11 +13,10 @@
       optCase: 'tagBrowserOptCase',
       optWholeWord: 'tagBrowserOptWW',
       optPath: 'tagBrowserOptPath',
-      optRegex: 'tagBrowserOptRegex',
       optDiacritics: 'tagBrowserOptDiac',
       sortBy: 'tagBrowserSortBy',
       optAsc: 'tagBrowserOptAsc',
-      folderSearchRecursive: 'tagBrowserFolderRec',
+      treeView: 'tagBrowserTreeView',
       foldersOnly: 'tagBrowserFoldersOnly',
       filesOnly: 'tagBrowserFilesOnly',
       propsWidthPx: 'tagBrowserPropsW',
@@ -29,11 +28,8 @@
       knownBracketTags: 'tagBrowserKnownBracketTags',
       activeTagFilter: 'tagBrowserActiveTag',
       tagFilterCombineOr: 'tagBrowserTagCombineOr',
-      hideDotFolders: 'tagBrowserHideDotFolders',
-      sortFoldersWithFiles: 'tagBrowserSortFoldersWithFiles',
       recencyFilter: 'tagBrowserRecencyFilter',
       searchDebug: 'tagBrowserSearchDebug',
-      tableColVisible: 'tagBrowserTableColVisible',
       helpModalTab: 'tagBrowserHelpModalTab',
       autoRefreshSec: 'tagBrowserAutoRefreshSec',
     };
@@ -48,11 +44,9 @@
         ['tagBrowserOptCase', 'everythangOptCase'],
         ['tagBrowserOptWW', 'everythangOptWW'],
         ['tagBrowserOptPath', 'everythangOptPath'],
-        ['tagBrowserOptRegex', 'everythangOptRegex'],
         ['tagBrowserOptDiac', 'everythangOptDiac'],
         ['tagBrowserSortBy', 'everythangSortBy'],
         ['tagBrowserOptAsc', 'everythangOptAsc'],
-        ['tagBrowserFolderRec', 'everythangFolderRec'],
         ['tagBrowserFoldersOnly', 'everythangFoldersOnly'],
         ['tagBrowserFilesOnly', 'everythangFilesOnly'],
         ['tagBrowserPropsW', 'everythangPropsW'],
@@ -60,7 +54,6 @@
         ['tagBrowserFavFolders', 'everythangFavFolders'],
         ['tagBrowserTagStore', 'everythangTagStore'],
         ['tagBrowserActiveTag', 'everythangActiveTag'],
-        ['tagBrowserHideDotFolders', 'everythangHideDotFolders'],
       ];
       for (const [n, o] of pairs) {
         if (localStorage.getItem(n) !== null) continue;
@@ -184,34 +177,13 @@
     }
 
     let propsPanePx = 300;
-    /** Percent weights for results table cols (sum 100). Col 0 must fit checkbox + recency blob without spilling into Name. */
-    const COL_PERCENT_DEFAULT = [4, 38, 20, 6, 7, 11, 14];
-    /** Saved default when col 0 was 2% — too narrow; one-time upgrade to COL_PERCENT_DEFAULT. */
-    const COL_PERCENT_OLD_THIN_FIRST = [2, 40, 20, 6, 7, 11, 14];
-    /** Shipped Apr 2026 — actions at 7% clipped the row buttons; upgrade once. */
-    const COL_PERCENT_OLD_THIN_ACTIONS = [2, 44, 22, 6, 7, 12, 7];
-    /** Pre–Apr 2026 default (thin Name / wide Actions); one-time upgrade to COL_PERCENT_DEFAULT. */
-    const COL_PERCENT_OLD_NARROW_NAME = [2, 13, 38, 5, 7, 10, 25];
-    /** Drag resize: boundary 5 = Modified | Actions — don’t shrink Actions below this (% of table). */
+    /** Percent weights: chk, name, path, size, modified, actions (sum 100). Type column removed — 6 cols. */
+    const COL_PERCENT_DEFAULT = [4, 34, 22, 8, 14, 18];
+    /** Drag resize: last boundary = Modified | Actions — don’t shrink Actions below this (% of table). */
     const COL_RESIZE_MIN_ACTIONS_PCT = 11;
-    /** Previous shipped 6-col default (wide merged grab+chk); upgrade to 7-col COL_PERCENT_DEFAULT once. */
-    const COL_PERCENT_WIDE_CHK_DEFAULT = [5.5, 14, 42, 7, 9, 22.5];
-    /** Old 7-col layout (grab+chk+…); merge grab+chk widths when migrating localStorage. */
-    const COL_PERCENT_LEGACY_SHIPPED_7 = [2.5, 3, 17, 26, 8, 11, 32.5];
+    /** Table column index for Path (hidden in tree view). */
+    const RESULTS_PATH_COL_IDX = 2;
     let colPercent = COL_PERCENT_DEFAULT.slice();
-    /** Column visibility: chk, name, path, type, size, modified, actions. */
-    const COL_VISIBLE_DEFAULT = [true, true, true, true, true, true, true];
-    const COL_VISIBLE_TOGGLE_INDEXES = [1, 2, 3, 4, 5, 6];
-    let colVisible = COL_VISIBLE_DEFAULT.slice();
-
-    /** Upgrade saved 6-wide visibility (pre–Type column) for favourites + localStorage. */
-    function normalizeColVisibleFromSaved(arr) {
-      if (!Array.isArray(arr)) return null;
-      const v = arr.map((x) => !!x);
-      if (v.length === 7) return v;
-      if (v.length === 6) return [v[0], v[1], v[2], true, v[3], v[4], v[5]];
-      return null;
-    }
 
     let lastRows = [];
     /** HTML5 drag payload for moving rows onto folder rows in the results table. */
@@ -278,6 +250,11 @@
     let searchRunSeq = 0;
     /** True while runSearch() awaits Everything (auto-refresh skips ticks to avoid overlap). */
     let searchInFlight = false;
+    /** True while loadMoreResults() is fetching the next Everything page. */
+    let resultsLoadMoreBusy = false;
+    /** Offset paging: replay same query with higher Everything offset (null = no further pages for current search). */
+    let resultsPagingCtx = null;
+    let resultsScrollMoreTimer = null;
     let autoRefreshTimerId = null;
     /** Set only around timer-driven runSearch — avoid RHS viewer tear-down when results are just re-fetched. */
     let suppressViewerResyncForTimerSearch = false;
@@ -295,7 +272,16 @@
     const PROPS_PREVIEW_DEBOUNCE_LIGHT_MS = 90;
     let propsPreviewDebounceTimer = null;
 
-    const SORT_LABELS = { name: 'Name', path: 'Path', ext: 'Type', size: 'Size', date_modified: 'Modified' };
+    const SORT_LABELS = { name: 'Name', path: 'Path', size: 'Size', date_modified: 'Modified' };
+
+    function isTreeViewOn() {
+      return !!document.getElementById('optTreeView')?.checked;
+    }
+    /** Tree browse: empty query and no tag filter — folders recursive + files in scope root only. */
+    function isTreeBrowseSimpleMode() {
+      const q = document.getElementById('query');
+      return isTreeViewOn() && (!q || !String(q.value || '').trim()) && activeTagKeys.size === 0;
+    }
 
     /** @type {Set<string>} lowercase keys; tag bar filters with AND (click toggles each). */
     let activeTagKeys = new Set();
@@ -391,12 +377,60 @@
     /** Google Drive desktop shortcuts → Viewer opens linked URL in a child BrowserWindow. */
     const GOOGLE_SHORTCUT_EXT = new Set(['gdoc', 'gsheet', 'gslides']);
 
+    /** .lnk target: set scope to that folder, or to parent folder and select the file (Everything list). */
+    async function navigateTagFoxToShortcutTarget(targetPathRaw, isDirectory) {
+      const status = document.getElementById('status');
+      let t = String(targetPathRaw || '').trim();
+      if (!t) {
+        if (status) status.textContent = 'Shortcut target is empty.';
+        return;
+      }
+      t = t.replace(/\//g, '\\');
+      if (isDirectory) {
+        const folderFp = normalizeFolderPathForEverything(t);
+        selectedRow = null;
+        selectedFullPath = folderFp;
+        await applySearchScopeAndRefresh(folderFp);
+        return;
+      }
+      const parent = normalizeFolderPathForEverything(T.parentDir(t));
+      if (!parent) {
+        if (status) status.textContent = 'Could not resolve parent folder for shortcut target.';
+        return;
+      }
+      selectedRow = null;
+      selectedFullPath = t;
+      await applySearchScopeAndRefresh(parent);
+    }
+
+    /** Resolve .lnk in main; navigate inside TagFox, else shell-open the shortcut. */
+    async function followShellShortcutInTagFox(lnkFullPath) {
+      const status = document.getElementById('status');
+      if (!window.tagBrowser.resolveShellShortcut) {
+        const err = await window.tagBrowser.openPath(lnkFullPath);
+        if (err && status) status.textContent = 'Open failed: ' + err;
+        return;
+      }
+      const r = await window.tagBrowser.resolveShellShortcut({ fullPath: lnkFullPath });
+      if (!r || !r.ok) {
+        if (status) status.textContent = (r && r.error) || 'Could not read shortcut.';
+        const err = await window.tagBrowser.openPath(lnkFullPath);
+        if (err && status) status.textContent = 'Open failed: ' + err;
+        return;
+      }
+      await navigateTagFoxToShortcutTarget(r.targetPath, r.isDirectory);
+    }
+
     /** File row: shell open, or Workspace child window for .gdoc / .gsheet / .gslides (same as Viewer button). */
     async function openFileDefaultOrGoogleWorkspace(fp) {
       const status = document.getElementById('status');
       const base = T.baseName(fp);
       const dot = base.lastIndexOf('.');
       const ext = dot >= 0 ? base.slice(dot + 1).toLowerCase() : '';
+      if (ext === 'lnk') {
+        await followShellShortcutInTagFox(fp);
+        return;
+      }
       if (GOOGLE_SHORTCUT_EXT.has(ext) && window.tagBrowser.googleWorkspaceShortcutUrl && window.tagBrowser.openGoogleWorkspaceWindow) {
         const rGw = await window.tagBrowser.googleWorkspaceShortcutUrl({ fullPath: fp });
         if (!rGw.ok) {
@@ -928,75 +962,36 @@
     function loadColWidthsFromStorage() {
       try {
         const parsed = JSON.parse(localStorage.getItem(LS.tableCols) || 'null');
-        if (Array.isArray(parsed)) {
-          const raw = parsed.map((x) => Number(x));
-          if (raw.every((n) => Number.isFinite(n) && n >= 2)) {
-            if (raw.length === 7) {
-              if (raw.every((n, i) => Math.abs(n - COL_PERCENT_LEGACY_SHIPPED_7[i]) < 0.06)) {
-                colPercent = COL_PERCENT_DEFAULT.slice();
-                localStorage.setItem(LS.tableCols, JSON.stringify(colPercent));
-              } else if (raw.every((n, i) => Math.abs(n - COL_PERCENT_OLD_THIN_ACTIONS[i]) < 0.06)) {
-                colPercent = COL_PERCENT_DEFAULT.slice();
-                localStorage.setItem(LS.tableCols, JSON.stringify(colPercent));
-              } else if (raw.every((n, i) => Math.abs(n - COL_PERCENT_OLD_NARROW_NAME[i]) < 0.06)) {
-                colPercent = COL_PERCENT_DEFAULT.slice();
-                localStorage.setItem(LS.tableCols, JSON.stringify(colPercent));
-              } else if (raw.every((n, i) => Math.abs(n - COL_PERCENT_OLD_THIN_FIRST[i]) < 0.06)) {
-                colPercent = COL_PERCENT_DEFAULT.slice();
-                localStorage.setItem(LS.tableCols, JSON.stringify(colPercent));
-              } else {
-                const sum7 = raw.reduce((a, b) => a + b, 0);
-                if (sum7 > 99 && sum7 < 101) {
-                  colPercent = raw;
-                  localStorage.setItem(LS.tableCols, JSON.stringify(colPercent));
-                }
-              }
-            } else if (raw.length === 6) {
-              if (raw.every((n, i) => Math.abs(n - COL_PERCENT_WIDE_CHK_DEFAULT[i]) < 0.06)) {
-                colPercent = COL_PERCENT_DEFAULT.slice();
-                localStorage.setItem(LS.tableCols, JSON.stringify(colPercent));
-              } else {
-                const sum = raw.reduce((a, b) => a + b, 0);
-                if (sum > 99 && sum < 101) {
-                  const take = Math.min(5.5, Math.max(3, raw[2] * 0.09));
-                  const pathN = raw[2] - take;
-                  if (pathN >= 8) {
-                    colPercent = [raw[0], raw[1], pathN, take, raw[3], raw[4], raw[5]];
-                  } else {
-                    colPercent = COL_PERCENT_DEFAULT.slice();
-                  }
-                  localStorage.setItem(LS.tableCols, JSON.stringify(colPercent));
-                }
-              }
-            }
-          }
+        if (!Array.isArray(parsed)) return;
+        const raw0 = parsed.map((x) => Number(x));
+        if (!raw0.every((n) => Number.isFinite(n) && n >= 2)) return;
+        let raw = raw0;
+        if (raw.length === 7) {
+          raw = [raw[0], raw[1], raw[2] + raw[3], raw[4], raw[5], raw[6]];
+        }
+        if (raw.length !== 6) {
+          colPercent = COL_PERCENT_DEFAULT.slice();
+          localStorage.setItem(LS.tableCols, JSON.stringify(colPercent));
+          return;
+        }
+        const sum = raw.reduce((a, b) => a + b, 0);
+        if (sum > 99 && sum < 101) {
+          colPercent = raw;
+          if (raw0.length === 7) localStorage.setItem(LS.tableCols, JSON.stringify(colPercent));
+        } else {
+          colPercent = COL_PERCENT_DEFAULT.slice();
+          localStorage.setItem(LS.tableCols, JSON.stringify(colPercent));
         }
       } catch (_) {}
     }
 
-    function loadColVisibilityFromStorage() {
-      try {
-        const parsed = JSON.parse(localStorage.getItem(LS.tableColVisible) || 'null');
-        const norm = normalizeColVisibleFromSaved(parsed);
-        if (norm && COL_VISIBLE_TOGGLE_INDEXES.some((i) => norm[i])) colVisible = norm;
-      } catch (_) {}
-      syncColumnVisibilityMenu();
-      applyTableColumnVisibility();
-    }
-
-    function persistColVisibilityToStorage() {
-      localStorage.setItem(LS.tableColVisible, JSON.stringify(colVisible));
-    }
-
-    /** Fold hidden column weight into Name (or Path if Name hidden) so visible % still sums to 100. */
+    /** Fold Path weight into Name when tree view hides Path so bars still sum to 100. */
     function effectiveColWeights() {
       const w = colPercent.slice();
-      const foldInto =
-        colVisible[1] !== false ? 1 : colVisible[2] !== false ? 2 : 0;
-      for (let i = 0; i < 7; i++) {
-        if (colVisible[i] !== false || i === foldInto) continue;
-        w[foldInto] += w[i];
-        w[i] = 0;
+      if (isTreeViewOn() && w.length > RESULTS_PATH_COL_IDX) {
+        const fold = w[RESULTS_PATH_COL_IDX] || 0;
+        w[1] = (w[1] || 0) + fold;
+        w[RESULTS_PATH_COL_IDX] = 0;
       }
       return w;
     }
@@ -1004,12 +999,12 @@
     function applyTableColWidths() {
       const w = effectiveColWeights();
       let sumV = 0;
-      for (let i = 0; i < 7; i++) {
-        if (colVisible[i] !== false) sumV += w[i];
+      for (let i = 0; i < w.length; i++) {
+        if (w[i] > 0) sumV += w[i];
       }
       if (!(sumV > 0)) return;
       document.querySelectorAll('#resultsTable col').forEach((c, i) => {
-        if (colVisible[i] === false) {
+        if (w[i] <= 0) {
           c.style.width = '';
           return;
         }
@@ -1017,31 +1012,19 @@
       });
     }
 
-    function syncColumnVisibilityMenu() {
-      const menu = document.getElementById('statusColumnsMenu');
-      if (!menu) return;
-      menu.querySelectorAll('input[data-col-idx]').forEach((el) => {
-        const idx = Number(el.getAttribute('data-col-idx'));
-        if (!Number.isInteger(idx)) return;
-        el.checked = colVisible[idx] !== false;
-      });
-    }
-
-    function applyTableColumnVisibility() {
+    /** Flat view: show Path column; tree view: hide Path col+header (grouping uses name gutter). */
+    function applyResultsTablePathColumnVisibility() {
+      const showPath = !isTreeViewOn();
       const table = document.getElementById('resultsTable');
       if (!table) return;
       const cols = table.querySelectorAll('col');
       const ths = table.querySelectorAll('thead th');
-      for (let i = 0; i < 7; i++) {
-        const vis = colVisible[i] !== false;
-        if (cols[i]) cols[i].style.display = vis ? '' : 'none';
-        if (ths[i]) ths[i].style.display = vis ? '' : 'none';
-      }
+      const idx = RESULTS_PATH_COL_IDX;
+      if (cols[idx]) cols[idx].style.display = showPath ? '' : 'none';
+      if (ths[idx]) ths[idx].style.display = showPath ? '' : 'none';
       table.querySelectorAll('tbody tr').forEach((tr) => {
-        const cells = tr.children;
-        for (let i = 0; i < Math.min(7, cells.length); i++) {
-          cells[i].style.display = colVisible[i] !== false ? '' : 'none';
-        }
+        const cell = tr.children[idx];
+        if (cell) cell.style.display = showPath ? '' : 'none';
       });
       applyTableColWidths();
     }
@@ -1062,7 +1045,7 @@
           b -= minLeft - a;
           a = minLeft;
         }
-        const minRight = boundaryIdx === 5 ? COL_RESIZE_MIN_ACTIONS_PCT : 3;
+        const minRight = boundaryIdx === 4 ? COL_RESIZE_MIN_ACTIONS_PCT : 3;
         if (b < minRight) {
           a -= minRight - b;
           b = minRight;
@@ -1259,22 +1242,21 @@
       return s.split('\\').filter(Boolean);
     }
 
-    /** Path folder grouping is active only for recursive + path sort + mode includes folders. */
+    /** Path folder grouping: tree search mode (not simple browse), path sort. */
     function shouldShowPathFolderGrouping() {
-      const recursive = !!document.getElementById('folderSearchRecursive')?.checked;
-      return recursive && sortColumn === 'path' && fileFolderFilterMode() !== 'files';
+      return isTreeViewOn() && sortColumn === 'path' && !isTreeBrowseSimpleMode();
     }
 
     /**
      * Tree + recency: directory mtime is often “touched” without meaningful content changes.
      * Drop real folder *hits* from the filtered set; path-grouping still injects synthetic folder rows
-     * as ancestors of surviving files. Folders-only mode still relies on folder rows + their dates.
+     * as ancestors of surviving files. Simple tree browse keeps folder rows.
      */
     function treeRecencyDropRealFolderHits() {
       return (
         shouldShowPathFolderGrouping() &&
         recencyFilterMode() !== 'all' &&
-        fileFolderFilterMode() !== 'folders'
+        !isTreeBrowseSimpleMode()
       );
     }
 
@@ -1283,6 +1265,24 @@
       const fp = fullPathForRow(row);
       const parent = String(T.parentDir(fp) || '').trim().replace(/[/\\]+$/, '');
       return pathSegmentsForTree(parent);
+    }
+
+    /** Scope folder (#rootFolder / breadcrumb) as segments — empty when searching whole index. */
+    function scopeSegmentsForTree() {
+      const scope = currentScopeFolderPath();
+      return scope ? pathSegmentsForTree(scope) : [];
+    }
+
+    /**
+     * Parent path segments shown in tree view: only below the current scope (last breadcrumb folder).
+     * If a hit isn’t under scope, fall back to full parent segments (odd result / no scope).
+     */
+    function parentSegmentsUnderScope(row) {
+      const full = parentSegmentsForRow(row);
+      const sp = scopeSegmentsForTree();
+      if (!sp.length) return full;
+      if (commonPrefixLen(sp, full) !== sp.length) return full;
+      return full.slice(sp.length);
     }
 
     /** Common prefix length for two arrays (case-insensitive). */
@@ -1317,37 +1317,37 @@
           if (k) realFolderKeys.add(k);
         }
       }
-      const parentSegsList = src.map((r) => parentSegmentsForRow(r));
+      const scopeParts = scopeSegmentsForTree();
+      const parentSegsList = src.map((r) => parentSegmentsUnderScope(r));
       const stripPrefixLen = segmentArraysCommonPrefixLen(parentSegsList);
-      const sameParentFolder = parentSegsList.every((parts) => parts.length === stripPrefixLen);
       const out = [];
       let prevRelParent = [];
       for (let rowIdx = 0; rowIdx < src.length; rowIdx++) {
         const row = src[rowIdx];
-        const absParts = parentSegsList[rowIdx];
-        const relParts = absParts.slice(stripPrefixLen);
-        if (sameParentFolder) {
-          if (rowIdx === 0 && absParts.length) {
-            const fullDir = absParts.join('\\');
-            if (!realFolderKeys.has(pathNormKey(fullDir))) {
-              const synthetic = syntheticFolderRow(fullDir);
-              synthetic.__pathTreeDepthUi = 1;
-              out.push(synthetic);
-            }
+        const under = parentSegsList[rowIdx];
+        const relParts = under.slice(stripPrefixLen);
+        const l = commonPrefixLen(prevRelParent, relParts);
+        /* One row (or shared strip eats all rel segments): emit each folder under scope, not one collapsed leaf. */
+        if (rowIdx === 0 && relParts.length === 0 && under.length > 0) {
+          for (let k = 0; k < under.length; k++) {
+            const prefixSegs = scopeParts.concat(under.slice(0, k + 1));
+            const fullDir = prefixSegs.join('\\');
+            if (realFolderKeys.has(pathNormKey(fullDir))) continue;
+            const synthetic = syntheticFolderRow(fullDir);
+            synthetic.__pathTreeDepthUi = k + 1;
+            out.push(synthetic);
           }
-          row.__pathTreeDepthUi = 2;
         } else {
-          const l = commonPrefixLen(prevRelParent, relParts);
           for (let j = l; j < relParts.length; j++) {
-            const absCount = stripPrefixLen + j + 1;
-            const fullDir = absParts.slice(0, absCount).join('\\');
+            const prefixSegs = scopeParts.concat(under.slice(0, stripPrefixLen + j + 1));
+            const fullDir = prefixSegs.join('\\');
             if (realFolderKeys.has(pathNormKey(fullDir))) continue;
             const synthetic = syntheticFolderRow(fullDir);
             synthetic.__pathTreeDepthUi = j + 1;
             out.push(synthetic);
           }
-          row.__pathTreeDepthUi = relParts.length + 1;
         }
+        row.__pathTreeDepthUi = (relParts.length === 0 ? under.length : relParts.length) + 1;
         out.push(row);
         prevRelParent = relParts;
       }
@@ -1620,11 +1620,6 @@
       const q = s.query != null ? String(s.query) : '';
       const sc = (s.rootFolder != null ? String(s.rootFolder) : '').trim();
       const tags = Array.isArray(s.activeTagKeys) ? [...s.activeTagKeys].filter(Boolean).sort() : [];
-      const type =
-        s.optFoldersOnly && s.optFilesOnly ? 'both'
-        : s.optFoldersOnly ? 'folders only'
-        : s.optFilesOnly ? 'files only'
-        : 'both';
       const lines = [];
       if (slotIdx >= 0 && slotIdx < 9) {
         lines.push('Shortcut: Ctrl+' + (slotIdx + 1));
@@ -1638,7 +1633,7 @@
       );
       if (tags.length) lines.push('Tags: ' + tags.join(', '));
       lines.push('Tag combine: ' + (s.tagFilterCombineOr ? 'OR' : 'AND'));
-      lines.push('Recursive: ' + (s.recursive ? 'on' : 'off'));
+      lines.push('Tree view: ' + (s.treeView !== false ? 'on' : 'off'));
       lines.push(
         'Match: case=' +
           !!s.optCase +
@@ -1646,39 +1641,14 @@
           !!s.optPath +
           ' whole=' +
           !!s.optWholeWord +
-          ' regex=' +
-          !!s.optRegex +
           ' diacritics=' +
           !!s.optDiacritics
       );
-      lines.push('Types: ' + type);
       lines.push(
         'Recency: ' +
           (s.recencyFilter && s.recencyFilter !== 'all' ? String(s.recencyFilter) + ' (modified)' : 'all')
       );
-      lines.push('Hide special: ' + !!s.optHideDotFolders);
-      lines.push('Sort folders with files (Settings): ' + (s.optSortFoldersWithFiles !== false));
       lines.push('Sort: ' + (s.sortColumn || 'name') + ' ' + (s.sortAsc !== false ? 'asc' : 'desc'));
-      {
-        const norm = normalizeColVisibleFromSaved(s.colVisible);
-        if (norm) {
-          const map = [
-            ['Name', norm[1]],
-            ['Path', norm[2]],
-            ['Type', norm[3]],
-            ['Size', norm[4]],
-            ['Modified', norm[5]],
-            ['Actions', norm[6]],
-          ];
-          lines.push(
-            'Columns: ' +
-              map
-                .filter((x) => !!x[1])
-                .map((x) => x[0])
-                .join(', ')
-          );
-        }
-      }
       lines.push('Advanced panel: ' + (s.advancedPanelOpen ? 'open' : 'closed'));
       return lines.join('\n');
     }
@@ -1744,7 +1714,7 @@
       q.placeholder = 'Search inside ' + pretty;
     }
 
-    /** Breadcrumb bar only depends on scope folder + Recursive — not on which result row is selected. */
+    /** Breadcrumb bar only depends on scope folder — not on which result row is selected. */
     let renderedScopeBreadcrumbKey = null;
     /** Set by refreshDriveRootsPickerGate(): Windows = any ready drive letter; macOS/Linux = more than one volume root. */
     let driveRootsPickerShow = false;
@@ -1786,9 +1756,7 @@
     }
 
     function currentScopeBreadcrumbKey() {
-      const raw = document.getElementById('rootFolder').value.trim();
-      const rec = document.getElementById('folderSearchRecursive').checked;
-      return raw + '\0' + (rec ? '1' : '0');
+      return document.getElementById('rootFolder').value.trim();
     }
 
     /** Avoid rebuilding breadcrumb when selection/table updates would destroy open ▾ + flyouts for nothing. */
@@ -2288,8 +2256,7 @@
         btn.textContent = parsed.pretty;
         const folderForSearch = normalizeFolderPathForEverything(acc);
         wrap.dataset.dropPath = folderForSearch; // internal drag-drop target (move into this folder)
-        btn.title =
-          'Scope: ' + folderForSearch + (document.getElementById('folderSearchRecursive').checked ? ' (recursive)' : ' (this folder only)');
+        btn.title = 'Scope: ' + folderForSearch + ' (recursive under this folder)';
         btn.addEventListener('click', async (e) => {
           e.stopPropagation();
           await applySearchScopeAndRefresh(folderForSearch);
@@ -2806,10 +2773,16 @@
       }
     }
 
-    /** New folder under scope; raw name sanitized in main process. */
-    async function createNewFolderInScopeInteractive() {
+    /**
+     * New folder under scope. parentOverride: when set (e.g. folder row ⋯ / right‑click), create inside that folder;
+     * otherwise use the current scope folder from Settings.
+     */
+    async function createNewFolderInScopeInteractive(parentOverride) {
       const status = document.getElementById('status');
-      const parent = currentScopeFolderPath();
+      const parent =
+        parentOverride != null && String(parentOverride).trim()
+          ? normalizeFolderPathForEverything(String(parentOverride).trim())
+          : currentScopeFolderPath();
       if (!parent) {
         status.textContent = 'Set a scope folder (Settings or breadcrumb) first.';
         return;
@@ -3659,11 +3632,25 @@
       return q ? quoted + ' ' + q : quoted;
     }
 
+    /**
+     * When Match path is off, wrap free-text in nopath:<…> so terms don’t match parent segments unless intended.
+     * If Match path is on, the HTTP layer searches paths; Everything’s nopath: skips that when already matching path.
+     */
+    function filenameOnlyUserQueryForScopedSearch(qRaw) {
+      const raw = String(qRaw || '').trim();
+      if (!raw) return raw;
+      if (document.getElementById('optPath').checked) return raw;
+      if (/^nopath:/i.test(raw)) return raw;
+      if (/<|>/.test(raw)) return raw;
+      return 'nopath:<' + raw + '>';
+    }
+
     /** Combine scope + user query for API (non-recursive uses parent: internally; query box stays clean). */
     function composeScopedEverythingSearch(scopeRaw, userQuery, recursive) {
-      const q = (userQuery || '').trim();
       const scope = (scopeRaw || '').trim();
+      let q = (userQuery || '').trim();
       if (!scope) return q;
+      q = filenameOnlyUserQueryForScopedSearch(q);
       const scopeNorm = normalizeFolderPathForEverything(scope).replace(/[/\\]+$/, '');
       if (recursive) return buildEverythingSearch(scopeNorm, q);
       const parentTok = 'parent:"' + scopeNorm.replace(/"/g, '') + '"';
@@ -3686,7 +3673,6 @@
         searchText: bracketDiscoveryQuery,
         countCap,
         baseUrl,
-        hideDotFolders: !!document.getElementById('optHideDotFolders')?.checked,
         hasSearchBridge: !!(window.tagBrowser && typeof window.tagBrowser.search === 'function'),
         knownTagsBeforeScan: knownBracketTagsList.length,
       });
@@ -3718,22 +3704,18 @@
         renderTagBar();
         return;
       }
-      const discRows = rowsRespectingHideDotFolders(rawRows);
       searchDebugLog('tagDiscovery.rowsPipe', {
         rawLen: rawRows.length,
-        afterHideDotLen: discRows.length,
-        droppedByHideDot: rawRows.length - discRows.length,
         sampleRaw: rawRows.slice(0, 3).map(searchDebugTagRowDigest),
-        sampleFiltered: discRows.slice(0, 3).map(searchDebugTagRowDigest),
       });
-      tagDiscoveryRows = discRows;
-      if (discRows.length) tagDiscoveryRowsLastGood = discRows;
-      absorbKnownBracketTagsFromScanRows(discRows);
+      tagDiscoveryRows = rawRows;
+      if (rawRows.length) tagDiscoveryRowsLastGood = rawRows;
+      absorbKnownBracketTagsFromScanRows(rawRows);
       searchDebugLog('tagDiscovery.afterAbsorb', { knownBracketTagsListLen: knownBracketTagsList.length });
       let fullScanActiveChanged = false;
       if (pruneDeadRemembered) {
         const countsFromDisc =
-          discRows.length > 0 ? T.aggregateTagCountsFromRows(discRows, fullPathForRow) : new Map();
+          rawRows.length > 0 ? T.aggregateTagCountsFromRows(rawRows, fullPathForRow) : new Map();
         searchDebugLog('tagDiscovery.prune', {
           countsFromDiscSize: countsFromDisc.size,
           keysSample: [...countsFromDisc.keys()].slice(0, 24),
@@ -3771,7 +3753,7 @@
         }
         if (fullScanActiveChanged) persistActiveTagFilter();
         if (statusEl) {
-          const n = discRows.length;
+          const n = rawRows.length;
           const extra =
             storeChanged || knownChanged || fullScanActiveChanged ? ' Dropped tags not in this scan.' : '';
           statusEl.textContent = 'Tag scan: ' + n + ' path(s) with [(…)] tag block (full index).' + extra;
@@ -3781,7 +3763,7 @@
       if (pruneDeadRemembered && fullScanActiveChanged) renderTable();
     }
 
-    /** pruneDeadRemembered true = “Rescan all tags”. false = awaitable (Hide special). */
+    /** pruneDeadRemembered true = “Rescan all tags”. false = awaitable. */
     async function runTagDiscoverySearch(pruneDeadRemembered) {
       await runTagDiscoverySearchInner(pruneDeadRemembered);
     }
@@ -3799,12 +3781,12 @@
       if (!inner) inner = t.replace(/[^a-z0-9_-]/gi, '');
       if (!inner) return '';
       const esc = escapeEverythingRegexFragment(inner);
-      return '(?i)\\[\\((?:[^,)]*,)*' + esc + '(?:,[^)]*)?\\)\\]';
+      return '(?i)\\[\\((?:[^,)]*,)*' + esc + '(?:,[^)]*)?\\)\\][^\\\\]*$';
     }
 
-    /** Narrow Everything: AND (space) or OR (|) of regex: clauses per active tag (skipped when global Regex is on). */
+    /** Narrow Everything: AND (space) or OR (|) of regex: clauses per active tag. */
     function appendActiveTagToEverythingQuery(searchText) {
-      if (!activeTagKeys.size || document.getElementById('optRegex').checked) return searchText;
+      if (!activeTagKeys.size) return searchText;
       let out = String(searchText || '').trim();
       const res = [...activeTagKeys]
         .sort()
@@ -3824,18 +3806,6 @@
     /** Google Drive for Desktop: real files live under this virtual segment — must not count as a “dot folder”. */
     function isGoogleDriveShortcutTargetsSegment(seg) {
       return String(seg || '').toLowerCase() === '.shortcut-targets-by-id';
-    }
-
-    /**
-     * Hide special in Everything: one `!path:regex:` negation (Everything 1.5+ modifier stack). Matches full path; bare `regex:` is filename-only with global Regex off.
-     * Semantics match `pathUnderDotFolder` (.segment except .shortcut-targets-by-id, ~, $, desktop.ini). Skipped when global Regex is on.
-     */
-    function appendSpecialHideToEverythingQuery(searchText) {
-      if (!document.getElementById('optHideDotFolders').checked) return String(searchText || '').trim();
-      if (document.getElementById('optRegex').checked) return String(searchText || '').trim();
-      const inner =
-        '(?:(?:\\\\|/)\\.(?!shortcut-targets-by-id(?:\\\\|/|$))[^\\\\/]+(?:\\\\|/)|(?:\\\\|/)\\.(?!shortcut-targets-by-id$)[^\\\\/]+$|(?:\\\\|/)~(?:[^\\\\/]+)?(?:(?:\\\\|/)|$)|(?:\\\\|/)\\$[^\\\\/]+(?:\\\\|/)|(?:\\\\|/)\\$[^\\\\/]+$|(?:\\\\|/)desktop\\.ini(?:\\\\|/|$))';
-      return (String(searchText || '').trim() + ' !path:regex:"' + inner + '"').trim();
     }
 
     /** dm: cutoff in local time (Everything datemodified syntax). */
@@ -3859,11 +3829,9 @@
 
     /**
      * Send recency to Everything as dm:>=… so max-results applies inside the time window (fixes path sort taking 200 “old” hits then client-filtering to a handful).
-     * Global Regex on: skipped — whole query is one pattern; filteredRows still trims by mtime client-side.
      */
     function appendRecencyToEverythingQuery(searchText) {
       if (recencyFilterMode() === 'all') return searchText;
-      if (document.getElementById('optRegex').checked) return searchText;
       const cut = recencyFilterCutoffMs();
       if (cut == null) return searchText;
       const clause = 'dm:>=' + formatEverythingDmCutoffLocal(cut);
@@ -4329,15 +4297,9 @@
     }
 
     function pruneCheckedPaths() {
-      const hideDot = document.getElementById('optHideDotFolders').checked;
       for (const k of [...checkedPathsMap.keys()]) {
-        const fp = checkedPathsMap.get(k);
         const row = lastRows.find((r) => pathNormKey(fullPathForRow(r)) === k);
-        if (!row) {
-          checkedPathsMap.delete(k);
-          continue;
-        }
-        if (hideDot && pathUnderDotFolder(fp)) checkedPathsMap.delete(k);
+        if (!row) checkedPathsMap.delete(k);
       }
       updateBulkBar();
     }
@@ -4491,12 +4453,6 @@
         if (da > db) return mul;
         return byPath();
       }
-      if (col === 'ext') {
-        const ea = rowExtSortKey(a);
-        const eb = rowExtSortKey(b);
-        const c = mul * ea.localeCompare(eb, undefined, { numeric: true, sensitivity: 'base' });
-        return c || byPath();
-      }
       return byPath();
     }
 
@@ -4505,22 +4461,14 @@
       rows.sort((a, b) => compareRowsBySort(a, b, col, asc));
     }
 
-    /**
-     * Client-side re-ordering when needed:
-     * - Path: plain string order on pathSortKey (same as sorting full paths as strings).
-     * - Both + interleave: after folder: + file: merge, one sort then cap.
-     * - force: server-direction fallback or post-merge.
-     */
+    /** Client-side re-sort: always when force; else path (full-path string order) only. */
     function sortLastRowsForDisplay(force) {
       if (!lastRows.length) return;
-      const mergedFolderFileLists =
-        fileFolderFilterMode() === 'both' && document.getElementById('optSortFoldersWithFiles').checked;
-      if (!force && !mergedFolderFileLists && sortColumn !== 'path' && sortColumn !== 'ext') return;
+      if (!force && sortColumn !== 'path') return;
       const before = lastRows.length;
       sortRowsForDisplay(lastRows, sortColumn, sortAsc);
       searchDebugLog('sortLastRowsForDisplay', {
         force: !!force,
-        mergedFolderFileLists,
         col: sortColumn,
         asc: sortAsc,
         count: before,
@@ -4546,26 +4494,6 @@
         if (seg.startsWith('.') || seg.startsWith('~') || seg.startsWith('$')) return true;
       }
       return false;
-    }
-
-    /** After sort: keep first `visibleCap` rows that pass Hide special, or first `visibleCap` raw rows when hide is off. */
-    function trimLastRowsToVisibleCap(sortedRawRows, visibleCap) {
-      if (!document.getElementById('optHideDotFolders').checked) {
-        return sortedRawRows.length > visibleCap ? sortedRawRows.slice(0, visibleCap) : sortedRawRows;
-      }
-      const out = [];
-      for (const r of sortedRawRows) {
-        if (pathUnderDotFolder(fullPathForRow(r))) continue;
-        out.push(r);
-        if (out.length >= visibleCap) break;
-      }
-      return out;
-    }
-
-    /** Hide special client-side (tag scan, global Regex+hide, or if an Everything term slips). */
-    function rowsRespectingHideDotFolders(rows) {
-      if (!document.getElementById('optHideDotFolders').checked) return rows;
-      return rows.filter((r) => !pathUnderDotFolder(fullPathForRow(r)));
     }
 
     function loadTagStore() {
@@ -4734,82 +4662,6 @@
       return new Set([s.toLowerCase()]);
     }
 
-    /** Result-type filter radios: both | folders | files (legacy: two checkboxes in localStorage). */
-    function fileFolderFilterMode() {
-      if (document.getElementById('optFilterFolders').checked) return 'folders';
-      if (document.getElementById('optFilterFiles').checked) return 'files';
-      return 'both';
-    }
-    function setFileFolderFilterMode(mode) {
-      const both = document.getElementById('optFilterBoth');
-      const folders = document.getElementById('optFilterFolders');
-      const files = document.getElementById('optFilterFiles');
-      if (!both || !folders || !files) return;
-      both.checked = mode === 'both';
-      folders.checked = mode === 'folders';
-      files.checked = mode === 'files';
-    }
-
-    /** Path column index for Tree View (checkbox…Name, Path, Type…). */
-    const TREE_VIEW_PATH_COL_IDX = 2;
-
-    function isContextualBundleActive() {
-      return (
-        sortColumn === 'path' &&
-        sortAsc === true &&
-        colVisible[TREE_VIEW_PATH_COL_IDX] === false &&
-        !!document.getElementById('folderSearchRecursive')?.checked &&
-        !!document.getElementById('optSortFoldersWithFiles')?.checked &&
-        fileFolderFilterMode() === 'both'
-      );
-    }
-
-    function syncContextualToggleUi() {
-      const el = document.getElementById('optContextual');
-      if (!el) return;
-      const on = isContextualBundleActive();
-      if (el.checked !== on) el.checked = on;
-    }
-
-    /** Apply the Tree View preset (optionally skip search — caller runs scheduleSearch). Enables folder+file interleave to match exit turning it off. */
-    function applyContextualBundle(opts) {
-      const deferSearch = !!(opts && opts.deferSearch);
-      sortColumn = 'path';
-      sortAsc = true;
-      colVisible[TREE_VIEW_PATH_COL_IDX] = false;
-      const rec = document.getElementById('folderSearchRecursive');
-      if (rec) rec.checked = true;
-      setFileFolderFilterMode('both');
-      const sfw = document.getElementById('optSortFoldersWithFiles');
-      if (sfw) sfw.checked = true;
-      persistColVisibilityToStorage();
-      syncColumnVisibilityMenu();
-      applyTableColumnVisibility();
-      saveSettings();
-      updateSortHeaders();
-      renderScopeBreadcrumb();
-      syncContextualToggleUi();
-      commitSearchHistoryNow();
-      if (!deferSearch) void runSearchNow();
-    }
-
-    /** User turned Tree View off: leave recursive / both; show Path column; Modified ▲; turn off folder+file interleave (single query). */
-    function exitContextualBundle() {
-      sortColumn = 'date_modified';
-      sortAsc = true;
-      colVisible[TREE_VIEW_PATH_COL_IDX] = true;
-      const sfw = document.getElementById('optSortFoldersWithFiles');
-      if (sfw) sfw.checked = false;
-      persistColVisibilityToStorage();
-      syncColumnVisibilityMenu();
-      applyTableColumnVisibility();
-      saveSettings();
-      updateSortHeaders();
-      syncContextualToggleUi();
-      commitSearchHistoryNow();
-      void runSearchNow();
-    }
-
     function recencyFilterMode() {
       const el = document.querySelector('input[name="tagFoxRecencyFilter"]:checked');
       const v = el && el.value;
@@ -4919,25 +4771,28 @@
       document.getElementById('optCase').checked = localStorage.getItem(LS.optCase) === '1';
       document.getElementById('optWholeWord').checked = localStorage.getItem(LS.optWholeWord) === '1';
       document.getElementById('optPath').checked = localStorage.getItem(LS.optPath) === '1';
-      document.getElementById('optRegex').checked = localStorage.getItem(LS.optRegex) === '1';
       document.getElementById('optDiacritics').checked = localStorage.getItem(LS.optDiacritics) === '1';
-      const legacyFolders = localStorage.getItem(LS.foldersOnly) === '1';
-      const legacyFiles = localStorage.getItem(LS.filesOnly) === '1';
-      let ffMode = 'both';
-      if (legacyFolders) ffMode = 'folders';
-      else if (legacyFiles) ffMode = 'files';
-      setFileFolderFilterMode(ffMode);
+      {
+        const tv = localStorage.getItem(LS.treeView);
+        if (tv === null) {
+          const legacyRec = localStorage.getItem('tagBrowserFolderRec');
+          const legacy =
+            legacyRec !== '0' &&
+            localStorage.getItem(LS.sortBy) === 'path' &&
+            localStorage.getItem(LS.optAsc) !== '0';
+          document.getElementById('optTreeView').checked = legacy;
+        } else {
+          document.getElementById('optTreeView').checked = tv === '1';
+        }
+      }
       {
         const rf = localStorage.getItem(LS.recencyFilter);
         setRecencyFilterMode(['all', '1h', '1d', '1w', '1m', '1y'].includes(rf) ? rf : 'all');
       }
       sortColumn = localStorage.getItem(LS.sortBy) || 'name';
-      if (!['name', 'path', 'date_modified', 'size', 'ext'].includes(sortColumn)) sortColumn = 'name';
+      if (sortColumn === 'ext') sortColumn = 'name';
+      if (!['name', 'path', 'date_modified', 'size'].includes(sortColumn)) sortColumn = 'name';
       sortAsc = localStorage.getItem(LS.optAsc) !== '0';
-      document.getElementById('folderSearchRecursive').checked =
-        localStorage.getItem(LS.folderSearchRecursive) !== '0';
-      document.getElementById('optHideDotFolders').checked = localStorage.getItem(LS.hideDotFolders) === '1';
-      document.getElementById('optSortFoldersWithFiles').checked = localStorage.getItem(LS.sortFoldersWithFiles) !== '0';
       document.getElementById('optSearchDebug').checked = localStorage.getItem(LS.searchDebug) === '1';
       activeTagKeys = activeTagKeysFromStored(localStorage.getItem(LS.activeTagFilter));
       tagFilterCombineOr = localStorage.getItem(LS.tagFilterCombineOr) === '1';
@@ -4972,23 +4827,11 @@
       localStorage.setItem(LS.optCase, document.getElementById('optCase').checked ? '1' : '0');
       localStorage.setItem(LS.optWholeWord, document.getElementById('optWholeWord').checked ? '1' : '0');
       localStorage.setItem(LS.optPath, document.getElementById('optPath').checked ? '1' : '0');
-      localStorage.setItem(LS.optRegex, document.getElementById('optRegex').checked ? '1' : '0');
       localStorage.setItem(LS.optDiacritics, document.getElementById('optDiacritics').checked ? '1' : '0');
-      const ff = fileFolderFilterMode();
-      localStorage.setItem(LS.foldersOnly, ff === 'folders' ? '1' : '0');
-      localStorage.setItem(LS.filesOnly, ff === 'files' ? '1' : '0');
+      localStorage.setItem(LS.treeView, document.getElementById('optTreeView').checked ? '1' : '0');
       localStorage.setItem(LS.recencyFilter, recencyFilterMode());
       localStorage.setItem(LS.sortBy, sortColumn);
       localStorage.setItem(LS.optAsc, sortAsc ? '1' : '0');
-      localStorage.setItem(
-        LS.folderSearchRecursive,
-        document.getElementById('folderSearchRecursive').checked ? '1' : '0'
-      );
-      localStorage.setItem(LS.hideDotFolders, document.getElementById('optHideDotFolders').checked ? '1' : '0');
-      localStorage.setItem(
-        LS.sortFoldersWithFiles,
-        document.getElementById('optSortFoldersWithFiles').checked ? '1' : '0'
-      );
       localStorage.setItem(LS.searchDebug, document.getElementById('optSearchDebug').checked ? '1' : '0');
       localStorage.setItem(LS.tagFilterCombineOr, tagFilterCombineOr ? '1' : '0');
       persistActiveTagFilter();
@@ -4999,7 +4842,7 @@
         case: document.getElementById('optCase').checked,
         wholeword: document.getElementById('optWholeWord').checked,
         pathSearch: document.getElementById('optPath').checked,
-        regex: document.getElementById('optRegex').checked,
+        regex: false,
         diacritics: document.getElementById('optDiacritics').checked,
         sort: sortColumn,
         ascending: sortAsc,
@@ -5064,10 +4907,7 @@
 
     /** Keep request options aligned with UI; direction fallback is handled explicitly in runSearch when needed. */
     function everythingOptionsForRequest() {
-      const o = searchOptionsFromUI();
-      /* Everything HTTP has no extension sort; fetch by name then sort Type in the client. */
-      if (o.sort === 'ext') return { ...o, sort: 'name' };
-      return o;
+      return searchOptionsFromUI();
     }
 
     function serializeSearchState() {
@@ -5077,20 +4917,14 @@
         rootFolder: document.getElementById('rootFolder').value,
         activeTagKeys: [...activeTagKeys].sort(),
         tagFilterCombineOr: !!tagFilterCombineOr,
-        recursive: document.getElementById('folderSearchRecursive').checked,
+        treeView: document.getElementById('optTreeView').checked,
         optCase: document.getElementById('optCase').checked,
         optWholeWord: document.getElementById('optWholeWord').checked,
         optPath: document.getElementById('optPath').checked,
-        optRegex: document.getElementById('optRegex').checked,
         optDiacritics: document.getElementById('optDiacritics').checked,
-        optFoldersOnly: fileFolderFilterMode() === 'folders',
-        optFilesOnly: fileFolderFilterMode() === 'files',
         recencyFilter: recencyFilterMode(),
-        optHideDotFolders: document.getElementById('optHideDotFolders').checked,
-        optSortFoldersWithFiles: document.getElementById('optSortFoldersWithFiles').checked,
         sortColumn: sortColumn,
         sortAsc: sortAsc,
-        colVisible: colVisible.slice(),
         advancedPanelOpen: !!(advPanel && !advPanel.hasAttribute('hidden')),
       };
     }
@@ -5153,31 +4987,21 @@
         activeTagKeys = new Set();
       }
       tagFilterCombineOr = !!s.tagFilterCombineOr;
-      document.getElementById('folderSearchRecursive').checked = !!s.recursive;
+      {
+        const el = document.getElementById('optTreeView');
+        if (el) el.checked = s.treeView !== false && s.treeView !== 0;
+      }
       document.getElementById('optCase').checked = !!s.optCase;
       document.getElementById('optWholeWord').checked = !!s.optWholeWord;
       document.getElementById('optPath').checked = !!s.optPath;
-      document.getElementById('optRegex').checked = !!s.optRegex;
       document.getElementById('optDiacritics').checked = !!s.optDiacritics;
-      if (s.optFoldersOnly && s.optFilesOnly) setFileFolderFilterMode('both');
-      else if (s.optFoldersOnly) setFileFolderFilterMode('folders');
-      else if (s.optFilesOnly) setFileFolderFilterMode('files');
-      else setFileFolderFilterMode('both');
       setRecencyFilterMode(
         s.recencyFilter && ['all', '1h', '1d', '1w', '1m', '1y'].includes(s.recencyFilter) ? s.recencyFilter : 'all'
       );
-      document.getElementById('optHideDotFolders').checked = !!s.optHideDotFolders;
-      document.getElementById('optSortFoldersWithFiles').checked = s.optSortFoldersWithFiles !== false;
-      sortColumn =
-        s.sortColumn && ['name', 'path', 'date_modified', 'size', 'ext'].includes(s.sortColumn) ? s.sortColumn : 'name';
+      let sc = s.sortColumn && String(s.sortColumn);
+      if (sc === 'ext') sc = 'name';
+      sortColumn = sc && ['name', 'path', 'date_modified', 'size'].includes(sc) ? sc : 'name';
       sortAsc = s.sortAsc !== false;
-      {
-        const norm = normalizeColVisibleFromSaved(s.colVisible);
-        if (norm && COL_VISIBLE_TOGGLE_INDEXES.some((i) => norm[i])) colVisible = norm;
-        else colVisible = COL_VISIBLE_DEFAULT.slice();
-      }
-      syncColumnVisibilityMenu();
-      applyTableColumnVisibility();
       const panel = document.getElementById('searchOptsAdvancedPanel');
       const advBtn = document.getElementById('btnToggleSearchOptsAdvanced');
       if (panel && advBtn) {
@@ -5187,7 +5011,6 @@
         advBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
         advBtn.classList.toggle('active', open);
       }
-      syncContextualToggleUi();
     }
 
     async function goSearchHistory(delta) {
@@ -5200,7 +5023,6 @@
         persistActiveTagFilter();
         saveSettings();
         updateSortHeaders();
-        syncContextualToggleUi();
         renderScopeBreadcrumb();
         renderTagBar();
         await runSearchNow();
@@ -5220,7 +5042,6 @@
         persistActiveTagFilter();
         saveSettings();
         updateSortHeaders();
-        syncContextualToggleUi();
         renderScopeBreadcrumb();
         renderTagBar();
         await runSearchNow();
@@ -5283,21 +5104,6 @@
       return pretty.slice(i + 1).toLowerCase();
     }
 
-    /** Type column label; folders always read as Folder (matches sort bucket). */
-    function rowTypeLabel(row) {
-      if (rowIsFolder(row)) return 'Folder';
-      const fp = fullPathForRow(row);
-      const ext = fileExtFromPretty(T.parseSegmentTags(T.baseName(fp)).pretty);
-      return ext || '—';
-    }
-
-    function rowExtSortKey(row) {
-      if (rowIsFolder(row)) return 'folder';
-      const fp = fullPathForRow(row);
-      const ext = fileExtFromPretty(T.parseSegmentTags(T.baseName(fp)).pretty);
-      return (ext || '').toLowerCase();
-    }
-
     function fileIconEl(ext) {
       const spec = FILE_ICON_BY_EXT.get(ext) || { kind: 'base', color: '#6c757d', label: ext ? '.' + ext : 'File' };
       const fa = FILE_ICON_FA[spec.kind] || FILE_ICON_FA.base;
@@ -5330,7 +5136,7 @@
     }
 
     function filteredRows() {
-      let rows = rowsRespectingHideDotFolders(lastRows);
+      let rows = lastRows.slice();
       if (activeTagKeys.size) {
         if (tagFilterCombineOr && activeTagKeys.size > 1) {
           rows = rows.filter((r) => {
@@ -5350,8 +5156,7 @@
       }
       const cut = recencyFilterCutoffMs();
       if (cut != null) {
-        const recencyInEverything =
-          recencyFilterMode() !== 'all' && !document.getElementById('optRegex').checked;
+        const recencyInEverything = recencyFilterMode() !== 'all';
         if (!recencyInEverything) {
           rows = rows.filter((r) => {
             if (treeRecencyDropRealFolderHits() && rowIsFolder(r)) return false;
@@ -5381,9 +5186,6 @@
       qWrap?.classList.remove('pulse-hint', 'pulse-hint--sparse');
       qWrap?.style.removeProperty('--empty-pulse-frac');
       document.getElementById('query')?.classList.remove('pulse-hint', 'pulse-hint--sparse');
-      const recLbl = document.querySelector('label[for="folderSearchRecursive"]');
-      recLbl?.classList.remove('pulse-hint', 'pulse-hint--sparse');
-      recLbl?.style.removeProperty('--empty-pulse-frac');
       const recencyGrp = recencyFilterGroupEl();
       recencyGrp?.classList.remove('pulse-hint', 'pulse-hint--sparse');
       recencyGrp?.style.removeProperty('--empty-pulse-frac');
@@ -5419,7 +5221,7 @@
     }
 
     /**
-     * Visible rows 0: full pulse on filters (non-empty query / recursive off / active tags).
+     * Visible rows 0: full pulse on filters (non-empty query / active tags).
      * Visible 0 + recency ≠ All: also pulse the Recency control (client or Everything dm: filter may hide all rows).
      * Visible 1–9: same targets, weaker pulse; strength (10−n)/10 → 0 at 10 rows (recency not pulsed here).
      * opts.forceRestart: replay animation after search (row count may change with same fingerprint).
@@ -5434,13 +5236,10 @@
 
       const q = document.getElementById('query');
       const qWrap = document.getElementById('queryInputGroup');
-      const rec = document.getElementById('folderSearchRecursive');
-      const recLbl = document.querySelector('label[for="folderSearchRecursive"]');
       const recencyGrp = recencyFilterGroupEl();
       const recencyMode = recencyFilterMode();
       const qNonEmpty = !!(q && q.value && q.value.trim());
       const wantQ = inBand && qNonEmpty;
-      const wantRec = inBand && rec && !rec.checked;
       const wantTag = inBand && activeTagKeys.size > 0;
       const wantRecency = isEmpty && recencyMode !== 'all';
 
@@ -5458,7 +5257,7 @@
         '\0' +
         (q && q.value != null ? String(q.value).trim() : '') +
         '\0' +
-        (rec && rec.checked ? '1' : '0') +
+        (isTreeViewOn() ? '1' : '0') +
         '\0' +
         (tagFilterCombineOr ? 'or' : 'and') +
         '\0' +
@@ -5468,7 +5267,6 @@
 
       if (fpChanged) {
         restartPulseHint(qWrap, wantQ, mode, sparseFrac);
-        restartPulseHint(recLbl, wantRec, mode, sparseFrac);
         restartPulseHint(recencyGrp, wantRecency, mode, sparseFrac);
         document.querySelectorAll('#tagBar button.tag-bar-pill-active[data-tag-key]').forEach((btn) => {
           restartPulseHint(btn, wantTag && activeTagKeys.has(btn.dataset.tagKey), mode, sparseFrac);
@@ -5480,11 +5278,6 @@
       qWrap?.classList.toggle('pulse-hint--sparse', wantQ && mode === 'sparse');
       if (wantQ && mode === 'sparse') qWrap?.style.setProperty('--empty-pulse-frac', String(sparseFrac));
       else if (!wantQ || mode === 'empty') qWrap?.style.removeProperty('--empty-pulse-frac');
-
-      recLbl?.classList.toggle('pulse-hint', wantRec);
-      recLbl?.classList.toggle('pulse-hint--sparse', wantRec && mode === 'sparse');
-      if (wantRec && mode === 'sparse') recLbl?.style.setProperty('--empty-pulse-frac', String(sparseFrac));
-      else if (!wantRec || mode === 'empty') recLbl?.style.removeProperty('--empty-pulse-frac');
 
       recencyGrp?.classList.toggle('pulse-hint', wantRecency);
       recencyGrp?.classList.toggle('pulse-hint--sparse', wantRecency && mode === 'sparse');
@@ -5540,7 +5333,7 @@
         el.appendChild(rescan);
       };
       // Counts match the visible table (filteredRows), not merged tag-scan rows.
-      const forTagCounting = rowsRespectingHideDotFolders(filteredRows());
+      const forTagCounting = filteredRows();
       const counts = forTagCounting.length ? T.aggregateTagCountsFromRows(forTagCounting, fullPathForRow) : new Map();
       // Pill set = global knownBracketTagsList order; numbers = tag hits in this result list.
       const entries = [];
@@ -5584,7 +5377,7 @@
         g.className = 'btn-group btn-group-sm';
         g.setAttribute('role', 'group');
         g.title =
-          'Combine multiple tag filters: match ALL (AND) or ANY (OR). Used in the Everything query (when Regex is off) and in the result table filter.';
+          'Combine multiple tag filters: match ALL (AND) or ANY (OR). Used in the Everything query and in the result table filter.';
         const idA = 'tagFoxTagCombineAnd';
         const idO = 'tagFoxTagCombineOr';
         const rA = document.createElement('input');
@@ -5637,9 +5430,9 @@
         b.title =
           'Toggle [(…)] tag filter (multi-tag: ' +
           (tagFilterCombineOr ? 'OR = any selected tag' : 'AND = all selected tags') +
-          '). Regex off: adds an Everything regex: clause; any tag on turns Recursive. ' +
+          '). Adds an Everything regex: clause for the tag. ' +
           (info.count > 0
-            ? 'Number = rows in the current result list with this tag (same cap as Max results).'
+            ? 'Number = rows in the current result list with this tag (after filters; grows when you load more pages).'
             : 'No rows with this tag in the current list—try Rescan or broaden search.');
         b.addEventListener('click', () => {
           void (async () => {
@@ -5650,27 +5443,8 @@
             }
             persistActiveTagFilter();
 
-            let turnedRecursiveOn = false;
-            if (activeTagKeys.size) {
-              const rec = document.getElementById('folderSearchRecursive');
-              if (!rec.checked) {
-                rec.checked = true;
-                turnedRecursiveOn = true;
-                saveSettings();
-                renderScopeBreadcrumb();
-              }
-            }
-
             await runSearchNow();
             commitSearchHistoryNow();
-
-            if (activeTagKeys.size) {
-              const st = document.getElementById('status');
-              const extra = turnedRecursiveOn
-                ? ' — Recursive was off; turned on to search the full scope tree for this tag.'
-                : ' — Tag filter: searching recursively under scope.';
-              st.textContent = (st.textContent || '') + extra;
-            }
           })();
         });
         el.appendChild(b);
@@ -5816,6 +5590,22 @@
       }
     }
 
+    /** ⋯ menu + right-click row: same IPC menu (viewport coords for Menu.popup). */
+    async function openResultsRowItemActionsMenu(fp, clientX, clientY, row) {
+      const res = await window.tagBrowser.showItemActionsMenu({
+        filePath: fp,
+        scopeFolder: document.getElementById('rootFolder').value.trim(),
+        x: Math.round(clientX),
+        y: Math.round(clientY),
+      });
+      if (res && res.action === 'followShellShortcut' && res.filePath) void followShellShortcutInTagFox(res.filePath);
+      else if (res && res.action === 'newFolderInScope') {
+        const parentForNew =
+          row && rowIsFolder(row) ? normalizeFolderPathForEverything(fullPathForRow(row)) : null;
+        void createNewFolderInScopeInteractive(parentForNew);
+      } else if (res && res.action === 'rename') void renameItemInteractive(fp);
+    }
+
     function renderTable() {
       const tbody = document.getElementById('tbody');
       const status = document.getElementById('status');
@@ -5830,13 +5620,18 @@
       const suffix =
         activeTagKeys.size || recencyFilterMode() !== 'all' ? ' (filtered)' : '';
       const rawN = lastRows.length;
-      // Hide special / tag filter shrink vs raw row count — show both so path ▲/▼ “missing rows” isn’t mistaken for truncation at 10.
+      // Recency/tag filter shrink vs raw row count — show both so path ▲/▼ “missing rows” isn’t mistaken for truncation at 10.
       const visN = rowsForDisplay.length;
-      if (!visN) status.textContent = 'No rows' + suffix;
-      else if (visN === rawN) status.textContent = visN + ' row(s)' + suffix;
-      else status.textContent = visN + ' / ' + rawN + ' row(s)' + suffix;
+      const treeBrowseHint =
+        isTreeBrowseSimpleMode() &&
+        normalizeFolderPathForEverything(document.getElementById('rootFolder').value.trim())
+          ? ' — Tree browse: files in this folder only; filter or open a subfolder for deeper files.'
+          : '';
+      if (!visN) status.textContent = 'No rows' + suffix + treeBrowseHint;
+      else if (visN === rawN) status.textContent = visN + ' row(s)' + suffix + treeBrowseHint;
+      else status.textContent = visN + ' / ' + rawN + ' row(s)' + suffix + treeBrowseHint;
       const showPathFolderGrouping = shouldShowPathFolderGrouping();
-      const showPathTreeGutter = document.getElementById('folderSearchRecursive').checked && sortColumn === 'path';
+      const showPathTreeGutter = isTreeViewOn() && sortColumn === 'path';
       const pathTreeDepths = rowsForDisplay.map((r) => pathTreeUiDepth(r, showPathFolderGrouping));
       const pathTreeGutters = showPathTreeGutter ? pathTreeGutterStringsForDepths(pathTreeDepths) : null;
       for (let rowIdx = 0; rowIdx < rowsForDisplay.length; rowIdx++) {
@@ -5844,6 +5639,11 @@
         const fp = fullPathForRow(row);
         const tr = document.createElement('tr');
         if (rowIsFolder(row)) tr.classList.add('results-folder-row');
+        /* Dim “special” path segments when listed (always shown; no query filter). */
+        if (pathUnderDotFolder(fp)) {
+          tr.classList.add('tagfox-row-special-path');
+          tr.title = 'Special path segment (. ~ $ or desktop.ini).';
+        }
 
         const tdCb = document.createElement('td');
         tdCb.className = 'align-middle text-start results-td-cb';
@@ -5905,11 +5705,6 @@
         fillPathCellBox(pathBox, pathColumnDisplayForRow(fp, rowIsFolder(row)));
         tdPath.appendChild(pathBox);
 
-        const tdType = document.createElement('td');
-        tdType.className = 'text-nowrap small';
-        const typeStr = rowTypeLabel(row);
-        tdType.textContent = typeStr;
-
         const tdSize = document.createElement('td');
         tdSize.className = 'text-end text-nowrap small';
         tdSize.textContent = formatSize(row.size);
@@ -5961,8 +5756,8 @@
           'btn btn-outline-secondary btn-sm me-1 row-clip-btn d-inline-flex align-items-center justify-content-center p-0';
         btnClip.style.width = '1.5rem';
         btnClip.style.height = '1.5rem';
-        btnClip.title = 'Copy for Explorer paste (Windows)';
-        btnClip.setAttribute('aria-label', 'Copy for Explorer paste');
+        btnClip.title = 'Copy (Windows Explorer paste)';
+        btnClip.setAttribute('aria-label', 'Copy');
         btnClip.innerHTML = '<i class="fa-solid fa-clipboard fa-fw" aria-hidden="true"></i>';
         btnClip.addEventListener('click', async (e) => {
           e.stopPropagation();
@@ -5975,20 +5770,14 @@
           'btn btn-outline-secondary btn-sm me-1 d-inline-flex align-items-center justify-content-center p-0';
         btnMore.style.width = '1.5rem';
         btnMore.style.height = '1.5rem';
-        btnMore.title = 'More — copy path, open, Drive search, rename (F2), new folder in scope, delete…';
+        btnMore.title =
+          'More — full actions menu (or right-click the row). Copy/cut, paths, open, shortcut, Properties, …';
         btnMore.setAttribute('aria-label', 'More actions');
         btnMore.innerHTML = '<i class="fa-solid fa-ellipsis fa-fw" aria-hidden="true"></i>';
         btnMore.addEventListener('click', async (e) => {
           e.stopPropagation();
           const r = btnMore.getBoundingClientRect();
-          const res = await window.tagBrowser.showItemActionsMenu({
-            filePath: fp,
-            scopeFolder: document.getElementById('rootFolder').value.trim(),
-            x: Math.round(r.left),
-            y: Math.round(r.bottom),
-          });
-          if (res && res.action === 'newFolderInScope') void createNewFolderInScopeInteractive();
-          else if (res && res.action === 'rename') void renameItemInteractive(fp);
+          await openResultsRowItemActionsMenu(fp, r.left, r.bottom, row);
         });
         const btnTags = document.createElement('button');
         btnTags.type = 'button';
@@ -6015,18 +5804,16 @@
         const dateStr = formatModified(row.date_modified ?? row.date_modified_unix);
         bindCellTooltip(tdName, nameTip);
         bindCellTooltip(tdPath, fp);
-        bindCellTooltip(tdType, typeStr);
         bindCellTooltip(tdSize, sizeStr);
         bindCellTooltip(tdDate, dateStr);
         bindCellTooltip(
           tdAct,
-          'Open — file: default app; folder: show in Explorer\nParent folder — set scope to containing folder\nClipboard — Explorer paste (Windows)\nTags — tag editor\n⋯ — copy actions + Drive search, delete, …'
+          'Open — file: default app; folder: show in Explorer\nParent folder — set scope to containing folder\nCopy — Windows Explorer paste\nTags — tag editor\n⋯ or right-click row — full menu (copy/cut, paths, shortcut, Properties, …)'
         );
 
         tr.appendChild(tdCb);
         tr.appendChild(tdName);
         tr.appendChild(tdPath);
-        tr.appendChild(tdType);
         tr.appendChild(tdSize);
         tr.appendChild(tdDate);
         tr.appendChild(tdAct);
@@ -6057,6 +5844,10 @@
           if (tagBrowserNextOsFileDrag) tagBrowserNextOsFileDrag = false;
           setDataTransferTagBrowserHtml5Paths(e.dataTransfer, paths);
         });
+        tr.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          void openResultsRowItemActionsMenu(fp, e.clientX, e.clientY, row);
+        });
         tr.addEventListener('click', (e) => {
           if (e.target.closest('button')) return;
           if (e.target.closest('input[type="checkbox"]')) return;
@@ -6079,10 +5870,11 @@
       tbody.querySelectorAll('td[data-bs-toggle="tooltip"]').forEach((td) => {
         new bootstrap.Tooltip(td, { container: 'body', trigger: 'hover', animation: false });
       });
-      applyTableColumnVisibility();
+      applyResultsTablePathColumnVisibility();
       syncResultsSelectionHighlight();
       updateSelectAllCheckboxState();
       updateEmptyResultsPulseHints(rowsForDisplay.length);
+      updateResultsLoadMoreUi();
     }
 
     function rebuildModalTagsUnion() {
@@ -6390,9 +6182,251 @@
       }
     }
 
+    /** Strip offset so paging can re-apply a new offset per request. */
+    function stripOffsetFromOpts(o) {
+      if (!o || typeof o !== 'object') return {};
+      const { offset: _ignored, ...rest } = o;
+      return rest;
+    }
+
+    /** Append new Everything rows; skip paths already in list (stable order: existing first). */
+    function mergeSearchRowsDedupe(existing, incoming) {
+      const ex = Array.isArray(existing) ? existing : [];
+      const inc = Array.isArray(incoming) ? incoming : [];
+      if (!inc.length) return ex.slice();
+      const seen = new Set(ex.map((r) => pathNormKey(fullPathForRow(r))));
+      const out = ex.slice();
+      for (const r of inc) {
+        const k = pathNormKey(fullPathForRow(r));
+        if (seen.has(k)) continue;
+        seen.add(k);
+        out.push(r);
+      }
+      return out;
+    }
+
+    /** One Everything HTTP page (offset + count); may retry with flipped ascending for path / date_modified sorts. */
+    async function everythingSearchWithDirectionFallback({
+      runId,
+      baseUrl,
+      countStr,
+      cap,
+      httpUser,
+      httpPassword,
+      searchText,
+      offset,
+      seedOptions,
+    }) {
+      const pickRows = (res) => (res && Array.isArray(res.rows) ? res.rows : []);
+      const directionCanMisbehave = (opts) =>
+        (opts.sort === 'path' && opts.ascending === true) || (opts.sort === 'date_modified' && opts.ascending === false);
+      const countLooksWrongForDirection = (rowsLen) =>
+        cap > 40 && rowsLen >= 0 && rowsLen < Math.max(3, Math.floor(cap * 0.2));
+      const shouldSwitchDirection = (baseRowsLen, altRowsLen) => altRowsLen >= Math.max(baseRowsLen + 5, baseRowsLen * 2);
+
+      let options = { ...(seedOptions || {}), offset: Math.max(0, Number(offset) || 0) };
+      const runOnce = (opts) =>
+        window.tagBrowser.search({
+          baseUrl,
+          count: countStr,
+          httpUser,
+          httpPassword,
+          options: opts,
+          searchText,
+        });
+      const t0 = performance.now();
+      searchDebugLog('search.request.base', { runId, searchText, options });
+      const baseRes = await runOnce(options);
+      if (runId !== searchRunSeq) return null;
+      const baseRows = pickRows(baseRes);
+      searchDebugLog('search.response.base', {
+        runId,
+        searchText,
+        ok: !!(baseRes && baseRes.ok),
+        rows: baseRows.length,
+        ms: Math.round(performance.now() - t0),
+        err: baseRes && baseRes.ok ? '' : (baseRes && baseRes.error) || 'unknown',
+      });
+      if (!baseRes || !baseRes.ok) {
+        if (runId !== searchRunSeq) return null;
+        return { ok: false, error: (baseRes && baseRes.error) || 'Search failed', rows: [], optionsUsed: options };
+      }
+      let rows = baseRows;
+      let usedFallbackSort = false;
+      if (directionCanMisbehave(options) && countLooksWrongForDirection(rows.length)) {
+        const altOptions = { ...options, ascending: !options.ascending };
+        const t1 = performance.now();
+        searchDebugLog('search.request.alt', { runId, searchText, altOptions });
+        const altRes = await runOnce(altOptions);
+        if (runId !== searchRunSeq) return null;
+        if (altRes && altRes.ok) {
+          const altRows = pickRows(altRes);
+          searchDebugLog('search.response.alt', {
+            runId,
+            searchText,
+            rows: altRows.length,
+            ms: Math.round(performance.now() - t1),
+          });
+          if (shouldSwitchDirection(rows.length, altRows.length)) {
+            rows = altRows;
+            usedFallbackSort = true;
+            options = altOptions;
+            searchDebugLog('search.fallback.useAlt', {
+              runId,
+              searchText,
+              baseRows: baseRows.length,
+              altRows: altRows.length,
+            });
+          }
+        } else {
+          searchDebugLog('search.response.altError', {
+            runId,
+            searchText,
+            err: (altRes && altRes.error) || 'alt failed',
+          });
+        }
+      }
+      if (runId !== searchRunSeq) return null;
+      return { ok: true, rows, usedFallbackSort, optionsUsed: options };
+    }
+
+    /** Show Load more when another Everything page may exist. */
+    function updateResultsLoadMoreUi() {
+      const wrap = document.getElementById('resultsLoadMoreWrap');
+      const btn = document.getElementById('btnLoadMoreResults');
+      const hint = document.getElementById('resultsLoadMoreHint');
+      if (!wrap || !btn) return;
+      const more = !!(resultsPagingCtx && resultsPagingCtx.hasMore && lastRows.length);
+      wrap.classList.toggle('d-none', !more);
+      btn.disabled = resultsLoadMoreBusy || searchInFlight;
+      if (hint) {
+        if (resultsLoadMoreBusy) hint.textContent = 'Loading…';
+        else if (more) hint.textContent = 'Scroll or click for the next page from Everything.';
+        else hint.textContent = '';
+      }
+    }
+
+    /** Near bottom of #resultsWrap: fetch next page (debounced). */
+    function onResultsWrapScrollForPaging() {
+      const el = document.getElementById('resultsWrap');
+      if (!el || !resultsPagingCtx || !resultsPagingCtx.hasMore) return;
+      if (resultsLoadMoreBusy || searchInFlight) return;
+      if (el.scrollTop + el.clientHeight < el.scrollHeight - 140) return;
+      if (resultsScrollMoreTimer) return;
+      resultsScrollMoreTimer = setTimeout(() => {
+        resultsScrollMoreTimer = null;
+        void loadMoreResults();
+      }, 200);
+    }
+
+    /** Next Everything offset page; same query/sort as resultsPagingCtx. */
+    async function loadMoreResults() {
+      if (!resultsPagingCtx || !resultsPagingCtx.hasMore || resultsLoadMoreBusy || searchInFlight) return;
+      const ctx = resultsPagingCtx;
+      const runId = searchRunSeq;
+      const status = document.getElementById('status');
+      resultsLoadMoreBusy = true;
+      updateResultsLoadMoreUi();
+      try {
+        if (ctx.mode === 'treeBrowseSplit') {
+          const [rFo, rFi] = await Promise.all([
+            everythingSearchWithDirectionFallback({
+              runId,
+              baseUrl: ctx.baseUrl,
+              countStr: String(ctx.pageSize),
+              cap: ctx.pageSize,
+              httpUser: ctx.httpUser,
+              httpPassword: ctx.httpPassword,
+              searchText: ctx.folderSearchText,
+              offset: ctx.folderOffset,
+              seedOptions: ctx.folderSeed,
+            }),
+            everythingSearchWithDirectionFallback({
+              runId,
+              baseUrl: ctx.baseUrl,
+              countStr: String(ctx.pageSize),
+              cap: ctx.pageSize,
+              httpUser: ctx.httpUser,
+              httpPassword: ctx.httpPassword,
+              searchText: ctx.rootFileSearchText,
+              offset: ctx.rootFileOffset,
+              seedOptions: ctx.rootFileSeed,
+            }),
+          ]);
+          if (runId !== searchRunSeq) return;
+          if (!rFo || !rFi || !rFo.ok || !rFi.ok) {
+            resultsPagingCtx = { ...ctx, hasMore: false };
+            if (status)
+              status.textContent =
+                (rFo && !rFo.ok && rFo.error) || (rFi && !rFi.ok && rFi.error) || 'Load more failed';
+            renderTable();
+            updateResultsLoadMoreUi();
+            return;
+          }
+          const addFo = rFo.rows || [];
+          const addFi = rFi.rows || [];
+          lastRows = mergeSearchRowsDedupe(lastRows, addFo.concat(addFi));
+          sortLastRowsForDisplay(true);
+          const nextFo = ctx.folderOffset + addFo.length;
+          const nextFi = ctx.rootFileOffset + addFi.length;
+          const hasMore = addFo.length === ctx.pageSize || addFi.length === ctx.pageSize;
+          resultsPagingCtx = {
+            ...ctx,
+            folderOffset: nextFo,
+            rootFileOffset: nextFi,
+            folderSeed: stripOffsetFromOpts(rFo.optionsUsed),
+            rootFileSeed: stripOffsetFromOpts(rFi.optionsUsed),
+            hasMore,
+          };
+        } else {
+          const res = await everythingSearchWithDirectionFallback({
+            runId,
+            baseUrl: ctx.baseUrl,
+            countStr: String(ctx.pageSize),
+            cap: ctx.pageSize,
+            httpUser: ctx.httpUser,
+            httpPassword: ctx.httpPassword,
+            searchText: ctx.searchText,
+            offset: ctx.singleOffset,
+            seedOptions: ctx.seedOptions,
+          });
+          if (runId !== searchRunSeq) return;
+          if (!res || !res.ok) {
+            resultsPagingCtx = { ...ctx, hasMore: false };
+            if (status) status.textContent = (res && res.error) || 'Load more failed';
+            renderTable();
+            updateResultsLoadMoreUi();
+            return;
+          }
+          const add = res.rows || [];
+          if (!add.length) {
+            resultsPagingCtx = { ...ctx, hasMore: false };
+          } else {
+            lastRows = mergeSearchRowsDedupe(lastRows, add);
+            sortLastRowsForDisplay(!!res.usedFallbackSort);
+            const hasMore = add.length === ctx.pageSize;
+            resultsPagingCtx = {
+              ...ctx,
+              singleOffset: ctx.singleOffset + add.length,
+              seedOptions: stripOffsetFromOpts(res.optionsUsed),
+              hasMore,
+            };
+          }
+        }
+        await syncSelectionAfterSearch();
+        renderTagBar();
+        renderTable();
+        updateResultsLoadMoreUi();
+      } finally {
+        resultsLoadMoreBusy = false;
+        updateResultsLoadMoreUi();
+      }
+    }
+
     async function runSearch() {
       searchInFlight = true;
       const runId = ++searchRunSeq;
+      resultsPagingCtx = null;
       try {
       cancelPropsPreviewSchedule();
       const status = document.getElementById('status');
@@ -6400,148 +6434,117 @@
       const baseUrl = document.getElementById('baseUrl').value.trim() || 'http://127.0.0.1';
       const rootFolder = document.getElementById('rootFolder').value.trim();
       const query = document.getElementById('query').value;
-      const rec = document.getElementById('folderSearchRecursive').checked;
-      let searchText = composeScopedEverythingSearch(rootFolder, query, rec);
-      searchText = appendActiveTagToEverythingQuery(searchText);
-      const ff = fileFolderFilterMode();
-      if (ff === 'folders') {
-        searchText = (searchText.trim() + ' folder:').trim();
-      } else if (ff === 'files') {
-        searchText = (searchText.trim() + ' file:').trim();
+      const hasScope = !!normalizeFolderPathForEverything(rootFolder);
+      /* Tree simple mode + scope: recursive folders + files only in scope root (not deep files). */
+      const treeBrowseScoped = isTreeBrowseSimpleMode() && hasScope;
+      let treeScopedFolderSt = '';
+      let treeScopedRootFileSt = '';
+      let searchText;
+      if (treeBrowseScoped) {
+        treeScopedFolderSt = composeScopedEverythingSearch(rootFolder, query, true);
+        treeScopedFolderSt = appendActiveTagToEverythingQuery(treeScopedFolderSt);
+        treeScopedFolderSt = (treeScopedFolderSt.trim() + ' folder:').trim();
+        treeScopedFolderSt = appendRecencyToEverythingQuery(treeScopedFolderSt);
+
+        treeScopedRootFileSt = composeScopedEverythingSearch(rootFolder, query, false);
+        treeScopedRootFileSt = appendActiveTagToEverythingQuery(treeScopedRootFileSt);
+        treeScopedRootFileSt = (treeScopedRootFileSt.trim() + ' file:').trim();
+        treeScopedRootFileSt = appendRecencyToEverythingQuery(treeScopedRootFileSt);
+
+        searchText = treeScopedFolderSt;
+      } else {
+        searchText = composeScopedEverythingSearch(rootFolder, query, true);
+        searchText = appendActiveTagToEverythingQuery(searchText);
+        searchText = appendRecencyToEverythingQuery(searchText);
       }
-      searchText = appendSpecialHideToEverythingQuery(searchText);
-      searchText = appendRecencyToEverythingQuery(searchText);
       const maxResultsRaw = document.getElementById('maxResults').value;
       const cap = Math.min(5000, Math.max(1, parseInt(String(maxResultsRaw).trim(), 10) || 200));
-      const hideDotServer =
-        document.getElementById('optHideDotFolders').checked &&
-        !document.getElementById('optRegex').checked;
-      const count = String(cap);
+      const countStr = String(cap);
       const httpUser = document.getElementById('httpUser').value;
       const httpPassword = document.getElementById('httpPassword').value;
       const baseSearchOpts = everythingOptionsForRequest();
-      /* Scope is sent as path tokens ("…\" or parent:"…"); HTTP path=0 = filename-only and those tokens do not limit the index — force Match path whenever scope is set. */
+      /* Scope: force Match path whenever scope is set so path tokens limit the index. */
       const scopeNeedsPathSearch = !!normalizeFolderPathForEverything(rootFolder);
       const options = {
         ...baseSearchOpts,
-        pathSearch: !!(baseSearchOpts.pathSearch || hideDotServer || scopeNeedsPathSearch),
+        pathSearch: !!(baseSearchOpts.pathSearch || scopeNeedsPathSearch),
       };
-      const makeDoSearch = (opts) => {
-        const payload = { baseUrl, count, httpUser, httpPassword, options: opts };
-        return (st) => window.tagBrowser.search({ ...payload, searchText: st });
-      };
-      const doSearch = makeDoSearch(options);
-
-      const directionCanMisbehave = (opts) =>
-        (opts.sort === 'path' && opts.ascending === true) || (opts.sort === 'date_modified' && opts.ascending === false);
-      const countLooksWrongForDirection = (rowsLen) =>
-        cap > 40 && rowsLen >= 0 && rowsLen < Math.max(3, Math.floor(cap * 0.2));
-      const pickRows = (res) => (res && Array.isArray(res.rows) ? res.rows : []);
-      const shouldSwitchDirection = (baseRowsLen, altRowsLen) => altRowsLen >= Math.max(baseRowsLen + 5, baseRowsLen * 2);
       searchDebugLog('runSearch.start', {
         runId,
         sortColumn,
         sortAsc,
-        ff,
-        interleave: document.getElementById('optSortFoldersWithFiles').checked,
+        treeBrowseSimple: isTreeBrowseSimpleMode(),
+        treeBrowseScoped,
         cap,
         query,
         searchText,
-        hideDotServer,
+        treeRootFileSearch: treeBrowseScoped ? treeScopedRootFileSt : '',
         options,
       });
 
-      async function doSearchWithDirectionFallback(st) {
-        const t0 = performance.now();
-        searchDebugLog('search.request.base', { runId, searchText: st, options });
-        const baseRes = await doSearch(st);
-        if (runId !== searchRunSeq) return null;
-        const baseRows = pickRows(baseRes);
-        searchDebugLog('search.response.base', {
-          runId,
-          searchText: st,
-          ok: !!(baseRes && baseRes.ok),
-          rows: baseRows.length,
-          ms: Math.round(performance.now() - t0),
-          err: baseRes && baseRes.ok ? '' : (baseRes && baseRes.error) || 'unknown',
-        });
-        if (!baseRes || !baseRes.ok) {
-          if (runId !== searchRunSeq) return null;
-          return { ok: false, error: (baseRes && baseRes.error) || 'Search failed', rows: [] };
-        }
-        let rows = baseRows;
-        let usedFallbackSort = false;
-        if (directionCanMisbehave(options) && countLooksWrongForDirection(rows.length)) {
-          const altOptions = { ...options, ascending: !options.ascending };
-          const altDoSearch = makeDoSearch(altOptions);
-          const t1 = performance.now();
-          searchDebugLog('search.request.alt', { runId, searchText: st, altOptions });
-          const altRes = await altDoSearch(st);
-          if (runId !== searchRunSeq) return null;
-          if (altRes && altRes.ok) {
-            const altRows = pickRows(altRes);
-            searchDebugLog('search.response.alt', {
-              runId,
-              searchText: st,
-              rows: altRows.length,
-              ms: Math.round(performance.now() - t1),
-            });
-            if (shouldSwitchDirection(rows.length, altRows.length)) {
-              rows = altRows;
-              usedFallbackSort = true;
-              searchDebugLog('search.fallback.useAlt', {
-                runId,
-                searchText: st,
-                baseRows: baseRows.length,
-                altRows: altRows.length,
-              });
-            }
-          } else {
-            searchDebugLog('search.response.altError', {
-              runId,
-              searchText: st,
-              err: (altRes && altRes.error) || 'alt failed',
-            });
-          }
-        }
-        if (runId !== searchRunSeq) return null;
-        return { ok: true, rows, usedFallbackSort };
-      }
-
       status.textContent = 'Searching…';
 
-      // Both + interleave: folder:/file: so one pool isn’t “all folders first” from Everything; merge then string-sort paths and cap.
-      const wantFolderFileSplit =
-        ff === 'both' && document.getElementById('optSortFoldersWithFiles').checked;
-      searchDebugLog('runSearch.branch', { runId, wantFolderFileSplit });
+      searchDebugLog('runSearch.branch', { runId, treeBrowseScoped });
+
+      const pageArgs = {
+        runId,
+        baseUrl,
+        countStr,
+        cap,
+        httpUser,
+        httpPassword,
+      };
 
       let res;
-      if (wantFolderFileSplit) {
-        const base = searchText.trim();
-        const rFo = await doSearchWithDirectionFallback((base + ' folder:').trim());
-        if (rFo == null) return;
+      if (treeBrowseScoped) {
+        const [rFo, rFi] = await Promise.all([
+          everythingSearchWithDirectionFallback({
+            ...pageArgs,
+            searchText: treeScopedFolderSt,
+            offset: 0,
+            seedOptions: options,
+          }),
+          everythingSearchWithDirectionFallback({
+            ...pageArgs,
+            searchText: treeScopedRootFileSt,
+            offset: 0,
+            seedOptions: options,
+          }),
+        ]);
+        if (rFo == null || rFi == null) return;
         if (runId !== searchRunSeq) return;
-        const rFi = await doSearchWithDirectionFallback((base + ' file:').trim());
-        if (rFi == null) return;
-        if (runId !== searchRunSeq) return;
-        searchDebugLog('runSearch.split.results', {
+        searchDebugLog('runSearch.treeBrowseSplit.results', {
           runId,
           foldersOk: !!rFo.ok,
-          filesOk: !!rFi.ok,
+          rootFilesOk: !!rFi.ok,
           folderRows: (rFo.rows || []).length,
-          fileRows: (rFi.rows || []).length,
+          rootFileRows: (rFi.rows || []).length,
         });
         if (rFo.ok && rFi.ok) {
+          const nFo = (rFo.rows || []).length;
+          const nFi = (rFi.rows || []).length;
           lastRows = (rFo.rows || []).concat(rFi.rows || []);
-          searchDebugLog('runSearch.split.concat', { runId, concatRows: lastRows.length });
           sortLastRowsForDisplay(true);
-          lastRows = trimLastRowsToVisibleCap(lastRows, cap);
-          searchDebugLog('runSearch.split.final', {
+          searchDebugLog('runSearch.treeBrowseSplit.final', {
             runId,
-            finalRows: lastRows.length,
+            rows: lastRows.length,
             first: lastRows.slice(0, 3).map((r) => fullPathForRow(r)),
             last: lastRows.slice(-3).map((r) => fullPathForRow(r)),
           });
+          resultsPagingCtx = {
+            mode: 'treeBrowseSplit',
+            pageSize: cap,
+            folderSearchText: treeScopedFolderSt,
+            rootFileSearchText: treeScopedRootFileSt,
+            folderOffset: nFo,
+            rootFileOffset: nFi,
+            hasMore: nFo === cap || nFi === cap,
+            baseUrl,
+            httpUser,
+            httpPassword,
+            folderSeed: stripOffsetFromOpts(rFo.optionsUsed),
+            rootFileSeed: stripOffsetFromOpts(rFi.optionsUsed),
+          };
           status.textContent = lastRows.length ? lastRows.length + ' result(s)' : 'No results';
           await syncSelectionAfterSearch();
           renderTagBar();
@@ -6549,17 +6552,28 @@
           pulseEmptyResultHintsAfterSearchOk();
           return;
         }
-        res = await doSearchWithDirectionFallback(base);
+        res = await everythingSearchWithDirectionFallback({
+          ...pageArgs,
+          searchText: treeScopedFolderSt,
+          offset: 0,
+          seedOptions: options,
+        });
         if (res == null) return;
         if (runId !== searchRunSeq) return;
       } else {
-        res = await doSearchWithDirectionFallback(searchText);
+        res = await everythingSearchWithDirectionFallback({
+          ...pageArgs,
+          searchText,
+          offset: 0,
+          seedOptions: options,
+        });
         if (res == null) return;
         if (runId !== searchRunSeq) return;
       }
 
       if (!res.ok) {
         lastRows = [];
+        resultsPagingCtx = null;
         searchDebugLog('runSearch.error', { runId, err: res.error || 'Search failed' });
         status.textContent = res.error || 'Search failed';
         await syncSelectionAfterSearch();
@@ -6567,9 +6581,9 @@
         renderTable();
         return;
       }
-      lastRows = Array.isArray(res.rows) ? res.rows : [];
+      const got = Array.isArray(res.rows) ? res.rows : [];
+      lastRows = got;
       sortLastRowsForDisplay(!!res.usedFallbackSort);
-      lastRows = trimLastRowsToVisibleCap(lastRows, cap);
       searchDebugLog('runSearch.single.final', {
         runId,
         usedFallbackSort: !!res.usedFallbackSort,
@@ -6577,6 +6591,17 @@
         first: lastRows.slice(0, 3).map((r) => fullPathForRow(r)),
         last: lastRows.slice(-3).map((r) => fullPathForRow(r)),
       });
+      resultsPagingCtx = {
+        mode: 'single',
+        pageSize: cap,
+        singleOffset: got.length,
+        hasMore: got.length === cap,
+        baseUrl,
+        httpUser,
+        httpPassword,
+        searchText,
+        seedOptions: stripOffsetFromOpts(res.optionsUsed),
+      };
       status.textContent = lastRows.length ? lastRows.length + ' result(s)' : 'No results';
       await syncSelectionAfterSearch();
       renderTagBar();
@@ -6586,6 +6611,10 @@
         if (runId === searchRunSeq) searchInFlight = false;
       }
     }
+
+    const resultsWrapScroll = document.getElementById('resultsWrap');
+    if (resultsWrapScroll) resultsWrapScroll.addEventListener('scroll', onResultsWrapScrollForPaging, { passive: true });
+    document.getElementById('btnLoadMoreResults')?.addEventListener('click', () => void loadMoreResults());
 
     const resultsThead = document.getElementById('resultsTable').querySelector('thead');
     resultsThead.addEventListener('mousedown', (e) => {
@@ -6609,7 +6638,6 @@
       }
       saveSettings();
       updateSortHeaders();
-      syncContextualToggleUi();
       commitSearchHistoryNow();
       void runSearchNow();
     });
@@ -6675,56 +6703,23 @@
       document.getElementById('btnCreateTodoMd').click();
     });
 
-    document.querySelectorAll('input[name="tagFoxFileFolderFilter"]').forEach((el) => {
-      el.addEventListener('change', () => {
-        saveSettings();
-        syncContextualToggleUi();
-        scheduleSearch();
-        commitSearchHistoryNow();
-      });
-    });
-
     document.querySelectorAll('input[name="tagFoxRecencyFilter"]').forEach((el) => {
       el.addEventListener('change', () => {
         saveSettings();
         commitSearchHistoryNow();
-        /* dm: is baked into the HTTP search — must re-run Everything or lastRows stays stale (renderTable alone is not enough). Regex: recency stays client-side on lastRows. */
-        if (document.getElementById('optRegex').checked) {
-          void syncSelectionAfterSearch();
-          renderTable();
-        } else {
-          void runSearchNow();
-        }
+        /* dm: is baked into the HTTP search — must re-run Everything or lastRows stays stale. */
+        void runSearchNow();
       });
     });
-    ['folderSearchRecursive', 'optCase', 'optWholeWord', 'optPath', 'optRegex', 'optDiacritics'].forEach((id) => {
+    ['optCase', 'optWholeWord', 'optPath', 'optDiacritics'].forEach((id) => {
       document.getElementById(id).addEventListener('change', () => {
         saveSettings();
-        if (id === 'folderSearchRecursive') renderScopeBreadcrumb();
         if (id === 'optCase' && document.getElementById('bulkRenameModal')?.classList.contains('show')) {
           updateBulkRenamePreview();
         }
-        syncContextualToggleUi();
         scheduleSearch();
         commitSearchHistoryNow();
       });
-    });
-
-    // Client-side filter only — no Everything round-trip.
-    document.getElementById('optHideDotFolders').addEventListener('change', () => {
-      saveSettings();
-      if (document.getElementById('optHideDotFolders').checked && selectedFullPath) {
-        const row = selectedRowForActions();
-        if (row && pathUnderDotFolder(selectedFullPath)) {
-          selectedRow = null;
-          selectedFullPath = null;
-          void flushMdFileAutosave();
-        }
-      }
-      void syncSelectionAfterSearch();
-      renderTable();
-      renderTagBar();
-      commitSearchHistoryNow();
     });
 
     document.getElementById('btnToggleSearchOptsAdvanced').addEventListener('click', () => {
@@ -6758,28 +6753,21 @@
         cancelScopePathEditMode();
       }
     });
+    document.getElementById('btnStatusScopeSiblingPrev')?.addEventListener('click', () => void goToSiblingScopeFolder(-1));
+    document.getElementById('btnStatusScopeSiblingNext')?.addEventListener('click', () => void goToSiblingScopeFolder(1));
     document.getElementById('btnStatusScopeParent').addEventListener('click', () => void goToParentScopeFolder());
-    document.getElementById('statusColumnsMenu').addEventListener('change', (e) => {
-      const t = e.target;
-      if (!t || t.type !== 'checkbox') return;
-      const idx = Number(t.getAttribute('data-col-idx'));
-      if (!Number.isInteger(idx) || !COL_VISIBLE_TOGGLE_INDEXES.includes(idx)) return;
-      const next = !!t.checked;
-      if (!next) {
-        const kept = COL_VISIBLE_TOGGLE_INDEXES.some((i) => i !== idx && colVisible[i] !== false);
-        if (!kept) {
-          t.checked = true;
-          return;
-        }
+    document.getElementById('optTreeView')?.addEventListener('change', (e) => {
+      saveSettings();
+      if (e.target.checked) {
+        sortColumn = 'path';
+        sortAsc = true;
+        localStorage.setItem(LS.sortBy, sortColumn);
+        localStorage.setItem(LS.optAsc, '1');
       }
-      colVisible[idx] = next;
-      persistColVisibilityToStorage();
-      applyTableColumnVisibility();
-      syncContextualToggleUi();
-    });
-    document.getElementById('optContextual')?.addEventListener('change', (e) => {
-      if (e.target.checked) applyContextualBundle();
-      else exitContextualBundle();
+      updateSortHeaders();
+      applyResultsTablePathColumnVisibility();
+      void runSearchNow();
+      commitSearchHistoryNow();
     });
     document.getElementById('btnClearQuery').addEventListener('click', () => {
       document.getElementById('query').value = '';
@@ -6822,12 +6810,6 @@
     document.getElementById('btnRecordGlobalToggleHotkey')?.addEventListener('click', () => {
       if (globalToggleRecording) setGlobalToggleRecording(false);
       else setGlobalToggleRecording(true);
-    });
-    document.getElementById('optSortFoldersWithFiles').addEventListener('change', () => {
-      saveSettings();
-      syncContextualToggleUi();
-      commitSearchHistoryNow();
-      void runSearchNow();
     });
     document.getElementById('optSearchDebug').addEventListener('change', () => {
       saveSettings();
@@ -7165,8 +7147,81 @@
     }
 
     function syncStatusBarParentScopeButton() {
+      const canUp = canGoToParentScopeFolder();
       const b = document.getElementById('btnStatusScopeParent');
-      if (b) b.disabled = !canGoToParentScopeFolder();
+      if (b) b.disabled = !canUp;
+      const prev = document.getElementById('btnStatusScopeSiblingPrev');
+      const next = document.getElementById('btnStatusScopeSiblingNext');
+      if (prev) prev.disabled = !canUp;
+      if (next) next.disabled = !canUp;
+    }
+
+    /**
+     * Immediate child folders of parentNorm via Everything (parent: + folder:), then client-sort like the results table.
+     * Scope chevrons ← / → : sibling navigation.
+     */
+    async function fetchSortedSiblingFolderRowsUnderParent(parentNorm) {
+      if (!window.tagBrowser || typeof window.tagBrowser.search !== 'function') return [];
+      const par = normalizeFolderPathForEverything(String(parentNorm || '').trim());
+      if (!par) return [];
+      const baseUrl = document.getElementById('baseUrl').value.trim() || 'http://127.0.0.1';
+      const maxResultsRaw = document.getElementById('maxResults').value;
+      const cap = Math.min(5000, Math.max(1, parseInt(String(maxResultsRaw).trim(), 10) || 200));
+      const httpUser = document.getElementById('httpUser').value;
+      const httpPassword = document.getElementById('httpPassword').value;
+      let searchText = composeScopedEverythingSearch(par, '', true).trim() + ' folder:';
+      const baseSearchOpts = everythingOptionsForRequest();
+      const options = { ...baseSearchOpts, pathSearch: true, offset: 0 };
+      const res = await window.tagBrowser.search({
+        baseUrl,
+        count: String(cap),
+        httpUser,
+        httpPassword,
+        options,
+        searchText,
+      });
+      if (!res || !res.ok) return [];
+      let rows = Array.isArray(res.rows) ? res.rows.slice() : [];
+      rows = rows.filter(rowIsFolder);
+      const parKey = pathNormKey(par);
+      rows = rows.filter((r) => pathNormKey(normalizeFolderPathForEverything(T.parentDir(fullPathForRow(r)))) === parKey);
+      sortRowsForDisplay(rows, sortColumn, sortAsc);
+      return rows;
+    }
+
+    /** ← / → among sibling folders under the same parent (order = current table sort). */
+    async function goToSiblingScopeFolder(delta) {
+      const status = document.getElementById('status');
+      const raw = document.getElementById('rootFolder').value.trim();
+      if (!raw) {
+        if (status) status.textContent = 'No scope folder set.';
+        return;
+      }
+      const norm = normalizeFolderPathForEverything(raw);
+      const parRaw = T.parentDir(norm);
+      const par = normalizeFolderPathForEverything(parRaw);
+      if (!par || pathNormKey(par) === pathNormKey(norm)) {
+        if (status) status.textContent = 'No sibling folders at this level.';
+        return;
+      }
+      const rows = await fetchSortedSiblingFolderRowsUnderParent(par);
+      if (!rows.length) {
+        if (status) status.textContent = 'Could not list folders in parent.';
+        return;
+      }
+      const scopeKey = pathNormKey(norm);
+      const idx = rows.findIndex((r) => pathNormKey(fullPathForRow(r)) === scopeKey);
+      if (idx < 0) {
+        if (status) status.textContent = 'Current folder not in parent listing.';
+        return;
+      }
+      const j = idx + delta;
+      if (j < 0 || j >= rows.length) {
+        if (status)
+          status.textContent = delta < 0 ? 'Already at first sibling folder.' : 'Already at last sibling folder.';
+        return;
+      }
+      await applySearchScopeAndRefresh(normalizeFolderPathForEverything(fullPathForRow(rows[j])));
     }
 
     /** Move scope folder to parent (toolbar scope / Settings field). */
@@ -7310,18 +7365,6 @@
             : 'Cut ' + paths.length + ' items — paste in Explorer to move them.';
     }
 
-    /** Ctrl+F: cycle Both → Files only → Folders only → Both. */
-    function cycleFilesFoldersFilter() {
-      const m = fileFolderFilterMode();
-      if (m === 'both') setFileFolderFilterMode('files');
-      else if (m === 'files') setFileFolderFilterMode('folders');
-      else setFileFolderFilterMode('both');
-      saveSettings();
-      syncContextualToggleUi();
-      scheduleSearch();
-      commitSearchHistoryNow();
-    }
-
     async function pasteShortcutClipboardIntoScope() {
       const status = document.getElementById('status');
       const dest = currentScopeFolderPath();
@@ -7437,9 +7480,8 @@
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
         e.preventDefault();
-        // Key repeat would cycle Folders ↔ Files and skip the "both off" (files+folders) step.
         if (e.repeat) return;
-        cycleFilesFoldersFilter();
+        focusQueryBox(true);
         return;
       }
       if (modC && (e.key === 'l' || e.key === 'L')) {
@@ -7692,7 +7734,6 @@
       const rf = document.getElementById('rootFolder').value.trim();
       if (rf) rememberScopeFolderHistory(normalizeFolderPathForEverything(rf));
     }
-    seedSearchHistoryFromCurrent();
     document.getElementById('btnScopeFolderHistory').addEventListener('show.bs.dropdown', () => renderScopeFolderHistoryMenu());
     document.getElementById('btnSearchHistBack').addEventListener('click', () => void goSearchHistory(-1));
     document.getElementById('btnSearchHistFwd').addEventListener('click', () => void goSearchHistory(1));
@@ -7799,13 +7840,20 @@
     });
     loadPaneWidthsFromStorage();
     loadColWidthsFromStorage();
-    loadColVisibilityFromStorage();
     if (treeViewDefaultsFreshProfile) {
-      applyContextualBundle({ deferSearch: true });
-      seedSearchHistoryFromCurrent();
-    } else {
-      syncContextualToggleUi();
+      if (localStorage.getItem(LS.treeView) === null) {
+        const tv = document.getElementById('optTreeView');
+        if (tv) {
+          tv.checked = true;
+          localStorage.setItem(LS.treeView, '1');
+        }
+      }
+      sortColumn = 'path';
+      sortAsc = true;
+      localStorage.setItem(LS.sortBy, sortColumn);
+      localStorage.setItem(LS.optAsc, '1');
     }
+    seedSearchHistoryFromCurrent();
     bindVerticalSplitters();
     document.getElementById('propsTheaterBackdrop').addEventListener('click', () => setPropsTheaterMode(false));
     document.getElementById('btnPropsTheaterToggle').addEventListener('click', () => togglePropsTheaterMode());

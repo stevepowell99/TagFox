@@ -58,7 +58,7 @@ Buttons are tags seen in results plus **remembered** tags (local store, max 40).
 
 - **↻** (end of the tag pill row): re-runs the main search, then the **full-index** `[(…)]` scan and **prunes** remembered / active tags missing from that scan (ghost cleanup). Ordinary searches do **not** run that scan — click ↻ when the tag bar is stale or after bulk renames elsewhere.
 
-With **Regex** off, active tags are also sent to Everything so you can find matches before results load. With **Regex** on, tag filtering is **client-side** on the current list.
+Active tag filters are sent to Everything (regex clause) so matches can be found before results load.
 
 ## Row actions (⋯)
 

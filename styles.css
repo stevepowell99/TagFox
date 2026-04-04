@@ -55,21 +55,31 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 .tagfox-search-toolbar-row {
   row-gap: 0.35rem;
 }
+/* Grow to fill row so tree / recency / Advanced / scope controls sit flush right */
 .tagfox-search-toolbar-row .tagfox-query-input {
-  flex: 1 1 11rem;
+  flex: 1 1 0;
   min-width: 7rem;
-  max-width: min(100%, 38vw);
+  max-width: none;
 }
 @media (max-width: 720px) {
   .tagfox-search-toolbar-row .tagfox-query-input {
     flex: 1 1 100%;
-    max-width: 100%;
+    min-width: 0;
   }
 }
-/* Extra air between recursive / type / recency / Advanced / Cols / ↑ (tight inside each btn-group). */
+/* Extra air between tree / recency / Advanced / <^> cluster (tight inside each btn-group). */
 .tagfox-search-toolbar-row .tagfox-search-opts-rhs {
   column-gap: 0.65rem;
   row-gap: 0.35rem;
+}
+/* Scope chevrons: ← ↑ → with minimal gap (reads as <^>). */
+.tagfox-search-toolbar-row .tagfox-scope-nav-cluster {
+  column-gap: 0.08rem;
+}
+.tagfox-search-toolbar-row .tagfox-scope-nav-chevron {
+  width: 1.42rem;
+  min-width: 1.42rem;
+  min-height: 1.5rem;
 }
 .tagfox-search-toolbar-row .tagfox-segmented > .btn-check + .btn {
   border-radius: 0;
@@ -551,6 +561,13 @@ body.tagfox-props-split-drag #propsAside {
 #resultsTable tbody:empty {
   min-height: 10rem;
 }
+/* Paths TagFox treats as “special” (. ~ $ desktop.ini, etc.): faint in the list when shown. */
+#resultsTable tbody tr.tagfox-row-special-path {
+  opacity: 0.6;
+}
+#resultsTable tbody tr.tagfox-row-special-path.table-active {
+  opacity: 1;
+}
 /* Scope-folder drop highlight: on scroll wrapper so empty area below last row is a valid target. */
 .results-wrap.results-scope-drop-over {
   outline: 2px dashed var(--bs-primary);
@@ -561,8 +578,15 @@ body.tagfox-props-split-drag #propsAside {
 #resultsTable td { vertical-align: middle; }
 #resultsTable td { padding-top: 0 !important; padding-bottom: 0 !important; }
 #resultsTable td { margin-top: 0 !important; margin-bottom: 0 !important; }
+/* Size / Modified / Actions: nowrap + fixed table width can clip — ellipsis; tooltips hold full value */
+#resultsTable tbody td:nth-child(4),
+#resultsTable tbody td:nth-child(5),
+#resultsTable tbody td:nth-child(6) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* Five tools (chevron, Open, clip, ⋯, Tags): keep last col wide enough so % + drag resize can’t clip it */
-#resultsTable col:nth-child(7),
+#resultsTable col:last-child,
 #resultsTable thead th:last-child,
 #resultsTable tbody td:last-child {
   min-width: 11.75rem; /* five square action buttons + Bootstrap btn-sm gaps */

@@ -22,18 +22,13 @@
     return { pretty: before + after, tags, raw };
   }
 
-  /** All tags in a full path (each segment scanned). */
+  /** Tags from the item's own name only (last path segment); parent-folder tags are not inherited. */
   function allTagsFromFullPath(fullPath) {
-    const out = [];
-    if (!fullPath) return out;
+    if (!fullPath) return [];
     const norm = fullPath.replace(/[/\\]+$/, '');
-    const parts = norm.split(/[/\\]/).filter((p) => p !== '');
-    for (const seg of parts) {
-      for (const t of parseSegmentTags(seg).tags) {
-        out.push(t);
-      }
-    }
-    return out;
+    const i = Math.max(norm.lastIndexOf('\\'), norm.lastIndexOf('/'));
+    const leaf = i < 0 ? norm : norm.slice(i + 1);
+    return parseSegmentTags(leaf).tags;
   }
 
   /** Tag set membership for filter (compare lowercased). */

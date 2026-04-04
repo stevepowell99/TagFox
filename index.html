@@ -32,7 +32,7 @@
         data-bs-toggle="offcanvas"
         data-bs-target="#settingsPanel"
         aria-controls="settingsPanel"
-        title="Show or hide Settings — Ctrl+, (⌘+, on Mac); Everything URL, max results, auto-refresh, HTTP auth, list options"
+        title="Show or hide Settings — Ctrl+, (⌘+, on Mac); Everything URL, results per page, auto-refresh, HTTP auth, list options"
       >
         Settings
       </button>
@@ -61,8 +61,16 @@
           <input type="text" id="baseUrl" class="form-control form-control-sm" placeholder="http://127.0.0.1:8080" autocomplete="off" />
         </div>
         <div class="col-12 col-md-4">
-          <label class="form-label small mb-0" for="maxResults">Max results</label>
-          <input type="number" id="maxResults" class="form-control form-control-sm" min="1" max="5000" value="200" />
+          <label class="form-label small mb-0" for="maxResults">Results per page</label>
+          <input
+            type="number"
+            id="maxResults"
+            class="form-control form-control-sm"
+            min="1"
+            max="5000"
+            value="200"
+            title="Each Everything request returns up to this many rows; scroll the results list or use Load more for the next page."
+          />
         </div>
         <div class="col-12">
           <label class="form-label small mb-0" for="autoRefreshSec">Auto-refresh results</label>
@@ -110,20 +118,6 @@
           <button type="button" class="btn btn-sm btn-outline-secondary" id="btnShelfOpen" title="Open the Shelf staging folder in File Explorer">
             Open
           </button>
-        </div>
-        <div class="col-12">
-          <label class="form-label small mb-1 d-block text-muted">Results list (when search shows files and folders)</label>
-          <div class="form-check mb-0">
-            <input class="form-check-input" type="checkbox" id="optSortFoldersWithFiles" checked autocomplete="off" />
-            <label class="form-check-label" for="optSortFoldersWithFiles"
-              title="On: one sorted list mixing folders and files. Off: Everything’s default (all folders, then all files for that sort)."
-              >Sort folders with files (interleave in table)</label
-            >
-            <div class="form-text text-muted small">
-              Off — you still get both types when <strong>Both</strong> is selected next to the search bar; folders appear first, then files, which can look like “only folders” until you scroll.
-              On — folders and files share one order by the active column. With <strong>Both</strong>, the app runs two Everything queries (folder / file), merges, and sorts; those requests run one after another so large path-sorted lists stay complete.
-            </div>
-          </div>
         </div>
         <div class="col-12">
           <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -259,41 +253,15 @@
           <input type="text" id="query" class="form-control" placeholder="" autocomplete="off" />
         </div>
         <div class="d-flex align-items-center flex-shrink-0 flex-wrap tagfox-search-opts-rhs">
-          <!-- Tree View: path sort A→Z, Path col off, recursive, both, interleave on — preset; unchecked if any drifts. -->
-          <input type="checkbox" class="btn-check" id="optContextual" autocomplete="off" />
+          <!-- Tree view: nested display + Path column hidden; flat view shows Path and no synthetic folder rows. -->
+          <input type="checkbox" class="btn-check" id="optTreeView" autocomplete="off" />
           <label
             class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center px-2"
-            for="optContextual"
-            title="Tree View: path sort A→Z, Path column hidden, recursive on, files + folders, Sort folders with files on. Matches when all are on; unchecks if you change sort, Cols, recursive, type filter, or interleave."
-            aria-label="Tree View — path order without Path column"
+            for="optTreeView"
+            title="Tree view: folder structure in the Name column; Path column hidden. Flat view: Path column visible, no reconstructed folders."
+            aria-label="Tree view"
             ><i class="fa-solid fa-sitemap" aria-hidden="true"></i></label>
-          <input type="checkbox" class="btn-check" id="folderSearchRecursive" checked autocomplete="off" />
-          <label
-            class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center px-2"
-            for="folderSearchRecursive"
-            title="On: this folder and subfolders. Off: immediate children only (Everything parent:)"
-            aria-label="Recursive — include subfolders"
-            ><i class="fa-solid fa-folder-tree" aria-hidden="true"></i></label>
-          <div class="btn-group tagfox-segmented flex-shrink-0" role="group" aria-label="Files and folders">
-            <input type="radio" class="btn-check" name="tagFoxFileFolderFilter" id="optFilterBoth" value="both" autocomplete="off" checked />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center px-2" for="optFilterBoth" title="Everything: no file:/folder: modifier — files and folders" aria-label="Files and folders (both)">
-              <span class="d-inline-flex align-items-center" style="gap: 0.1rem" aria-hidden="true">
-                <i class="fa-solid fa-folder fa-sm"></i>
-                <i class="fa-solid fa-file fa-sm"></i>
-              </span>
-            </label>
-            <input type="radio" class="btn-check" name="tagFoxFileFolderFilter" id="optFilterFolders" value="folders" autocomplete="off" />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center px-2" for="optFilterFolders" title="Everything: folder: — folders only" aria-label="Folders only">
-              <i class="fa-solid fa-folder" aria-hidden="true"></i>
-            </label>
-            <input type="radio" class="btn-check" name="tagFoxFileFolderFilter" id="optFilterFiles" value="files" autocomplete="off" />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center px-2" for="optFilterFiles" title="Everything: file: — files only" aria-label="Files only">
-              <i class="fa-solid fa-file" aria-hidden="true"></i>
-            </label>
-          </div>
           <div class="btn-group tagfox-segmented flex-shrink-0" role="group" aria-label="Recency">
-            <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecencyAll" value="all" autocomplete="off" checked />
-            <label class="btn btn-outline-secondary btn-sm" for="optRecencyAll" title="No recency filter">All</label>
             <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecency1h" value="1h" autocomplete="off" />
             <label class="btn btn-outline-secondary btn-sm" for="optRecency1h" title="Modified within the last hour">1h</label>
             <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecency1d" value="1d" autocomplete="off" />
@@ -304,6 +272,8 @@
             <label class="btn btn-outline-secondary btn-sm" for="optRecency1m" title="Modified within the last 30 days">1m</label>
             <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecency1y" value="1y" autocomplete="off" />
             <label class="btn btn-outline-secondary btn-sm" for="optRecency1y" title="Modified within the last 365 days">1y</label>
+            <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecencyAll" value="all" autocomplete="off" checked />
+            <label class="btn btn-outline-secondary btn-sm" for="optRecencyAll" title="No recency filter">All</label>
           </div>
           <div class="position-relative flex-shrink-0 align-self-center tagfox-advanced-wrap">
             <button
@@ -312,7 +282,7 @@
               id="btnToggleSearchOptsAdvanced"
               aria-expanded="false"
               aria-controls="searchOptsAdvancedPanel"
-              title="Match case, match path, whole word, regex, diacritics, hide . / ~ / $ (opens below)"
+              title="Match case, match path, whole word, diacritics (opens below)"
             >
               Advanced
             </button>
@@ -329,71 +299,52 @@
               <label class="btn btn-outline-secondary btn-sm" for="optPath">Match path</label>
               <input type="checkbox" class="btn-check" id="optWholeWord" autocomplete="off" />
               <label class="btn btn-outline-secondary btn-sm" for="optWholeWord">Whole word</label>
-              <input type="checkbox" class="btn-check" id="optRegex" autocomplete="off" />
-              <label class="btn btn-outline-secondary btn-sm" for="optRegex">Regex</label>
               <input type="checkbox" class="btn-check" id="optDiacritics" autocomplete="off" />
               <label class="btn btn-outline-secondary btn-sm" for="optDiacritics">Diacritics</label>
-              <input type="checkbox" class="btn-check" id="optHideDotFolders" autocomplete="off" />
-              <label class="btn btn-outline-secondary btn-sm" for="optHideDotFolders" title="Hide paths under segments starting with ., ~, or $ (plus desktop.ini). Google Drive .shortcut-targets-by-id stays. Everything 1.5+: path-regex in query; 1.4 HTTP may behave poorly — client table filter always matches.">Hide special</label>
             </div>
           </div>
-          <div class="dropdown flex-shrink-0">
+          <div
+            class="d-inline-flex align-items-center flex-shrink-0 tagfox-scope-nav-cluster"
+            role="group"
+            aria-label="Scope folder navigation"
+          >
             <button
               type="button"
-              class="btn btn-sm btn-link text-secondary flex-shrink-0 p-0 d-inline-flex align-items-center justify-content-center text-decoration-none status-bar-columns-btn"
-              style="width: 2.2rem; min-height: 1.5rem"
-              id="btnStatusColumns"
-              data-bs-toggle="dropdown"
-              data-bs-auto-close="outside"
-              title="Choose visible columns"
-              aria-label="Choose visible columns"
+              class="btn btn-sm btn-link text-secondary flex-shrink-0 p-0 d-inline-flex align-items-center justify-content-center text-decoration-none status-bar-scope-up tagfox-scope-nav-chevron"
+              id="btnStatusScopeSiblingPrev"
+              disabled
+              title="Previous sibling folder (same sort as results table)"
+              aria-label="Previous sibling scope folder"
             >
-              Cols
+              <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
             </button>
-            <div class="dropdown-menu dropdown-menu-end p-2 shadow-sm" id="statusColumnsMenu" style="min-width: 12rem">
-              <div class="form-check mb-1">
-                <input class="form-check-input" type="checkbox" id="colVisName" data-col-idx="1" checked />
-                <label class="form-check-label small" for="colVisName">Name</label>
-              </div>
-              <div class="form-check mb-1">
-                <input class="form-check-input" type="checkbox" id="colVisPath" data-col-idx="2" checked />
-                <label class="form-check-label small" for="colVisPath">Path</label>
-              </div>
-              <div class="form-check mb-1">
-                <input class="form-check-input" type="checkbox" id="colVisType" data-col-idx="3" checked />
-                <label class="form-check-label small" for="colVisType">Type</label>
-              </div>
-              <div class="form-check mb-1">
-                <input class="form-check-input" type="checkbox" id="colVisSize" data-col-idx="4" checked />
-                <label class="form-check-label small" for="colVisSize">Size</label>
-              </div>
-              <div class="form-check mb-1">
-                <input class="form-check-input" type="checkbox" id="colVisModified" data-col-idx="5" checked />
-                <label class="form-check-label small" for="colVisModified">Modified</label>
-              </div>
-              <div class="form-check mb-0">
-                <input class="form-check-input" type="checkbox" id="colVisActions" data-col-idx="6" checked />
-                <label class="form-check-label small" for="colVisActions">Actions</label>
-              </div>
-            </div>
+            <button
+              type="button"
+              class="btn btn-sm btn-link text-secondary flex-shrink-0 p-0 d-inline-flex align-items-center justify-content-center text-decoration-none status-bar-scope-up tagfox-scope-nav-chevron"
+              id="btnStatusScopeParent"
+              disabled
+              title="Parent scope folder (Ctrl+↑ or Backspace)"
+              aria-label="Open parent scope folder"
+            >
+              <i class="fa-solid fa-chevron-up" aria-hidden="true"></i>
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-link text-secondary flex-shrink-0 p-0 d-inline-flex align-items-center justify-content-center text-decoration-none status-bar-scope-up tagfox-scope-nav-chevron"
+              id="btnStatusScopeSiblingNext"
+              disabled
+              title="Next sibling folder (same sort as results table)"
+              aria-label="Next sibling scope folder"
+            >
+              <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+            </button>
           </div>
-          <button
-            type="button"
-            class="btn btn-sm btn-link text-secondary flex-shrink-0 p-0 d-inline-flex align-items-center justify-content-center text-decoration-none status-bar-scope-up"
-            style="width: 1.75rem; min-height: 1.5rem"
-            id="btnStatusScopeParent"
-            disabled
-            title="Parent scope folder (Ctrl+↑ or Backspace)"
-            aria-label="Open parent scope folder"
-          >
-            <i class="fa-solid fa-chevron-up" aria-hidden="true"></i>
-          </button>
         </div>
       </div>
 
       <div id="bulkBar" class="d-none mb-1 small d-flex flex-wrap align-items-center gap-1">
         <span id="bulkBarLabel" class="text-muted me-1"></span>
-        <button type="button" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0 row-clip-btn" style="width:2rem;height:2rem" id="btnBulkClip" title="Copy selected for Explorer paste (Windows)" aria-label="Copy for Explorer paste">
+        <button type="button" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0 row-clip-btn" style="width:2rem;height:2rem" id="btnBulkClip" title="Copy selected (Windows Explorer paste)" aria-label="Copy">
           <i class="fa-solid fa-clipboard" aria-hidden="true"></i>
         </button>
         <button type="button" class="btn btn-sm btn-outline-danger" id="btnBulkTrash" title="Move checked or highlighted rows to the Recycle Bin (confirmation)">
@@ -435,30 +386,35 @@
         <table class="table table-sm mb-0" id="resultsTable">
           <colgroup>
             <col style="width:4%" />
-            <col style="width:38%" />
-            <col style="width:20%" />
-            <col style="width:6%" />
-            <col style="width:7%" />
-            <col style="width:11%" />
+            <col style="width:36%" />
+            <col style="width:22%" />
+            <col style="width:8%" />
             <col style="width:14%" />
+            <col style="width:16%" />
           </colgroup>
           <thead class="table-light sticky-top">
             <tr>
               <th class="align-middle text-start position-relative results-th-cb" title="Select rows. Drag = in-app. Shelf “OS drag” or Alt+drag = Explorer files.">
                 <input type="checkbox" class="form-check-input m-0 results-cb" id="chkSelectAllResults" autocomplete="off" aria-label="Select all in list" />
-                <!-- boundary N = resize handle between col N and N+1 (checkbox=0 … Type–Size=3 …) -->
+                <!-- boundary N = resize between col N and N+1 (0 = chk|Name … 4 = Modified|Actions) -->
                 <span class="th-resize" data-resize-idx="0" title="Drag to resize"></span>
               </th>
               <th class="sortable-th" data-sort="name" title="Sort by name"><span class="sort-label">Name</span><span class="th-resize" data-resize-idx="1"></span></th>
               <th class="sortable-th" data-sort="path" title="Sort by path"><span class="sort-label">Path</span><span class="th-resize" data-resize-idx="2"></span></th>
-              <th class="sortable-th" data-sort="ext" title="Sort by file type (extension); folders grouped as Folder"><span class="sort-label">Type</span><span class="th-resize" data-resize-idx="3"></span></th>
-              <th class="sortable-th text-end" data-sort="size" title="Sort by size"><span class="sort-label">Size</span><span class="th-resize" data-resize-idx="4"></span></th>
-              <th class="sortable-th" data-sort="date_modified" title="Sort by modified"><span class="sort-label">Modified</span><span class="th-resize" data-resize-idx="5"></span></th>
+              <th class="sortable-th text-end" data-sort="size" title="Sort by size"><span class="sort-label">Size</span><span class="th-resize" data-resize-idx="3"></span></th>
+              <th class="sortable-th" data-sort="date_modified" title="Sort by modified"><span class="sort-label">Modified</span><span class="th-resize" data-resize-idx="4"></span></th>
               <th class="align-middle"></th>
             </tr>
           </thead>
           <tbody id="tbody"></tbody>
         </table>
+        <div
+          id="resultsLoadMoreWrap"
+          class="results-load-more-wrap border-top px-2 py-2 bg-body-secondary d-none"
+        >
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btnLoadMoreResults">Load more</button>
+          <span id="resultsLoadMoreHint" class="small text-muted ms-2" aria-live="polite"></span>
+        </div>
       </div>
       </div>
     </div>
@@ -624,7 +580,7 @@
     </aside>
   </div>
 
-  <!-- Status text: full window width, bottom of shell (Cols / parent scope moved to search row after Advanced). -->
+  <!-- Status text: full window width, bottom of shell. -->
   <footer class="app-status-bar border-top bg-body px-2 py-1 d-flex align-items-center flex-shrink-0" role="status">
     <div id="status" class="small text-muted min-w-0 flex-grow-1" aria-live="polite"></div>
   </footer>
@@ -884,7 +840,7 @@
                   The <strong>current folder</strong> (breadcrumb under Favourites) is where search, paste, new folder, and “Add TODO” anchor. Empty scope searches the whole index.
                 </li>
                 <li class="mb-2">
-                  <strong>Tree View</strong> (sitemap icon) is the contextual mode: path order, folders and files together, recursive — good for seeing structure, not just a flat hit list.
+                  <strong>Tree view</strong> (sitemap icon) shows folder structure in the Name column (path sort) and hides the Path column; with an empty query and no tag filters, files in subfolders stay out of the list until you open those folders. Turn it off for a flat list with a visible Path column.
                 </li>
                 <li class="mb-2">
                   <strong>Tags</strong> live in filenames as <code>[(t1,t2)]</code> on the last segment, e.g. <code>Notes[(draft)].md</code>. They stay visible in Explorer, Drive, and zip exports.
@@ -921,7 +877,7 @@
             <div class="tab-pane fade" id="help-pane-features" role="tabpanel" aria-labelledby="help-tab-features">
               <ul class="mt-3 mb-0 ps-3">
                 <li class="mb-2"><strong>Keyboard-first</strong> — navigation, bulk actions, tags, rename, history; see <strong>Shortcuts</strong>.</li>
-                <li class="mb-2"><strong>Favourite folders</strong> and <strong>saved searches</strong> (full snapshot: query, scope, tags, filters, Advanced, sort, visible columns).</li>
+                <li class="mb-2"><strong>Favourite folders</strong> and <strong>saved searches</strong> (full snapshot: query, scope, tags, filters, Advanced, sort, tree view).</li>
                 <li class="mb-2">Search scope can include <strong>Drive folders shared with you</strong> that appear under your synced paths.</li>
                 <li class="mb-2">
                   <strong>Fast previews</strong> for many Office types, PDF, images, text/json; PowerPoint via text-style preview where supported.
@@ -950,25 +906,22 @@
                 <li>The <strong>breadcrumb</strong> under Favourites is the <strong>current folder</strong> Everything scopes to (unless you clear scope for the whole index). The <strong>pen</strong> toggles a path editor; <kbd>Enter</kbd> saves, <kbd>Esc</kbd> cancels; invalid paths are rejected.</li>
                 <li>The search box filters what Everything returns. Results update as you type (debounced); <kbd>Enter</kbd> forces a refresh. Tip: <code>!foo</code> excludes matches for <code>foo</code>. <strong>Clear</strong> only clears query text.</li>
                 <li>
-                  <strong>Recursive</strong> includes subfolders; off limits to immediate children. <strong>Both</strong> / <strong>Folders</strong> / <strong>Files</strong> map to Everything’s file/folder filters.
+                  Searches under the current folder are <strong>recursive</strong> (subfolders included). With <strong>tree view</strong> on, an <strong>empty</strong> query and <strong>no</strong> active tag filters use a tree-browse pattern: folders everywhere under scope, but <strong>files only in the current folder</strong>; type a query or turn tags on for one merged file+folder list. Tree view off shows a <strong>Path</strong> column and no synthetic folder rows; sort by any column.
                 </li>
                 <li>
-                  <strong>Tree View</strong> (sitemap): path sort A→Z, <strong>Path</strong> column hidden, recursive on, files + folders, interleaved sort — a single preset; the toggle stays checked only while that whole bundle matches. Change sort, columns, recursive, type filter, or interleave and it turns off.
+                  Turning <strong>tree view</strong> on sets sort to <strong>Path</strong> A→Z and hides the Path column; turning it off shows Path again. “Special” paths (e.g. segments with <code>.</code>, <code>~</code>, <code>$</code>) may appear dimmed but are not hidden from the list.
                 </li>
                 <li><strong>Recency</strong> filters limit to items modified in the last hour/day/week/month/year.</li>
                 <li>
                   <strong>Search history</strong> — <kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>→</kbd> or toolbar arrows — steps through full snapshots (query, folder, tags, options). <strong>Recent folders</strong> (<kbd>Ctrl</kbd>+<kbd>L</kbd>, clock) only jumps paths, not full snapshots.
                 </li>
               </ul>
-              <h3 class="fs-6 text-secondary mb-2">Advanced, columns, sorting</h3>
+              <h3 class="fs-6 text-secondary mb-2">Advanced &amp; sorting</h3>
               <ul class="mb-3 ps-3">
-                <li><strong>Advanced</strong> (panel below the button): match case, match path, whole word, regex, diacritics, and <strong>Hide special</strong> (<strong>Hide . / ~ / $</strong> — drops paths with a segment starting with <code>.</code>, <code>~</code>, or <code>$</code>; <code>..</code> parents ignored). Behaviour vs Everything 1.4 HTTP differs — see <strong>Gotchas</strong>.</li>
-                <li><strong>Cols</strong> chooses visible columns. Header edges resize columns; header clicks sort (Everything gets name/path/size/date; <strong>Type</strong> sorts in the client).</li>
+                <li><strong>Advanced</strong> (panel below the button): match case, match path, whole word, diacritics. Plain search supports <code>|</code> in Everything without a separate “regex” mode.</li>
+                <li>Header edges resize columns; header clicks sort by name, path, size, or modified (Everything name/path/size/date where applicable).</li>
                 <li>
-                  <strong>Settings → Sort folders with files</strong> interleaves folders and files in one order; off, Everything’s default block (folders then files for that sort) applies — with <strong>Both</strong>, that can look like “only folders” until you scroll.
-                </li>
-                <li>
-                  <strong>Settings</strong> (<kbd>Ctrl</kbd>+<kbd>,</kbd> / <kbd>⌘</kbd>+<kbd>,</kbd>): Everything base URL, max results, HTTP user/password, auto-refresh timer, global show/hide shortcut, <strong>Sort folders with files</strong>, optional search debug log, open the Shelf staging folder in Explorer.
+                  <strong>Settings</strong> (<kbd>Ctrl</kbd>+<kbd>,</kbd> / <kbd>⌘</kbd>+<kbd>,</kbd>): Everything base URL, results per page (then <strong>Load more</strong> or scroll for the next page), HTTP user/password, auto-refresh timer, global show/hide shortcut, optional search debug log, open the Shelf staging folder in Explorer.
                 </li>
               </ul>
             </div>
@@ -1039,7 +992,7 @@
                   <strong>Shared Workspace files</strong> / another person’s Drive trees may not open in the child window the same as your own; streaming vs mirrored shortcuts matters.
                 </li>
                 <li class="mb-2">
-                  <strong>Everything 1.5 vs 1.4</strong>: <strong>Hide special</strong> uses path-regex in queries on 1.5; 1.4’s HTTP API may handle that poorly — Tag Fox can still filter rows client-side, but results may include extra paths before the filter. Prefer 1.5+ when possible.
+                  <strong>Everything 1.5 vs 1.4</strong>: advanced options and some query shapes behave differently over HTTP; prefer Everything 1.5+ when possible.
                 </li>
                 <li class="mb-0">Everything must stay running and indexing; Tag Fox only talks to its HTTP API.</li>
               </ul>
@@ -1153,7 +1106,7 @@
                     </tr>
                     <tr>
                       <td><kbd>Ctrl</kbd>+<kbd>F</kbd></td>
-                      <td>Cycle result type: <strong>Both</strong> → <strong>Files only</strong> → <strong>Folders only</strong> → <strong>Both</strong></td>
+                      <td>Focus the search box and select its text (same idea as <kbd>Ctrl</kbd>+<kbd>/</kbd>)</td>
                     </tr>
                     <tr>
                       <td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd></td>
