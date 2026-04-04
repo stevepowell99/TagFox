@@ -1,5 +1,5 @@
 // TagBrowser — Electron main: window + IPC to Everything HTTP + open/rename files
-const { app, BrowserWindow, ipcMain, shell, Menu, clipboard, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, clipboard, nativeImage, globalShortcut } = require('electron');
 const { spawn, spawnSync, execFileSync } = require('child_process');
 const { pathToFileURL } = require('url');
 const fs = require('fs').promises;
@@ -22,6 +22,15 @@ function googleDriveSearchUrlForPath(fullPath) {
   const q = String(pretty || base).trim();
   if (!q) return null;
   return `https://drive.google.com/drive/search?q=${encodeURIComponent(q)}`;
+}
+
+/** Parent folder ID in Google Drive for desktop: `...\ .shortcut-targets-by-id \<id>\ ...` */
+function driveFolderUrlFromShortcutTargetsPath(fullPath) {
+  const s = String(fullPath || '').replace(/\//g, '\\');
+  const m = /\\\.shortcut-targets-by-id\\([^\\/]+)/i.exec(s);
+  const id = m && String(m[1] || '').trim();
+  if (!id) return null;
+  return { driveFolderId: id, driveFolderUrl: `https://drive.google.com/drive/folders/${id}` };
 }
 
 /** Normalize Everything HTTP JSON (shape varies slightly by version) into an array of row objects. */
@@ -300,6 +309,31 @@ async function validateScopePasteDestination(destDirRaw, rootPrefix, err) {
   return { ok: true, destDir };
 }
 
+/**
+ * Explorer-style non-clobber name: use baseName if free, else `stem (1).ext`, `stem (2).ext`, …
+ * baseName must be a single segment (basename semantics).
+ */
+async function uniqueDestPathInDir(destDir, baseName) {
+  const baseSeg = path.basename(String(baseName || ''));
+  if (!baseSeg || baseSeg === '.' || baseSeg === '..') {
+    return { ok: false, error: 'Invalid paste name.' };
+  }
+  const { name: stem, ext } = path.parse(baseSeg);
+  let n = 0;
+  while (true) {
+    const label = n === 0 ? baseSeg : `${stem} (${n})${ext}`;
+    const destResolved = path.resolve(path.join(destDir, label));
+    try {
+      await fs.stat(destResolved);
+      n += 1;
+      if (n > 10000) return { ok: false, error: 'Too many duplicate names.' };
+    } catch (e) {
+      if (e && e.code === 'ENOENT') return { ok: true, destResolved };
+      return { ok: false, error: 'Destination check: ' + String(e.message || e) };
+    }
+  }
+}
+
 /** Copy files/folders from disk into destDir (recursive); honors rootPrefix like rename-path. */
 async function copySourcesIntoScopeFolder(sourcePaths, destDirRaw, rootPrefix, replaceExisting = false) {
   const v = await validateScopePasteDestination(destDirRaw, rootPrefix, {
@@ -323,9 +357,16 @@ async function copySourcesIntoScopeFolder(sourcePaths, destDirRaw, rootPrefix, r
     }
 
     const base = path.basename(src);
-    const dest = path.join(destDir, base);
-    const destResolved = path.resolve(dest);
     const srcResolved = path.resolve(src);
+
+    let destResolved;
+    if (replaceExisting) {
+      destResolved = path.resolve(path.join(destDir, base));
+    } else {
+      const u = await uniqueDestPathInDir(destDir, base);
+      if (!u.ok) return u;
+      destResolved = u.destResolved;
+    }
 
     if (destResolved.toLowerCase() === srcResolved.toLowerCase()) continue;
 
@@ -335,20 +376,6 @@ async function copySourcesIntoScopeFolder(sourcePaths, destDirRaw, rootPrefix, r
 
     if (!isPathUnderRoot(destResolved, rootPrefix)) {
       return { ok: false, error: 'Paste would place files outside the configured root folder.' };
-    }
-
-    if (!replaceExisting) {
-      try {
-        await fs.stat(destResolved);
-        return {
-          ok: false,
-          code: 'EEXIST',
-          error: 'Already exists in scope folder: ' + base,
-          baseName: base,
-        };
-      } catch (e) {
-        if (e.code !== 'ENOENT') return { ok: false, error: 'Destination check: ' + String(e.message || e) };
-      }
     }
 
     try {
@@ -386,9 +413,16 @@ async function moveSourcesIntoFolder(sourcePaths, destDirRaw, rootPrefix, replac
     }
 
     const base = path.basename(src);
-    const dest = path.join(destDir, base);
-    const destResolved = path.resolve(dest);
     const srcResolved = path.resolve(src);
+
+    let destResolved;
+    if (replaceExisting) {
+      destResolved = path.resolve(path.join(destDir, base));
+    } else {
+      const u = await uniqueDestPathInDir(destDir, base);
+      if (!u.ok) return u;
+      destResolved = u.destResolved;
+    }
 
     if (destResolved.toLowerCase() === srcResolved.toLowerCase()) continue;
 
@@ -400,23 +434,7 @@ async function moveSourcesIntoFolder(sourcePaths, destDirRaw, rootPrefix, replac
       return { ok: false, error: 'Move would place items outside the configured root folder.' };
     }
 
-    let destOccupied = false;
-    try {
-      await fs.stat(destResolved);
-      destOccupied = true;
-    } catch (e) {
-      if (e.code !== 'ENOENT') return { ok: false, error: 'Destination check: ' + String(e.message || e) };
-    }
-
-    if (destOccupied) {
-      if (!replaceExisting) {
-        return {
-          ok: false,
-          code: 'EEXIST',
-          error: 'Already exists in destination folder: ' + base,
-          baseName: base,
-        };
-      }
+    if (replaceExisting) {
       try {
         await fs.rm(destResolved, { recursive: true, force: true });
       } catch (e) {
@@ -927,6 +945,29 @@ function everythingSearchUrl(baseUrl, searchText, count, options) {
   return u.toString();
 }
 
+/** Target webContents for View-menu actions (focused BrowserWindow). */
+function focusedMenuWebContents(focusedWindow) {
+  const w = focusedWindow || BrowserWindow.getFocusedWindow();
+  if (!w || w.isDestroyed()) return null;
+  return w.webContents;
+}
+
+/** Page zoom steps — shared by View menu (clicks) and attachPageZoomShortcuts (keyboard). */
+function pageZoomReset(wc) {
+  if (!wc || wc.isDestroyed()) return;
+  wc.setZoomFactor(1);
+}
+function pageZoomIn(wc) {
+  if (!wc || wc.isDestroyed()) return;
+  const z = wc.getZoomFactor();
+  wc.setZoomFactor(Math.min(3, Math.round(z * 1.1 * 100) / 100));
+}
+function pageZoomOut(wc) {
+  if (!wc || wc.isDestroyed()) return;
+  const z = wc.getZoomFactor();
+  wc.setZoomFactor(Math.max(0.25, Math.round((z / 1.1) * 100) / 100));
+}
+
 /** Windows/Linux: without an app menu, Electron does not bind reload / hard-reload accelerators. */
 function installApplicationMenu() {
   const isMac = process.platform === 'darwin';
@@ -934,6 +975,42 @@ function installApplicationMenu() {
     const w = focusedWindow || BrowserWindow.getFocusedWindow();
     if (w && !w.isDestroyed()) w.webContents.reloadIgnoringCache();
   };
+  // Show shortcuts in the menu; real key handling is attachPageZoomShortcuts (Windows/Linux:
+  // registerAccelerator: false avoids double-zoom). macOS cannot disable registration, so no accelerators there.
+  const zoomClick = (fn) => (_item, focusedWindow) => {
+    const wc = focusedMenuWebContents(focusedWindow);
+    if (wc) fn(wc);
+  };
+  const zoomInItem /** @type {Electron.MenuItemConstructorOptions[]} */ = isMac
+    ? [{ label: 'Zoom In (⌘+)', click: zoomClick(pageZoomIn) }]
+    : [
+        {
+          label: 'Zoom In',
+          accelerator: 'CmdOrCtrl+Plus',
+          registerAccelerator: false,
+          click: zoomClick(pageZoomIn),
+        },
+      ];
+  const zoomOutItem /** @type {Electron.MenuItemConstructorOptions[]} */ = isMac
+    ? [{ label: 'Zoom Out (⌘−)', click: zoomClick(pageZoomOut) }]
+    : [
+        {
+          label: 'Zoom Out',
+          accelerator: 'CmdOrCtrl+-',
+          registerAccelerator: false,
+          click: zoomClick(pageZoomOut),
+        },
+      ];
+  const actualSizeItem /** @type {Electron.MenuItemConstructorOptions[]} */ = isMac
+    ? [{ label: 'Actual Size (⌘0)', click: zoomClick(pageZoomReset) }]
+    : [
+        {
+          label: 'Actual Size',
+          accelerator: 'CmdOrCtrl+0',
+          registerAccelerator: false,
+          click: zoomClick(pageZoomReset),
+        },
+      ];
   const viewSubmenu /** @type {Electron.MenuItemConstructorOptions[]} */ = [
     { role: 'reload' },
     { role: 'forceReload' },
@@ -942,6 +1019,10 @@ function installApplicationMenu() {
     { label: 'Hard reload', accelerator: 'CmdOrCtrl+Shift+F5', visible: false, click: hardReload },
     { type: 'separator' },
     { role: 'toggleDevTools' },
+    { type: 'separator' },
+    ...zoomInItem,
+    ...zoomOutItem,
+    ...actualSizeItem,
   ];
   const template /** @type {Electron.MenuItemConstructorOptions[]} */ = isMac
     ? [
@@ -967,19 +1048,127 @@ function installApplicationMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+/**
+ * Ctrl/Cmd +/-/0 on page zoom. Menu `zoomIn`/`zoomOut` accelerators often do not run when the
+ * webContents has focus on Windows; `before-input-event` applies zoom in the main process.
+ */
+function attachPageZoomShortcuts(wc) {
+  wc.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const mod = process.platform === 'darwin' ? input.meta : input.control;
+    if (!mod || input.alt) return;
+
+    const { code } = input;
+
+    if (code === 'Digit0' || code === 'Numpad0') {
+      if (input.shift) return;
+      event.preventDefault();
+      pageZoomReset(wc);
+      return;
+    }
+    if (code === 'Minus' || code === 'NumpadSubtract') {
+      event.preventDefault();
+      pageZoomOut(wc);
+      return;
+    }
+    if (code === 'Equal' || code === 'NumpadAdd') {
+      event.preventDefault();
+      pageZoomIn(wc);
+      return;
+    }
+  });
+}
+
+/** Main browser window ref for global show/hide toggle (child windows excluded). */
+let mainWindowRef = null;
+/** Currently registered global shortcut string (Electron accelerator), or ''. */
+let globalToggleRegistered = '';
+
+const DEFAULT_GLOBAL_TOGGLE_ACCEL = 'Control+Space';
+
+function globalTogglePrefsPath() {
+  return path.join(app.getPath('userData'), 'tagBrowser-global-toggle.json');
+}
+
+function loadGlobalToggleAccelFromDisk() {
+  try {
+    const p = globalTogglePrefsPath();
+    if (!fssync.existsSync(p)) return DEFAULT_GLOBAL_TOGGLE_ACCEL;
+    const j = JSON.parse(fssync.readFileSync(p, 'utf8'));
+    const a = j && typeof j.accelerator === 'string' ? j.accelerator.trim() : '';
+    return a || DEFAULT_GLOBAL_TOGGLE_ACCEL;
+  } catch {
+    return DEFAULT_GLOBAL_TOGGLE_ACCEL;
+  }
+}
+
+function saveGlobalToggleAccelToDisk(acc) {
+  const p = globalTogglePrefsPath();
+  const dir = path.dirname(p);
+  if (!fssync.existsSync(dir)) fssync.mkdirSync(dir, { recursive: true });
+  fssync.writeFileSync(p, JSON.stringify({ accelerator: acc }), 'utf8');
+}
+
+function toggleMainWindowFromGlobalShortcut() {
+  const w =
+    mainWindowRef && !mainWindowRef.isDestroyed()
+      ? mainWindowRef
+      : BrowserWindow.getAllWindows().find((x) => x && !x.isDestroyed());
+  if (!w || w.isDestroyed()) return;
+  if (w.isVisible() && !w.isMinimized()) w.hide();
+  else {
+    if (w.isMinimized()) w.restore();
+    w.show();
+    w.focus();
+  }
+}
+
+/** Register OS-wide shortcut; rolls back to previous if the new one cannot register. */
+function registerGlobalToggleShortcut(accelRaw) {
+  const accel = String(accelRaw || '').trim() || DEFAULT_GLOBAL_TOGGLE_ACCEL;
+  const prev = globalToggleRegistered;
+  if (prev) {
+    try {
+      globalShortcut.unregister(prev);
+    } catch (_) {}
+    globalToggleRegistered = '';
+  }
+  const ok = globalShortcut.register(accel, toggleMainWindowFromGlobalShortcut);
+  if (!ok) {
+    if (prev) {
+      const back = globalShortcut.register(prev, toggleMainWindowFromGlobalShortcut);
+      if (back) globalToggleRegistered = prev;
+    }
+    return {
+      ok: false,
+      error: 'Could not register shortcut (invalid or already in use by another app).',
+      accelerator: prev || accel,
+    };
+  }
+  globalToggleRegistered = accel;
+  saveGlobalToggleAccelToDisk(accel);
+  return { ok: true, accelerator: accel };
+}
+
 function createWindow() {
   // `maximized` is not a BrowserWindow option — use maximize() so we get OS chrome, not fullscreen.
   const win = new BrowserWindow({
     width: 1480,
     height: 820,
     show: false,
-    autoHideMenuBar: true,
+    // false: File / View stay visible (Alt-only bar hid the menu — looked like “no File menu”).
+    autoHideMenuBar: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+  mainWindowRef = win;
+  win.on('closed', () => {
+    if (mainWindowRef === win) mainWindowRef = null;
+  });
+  attachPageZoomShortcuts(win.webContents);
   win.loadFile(path.join(__dirname, 'index.html'));
   win.webContents.setWindowOpenHandler(({ url: openUrl }) => {
     try {
@@ -1012,6 +1201,8 @@ function createWindow() {
 
 app.whenReady().then(() => {
   installApplicationMenu();
+  const gt = registerGlobalToggleShortcut(loadGlobalToggleAccelFromDisk());
+  if (!gt.ok) console.warn('[TagFox] Global toggle shortcut:', gt.error);
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -1021,6 +1212,18 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
+
+app.on('will-quit', () => {
+  try {
+    globalShortcut.unregisterAll();
+  } catch (_) {}
+});
+
+ipcMain.handle('global-toggle-get', () => ({
+  accelerator: globalToggleRegistered || loadGlobalToggleAccelFromDisk(),
+}));
+
+ipcMain.handle('global-toggle-set', (_event, accel) => registerGlobalToggleShortcut(accel));
 
 ipcMain.on('tag-prefs-read-sync', (event) => {
   try {
@@ -1114,6 +1317,374 @@ function targetUrlFromGoogleDriveShortcut(fullPath, rawText) {
   return `https://docs.google.com/document/d/${id}/edit`;
 }
 
+/** Node readFile EISDIR on `.gdoc` while stat says file: try .NET ReadAllText (Explorer-style) for normal + `\\?\` paths. */
+const PS1_READ_UTF8_PATH_VARIANTS = `param([Parameter(Mandatory)][string]$JsonPath)
+try {
+  $j = (Get-Content -LiteralPath $JsonPath -Raw -Encoding UTF8) | ConvertFrom-Json
+  $out = [string]$j.outFile
+  $arr = $j.paths
+  if ($null -eq $arr) { throw 'Missing paths' }
+  if ($arr -isnot [System.Array]) { $arr = @($arr) }
+  $enc = [System.Text.UTF8Encoding]::new($false)
+  foreach ($p in $arr) {
+    $lp = [string]$p
+    if (-not $lp) { continue }
+    try {
+      $t = [System.IO.File]::ReadAllText($lp, $enc)
+      [System.IO.File]::WriteAllText($out, $t, $enc)
+      exit 0
+    } catch { }
+  }
+  throw 'ReadAllText failed for all path variants'
+} catch {
+  [Console]::Error.WriteLine($_.Exception.Message)
+  exit 1
+}`;
+
+/** Drive placeholders: Copy-Item to local disk often hydrates when ReadAllText cannot open the virtual path. */
+const PS1_COPY_PATH_VARIANTS = `param([Parameter(Mandatory)][string]$JsonPath)
+try {
+  $j = (Get-Content -LiteralPath $JsonPath -Raw -Encoding UTF8) | ConvertFrom-Json
+  $dest = [string]$j.dest
+  if (-not $dest) { throw 'No dest' }
+  $arr = $j.paths
+  if ($null -eq $arr) { throw 'Missing paths' }
+  if ($arr -isnot [System.Array]) { $arr = @($arr) }
+  if (Test-Path -LiteralPath $dest) { Remove-Item -LiteralPath $dest -Force }
+  foreach ($p in $arr) {
+    $lp = [string]$p
+    if (-not $lp) { continue }
+    try {
+      Copy-Item -LiteralPath $lp -Destination $dest -Force
+      exit 0
+    } catch { }
+  }
+  throw 'Copy-Item failed for all path variants'
+} catch {
+  [Console]::Error.WriteLine($_.Exception.Message)
+  exit 1
+}`;
+
+function readUtf8ViaDotnetFileReadWindows(absPathRaw, diag) {
+  if (process.platform !== 'win32') return null;
+  const norm = normalizePathForShellOpen(String(absPathRaw || '')).trim();
+  if (!norm) return null;
+  const absNorm = path.resolve(norm);
+  const back = absNorm.replace(/\//g, '\\');
+  const paths = [back];
+  const longP = toWinLongRenamePath(absNorm);
+  if (longP !== back) paths.push(longP);
+  const tmpJson = path.join(os.tmpdir(), `tagbrowser-psread-${process.pid}-${Date.now()}.json`);
+  const outFile = path.join(os.tmpdir(), `tagbrowser-psread-out-${process.pid}-${Date.now()}.txt`);
+  try {
+    fssync.writeFileSync(tmpJson, JSON.stringify({ paths, outFile }), 'utf8');
+    const err = runPowershellScriptFileWithArg(
+      PS1_READ_UTF8_PATH_VARIANTS,
+      tmpJson,
+      'PowerShell ReadAllText shortcut'
+    );
+    if (err) {
+      if (diag) diag.psReadAllText = { ok: false, pathsTried: paths, error: err };
+      return null;
+    }
+    const text = fssync.readFileSync(outFile, 'utf8');
+    if (diag) {
+      diag.psReadAllText = { ok: true, pathsTried: paths, utf8Bytes: Buffer.byteLength(text, 'utf8') };
+    }
+    return text;
+  } catch (e) {
+    if (diag) diag.psReadAllText = { ok: false, pathsTried: paths, error: String(e.message || e) };
+    return null;
+  } finally {
+    try {
+      fssync.unlinkSync(tmpJson);
+    } catch (_) {}
+    try {
+      fssync.unlinkSync(outFile);
+    } catch (_) {}
+  }
+}
+
+/** Try copy shortcut to TEMP then read — hydrates some streamed Drive .gdoc paths Node cannot read in place. */
+async function readUtf8ViaHydrateCopyToTempWindows(absPathRaw, diag) {
+  if (process.platform !== 'win32') return null;
+  const norm = normalizePathForShellOpen(String(absPathRaw || '')).trim();
+  if (!norm) return null;
+  const absNorm = path.resolve(norm);
+  const ext = path.extname(absNorm) || '.gdoc';
+  const tmp = path.join(os.tmpdir(), `tagfox-hydrate-${process.pid}-${Date.now()}${ext}`);
+  const back = absNorm.replace(/\//g, '\\');
+  const paths = [back];
+  const longP = toWinLongRenamePath(absNorm);
+  if (longP !== back) paths.push(longP);
+
+  const h = { pathsTried: paths, nodeCopyFile: null, psCopyItem: null, readTemp: null };
+  if (diag) diag.hydrateCopy = h;
+
+  try {
+    try {
+      await fs.copyFile(absNorm, tmp);
+      h.nodeCopyFile = { ok: true };
+    } catch (e) {
+      h.nodeCopyFile = { ok: false, code: e.code || null, message: String(e.message || e) };
+      const tmpJson = path.join(os.tmpdir(), `tagfox-hydrate-${process.pid}-${Date.now()}.json`);
+      try {
+        fssync.writeFileSync(tmpJson, JSON.stringify({ paths, dest: tmp }), 'utf8');
+        const err = runPowershellScriptFileWithArg(PS1_COPY_PATH_VARIANTS, tmpJson, 'PowerShell Copy-Item hydrate');
+        if (err) {
+          h.psCopyItem = { ok: false, error: err };
+          return null;
+        }
+        h.psCopyItem = { ok: true };
+      } finally {
+        try {
+          fssync.unlinkSync(tmpJson);
+        } catch (_) {}
+      }
+    }
+
+    let raw;
+    try {
+      raw = await fs.readFile(tmp, 'utf8');
+      h.readTemp = { ok: true, utf8Bytes: Buffer.byteLength(raw, 'utf8') };
+    } catch (e) {
+      h.readTemp = { ok: false, code: e.code || null, message: String(e.message || e) };
+      return null;
+    }
+    return raw;
+  } finally {
+    try {
+      await fs.unlink(tmp);
+    } catch (_) {}
+  }
+}
+
+/** Serializable fs.Stats fields for shortcut diagnostics (streamed Drive / reparse quirks). */
+function statToJson(st) {
+  if (!st) return null;
+  return {
+    isFile: st.isFile(),
+    isDirectory: st.isDirectory(),
+    isSymbolicLink: typeof st.isSymbolicLink === 'function' ? st.isSymbolicLink() : false,
+    size: st.size,
+    mtimeMs: st.mtimeMs,
+  };
+}
+
+/**
+ * UTF-8 body of a Drive Workspace pointer: normal file, or folder-style shortcut (shared / .shortcut-targets-by-id).
+ * Some mounts stat as file but readFile throws EISDIR — same recovery as explicit directory.
+ * Always fills `diag` for IPC / console when shortcuts are not fully on disk (streamed).
+ */
+async function readGoogleWorkspaceShortcutText(fullPathRaw) {
+  const hints = [
+    'Streamed cloud files may have no real bytes until Explorer (or the sync client) hydrates them - Node can see a name but read fails or size stays 0.',
+    'If this path is under `.shortcut-targets-by-id`, Drive often uses placeholders; try Available offline, open the file once in your browser, or mirror the shared drive.',
+    'Row Open / context Open still runs shell.openPath when JSON cannot be read - Windows may open the live doc in your browser even though this app cannot load the in-app Google window.',
+  ];
+  const diag = {
+    path: '',
+    platform: process.platform,
+    hints,
+    lstat: null,
+    stat: null,
+    readFile: null,
+    readdir: null,
+    children: [],
+    source: null,
+    outcome: 'init',
+  };
+
+  const fullPath = normalizePathForShellOpen(fullPathRaw);
+  diag.path = fullPath;
+  if (!fullPath) {
+    diag.outcome = 'empty_path';
+    return { ok: false, error: 'Empty path.', diag };
+  }
+
+  const searchU = googleDriveSearchUrlForPath(fullPath);
+  if (searchU) diag.driveSearchUrl = searchU;
+  const foldU = driveFolderUrlFromShortcutTargetsPath(fullPath);
+  if (foldU) {
+    diag.driveFolderId = foldU.driveFolderId;
+    diag.driveFolderUrl = foldU.driveFolderUrl;
+  }
+
+  try {
+    diag.lstat = statToJson(await fs.lstat(fullPath));
+  } catch (e) {
+    diag.lstat = { error: String(e.message || e), code: e.code || null };
+  }
+
+  let st;
+  try {
+    st = await fs.stat(fullPath);
+    diag.stat = statToJson(st);
+  } catch (e) {
+    diag.stat = { error: String(e.message || e), code: e.code || null };
+    diag.outcome = 'stat_failed';
+    if (e && e.code === 'ENOENT') {
+      console.warn('[TagFox google-shortcut]', diag.outcome, diag);
+      return { ok: false, error: 'File not found.', code: 'ENOENT', diag };
+    }
+    console.warn('[TagFox google-shortcut]', diag.outcome, diag);
+    return { ok: false, error: String(e.message || e), diag };
+  }
+
+  const maxChildBytes = 65536;
+  const maxChildRows = 40;
+  const maxNamesList = 60;
+
+  async function tryParseChildFiles(dir) {
+    let names;
+    try {
+      names = await fs.readdir(dir);
+    } catch (e) {
+      diag.readdir = {
+        ok: false,
+        code: e.code || null,
+        message: String(e.message || e),
+        names: [],
+      };
+      return null;
+    }
+    diag.readdir = {
+      ok: true,
+      code: null,
+      message: null,
+      nameCount: names.length,
+      namesSample: names.filter(Boolean).slice(0, maxNamesList),
+      namesTruncated: names.length > maxNamesList,
+    };
+    const kids = names
+      .filter((n) => n && n !== '.' && n !== '..')
+      .map((n) => path.join(dir, n))
+      .sort((a, b) =>
+        path.basename(a).localeCompare(path.basename(b), undefined, { sensitivity: 'base', numeric: true })
+      );
+    let row = 0;
+    for (const child of kids) {
+      if (row >= maxChildRows) {
+        diag.children.push({ name: path.basename(child), skipped: true, reason: 'maxChildRows' });
+        continue;
+      }
+      row++;
+      const rec = { name: path.basename(child) };
+      let cst;
+      try {
+        cst = await fs.stat(child);
+        rec.stat = statToJson(cst);
+      } catch (e) {
+        rec.statError = String(e.message || e);
+        rec.statCode = e.code || null;
+        diag.children.push(rec);
+        continue;
+      }
+      if (!cst.isFile() || cst.size > maxChildBytes) {
+        rec.skipRead = !cst.isFile() ? 'not_file' : 'too_large';
+        diag.children.push(rec);
+        continue;
+      }
+      try {
+        const raw = await fs.readFile(child, 'utf8');
+        rec.readOk = true;
+        rec.readLength = raw.length;
+        if (targetUrlFromGoogleDriveShortcut(fullPath, raw)) {
+          rec.parseMatched = true;
+          diag.children.push(rec);
+          return raw;
+        }
+        rec.parseMatched = false;
+        rec.snippet = String(raw || '').replace(/\s+/g, ' ').slice(0, 120);
+      } catch (e) {
+        rec.readOk = false;
+        rec.readCode = e.code || null;
+        rec.readMessage = String(e.message || e);
+      }
+      diag.children.push(rec);
+    }
+    return null;
+  }
+
+  if (st.isDirectory()) {
+    diag.outcome = 'shortcut_is_directory';
+    const raw = await tryParseChildFiles(fullPath);
+    if (!raw) {
+      diag.outcome = 'dir_no_parseable_child';
+      console.warn('[TagFox google-shortcut]', diag.outcome, diag);
+      return { ok: false, error: 'Could not read Google link from shortcut folder.', diag };
+    }
+    diag.source = 'dirChildren';
+    diag.outcome = 'ok_dirChildren';
+    return { ok: true, raw, diag };
+  }
+
+  if (!st.isFile()) {
+    diag.outcome = 'not_file_or_directory';
+    console.warn('[TagFox google-shortcut]', diag.outcome, diag);
+    return { ok: false, error: 'Not a file', diag };
+  }
+  if (st.size > maxChildBytes) {
+    diag.outcome = 'file_too_large';
+    console.warn('[TagFox google-shortcut]', diag.outcome, diag);
+    return { ok: false, error: 'Shortcut file unexpectedly large.', diag };
+  }
+
+  diag.readFile = { attempted: fullPath, expectedSize: st.size };
+  try {
+    const raw = await fs.readFile(fullPath, 'utf8');
+    diag.readFile.ok = true;
+    diag.readFile.bytesRead = Buffer.byteLength(raw, 'utf8');
+    diag.source = 'file';
+    diag.outcome = 'ok_file';
+    return { ok: true, raw, diag };
+  } catch (e) {
+    diag.readFile.ok = false;
+    diag.readFile.code = e.code || null;
+    diag.readFile.message = String(e.message || e);
+    if (e && e.code === 'EISDIR') {
+      diag.outcome = 'readfile_eisdir_try_ps';
+      const psText = readUtf8ViaDotnetFileReadWindows(fullPath, diag);
+      if (psText) {
+        const urlPs = targetUrlFromGoogleDriveShortcut(fullPath, psText);
+        if (urlPs) {
+          diag.source = 'psReadAllText';
+          diag.outcome = 'ok_psReadAllText';
+          return { ok: true, raw: psText, diag };
+        }
+        diag.psParseNote = 'ReadAllText returned bytes but no doc_id/url in JSON.';
+      }
+      diag.outcome = 'readfile_eisdir_try_hydrate_copy';
+      const hydrated = await readUtf8ViaHydrateCopyToTempWindows(fullPath, diag);
+      if (hydrated) {
+        const urlH = targetUrlFromGoogleDriveShortcut(fullPath, hydrated);
+        if (urlH) {
+          diag.source = 'hydrateCopy';
+          diag.outcome = 'ok_hydrateCopy';
+          return { ok: true, raw: hydrated, diag };
+        }
+        diag.hydrateParseNote = 'Temp file read OK but JSON had no doc_id/url.';
+      }
+      diag.outcome = 'readfile_eisdir_try_children';
+      const raw = await tryParseChildFiles(fullPath);
+      if (raw) {
+        diag.source = 'dirChildren_after_eisdir';
+        diag.outcome = 'ok_dirChildren_after_eisdir';
+        return { ok: true, raw, diag };
+      }
+      diag.outcome = 'eisdir_no_child_parse';
+    } else if (e && e.code === 'ENOENT') {
+      diag.outcome = 'readfile_enoent';
+      console.warn('[TagFox google-shortcut]', diag.outcome, diag);
+      return { ok: false, error: 'File not found.', code: 'ENOENT', diag };
+    } else {
+      diag.outcome = 'readfile_failed';
+    }
+    console.warn('[TagFox google-shortcut]', diag.outcome, diag);
+    return { ok: false, error: String(e.message || e), diag };
+  }
+}
+
 function isAllowedGoogleWorkspaceUrl(u) {
   try {
     const { protocol, hostname } = new URL(String(u || '').trim());
@@ -1144,6 +1715,7 @@ function openGoogleWorkspaceEditorWindow(parentWin, targetUrl) {
       nodeIntegration: false,
     },
   });
+  attachPageZoomShortcuts(googleWorkspaceWin.webContents);
   googleWorkspaceWin.setMenuBarVisibility(false);
   googleWorkspaceWin.once('ready-to-show', () => {
     if (googleWorkspaceWin && !googleWorkspaceWin.isDestroyed()) googleWorkspaceWin.show();
@@ -1155,55 +1727,77 @@ function openGoogleWorkspaceEditorWindow(parentWin, targetUrl) {
   return { ok: true };
 }
 
-/** shell.openPath, but Google shortcuts open in the in-app workspace window when parseable. */
+/**
+ * shell.openPath, but Google shortcuts open in the in-app workspace window when the stub is readable.
+ * When Node/.NET cannot read streamed placeholders (EISDIR etc.), still call openPathWithFallback — ShellExecute
+ * often opens the live doc in the browser even though fs.readFile/copyFile fails.
+ */
 async function openPathOrGoogleWorkspaceShortcut(wc, fullPathRaw) {
   const p = normalizePathForShellOpen(fullPathRaw);
   if (!p) return 'Empty path.';
   const ext = path.extname(p).toLowerCase();
-  if (['.gdoc', '.gsheet', '.gslides'].includes(ext)) {
-    try {
-      const st = await fs.stat(p);
-      if (st.isFile() && st.size <= 65536) {
-        const raw = await fs.readFile(p, 'utf8');
-        const url = targetUrlFromGoogleDriveShortcut(p, raw);
-        if (url) {
-          const parent = BrowserWindow.fromWebContents(wc);
-          const r = openGoogleWorkspaceEditorWindow(parent, url);
-          if (r.ok) return null;
-          if (r && r.error) return r.error;
-        }
-      }
-    } catch (e) {
-      if (e && e.code === 'ENOENT') return 'File not found.';
-    }
+  if (!['.gdoc', '.gsheet', '.gslides'].includes(ext)) {
+    return openPathWithFallback(fullPathRaw);
   }
-  return openPathWithFallback(fullPathRaw);
+
+  const r = await readGoogleWorkspaceShortcutText(fullPathRaw);
+  const diag = r && r.diag;
+
+  if (r.ok) {
+    const url = targetUrlFromGoogleDriveShortcut(p, r.raw);
+    if (url) {
+      const parent = BrowserWindow.fromWebContents(wc);
+      const winR = openGoogleWorkspaceEditorWindow(parent, url);
+      if (winR.ok) return null;
+      if (winR && winR.error) return winR.error;
+    }
+    console.warn('[TagFox google-shortcut] parsed body but no url', diag);
+  } else if (r.code === 'ENOENT') {
+    return 'File not found.';
+  }
+
+  console.warn(
+    '[TagFox google-shortcut] using shell.openPath fallback (in-app window needs readable shortcut JSON).',
+    diag && diag.outcome
+  );
+  const shellErr = await openPathWithFallback(fullPathRaw);
+  if (!shellErr) return null;
+  console.warn('[TagFox google-shortcut] shell.openPath fallback failed', shellErr, diag && diag.outcome);
+  return '';
 }
 
 ipcMain.handle('google-workspace-shortcut-url', async (_event, { fullPath }) => {
   const fp = path.normalize(String(fullPath || ''));
-  if (!fp) return { ok: false, error: 'Missing path' };
+  if (!fp) return { ok: false, error: 'Missing path', diag: null };
   const ext = path.extname(fp).toLowerCase();
   if (!['.gdoc', '.gsheet', '.gslides'].includes(ext)) {
-    return { ok: false, error: 'Not a Google Workspace shortcut.' };
+    return { ok: false, error: 'Not a Google Workspace shortcut.', diag: null };
   }
-  try {
-    const st = await fs.stat(fp);
-    if (!st.isFile()) return { ok: false, error: 'Not a file' };
-    if (st.size > 65536) return { ok: false, error: 'Shortcut file unexpectedly large.' };
-    const raw = await fs.readFile(fp, 'utf8');
-    const url = targetUrlFromGoogleDriveShortcut(fp, raw);
-    if (!url) return { ok: false, error: 'Could not read Google link from shortcut.' };
-    return { ok: true, url };
-  } catch (e) {
-    if (e && e.code === 'ENOENT') return { ok: false, error: 'File not found.' };
-    return { ok: false, error: String(e.message || e) };
+  const body = await readGoogleWorkspaceShortcutText(fp);
+  if (!body.ok) {
+    if (body.code === 'ENOENT') return { ok: false, error: 'File not found.', diag: body.diag || null };
+    return { ok: false, error: body.error || 'Could not read shortcut.', diag: body.diag || null };
   }
+  const url = targetUrlFromGoogleDriveShortcut(fp, body.raw);
+  if (!url) {
+    console.warn('[TagFox google-shortcut] IPC: no url from JSON', body.diag);
+    return { ok: false, error: 'Could not read Google link from shortcut.', diag: body.diag || null };
+  }
+  return { ok: true, url, diag: body.diag || null };
 });
 
 ipcMain.handle('open-google-workspace-window', async (event, { url }) => {
   const parent = BrowserWindow.fromWebContents(event.sender);
   return openGoogleWorkspaceEditorWindow(parent, url);
+});
+
+ipcMain.handle('open-url-default-browser', async (_event, { url }) => {
+  try {
+    await openUrlInSystemDefaultBrowser(url);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) };
+  }
 });
 
 /**
@@ -1435,6 +2029,51 @@ ipcMain.handle('list-child-folders', async (_event, { parentPath }) => {
   }
   folders.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }));
   return { ok: true, folders };
+});
+
+/** Drive letters / volume mount points for breadcrumb (Windows: ready drives; macOS: / + /Volumes/*; else /). */
+function listDriveRootsForPlatform() {
+  if (process.platform === 'win32') {
+    const roots = [];
+    for (let i = 0; i < 26; i++) {
+      const letter = String.fromCharCode(65 + i);
+      const fp = letter + ':\\';
+      try {
+        if (fssync.existsSync(fp)) roots.push({ label: letter + ':', fullPath: fp });
+      } catch (_) {}
+    }
+    return { platform: 'win32', roots };
+  }
+  if (process.platform === 'darwin') {
+    const roots = [{ label: '/', fullPath: '/' }];
+    const vol = '/Volumes';
+    try {
+      const names = fssync.readdirSync(vol);
+      for (const name of names) {
+        if (!name || name === '.' || name === '..') continue;
+        const full = path.join(vol, name);
+        try {
+          if (fssync.statSync(full).isDirectory()) roots.push({ label: name, fullPath: full });
+        } catch (_) {}
+      }
+    } catch (_) {}
+    roots.sort((a, b) => {
+      if (a.fullPath === '/') return -1;
+      if (b.fullPath === '/') return 1;
+      return a.label.localeCompare(b.label, undefined, { sensitivity: 'base', numeric: true });
+    });
+    return { platform: 'darwin', roots };
+  }
+  return { platform: process.platform || 'linux', roots: [{ label: '/', fullPath: '/' }] };
+}
+
+ipcMain.handle('list-drive-roots', async () => {
+  try {
+    const { platform, roots } = listDriveRootsForPlatform();
+    return { ok: true, platform, roots };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e), platform: process.platform, roots: [] };
+  }
 });
 
 /** One path segment for a new folder name (no separators / Windows-forbidden chars). */
@@ -1696,6 +2335,17 @@ ipcMain.handle('read-file-buffer', async (_event, { fullPath }) => {
     const buf = await fs.readFile(fp);
     return { ok: true, base64: buf.toString('base64') };
   } catch (e) {
+    const code = e && e.code;
+    // Google Drive / My Drive: stat can EPERM on some paths while readFile still works.
+    if (code === 'EPERM' || code === 'EACCES') {
+      try {
+        const buf = await fs.readFile(fp);
+        if (buf.length > maxBytes) return { ok: false, error: 'File too large for preview (max 100 MB).' };
+        return { ok: true, base64: buf.toString('base64') };
+      } catch (e2) {
+        return { ok: false, error: String(e2.message || e2) };
+      }
+    }
     return { ok: false, error: String(e.message || e) };
   }
 });
@@ -1711,16 +2361,43 @@ ipcMain.handle('write-text-file', async (_event, { fullPath, text }) => {
   }
 });
 
-// Create empty readme.md in folder if missing.
-ipcMain.handle('ensure-readme', async (_event, { folderPath }) => {
+/** Folder Viewer: fixed “description” basenames, in order (case-insensitive on disk). */
+const FOLDER_VIEWER_DOC_NAMES = [
+  'readme.md',
+  'readme.txt',
+  'claude.md',
+  'agents.md',
+  'about.md',
+  'about.txt',
+  'context.md',
+  'context.txt',
+  'index.md',
+  'index.txt',
+];
+
+ipcMain.handle('resolve-folder-viewer-doc', async (_event, { folderPath }) => {
   const dir = path.normalize(String(folderPath || '').trim().replace(/[/\\]+$/, ''));
-  if (!dir) return { ok: false, error: 'Missing folder' };
-  const readmePath = path.join(dir, 'readme.md');
+  if (!dir) return { ok: false, error: 'Missing folder', fullPath: null };
+  let entries;
   try {
-    await fs.access(readmePath);
-    return { ok: true, path: readmePath, created: false };
-  } catch {
-    await fs.writeFile(readmePath, '', 'utf8');
-    return { ok: true, path: readmePath, created: true };
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch (e) {
+    return { ok: false, error: String(e.message || e), fullPath: null };
   }
+  const files = [];
+  for (const d of entries) {
+    if (d.isFile()) files.push(d.name);
+  }
+  const lower = (n) => String(n).toLowerCase();
+  const pickCi = (want) => {
+    const w = lower(want);
+    const hit = files.find((f) => lower(f) === w);
+    return hit ? path.join(dir, hit) : null;
+  };
+  let fullPath = null;
+  for (const name of FOLDER_VIEWER_DOC_NAMES) {
+    fullPath = pickCi(name);
+    if (fullPath) break;
+  }
+  return { ok: true, fullPath };
 });

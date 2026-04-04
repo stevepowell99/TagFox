@@ -1,0 +1,67 @@
+Recording: Tag Fox documentation / help (dictated notes, tidied)
+
+--- Structure / meta (from closing notes) ---
+- Split out tasks up front (for author), separate from user-facing motivation and documentation.
+- Motivation-oriented material can come first in the user doc, but at the very top consider a short "eight things you need to know", then motivation, then more detail merged with the existing Help file.
+
+--- Installation & Everything versions ---
+- Explain in installation instructions: what happens if you do NOT have Everything 1.5 Alpha, vs if you DO (HTTP server setup procedure differs).
+- App should behave gracefully if someone installed Everything 1.4 rather than 1.5; difference may mainly affect "special objects" / hide-folder behaviour — may need that option disabled or changed for 1.4.
+- Document: if installing 1.4, how to enable the server; if using 1.5, add HTTP as a plugin.
+
+
+--- Behaviour by view / version ---
+- Problems with hiding folders might be specific to certain views.
+- For those views, if the user is on Everything 1.4, the hide-folder (or related) option needs to be disabled.
+
+--- Help reorganisation ---
+- Much more motivated Help; put Installation and Advanced tabs at the end.
+- A "Using Tag Fox" panel: keep the existing narrative but better motivated and organised for newcomers.
+
+--- Why Tag Fox (motivation) ---
+- Early Google made web search feel faster than searching your own filesystem; filesystem search is still slow unless you use Everything (or similar).
+- Google / Google Drive trained people to type a word and expect the right file/folder — but you get a flat list of hits and lose structure. Complex projects have similar-sounding folders; easy to confuse what is what.
+- We do not worship folders for their own sake, but real work arrives as zipped trees, phased project folders, "here are the sources", etc. — folders are not going away, yet they are not well suited to search-only UIs.
+- Ordinary file browsers on Windows are mostly awful; a few better ones exist but may be unfinished or expensive; their search feels like it is crawling the disk. In the Google era you expect results to appear instantly.
+- Tag Fox aims at: instant search where results stay in context (folders / subfolders / tree) with enough power that you need not live in File Explorer.
+
+--- Tasks, notes, and the tree ---
+- Related problem: project management — start the day/week with todos and overviews in context. Past a few dozen tasks, flat lists confuse; you want a tree. Tasks/notes often should align with how files are organised, with links between the two. Tools like Trello / Workflowy handle sideways links; Workflowy-style "show all todos under this project" in a tree is the feel we want.
+- Obvious direction: combine todos/notes with the filesystem so you search and browse together. TagSpaces does something similar but is old and spams secret folders across the filesystem.
+
+--- What Tag Fox does (tags) ---
+- Support is intentionally simple: add tag text using the square-and-round-bracket convention on file and folder names.
+- Renaming folders on the filesystem can be flaky: OS may block when something has the folder open — need to surface/diagnose that better. Not a showstopper: you can still tag files.
+- You can tag real documents or small note files; works with gdoc and other Google Drive placeholders in the filesystem, but the displayed name then differs between web and local FS.
+
+--- Caveat (put near the start of user-facing docs) ---
+- Some of Tag Fox works less well with Google Drive (and possibly OneDrive; others unclear) when used as streaming rather than full mirror: things look local but fetch from web on demand — say which parts are fine vs weaker.
+
+--- TODO display hack ---
+- If a document is marked todo, show the tag next to it; the "todo in special brackets" hack in the filename is hidden inside Tag Fox but visible elsewhere — interoperable, self-explanatory as extra filename text.
+
+--- Priority / risk: Drive folder renames ---
+- After thorough testing: robustness of naming/renaming folders synced to Google Drive. If too flaky, consider dropping folder tagging; in tree view you can use a file instead of tagging the folder (e.g. metadata/readme at folder root, or hacks to surface that text as if part of the main folder). Needs looking up / deciding.
+
+--- Feature highlights ---
+- Very keyboard-friendly.
+- Save favourite searches and favourite folders.
+- Search folders shared with you on Google Drive that are not "yours".
+- Fast preview of Office files (incl. text-ish view of PowerPoint where relevant), PDF, etc.; accompanying vs unaccompanying viewer (as in current product).
+- Easy add a small todo text file anywhere, default-tagged todo.
+- Easy read/create special readme files per folder; also Claude.md and other well-known explainer text files for "what this folder is about".
+- Besides default tree view: switch to a more Everything-like unstructured list (e.g. by recency); search files modified last day/hour/month, etc.
+- Mixed local + Drive + gdoc projects: instant previews for Office-like files vs the annoyance of gdoc opening elsewhere — Tag Fox has a convenient way to peek gdocs (separate window in front, not fully in-app). May not work for some shared-workspace / other-owner / streaming cases — unclear; mirroring might help; most people do not mirror others' clutter.
+
+--- Tabs / dual pane vs Shelf ---
+- Deliberately no tabs or split pane (author thinks they are often a bad idea).
+- Use several favourite folders or favourite searches and switch via buttons; keyboard shortcut for searches.
+- Common reason for dual panes: copy between locations — use the Shelf: copy items to shelf, switch folder, paste; more visual than clipboard-only; keyboard shortcuts still available; can copy to other apps; drag-drop with extra key or shelf control.
+
+--- Stack ---
+- Electron: easy to build/install, fairly lightweight and fast.
+- Downside: missing some OS shell/context-menu integrations available in Explorer — can add manually if needed.
+
+--- Markdown / project management without extra apps ---
+- Easy small markdown file that can render as markdown: what we agreed about this folder/files; tag as todo/active/archived etc.
+- In principle you do not need separate project-management software beyond the filesystem — unproprietary, tags visible in Explorer/Drive/exports. (Aside: Google Drive still lacks a native markdown editor — silly in 2026.)

@@ -35,6 +35,7 @@
       searchDebug: 'tagBrowserSearchDebug',
       tableColVisible: 'tagBrowserTableColVisible',
       helpModalTab: 'tagBrowserHelpModalTab',
+      autoRefreshSec: 'tagBrowserAutoRefreshSec',
     };
 
     /** One-time copy when upgrading from the old app name (everythang* keys). */
@@ -273,7 +274,13 @@
     let searchDebounceTimer = null;
     const SEARCH_DEBUG_MAX = 3500;
     let searchDebugLines = [];
+    /** Incremented at each runSearch start; in-flight HTTP from an older id must not touch UI (overlapping debounced runs). */
     let searchRunSeq = 0;
+    /** True while runSearch() awaits Everything (auto-refresh skips ticks to avoid overlap). */
+    let searchInFlight = false;
+    let autoRefreshTimerId = null;
+    /** Set only around timer-driven runSearch — avoid RHS viewer tear-down when results are just re-fetched. */
+    let suppressViewerResyncForTimerSearch = false;
     /** Recent search UI state (query, scope, tag, toggles, sort) for Alt+← / Alt+→ and toolbar buttons. */
     const SEARCH_HIST_MAX = 50;
     const SEARCH_HIST_DEBOUNCE_MS = 450;
@@ -311,6 +318,8 @@
     /** Index in filteredRows() for Shift+↑/↓ range checkbox select; cleared on plain ↑/↓. */
     let resultsShiftRangeAnchorIdx = null;
     let activeReadmePath = null;
+    /** After folder readme RHS is shown — same as `pathKeyLoose(folder)` so quick refresh does not hide readme / “Loading…”. */
+    let lastReadmeFolderPathLoose = '';
     let activeMdPath = null;
     /** RHS .md / .txt editor: path the textarea belongs to + debounced write */
     let mdAutosaveTimer = null;
@@ -391,7 +400,15 @@
       if (GOOGLE_SHORTCUT_EXT.has(ext) && window.tagBrowser.googleWorkspaceShortcutUrl && window.tagBrowser.openGoogleWorkspaceWindow) {
         const rGw = await window.tagBrowser.googleWorkspaceShortcutUrl({ fullPath: fp });
         if (!rGw.ok) {
-          if (status) status.textContent = rGw.error || 'Could not read Google shortcut';
+          if (rGw.code === 'ENOENT') {
+            if (status) status.textContent = 'File not found.';
+            return;
+          }
+          const shellErr = await window.tagBrowser.openPath(fp);
+          if (status) {
+            if (shellErr) status.textContent = 'Could not open file.';
+            else status.textContent = '';
+          }
           return;
         }
         const r = await window.tagBrowser.openGoogleWorkspaceWindow({ url: rGw.url });
@@ -683,7 +700,7 @@
       }
     }
 
-    /** Coloured pill + × to remove tag from this path (stops row click propagation). */
+    /** Coloured pill + FA xmark to remove tag from this path (stops row click propagation). */
     function appendTagPillWithRemove(parent, tag, fullPath) {
       const pill = document.createElement('span');
       pill.className = 'badge d-inline-flex align-items-center gap-0';
@@ -693,11 +710,11 @@
       lbl.textContent = tag;
       const x = document.createElement('button');
       x.type = 'button';
-      x.className = 'btn btn-sm tag-pill-x ms-1 border-0 align-baseline';
+      x.className = 'btn btn-sm tag-pill-x ms-1 border-0 align-baseline p-0 d-inline-flex align-items-center justify-content-center';
       x.style.background = 'transparent';
       x.style.color = '#212529';
       x.style.opacity = '0.8';
-      x.textContent = '\u00D7';
+      x.innerHTML = '<i class="fa-solid fa-xmark" style="font-size:0.65rem;line-height:1" aria-hidden="true"></i>';
       x.title = 'Remove tag from name';
       x.setAttribute('aria-label', 'Remove tag ' + tag);
       x.addEventListener('click', (e) => {
@@ -717,6 +734,17 @@
       return s;
     }
 
+    /** Block obvious bad paths before IPC (OS-specific wildcards only when path looks Windows-style). */
+    function scopePathClientSyntaxError(rawTrimmed) {
+      const s = String(rawTrimmed || '').trim();
+      if (!s) return '';
+      if (/[\x00-\x1f]/.test(s)) return 'Path contains control characters.';
+      if (/["<>|]/.test(s)) return 'Path contains invalid characters.';
+      const looksWin = /^[a-zA-Z]:[\\/]/i.test(s) || s.startsWith('\\\\') || s.includes('\\');
+      if (looksWin && /[*?]/.test(s)) return 'Wildcards are not allowed in a folder path.';
+      return '';
+    }
+
     /** Set scope path only; query text stays as the in-scope filter. */
     function setSearchScopeFolder(folderAbsPath) {
       const folder = normalizeFolderPathForEverything(folderAbsPath);
@@ -724,7 +752,95 @@
       document.getElementById('rootFolder').value = folder;
     }
 
+    function leaveScopePathEditChrome() {
+      scopePathEditMode = false;
+      scopePathEditCommitError = false;
+      const inp = document.getElementById('scopePathEdit');
+      if (inp) {
+        inp.classList.remove('is-invalid');
+        inp.removeAttribute('aria-invalid');
+      }
+      const btn = document.getElementById('btnEditScopePath');
+      if (btn) {
+        btn.classList.remove('active');
+        btn.setAttribute('aria-pressed', 'false');
+        btn.title = 'Edit scope as path';
+        btn.setAttribute('aria-label', 'Edit scope path');
+        btn.innerHTML = '<i class="fa-solid fa-pen" aria-hidden="true"></i>';
+      }
+      document.getElementById('scopePathEditWrap')?.classList.add('d-none');
+    }
+
+    function enterScopePathEditMode() {
+      scopePathEditMode = true;
+      hideBreadcrumbSubfolderFlyout();
+      const shell = document.getElementById('breadcrumbShell');
+      const bar = document.getElementById('breadcrumbBar');
+      const wrap = document.getElementById('scopePathEditWrap');
+      const btn = document.getElementById('btnEditScopePath');
+      if (shell) {
+        shell.classList.remove('d-none');
+        shell.classList.add('d-flex');
+      }
+      if (bar) bar.classList.add('d-none');
+      if (wrap) wrap.classList.remove('d-none');
+      if (btn) {
+        btn.classList.add('active');
+        btn.setAttribute('aria-pressed', 'true');
+        btn.title = 'Save scope path';
+        btn.setAttribute('aria-label', 'Save scope path');
+        btn.innerHTML = '<i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>';
+      }
+      const inp = document.getElementById('scopePathEdit');
+      if (inp) {
+        inp.value = document.getElementById('rootFolder').value;
+        scopePathEditCommitError = false;
+        syncScopePathEditValidationVisual();
+        inp.focus();
+        inp.select();
+      }
+    }
+
+    function cancelScopePathEditMode() {
+      leaveScopePathEditChrome();
+      renderScopeBreadcrumb();
+    }
+
+    async function commitScopePathEditMode() {
+      const raw = document.getElementById('scopePathEdit').value.trim();
+      const status = document.getElementById('status');
+      if (!raw) {
+        leaveScopePathEditChrome();
+        clearSearchScope();
+        return;
+      }
+      const synErr = scopePathClientSyntaxError(raw);
+      if (synErr) {
+        if (status) status.textContent = synErr;
+        scopePathEditCommitError = false;
+        syncScopePathEditValidationVisual();
+        return;
+      }
+      const norm = normalizeFolderPathForEverything(raw);
+      if (window.tagBrowser && typeof window.tagBrowser.listChildFolders === 'function') {
+        const r = await window.tagBrowser.listChildFolders({ parentPath: norm });
+        if (!r || !r.ok) {
+          if (status) {
+            status.textContent =
+              'Invalid scope: ' + (r && r.error ? String(r.error) : 'Not a folder or not reachable.');
+          }
+          scopePathEditCommitError = true;
+          syncScopePathEditValidationVisual();
+          return;
+        }
+      }
+      scopePathEditCommitError = false;
+      leaveScopePathEditChrome();
+      await applySearchScopeAndRefresh(norm);
+    }
+
     function clearSearchScope() {
+      leaveScopePathEditChrome();
       document.getElementById('rootFolder').value = '';
       saveSettings();
       renderScopeBreadcrumb();
@@ -756,7 +872,9 @@
         btn.setAttribute('aria-expanded', show ? 'true' : 'false');
         btn.title = show ? 'Exit expanded view (Shift+Space or Esc)' : 'Near full screen (Shift+Space)';
         btn.setAttribute('aria-label', show ? 'Exit expanded viewer panel' : 'Expand viewer panel');
-        btn.textContent = show ? '⤡' : '⤢';
+        btn.innerHTML = show
+          ? '<i class="fa-solid fa-down-left-and-up-right-to-center" aria-hidden="true"></i>'
+          : '<i class="fa-solid fa-up-right-and-down-left-from-center" aria-hidden="true"></i>';
       }
       if (!show) applyPaneWidths();
     }
@@ -968,14 +1086,15 @@
      * Use for breadcrumb, favourites, folder row, row parent-scope (chevron), sibling-folder dropdown, etc.
      */
     async function applySearchScopeAndRefresh(folderAbsPath) {
+      leaveScopePathEditChrome();
       setSearchScopeFolder(folderAbsPath);
       const scopeNorm = normalizeFolderPathForEverything(document.getElementById('rootFolder').value.trim());
       if (scopeNorm) rememberScopeFolderHistory(scopeNorm);
       saveSettings();
       renderScopeBreadcrumb();
       await runSearchNow();
-      await runTagDiscoverySearchInner(false);
       commitSearchHistoryNow();
+      pulseSearchBoxAfterScopeFolderChange();
     }
 
     function scheduleSearch() {
@@ -984,6 +1103,47 @@
         searchDebounceTimer = null;
         void runSearch();
       }, 300);
+    }
+
+    /** Seconds from Settings; 0 = disabled. */
+    function autoRefreshIntervalSeconds() {
+      const el = document.getElementById('autoRefreshSec');
+      if (!el) return 0;
+      const n = parseInt(String(el.value || '0'), 10);
+      return Number.isFinite(n) && n > 0 ? n : 0;
+    }
+
+    function stopAutoRefreshTimer() {
+      if (autoRefreshTimerId) {
+        clearInterval(autoRefreshTimerId);
+        autoRefreshTimerId = null;
+      }
+    }
+
+    /** Start/stop interval from current #autoRefreshSec (call after load / change). */
+    function syncAutoRefreshTimer() {
+      stopAutoRefreshTimer();
+      const sec = autoRefreshIntervalSeconds();
+      if (!sec) return;
+      autoRefreshTimerId = setInterval(() => void maybeAutoRefreshSearchTick(), sec * 1000);
+    }
+
+    /** Timer callback: same query as F5, but only when idle and safe. */
+    async function maybeAutoRefreshSearchTick() {
+      if (!autoRefreshIntervalSeconds()) {
+        stopAutoRefreshTimer();
+        return;
+      }
+      if (document.hidden) return;
+      if (document.querySelector('.modal.show')) return;
+      if (tagRenameBusy || renameItemBusy) return;
+      if (searchInFlight) return;
+      suppressViewerResyncForTimerSearch = true;
+      try {
+        await runSearchNow();
+      } finally {
+        suppressViewerResyncForTimerSearch = false;
+      }
     }
 
     async function runSearchNow() {
@@ -1105,6 +1265,19 @@
       return recursive && sortColumn === 'path' && fileFolderFilterMode() !== 'files';
     }
 
+    /**
+     * Tree + recency: directory mtime is often “touched” without meaningful content changes.
+     * Drop real folder *hits* from the filtered set; path-grouping still injects synthetic folder rows
+     * as ancestors of surviving files. Folders-only mode still relies on folder rows + their dates.
+     */
+    function treeRecencyDropRealFolderHits() {
+      return (
+        shouldShowPathFolderGrouping() &&
+        recencyFilterMode() !== 'all' &&
+        fileFolderFilterMode() !== 'folders'
+      );
+    }
+
     /** Parent-dir segments for one result row (files and folders both use parent of full path). */
     function parentSegmentsForRow(row) {
       const fp = fullPathForRow(row);
@@ -1177,6 +1350,48 @@
         }
         out.push(row);
         prevRelParent = relParts;
+      }
+      return out;
+    }
+
+    /** UI tree depth for path-sort gutter (grouping uses synthetic rows + __pathTreeDepthUi). */
+    function pathTreeUiDepth(row, showPathFolderGrouping) {
+      return showPathFolderGrouping ? Number(row.__pathTreeDepthUi) || 1 : parentSegmentsForRow(row).length;
+    }
+
+    /**
+     * Box-drawing prefixes (├/└/─/│) for a depth column — list should be tree-ordered (path grouping on).
+     * moreAtCol[c] mirrors archy: after a non-last sibling, column c gets │ for deeper rows.
+     */
+    function pathTreeGutterStringsForDepths(depths) {
+      const n = depths.length;
+      const out = new Array(n).fill('');
+      const moreAtCol = [];
+      for (let i = 0; i < n; i++) {
+        const D = depths[i];
+        if (D <= 1) {
+          out[i] = '';
+          while (moreAtCol.length >= D) moreAtCol.pop();
+          continue;
+        }
+        while (moreAtCol.length > D - 1) moreAtCol.pop();
+        let s = '';
+        for (let c = 0; c < D - 2; c++) {
+          s += (moreAtCol[c] ? '\u2502' : ' ') + ' ';
+        }
+        let isLast = true;
+        for (let j = i + 1; j < n; j++) {
+          if (depths[j] < D) break;
+          if (depths[j] === D) {
+            isLast = false;
+            break;
+          }
+        }
+        /* ├/└ already include a short horizontal stub; extra ─ was widening the arm. */
+        s += (isLast ? '\u2514' : '\u251c') + ' ';
+        out[i] = s;
+        while (moreAtCol.length < D - 1) moreAtCol.push(false);
+        moreAtCol[D - 2] = !isLast;
       }
       return out;
     }
@@ -1369,9 +1584,9 @@
         grp.appendChild(ddWrap);
         const rm = document.createElement('button');
         rm.type = 'button';
-        rm.className = 'btn btn-outline-secondary btn-sm px-1 ms-1';
+        rm.className = 'btn btn-outline-secondary btn-sm px-1 ms-1 d-inline-flex align-items-center justify-content-center';
         rm.setAttribute('aria-label', 'Remove');
-        rm.textContent = '×';
+        rm.innerHTML = '<i class="fa-solid fa-xmark fa-sm" aria-hidden="true"></i>';
         rm.title = 'Remove from favourites';
         rm.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -1441,7 +1656,7 @@
         'Recency: ' +
           (s.recencyFilter && s.recencyFilter !== 'all' ? String(s.recencyFilter) + ' (modified)' : 'all')
       );
-      lines.push('Hide . / ~: ' + !!s.optHideDotFolders);
+      lines.push('Hide special: ' + !!s.optHideDotFolders);
       lines.push('Sort folders with files (Settings): ' + (s.optSortFoldersWithFiles !== false));
       lines.push('Sort: ' + (s.sortColumn || 'name') + ' ' + (s.sortAsc !== false ? 'asc' : 'desc'));
       {
@@ -1494,9 +1709,9 @@
         grp.appendChild(go);
         const rm = document.createElement('button');
         rm.type = 'button';
-        rm.className = 'btn btn-outline-secondary btn-sm px-1 ms-1';
+        rm.className = 'btn btn-outline-secondary btn-sm px-1 ms-1 d-inline-flex align-items-center justify-content-center';
         rm.setAttribute('aria-label', 'Remove');
-        rm.textContent = '×';
+        rm.innerHTML = '<i class="fa-solid fa-xmark fa-sm" aria-hidden="true"></i>';
         rm.title = 'Remove saved search';
         rm.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -1531,6 +1746,45 @@
 
     /** Breadcrumb bar only depends on scope folder + Recursive — not on which result row is selected. */
     let renderedScopeBreadcrumbKey = null;
+    /** Set by refreshDriveRootsPickerGate(): Windows = any ready drive letter; macOS/Linux = more than one volume root. */
+    let driveRootsPickerShow = false;
+    /** Pen toggle: text path field instead of segment breadcrumb. */
+    let scopePathEditMode = false;
+    /** Last save failed (e.g. folder missing); cleared on input — drives red styling with syntax errors. */
+    let scopePathEditCommitError = false;
+
+    /** Red border/text when path text is illegal or save failed (see scopePathClientSyntaxError). */
+    function syncScopePathEditValidationVisual() {
+      const inp = document.getElementById('scopePathEdit');
+      if (!inp || !scopePathEditMode) return;
+      const trimmed = inp.value.trim();
+      if (!trimmed) {
+        inp.classList.remove('is-invalid');
+        inp.removeAttribute('aria-invalid');
+        scopePathEditCommitError = false;
+        return;
+      }
+      const bad = !!(scopePathClientSyntaxError(trimmed) || scopePathEditCommitError);
+      inp.classList.toggle('is-invalid', bad);
+      inp.setAttribute('aria-invalid', bad ? 'true' : 'false');
+    }
+
+    async function refreshDriveRootsPickerGate() {
+      if (!window.tagBrowser || typeof window.tagBrowser.listDriveRoots !== 'function') {
+        driveRootsPickerShow = false;
+        return;
+      }
+      try {
+        const r = await window.tagBrowser.listDriveRoots();
+        const plat = (r && r.platform) || '';
+        const roots = Array.isArray(r.roots) ? r.roots : [];
+        driveRootsPickerShow = plat === 'win32' ? roots.length > 0 : roots.length > 1;
+      } catch {
+        driveRootsPickerShow = false;
+      }
+      if (document.getElementById('rootFolder').value.trim()) renderScopeBreadcrumb();
+    }
+
     function currentScopeBreadcrumbKey() {
       const raw = document.getElementById('rootFolder').value.trim();
       const rec = document.getElementById('folderSearchRecursive').checked;
@@ -1543,9 +1797,9 @@
       renderScopeBreadcrumb();
     }
 
-    /** Chevron-down icon for breadcrumb ▾ scope toggles. */
+    /** Chevron-down for breadcrumb ▾ scope toggles (Font Awesome). */
     function breadcrumbDropdownChevronHtml() {
-      return '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/></svg>';
+      return '<i class="fa-solid fa-chevron-down fa-fw" aria-hidden="true"></i>';
     }
 
     /**
@@ -1904,28 +2158,124 @@
       populateBreadcrumbSubfolderFlyoutAtDepth(fly, folders, subBtnToggle, depth, parentPath);
     }
 
+    /** Highlight drive/volume row when current scope path is under that root. */
+    function scopeIsUnderDriveRoot(scopeNorm, pathSep, rootFullPath) {
+      const r = normalizeFolderPathForEverything(rootFullPath).replace(/[/\\]+$/, '').toLowerCase();
+      const s = normalizeFolderPathForEverything(scopeNorm).replace(/[/\\]+$/, '').toLowerCase();
+      if (!r || !s) return false;
+      if (s === r) return true;
+      const slash = pathSep === '/' ? '/' : '\\';
+      return s.startsWith(r + slash);
+    }
+
+    /** Leading breadcrumb control: OS-mounted roots from main (Windows A:–Z:, macOS / + /Volumes, etc.). */
+    function prependDriveRootPicker(barEl, scopeNorm, pathSep) {
+      if (!driveRootsPickerShow || !window.tagBrowser || typeof window.tagBrowser.listDriveRoots !== 'function') return;
+      const ddWrap = document.createElement('div');
+      ddWrap.className = 'dropdown d-inline-block me-1';
+      const ddBtn = document.createElement('button');
+      ddBtn.type = 'button';
+      ddBtn.className =
+        'btn btn-link btn-sm text-secondary py-0 px-1 align-baseline breadcrumb-dd-toggle d-inline-flex align-items-center gap-0';
+      ddBtn.innerHTML =
+        '<i class="fa-solid fa-folder fa-fw" aria-hidden="true"></i>' + breadcrumbDropdownChevronHtml();
+      ddBtn.title = 'Drives and volumes';
+      ddBtn.setAttribute('aria-label', 'Drives and volumes');
+      ddBtn.setAttribute('data-bs-toggle', 'dropdown');
+      ddBtn.setAttribute('aria-expanded', 'false');
+      const menu = document.createElement('ul');
+      menu.className = 'dropdown-menu dropdown-menu-start py-1 small shadow';
+      menu.style.maxHeight = 'min(50vh, 280px)';
+      menu.style.overflow = 'auto';
+      menu.addEventListener('scroll', () => repositionBreadcrumbFlyoutChain());
+      menu.addEventListener('mouseenter', cancelBreadcrumbFlyoutHideTimer);
+      ddBtn.addEventListener('click', (e) => e.stopPropagation());
+      ddBtn.addEventListener('hide.bs.dropdown', (ev) => {
+        if (focusInsideBreadcrumbFlyout()) ev.preventDefault();
+      });
+      ddBtn.addEventListener('hidden.bs.dropdown', () => hideBreadcrumbSubfolderFlyout());
+      ddBtn.addEventListener('show.bs.dropdown', () => {
+        menu.innerHTML =
+          '<li><span class="dropdown-item-text text-muted">' +
+          (window.tagBrowser.listDriveRoots ? 'Loading…' : 'Not available') +
+          '</span></li>';
+        if (!window.tagBrowser.listDriveRoots) return;
+        void (async () => {
+          const r = await window.tagBrowser.listDriveRoots();
+          menu.innerHTML = '';
+          if (!r || !r.ok || !Array.isArray(r.roots) || !r.roots.length) {
+            const li0 = document.createElement('li');
+            li0.innerHTML =
+              '<span class="dropdown-item-text text-danger small">' +
+              (r && r.error ? String(r.error) : 'Could not list drives') +
+              '</span>';
+            menu.appendChild(li0);
+            return;
+          }
+          for (const item of r.roots) {
+            const fp = item && item.fullPath ? String(item.fullPath) : '';
+            const lbl = item && item.label ? String(item.label) : fp;
+            if (!fp) continue;
+            const li = document.createElement('li');
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'dropdown-item small py-1';
+            b.textContent = lbl;
+            if (scopeIsUnderDriveRoot(scopeNorm, pathSep, fp)) b.classList.add('active');
+            b.addEventListener('click', async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const inst = bootstrap.Dropdown.getInstance(ddBtn);
+              if (inst) inst.hide();
+              await applySearchScopeAndRefresh(normalizeFolderPathForEverything(fp));
+            });
+            li.appendChild(b);
+            menu.appendChild(li);
+          }
+        })();
+      });
+      ddWrap.appendChild(ddBtn);
+      ddWrap.appendChild(menu);
+      bindBreadcrumbDropdownHover(ddWrap, ddBtn);
+      barEl.appendChild(ddWrap);
+    }
+
     /** Folder trail: segments set scope; ▾ opens sibling/subfolder menus (hover or click). */
     function renderScopeBreadcrumb() {
       hideBreadcrumbSubfolderFlyout();
       updateQueryPlaceholder();
+      if (scopePathEditMode) return;
       const el = document.getElementById('breadcrumbBar');
+      const shell = document.getElementById('breadcrumbShell');
+      const editWrap = document.getElementById('scopePathEditWrap');
       el.innerHTML = '';
       const scopeRaw = document.getElementById('rootFolder').value.trim();
       const btnClear = document.getElementById('btnClearScope');
       if (!scopeRaw) {
         el.classList.add('d-none');
-        el.classList.remove('d-flex');
+        el.classList.remove('d-flex', 'align-items-center', 'flex-wrap', 'gap-0');
+        if (shell) {
+          shell.classList.remove('d-flex');
+          shell.classList.add('d-none');
+        }
+        if (editWrap) editWrap.classList.add('d-none');
         if (btnClear) btnClear.disabled = true;
         syncStatusBarParentScopeButton();
         renderedScopeBreadcrumbKey = currentScopeBreadcrumbKey();
         return;
       }
       if (btnClear) btnClear.disabled = false;
+      if (shell) {
+        shell.classList.remove('d-none');
+        shell.classList.add('d-flex');
+      }
+      if (editWrap) editWrap.classList.add('d-none');
       el.classList.remove('d-none');
       el.classList.add('d-flex', 'align-items-center', 'flex-wrap', 'gap-0');
       const norm = normalizeFolderPathForEverything(scopeRaw).replace(/[/\\]+$/, '');
       const sep = norm.includes('/') ? '/' : '\\';
       const parts = norm.split(/[/\\]/).filter((p) => p !== '');
+      prependDriveRootPicker(el, norm, sep);
       let acc = '';
       parts.forEach((part, i) => {
         acc = i === 0 ? part : acc + sep + part;
@@ -2528,15 +2878,35 @@
       if (textFileBlock) textFileBlock.classList.add('d-none');
       const gdocWorkspaceBlock = document.getElementById('gdocWorkspaceBlock');
       if (gdocWorkspaceBlock) gdocWorkspaceBlock.classList.add('d-none');
+      const gdocDriveLinks = document.getElementById('gdocWorkspaceDriveLinks');
+      if (gdocDriveLinks) {
+        gdocDriveLinks.classList.add('d-none');
+        const bs = document.getElementById('btnGdocDriveSearch');
+        const bf = document.getElementById('btnGdocDriveFolder');
+        if (bs) bs.onclick = null;
+        if (bf) bf.onclick = null;
+      }
       document.getElementById('propsEmpty').classList.remove('d-none');
       document.getElementById('propsDetails').classList.add('d-none');
       activeReadmePath = null;
+      lastReadmeFolderPathLoose = '';
       activeMdPath = null;
+      resetViewerDocEditorChrome();
       renderScopeBreadcrumbIfScopeChanged();
     }
 
+    /** Same logical path across `/` vs `\\` and case — matches Everything rows to the table selection on Windows. */
+    function pathKeyLoose(fp) {
+      return String(fp || '')
+        .trim()
+        .replace(/[/\\]+$/, '')
+        .replace(/\//g, '\\')
+        .toLowerCase();
+    }
+
     function findRowByFullPath(fp) {
-      return lastRows.find((r) => fullPathForRow(r) === fp) || null;
+      const k = pathKeyLoose(fp);
+      return lastRows.find((r) => pathKeyLoose(fullPathForRow(r)) === k) || null;
     }
 
     /** Minimal row when scope folder isn’t in the current result set (e.g. parent: children only). */
@@ -2555,6 +2925,20 @@
 
     function propsPathKey(p) {
       return String(p || '').replace(/[/\\]+$/, '').toLowerCase();
+    }
+
+    /** Stable key for “did this hit’s metadata change?” — skip full viewer reload when only the results list refreshed (e.g. auto-refresh). */
+    function viewerRefreshSignatureForRow(row, fp) {
+      const p = pathKeyLoose(fp);
+      if (!p) return '';
+      if (!row || pathKeyLoose(fullPathForRow(row)) !== p) return p + '|!row';
+      const ms = modifiedTimeMs(row);
+      const sz = rowSizeBytes(row);
+      const kind = rowIsFolder(row) ? 'd' : 'f';
+      /* Second precision: sub-second jitter in FILETIME / HTTP should not force a full viewer tear-down. */
+      const mt = ms == null ? '' : String(Math.floor(ms / 1000));
+      const szs = sz == null ? '' : String(sz);
+      return [p, kind, mt, szs].join('|');
     }
 
     /** Before Recycle: drop .md/.txt/readme editor binding to trashed paths so a later flushMdFileAutosave() cannot recreate the file. */
@@ -2628,28 +3012,52 @@
         await refreshPropsPanel();
         return;
       }
+      const pathForSig = selectedFullPath;
+      const prevRow = selectedRow;
       let row = findRowByFullPath(selectedFullPath);
       if (!row) {
         const vis = listRowsForUi();
-        row = vis.find((r) => fullPathForRow(r) === selectedFullPath) || null;
+        const selK = pathKeyLoose(selectedFullPath);
+        row = vis.find((r) => pathKeyLoose(fullPathForRow(r)) === selK) || null;
       }
       if (row) {
+        const prevSig = viewerRefreshSignatureForRow(prevRow, pathForSig);
+        const nextSig = viewerRefreshSignatureForRow(row, pathForSig);
         selectedRow = row;
-      } else {
-        const scope = normalizeFolderPathForEverything(document.getElementById('rootFolder').value.trim()).replace(/[/\\]+$/, '');
-        const selNorm = selectedFullPath.replace(/[/\\]+$/, '');
-        if (scope && selNorm.toLowerCase() === scope.toLowerCase()) {
-          selectedRow = syntheticFolderRow(selectedFullPath);
-          row = selectedRow;
-        } else {
-          selectedRow = null;
-          selectedFullPath = null;
-          await flushMdFileAutosave();
-          renderScopeBreadcrumbIfScopeChanged();
-          await refreshPropsPanel();
+        renderScopeBreadcrumbIfScopeChanged();
+        const kSel = pathKeyLoose(pathForSig);
+        const needFolderDocResync =
+          rowIsFolder(row) && (!lastReadmeFolderPathLoose || kSel !== lastReadmeFolderPathLoose);
+        if (prevSig === nextSig || suppressViewerResyncForTimerSearch) {
+          if (needFolderDocResync) await refreshPropsPanel();
+          else cancelPropsPreviewSchedule();
           return;
         }
+        await refreshPropsPanel();
+        return;
       }
+      const scope = normalizeFolderPathForEverything(document.getElementById('rootFolder').value.trim()).replace(/[/\\]+$/, '');
+      const selNorm = selectedFullPath.replace(/[/\\]+$/, '');
+      if (scope && selNorm.toLowerCase() === scope.toLowerCase()) {
+        const syn = syntheticFolderRow(selectedFullPath);
+        const prevSig = viewerRefreshSignatureForRow(prevRow, pathForSig);
+        const nextSig = viewerRefreshSignatureForRow(syn, pathForSig);
+        selectedRow = syn;
+        renderScopeBreadcrumbIfScopeChanged();
+        const kSel = pathKeyLoose(pathForSig);
+        const needFolderDocResync =
+          rowIsFolder(syn) && (!lastReadmeFolderPathLoose || kSel !== lastReadmeFolderPathLoose);
+        if (prevSig === nextSig || suppressViewerResyncForTimerSearch) {
+          if (needFolderDocResync) await refreshPropsPanel();
+          else cancelPropsPreviewSchedule();
+          return;
+        }
+        await refreshPropsPanel();
+        return;
+      }
+      selectedRow = null;
+      selectedFullPath = null;
+      await flushMdFileAutosave();
       renderScopeBreadcrumbIfScopeChanged();
       await refreshPropsPanel();
     }
@@ -2693,15 +3101,23 @@
       revokePreviewBlobs();
       empty.classList.add('d-none');
       details.classList.remove('d-none');
-      readmeBlock.classList.add('d-none');
+      const isSameFolderReadme =
+        rowIsFolder(propRow) &&
+        lastReadmeFolderPathLoose &&
+        pathKeyLoose(propPath) === lastReadmeFolderPathLoose &&
+        !readmeBlock.classList.contains('d-none');
+      if (!isSameFolderReadme) readmeBlock.classList.add('d-none');
       mdFileBlock.classList.add('d-none');
       if (gdocWorkspaceBlock) gdocWorkspaceBlock.classList.add('d-none');
       if (pdfBlock) pdfBlock.classList.add('d-none');
       if (officeBlock) officeBlock.classList.add('d-none');
       if (imageBlock) imageBlock.classList.add('d-none');
       if (textFileBlock) textFileBlock.classList.add('d-none');
-      propPh.classList.remove('d-none');
-      propPh.textContent = 'Loading preview…';
+      if (isSameFolderReadme) propPh.classList.add('d-none');
+      else {
+        propPh.classList.remove('d-none');
+        propPh.textContent = 'Loading preview…';
+      }
 
       const base = T.baseName(propPath);
       const parsedTitle = T.parseSegmentTags(base);
@@ -2751,9 +3167,19 @@
 
       if (isMdOrTxt) {
         activeReadmePath = null;
-        document.getElementById('btnCreateReadme').classList.add('d-none');
         mdFileBlock.classList.remove('d-none');
         const ed = document.getElementById('mdFileEditor');
+        const mdWrap = document.getElementById('mdFileEditorWrap');
+        /* Poll/search refresh changes mtime → full heavy run used to reset UI; keep editing session if same file + editor open. */
+        const sameMdEditing =
+          mdWrap &&
+          !mdWrap.classList.contains('d-none') &&
+          activeMdPath &&
+          propsPathKey(activeMdPath) === propsPathKey(targetFp);
+        if (sameMdEditing) {
+          document.getElementById('mdFilePreview').innerHTML = mdPreviewHtml(ed.value);
+          return;
+        }
         mdAutosaveTargetPath = null;
         const rTxt = await window.tagBrowser.readTextFile({ fullPath: targetFp });
         if (!propsViewStill(targetFp)) return;
@@ -2765,6 +3191,7 @@
         }
         activeMdPath = mdAutosaveTargetPath ? targetFp : null;
         document.getElementById('mdFilePreview').innerHTML = mdPreviewHtml(ed.value);
+        resetViewerDocEditorChrome();
         return;
       }
 
@@ -2785,17 +3212,49 @@
         }
         const urlEl = document.getElementById('gdocWorkspaceUrl');
         const btnGw = document.getElementById('btnOpenGoogleWorkspace');
+        const diagEl = document.getElementById('gdocWorkspaceDiag');
+        const linksWrap = document.getElementById('gdocWorkspaceDriveLinks');
+        const btnGdocSearch = document.getElementById('btnGdocDriveSearch');
+        const btnGdocFolder = document.getElementById('btnGdocDriveFolder');
         const rGw = await window.tagBrowser.googleWorkspaceShortcutUrl({ fullPath: targetFp });
         if (!propsViewStill(targetFp)) return;
         if (!urlEl || !btnGw) return;
         if (!rGw.ok) {
-          urlEl.textContent = rGw.error || 'Could not read shortcut.';
+          urlEl.textContent =
+            rGw.code === 'ENOENT'
+              ? 'File not found.'
+              : 'Use Drive buttons below, or Open in the row menu. (In-app tab needs a readable shortcut file.)';
           btnGw.classList.add('d-none');
           delete btnGw.dataset.url;
+          if (diagEl) {
+            diagEl.textContent = '';
+            diagEl.classList.add('d-none');
+          }
+          if (linksWrap && btnGdocSearch && btnGdocFolder && window.tagBrowser.openUrlDefaultBrowser) {
+            const su = rGw.diag && rGw.diag.driveSearchUrl;
+            const fu = rGw.diag && rGw.diag.driveFolderUrl;
+            const any = !!(su || fu);
+            linksWrap.classList.toggle('d-none', !any);
+            btnGdocSearch.classList.toggle('d-none', !su);
+            btnGdocFolder.classList.toggle('d-none', !fu);
+            btnGdocSearch.onclick = su ? () => void window.tagBrowser.openUrlDefaultBrowser({ url: su }) : null;
+            btnGdocFolder.onclick = fu ? () => void window.tagBrowser.openUrlDefaultBrowser({ url: fu }) : null;
+          } else if (linksWrap) {
+            linksWrap.classList.add('d-none');
+          }
         } else {
           urlEl.textContent = rGw.url;
           btnGw.classList.remove('d-none');
           btnGw.dataset.url = rGw.url;
+          if (diagEl) {
+            diagEl.textContent = '';
+            diagEl.classList.add('d-none');
+          }
+          if (linksWrap) {
+            linksWrap.classList.add('d-none');
+            if (btnGdocSearch) btnGdocSearch.onclick = null;
+            if (btnGdocFolder) btnGdocFolder.onclick = null;
+          }
         }
         return;
       }
@@ -3043,31 +3502,134 @@
       prev.addEventListener('animationend', () => prev.classList.remove('readme-preview--pulse'), { once: true });
     }
 
+    /** Folder doc + .md/.txt viewer: editor hidden until Edit or double-click preview (same chrome for both). */
+    function resetViewerDocEditorChrome() {
+      for (const which of ['readme', 'mdFile']) {
+        const wrapId = which === 'readme' ? 'readmeEditorWrap' : 'mdFileEditorWrap';
+        const btnId = which === 'readme' ? 'btnReadmeEdit' : 'btnMdFileEdit';
+        document.getElementById(wrapId)?.classList.add('d-none');
+        const b = document.getElementById(btnId);
+        if (b) {
+          b.textContent = 'Edit';
+          b.setAttribute('aria-expanded', 'false');
+        }
+      }
+    }
+
+    function setViewerDocEditorOpen(which, open) {
+      const wrapId = which === 'readme' ? 'readmeEditorWrap' : 'mdFileEditorWrap';
+      const edId = which === 'readme' ? 'readmeEditor' : 'mdFileEditor';
+      const prevId = which === 'readme' ? 'readmePreview' : 'mdFilePreview';
+      const btnId = which === 'readme' ? 'btnReadmeEdit' : 'btnMdFileEdit';
+      const wrap = document.getElementById(wrapId);
+      const ed = document.getElementById(edId);
+      const prev = document.getElementById(prevId);
+      const btn = document.getElementById(btnId);
+      if (!wrap || !ed || !prev) return;
+      const show = !!open;
+      if (!show && which === 'mdFile') void flushMdFileAutosave();
+      wrap.classList.toggle('d-none', !show);
+      if (btn) {
+        btn.textContent = show ? 'Done' : 'Edit';
+        btn.setAttribute('aria-expanded', show ? 'true' : 'false');
+      }
+      if (!show) {
+        prev.innerHTML = mdPreviewHtml(ed.value);
+        if (which === 'readme') syncReadmePreviewChrome({ pulse: false });
+      }
+      if (show) {
+        requestAnimationFrame(() => {
+          ed.focus();
+          try {
+            ed.setSelectionRange(ed.value.length, ed.value.length);
+          } catch (_) {}
+        });
+      }
+    }
+
+    function toggleViewerDocEditor(which) {
+      const wrapId = which === 'readme' ? 'readmeEditorWrap' : 'mdFileEditorWrap';
+      const wrap = document.getElementById(wrapId);
+      if (!wrap) return;
+      const willOpen = wrap.classList.contains('d-none');
+      setViewerDocEditorOpen(which, willOpen);
+    }
+
+    /** Folder row / current folder: first match among FOLDER_VIEWER_DOC_NAMES in main; else empty editor → Save creates readme.md. */
     async function loadReadmeForFolder(folderPath) {
       const readmeBlock = document.getElementById('readmeBlock');
       const sep = folderPath.includes('/') ? '/' : '\\';
-      const readmePath = folderPath.replace(/[/\\]+$/, '') + sep + 'readme.md';
+      const readmeOnlyPath = folderPath.replace(/[/\\]+$/, '') + sep + 'readme.md';
 
-      const btnCreate = document.getElementById('btnCreateReadme');
       const ed = document.getElementById('readmeEditor');
-      const r = await window.tagBrowser.readTextFile({ fullPath: readmePath });
+      const titleEl = document.getElementById('readmeFolderDocTitle');
+      const kTarget = pathKeyLoose(folderPath);
+      /* New folder vs last loaded: clear immediately so scope/selection changes never keep the previous readme text. */
+      if (lastReadmeFolderPathLoose && kTarget !== lastReadmeFolderPathLoose) {
+        ed.value = '';
+        document.getElementById('readmePreview').innerHTML = mdPreviewHtml('');
+        syncReadmePreviewChrome({ pulse: false });
+        if (titleEl) titleEl.textContent = 'Folder doc';
+        activeReadmePath = null;
+      }
+
+      const pick = await window.tagBrowser.resolveFolderViewerDoc({ folderPath });
       if (!propsViewStill(folderPath)) return;
 
       readmeBlock.classList.remove('d-none');
-      activeReadmePath = readmePath;
+
+      const readmeWrap = document.getElementById('readmeEditorWrap');
+      const sameFolderDocEditing =
+        readmeWrap &&
+        !readmeWrap.classList.contains('d-none') &&
+        lastReadmeFolderPathLoose &&
+        kTarget === lastReadmeFolderPathLoose;
+      if (sameFolderDocEditing) {
+        document.getElementById('readmePreview').innerHTML = mdPreviewHtml(ed.value);
+        syncReadmePreviewChrome({ pulse: false });
+        return;
+      }
+
+      if (!pick.ok) {
+        activeReadmePath = null;
+        if (titleEl) titleEl.textContent = 'Folder doc';
+        ed.value = '/* read error: ' + (pick.error || '') + ' */';
+        document.getElementById('readmePreview').innerHTML = mdPreviewHtml(ed.value);
+        syncReadmePreviewChrome({ pulse: true });
+        lastReadmeFolderPathLoose = pathKeyLoose(folderPath);
+        resetViewerDocEditorChrome();
+        return;
+      }
+
+      const docPath = pick.fullPath;
+      if (!docPath) {
+        activeReadmePath = readmeOnlyPath;
+        if (titleEl) titleEl.textContent = 'readme.md (folder)';
+        ed.value = '';
+        document.getElementById('readmePreview').innerHTML = mdPreviewHtml(ed.value);
+        syncReadmePreviewChrome({ pulse: true });
+        lastReadmeFolderPathLoose = pathKeyLoose(folderPath);
+        resetViewerDocEditorChrome();
+        return;
+      }
+
+      activeReadmePath = docPath;
+      if (titleEl) titleEl.textContent = segmentPretty(T.baseName(docPath)) + ' (folder)';
+
+      const r = await window.tagBrowser.readTextFile({ fullPath: docPath });
+      if (!propsViewStill(folderPath)) return;
 
       if (r.ok) {
-        btnCreate.classList.add('d-none');
         ed.value = r.text;
       } else if (r.code === 'ENOENT') {
-        btnCreate.classList.remove('d-none');
         ed.value = '';
       } else {
-        btnCreate.classList.add('d-none');
         ed.value = '/* read error: ' + (r.error || '') + ' */';
       }
       document.getElementById('readmePreview').innerHTML = mdPreviewHtml(ed.value);
       syncReadmePreviewChrome({ pulse: true });
+      lastReadmeFolderPathLoose = pathKeyLoose(folderPath);
+      resetViewerDocEditorChrome();
     }
 
     function setSelection(row, fp) {
@@ -3106,12 +3668,6 @@
       if (recursive) return buildEverythingSearch(scopeNorm, q);
       const parentTok = 'parent:"' + scopeNorm.replace(/"/g, '') + '"';
       return q ? parentTok + ' ' + q : parentTok;
-    }
-
-    /** Full-index bracket scan after each main search (same query regardless of current folder). */
-    function kickTagDiscoveryAfterSearch() {
-      searchDebugLog('tagDiscovery.kick', {});
-      void runTagDiscoverySearchInner(false);
     }
 
     /** pruneDeadRemembered: ghost cleanup on “Rescan all tags” only. */
@@ -3225,7 +3781,7 @@
       if (pruneDeadRemembered && fullScanActiveChanged) renderTable();
     }
 
-    /** pruneDeadRemembered true = “Rescan all tags”. false = awaitable (Hide . / ~). */
+    /** pruneDeadRemembered true = “Rescan all tags”. false = awaitable (Hide special). */
     async function runTagDiscoverySearch(pruneDeadRemembered) {
       await runTagDiscoverySearchInner(pruneDeadRemembered);
     }
@@ -3271,16 +3827,15 @@
     }
 
     /**
-     * Hide . / ~: paths through .segment\, basenames .*, or any ~segment\ (Office ~$ locks, etc.).
-     * Needs path matching — runSearch sets pathSearch true when this is appended. Skipped if global Regex is on (whole query is one pattern).
+     * Hide special in Everything: one `!path:regex:` negation (Everything 1.5+ modifier stack). Matches full path; bare `regex:` is filename-only with global Regex off.
+     * Semantics match `pathUnderDotFolder` (.segment except .shortcut-targets-by-id, ~, $, desktop.ini). Skipped when global Regex is on.
      */
-    function appendHideDotFoldersToEverythingQuery(searchText) {
-      if (!document.getElementById('optHideDotFolders').checked) return searchText;
-      if (document.getElementById('optRegex').checked) return searchText;
-      /* Exclude `.shortcut-targets-by-id` from the “bad dot segment” match (Drive on H:\ etc.). */
-      const clause =
-        ' !regex:(?:(?:\\\\|/)\\.(?!shortcut-targets-by-id(?:\\\\|/|$))[^\\\\/]+(?:\\\\|/)|(?:\\\\|/)\\.(?!shortcut-targets-by-id$)[^\\\\/]+$|(?:\\\\|/)~(?:[^\\\\/]+)?(?:(?:\\\\|/)|$))';
-      return (String(searchText || '').trim() + clause).trim();
+    function appendSpecialHideToEverythingQuery(searchText) {
+      if (!document.getElementById('optHideDotFolders').checked) return String(searchText || '').trim();
+      if (document.getElementById('optRegex').checked) return String(searchText || '').trim();
+      const inner =
+        '(?:(?:\\\\|/)\\.(?!shortcut-targets-by-id(?:\\\\|/|$))[^\\\\/]+(?:\\\\|/)|(?:\\\\|/)\\.(?!shortcut-targets-by-id$)[^\\\\/]+$|(?:\\\\|/)~(?:[^\\\\/]+)?(?:(?:\\\\|/)|$)|(?:\\\\|/)\\$[^\\\\/]+(?:\\\\|/)|(?:\\\\|/)\\$[^\\\\/]+$|(?:\\\\|/)desktop\\.ini(?:\\\\|/|$))';
+      return (String(searchText || '').trim() + ' !path:regex:"' + inner + '"').trim();
     }
 
     /** dm: cutoff in local time (Everything datemodified syntax). */
@@ -3355,14 +3910,16 @@
       return n * 1000;
     }
 
+    const RECENCY_MS_HOUR = 3600000;
     const RECENCY_MS_DAY = 86400000;
 
-    /** CSS class for the row blob: same buckets as 1d / 1w / 1m / 1y toolbar filter. */
+    /** CSS class for the row blob: same buckets as 1h / 1d / 1w / 1m / 1y toolbar filter. */
     function recencyBlobClassForRow(row) {
       const ms = modifiedTimeMs(row);
       if (ms == null) return 'recency-blob recency-blob--unknown';
       const age = Date.now() - ms;
-      if (age < 0) return 'recency-blob recency-blob--d1';
+      if (age < 0) return 'recency-blob recency-blob--h1';
+      if (age <= RECENCY_MS_HOUR) return 'recency-blob recency-blob--h1';
       if (age <= RECENCY_MS_DAY) return 'recency-blob recency-blob--d1';
       if (age <= 7 * RECENCY_MS_DAY) return 'recency-blob recency-blob--d7';
       if (age <= 30 * RECENCY_MS_DAY) return 'recency-blob recency-blob--d30';
@@ -3374,6 +3931,7 @@
     function recencyFilterCutoffMs() {
       const m = recencyFilterMode();
       if (m === 'all') return null;
+      if (m === '1h') return Date.now() - RECENCY_MS_HOUR;
       if (m === '1d') return Date.now() - RECENCY_MS_DAY;
       if (m === '1w') return Date.now() - 7 * RECENCY_MS_DAY;
       if (m === '1m') return Date.now() - 30 * RECENCY_MS_DAY;
@@ -3585,7 +4143,7 @@
         }
         const scopeDest = currentScopeFolderPath();
         if (!scopeDest) {
-          document.getElementById('status').textContent = 'Set a scope folder (Settings) to drop into the list.';
+          document.getElementById('status').textContent = 'Set a scope folder (breadcrumb or path editor) to drop into the list.';
           return;
         }
         await applyInternalPathsDrop(scopeDest, paths, e.shiftKey ? 'copy' : 'move');
@@ -3976,7 +4534,7 @@
       return t === 'folder' || row.type === 2 || row.type === '2';
     }
 
-    /** True if any path segment is .name or ~name (.git, .env, ~$temp); .. segments ignored. */
+    /** True if any segment is desktop.ini, starts with . (not ..; .shortcut-targets-by-id kept for Drive), ~, or $; .. ignored. */
     function pathUnderDotFolder(fp) {
       const raw = String(fp || '').trim();
       if (!raw) return false;
@@ -3984,12 +4542,27 @@
       for (const seg of parts) {
         if (seg === '..') continue;
         if (isGoogleDriveShortcutTargetsSegment(seg)) continue;
-        if (seg.startsWith('.') || seg.startsWith('~')) return true;
+        if (seg.toLowerCase() === 'desktop.ini') return true;
+        if (seg.startsWith('.') || seg.startsWith('~') || seg.startsWith('$')) return true;
       }
       return false;
     }
 
-    /** Hide . / ~ client-side (tag scan, global Regex+hide, or safety if server clause mismatches). */
+    /** After sort: keep first `visibleCap` rows that pass Hide special, or first `visibleCap` raw rows when hide is off. */
+    function trimLastRowsToVisibleCap(sortedRawRows, visibleCap) {
+      if (!document.getElementById('optHideDotFolders').checked) {
+        return sortedRawRows.length > visibleCap ? sortedRawRows.slice(0, visibleCap) : sortedRawRows;
+      }
+      const out = [];
+      for (const r of sortedRawRows) {
+        if (pathUnderDotFolder(fullPathForRow(r))) continue;
+        out.push(r);
+        if (out.length >= visibleCap) break;
+      }
+      return out;
+    }
+
+    /** Hide special client-side (tag scan, global Regex+hide, or if an Everything term slips). */
     function rowsRespectingHideDotFolders(rows) {
       if (!document.getElementById('optHideDotFolders').checked) return rows;
       return rows.filter((r) => !pathUnderDotFolder(fullPathForRow(r)));
@@ -4177,26 +4750,160 @@
       files.checked = mode === 'files';
     }
 
+    /** Path column index for Tree View (checkbox…Name, Path, Type…). */
+    const TREE_VIEW_PATH_COL_IDX = 2;
+
+    function isContextualBundleActive() {
+      return (
+        sortColumn === 'path' &&
+        sortAsc === true &&
+        colVisible[TREE_VIEW_PATH_COL_IDX] === false &&
+        !!document.getElementById('folderSearchRecursive')?.checked &&
+        !!document.getElementById('optSortFoldersWithFiles')?.checked &&
+        fileFolderFilterMode() === 'both'
+      );
+    }
+
+    function syncContextualToggleUi() {
+      const el = document.getElementById('optContextual');
+      if (!el) return;
+      const on = isContextualBundleActive();
+      if (el.checked !== on) el.checked = on;
+    }
+
+    /** Apply the Tree View preset (optionally skip search — caller runs scheduleSearch). Enables folder+file interleave to match exit turning it off. */
+    function applyContextualBundle(opts) {
+      const deferSearch = !!(opts && opts.deferSearch);
+      sortColumn = 'path';
+      sortAsc = true;
+      colVisible[TREE_VIEW_PATH_COL_IDX] = false;
+      const rec = document.getElementById('folderSearchRecursive');
+      if (rec) rec.checked = true;
+      setFileFolderFilterMode('both');
+      const sfw = document.getElementById('optSortFoldersWithFiles');
+      if (sfw) sfw.checked = true;
+      persistColVisibilityToStorage();
+      syncColumnVisibilityMenu();
+      applyTableColumnVisibility();
+      saveSettings();
+      updateSortHeaders();
+      renderScopeBreadcrumb();
+      syncContextualToggleUi();
+      commitSearchHistoryNow();
+      if (!deferSearch) void runSearchNow();
+    }
+
+    /** User turned Tree View off: leave recursive / both; show Path column; Modified ▲; turn off folder+file interleave (single query). */
+    function exitContextualBundle() {
+      sortColumn = 'date_modified';
+      sortAsc = true;
+      colVisible[TREE_VIEW_PATH_COL_IDX] = true;
+      const sfw = document.getElementById('optSortFoldersWithFiles');
+      if (sfw) sfw.checked = false;
+      persistColVisibilityToStorage();
+      syncColumnVisibilityMenu();
+      applyTableColumnVisibility();
+      saveSettings();
+      updateSortHeaders();
+      syncContextualToggleUi();
+      commitSearchHistoryNow();
+      void runSearchNow();
+    }
+
     function recencyFilterMode() {
       const el = document.querySelector('input[name="tagFoxRecencyFilter"]:checked');
       const v = el && el.value;
-      return v && ['all', '1d', '1w', '1m', '1y'].includes(v) ? v : 'all';
+      return v && ['all', '1h', '1d', '1w', '1m', '1y'].includes(v) ? v : 'all';
     }
 
     function setRecencyFilterMode(mode) {
       const id =
-        mode === '1d'
-          ? 'optRecency1d'
-          : mode === '1w'
-            ? 'optRecency1w'
-            : mode === '1m'
-              ? 'optRecency1m'
-              : mode === '1y'
-                ? 'optRecency1y'
-                : 'optRecencyAll';
+        {
+          all: 'optRecencyAll',
+          '1h': 'optRecency1h',
+          '1d': 'optRecency1d',
+          '1w': 'optRecency1w',
+          '1m': 'optRecency1m',
+          '1y': 'optRecency1y',
+        }[mode] || 'optRecencyAll';
       const r = document.getElementById(id);
       if (!r || r.name !== 'tagFoxRecencyFilter') return;
       r.checked = true;
+    }
+
+    /** Settings → global shortcut capture: require modifiers (Electron globalShortcut). */
+    let globalToggleRecording = false;
+
+    /** Map a keydown on the hotkey field to an Electron accelerator string, or null if incomplete / invalid. */
+    function acceleratorFromKeydown(ev) {
+      if (!ev || ev.key === 'Escape') return null;
+      if (['Control', 'Shift', 'Alt', 'Meta'].includes(ev.key)) return null;
+      const parts = [];
+      if (ev.ctrlKey) parts.push('Control');
+      if (ev.metaKey) parts.push('Command');
+      if (ev.altKey) parts.push('Alt');
+      if (ev.shiftKey) parts.push('Shift');
+      if (!parts.length) return null;
+      const code = ev.code || '';
+      let keyPart = '';
+      if (code === 'Space') keyPart = 'Space';
+      else if (/^Key[A-Z]$/.test(code)) keyPart = code.slice(3);
+      else if (/^Digit(\d)$/.test(code)) keyPart = code.slice(5);
+      else if (/^F(1[0-9]|2[0-4]|[1-9])$/.test(code)) keyPart = code;
+      else if (code === 'Enter' || code === 'NumpadEnter') keyPart = 'Return';
+      else {
+        const byCode = {
+          Tab: 'Tab',
+          Minus: '-',
+          Equal: '=',
+          BracketLeft: '[',
+          BracketRight: ']',
+          Backslash: '\\',
+          Semicolon: ';',
+          Quote: "'",
+          Comma: ',',
+          Period: '.',
+          Slash: '/',
+          Backquote: '`',
+          IntlBackslash: '\\',
+          ArrowUp: 'Up',
+          ArrowDown: 'Down',
+          ArrowLeft: 'Left',
+          ArrowRight: 'Right',
+        };
+        keyPart = byCode[code] || '';
+      }
+      if (!keyPart) return null;
+      parts.push(keyPart);
+      return parts.join('+');
+    }
+
+    async function refreshGlobalToggleHotkeyFromMain() {
+      const inp = document.getElementById('globalToggleHotkeyDisplay');
+      if (!inp || !window.tagBrowser || typeof window.tagBrowser.globalToggleGet !== 'function') return;
+      try {
+        const r = await window.tagBrowser.globalToggleGet();
+        if (r && r.accelerator) inp.value = r.accelerator;
+      } catch (_) {}
+    }
+
+    function setGlobalToggleRecording(on) {
+      globalToggleRecording = !!on;
+      const inp = document.getElementById('globalToggleHotkeyDisplay');
+      const btn = document.getElementById('btnRecordGlobalToggleHotkey');
+      if (btn) {
+        btn.textContent = on ? 'Cancel' : 'Record…';
+        btn.classList.toggle('btn-danger', on);
+        btn.classList.toggle('btn-outline-secondary', !on);
+      }
+      if (inp) {
+        if (on) {
+          inp.value = 'Press a key combination…';
+          inp.classList.add('border-primary');
+          requestAnimationFrame(() => inp.focus());
+        } else inp.classList.remove('border-primary');
+      }
+      if (!on) void refreshGlobalToggleHotkeyFromMain();
     }
 
     function loadSettings() {
@@ -4222,7 +4929,7 @@
       setFileFolderFilterMode(ffMode);
       {
         const rf = localStorage.getItem(LS.recencyFilter);
-        setRecencyFilterMode(['all', '1d', '1w', '1m', '1y'].includes(rf) ? rf : 'all');
+        setRecencyFilterMode(['all', '1h', '1d', '1w', '1m', '1y'].includes(rf) ? rf : 'all');
       }
       sortColumn = localStorage.getItem(LS.sortBy) || 'name';
       if (!['name', 'path', 'date_modified', 'size', 'ext'].includes(sortColumn)) sortColumn = 'name';
@@ -4240,13 +4947,27 @@
         knownLen: knownBracketTagsList.length,
         tagStoreLen: tagStoreOrder.length,
       });
+      {
+        const sel = document.getElementById('autoRefreshSec');
+        if (sel) {
+          const allowed = new Set(['0', '3', '5', '10', '30']);
+          const v = localStorage.getItem(LS.autoRefreshSec);
+          sel.value = allowed.has(String(v)) ? String(v) : '0';
+        }
+      }
+      syncAutoRefreshTimer();
       searchDebugRender();
+      void refreshGlobalToggleHotkeyFromMain();
     }
 
     function saveSettings() {
       localStorage.setItem(LS.baseUrl, document.getElementById('baseUrl').value.trim());
       localStorage.setItem(LS.rootFolder, document.getElementById('rootFolder').value.trim());
       localStorage.setItem(LS.maxResults, document.getElementById('maxResults').value.trim());
+      {
+        const sel = document.getElementById('autoRefreshSec');
+        localStorage.setItem(LS.autoRefreshSec, sel ? String(sel.value || '0') : '0');
+      }
       localStorage.setItem(LS.httpUser, document.getElementById('httpUser').value.trim());
       localStorage.setItem(LS.optCase, document.getElementById('optCase').checked ? '1' : '0');
       localStorage.setItem(LS.optWholeWord, document.getElementById('optWholeWord').checked ? '1' : '0');
@@ -4443,7 +5164,7 @@
       else if (s.optFilesOnly) setFileFolderFilterMode('files');
       else setFileFolderFilterMode('both');
       setRecencyFilterMode(
-        s.recencyFilter && ['all', '1d', '1w', '1m', '1y'].includes(s.recencyFilter) ? s.recencyFilter : 'all'
+        s.recencyFilter && ['all', '1h', '1d', '1w', '1m', '1y'].includes(s.recencyFilter) ? s.recencyFilter : 'all'
       );
       document.getElementById('optHideDotFolders').checked = !!s.optHideDotFolders;
       document.getElementById('optSortFoldersWithFiles').checked = s.optSortFoldersWithFiles !== false;
@@ -4466,6 +5187,7 @@
         advBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
         advBtn.classList.toggle('active', open);
       }
+      syncContextualToggleUi();
     }
 
     async function goSearchHistory(delta) {
@@ -4478,6 +5200,7 @@
         persistActiveTagFilter();
         saveSettings();
         updateSortHeaders();
+        syncContextualToggleUi();
         renderScopeBreadcrumb();
         renderTagBar();
         await runSearchNow();
@@ -4497,6 +5220,7 @@
         persistActiveTagFilter();
         saveSettings();
         updateSortHeaders();
+        syncContextualToggleUi();
         renderScopeBreadcrumb();
         renderTagBar();
         await runSearchNow();
@@ -4513,35 +5237,22 @@
       updateSearchHistoryNavUI();
     }
 
-    /** Small folder glyph (Bootstrap-like), leading; never the word “folder”. */
+    /** Folder glyph in Name column (Font Awesome). */
     function folderIconEl() {
       const holder = document.createElement('span');
       holder.className = 'folder-type-icon';
       holder.setAttribute('aria-label', 'Folder');
-      holder.innerHTML =
-        '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16" focusable="false">' +
-        '<path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h2.764c.958 0 1.76.56 2.311 1.184C7.985 3.648 8.548 4 9 4h4.5A1.5 1.5 0 0 1 15 5.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12.5v-9z"/>' +
-        '</svg>';
+      holder.innerHTML = '<i class="fa-solid fa-folder fa-fw" aria-hidden="true"></i>';
       return holder;
     }
 
-    /** File-earmark outline + optional 2nd path (Bootstrap-style viewBox 0 0 16 16). */
-    const FILE_ICON_PATHS = {
-      base: [
-        'M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5L14 4.5zm-3 0A1.5 1.5 0 0 1 9.5 3H4v12h8a1 1 0 0 0 1-1V4.5h-2A1.5 1.5 0 0 1 9.5 3z',
-      ],
-      text: [
-        'M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5L14 4.5zm-3 0A1.5 1.5 0 0 1 9.5 3H4v12h8a1 1 0 0 0 1-1V4.5h-2A1.5 1.5 0 0 1 9.5 3z',
-        'M5.5 6.5h5v1h-5v-1zm0 2h5v1h-5v-1zm0 2h3.5v1h-3.5v-1z',
-      ],
-      code: [
-        'M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5L14 4.5zm-3 0A1.5 1.5 0 0 1 9.5 3H4v12h8a1 1 0 0 0 1-1V4.5h-2A1.5 1.5 0 0 1 9.5 3z',
-        'M5.72 7.28a.75.75 0 0 1 0 1.06L4.06 10l1.66 1.66a.75.75 0 1 1-1.06 1.06l-2.2-2.2a.75.75 0 0 1 0-1.06l2.2-2.2a.75.75 0 0 1 1.06 0zm4.56 0a.75.75 0 0 1 1.06 0l2.2 2.2a.75.75 0 0 1 0 1.06l-2.2 2.2a.75.75 0 1 1-1.06-1.06L11.94 10l-1.66-1.66a.75.75 0 0 1 0-1.06z',
-      ],
-      media: [
-        'M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5L14 4.5zm-3 0A1.5 1.5 0 0 1 9.5 3H4v12h8a1 1 0 0 0 1-1V4.5h-2A1.5 1.5 0 0 1 9.5 3z',
-        'M6.55 6.65v3.4l3.1-1.75-3.1-1.65z',
-      ],
+    /** FA class per file “kind” from extension map (plain file / lines / code / video). */
+    const FILE_ICON_FA = {
+      base: 'fa-file',
+      text: 'fa-file-lines',
+      code: 'fa-file-code',
+      media: 'fa-file-video',
+      pdf: 'fa-file-pdf',
     };
 
     function buildFileIconSpecMap() {
@@ -4554,7 +5265,7 @@
       add(['doc', 'docx', 'rtf', 'odt'], 'base', '#2b579a', 'Word');
       add(['xls', 'xlsx', 'csv', 'ods'], 'base', '#217346', 'Spreadsheet');
       add(['ppt', 'pptx', 'odp'], 'base', '#c43e1c', 'Slides');
-      add(['pdf'], 'base', '#dc3545', 'PDF');
+      add(['pdf'], 'pdf', '#dc3545', 'PDF');
       add(['html', 'htm', 'css', 'js', 'ts', 'mjs', 'cjs', 'jsx', 'tsx', 'json', 'xml', 'vue', 'svelte'], 'code', '#6f42c1', 'Code');
       add(['yml', 'yaml', 'toml', 'ini', 'sql', 'py', 'r', 'cpp', 'h', 'hpp', 'c', 'cs', 'go', 'rs', 'java', 'php', 'rb', 'sh', 'ps1'], 'code', '#7952b3', 'Code');
       add(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tif', 'tiff', 'heic', 'raw'], 'base', '#fd7e14', 'Image');
@@ -4589,19 +5300,13 @@
 
     function fileIconEl(ext) {
       const spec = FILE_ICON_BY_EXT.get(ext) || { kind: 'base', color: '#6c757d', label: ext ? '.' + ext : 'File' };
-      const paths = FILE_ICON_PATHS[spec.kind] || FILE_ICON_PATHS.base;
+      const fa = FILE_ICON_FA[spec.kind] || FILE_ICON_FA.base;
+      const iconWeight = spec.kind === 'pdf' ? 'fa-regular' : 'fa-solid';
       const holder = document.createElement('span');
       holder.className = 'file-type-icon';
       holder.style.color = spec.color;
       holder.setAttribute('aria-label', spec.label);
-      let inner = '';
-      for (const d of paths) {
-        inner += '<path d="' + d + '"/>';
-      }
-      holder.innerHTML =
-        '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16" focusable="false">' +
-        inner +
-        '</svg>';
+      holder.innerHTML = '<i class="' + iconWeight + ' ' + fa + ' fa-fw" aria-hidden="true"></i>';
       return holder;
     }
 
@@ -4649,9 +5354,13 @@
           recencyFilterMode() !== 'all' && !document.getElementById('optRegex').checked;
         if (!recencyInEverything) {
           rows = rows.filter((r) => {
+            if (treeRecencyDropRealFolderHits() && rowIsFolder(r)) return false;
             const ms = modifiedTimeMs(r);
             return ms != null && ms >= cut;
           });
+        } else if (treeRecencyDropRealFolderHits()) {
+          /* dm: already applied server-side — still strip folder rows so only file recency drives the tree. */
+          rows = rows.filter((r) => !rowIsFolder(r));
         }
       }
       return rows;
@@ -4662,6 +5371,11 @@
       return buildPathGroupedDisplayRows(filteredRows());
     }
 
+    /** Recency segmented control (search bar); target for zero-row pulse when a bucket other than All is active. */
+    function recencyFilterGroupEl() {
+      return document.querySelector('.tagfox-search-toolbar-row [aria-label="Recency"]');
+    }
+
     function clearEmptyResultsPulseHintClasses() {
       const qWrap = document.getElementById('queryInputGroup');
       qWrap?.classList.remove('pulse-hint', 'pulse-hint--sparse');
@@ -4670,6 +5384,9 @@
       const recLbl = document.querySelector('label[for="folderSearchRecursive"]');
       recLbl?.classList.remove('pulse-hint', 'pulse-hint--sparse');
       recLbl?.style.removeProperty('--empty-pulse-frac');
+      const recencyGrp = recencyFilterGroupEl();
+      recencyGrp?.classList.remove('pulse-hint', 'pulse-hint--sparse');
+      recencyGrp?.style.removeProperty('--empty-pulse-frac');
       document.querySelectorAll('#tagBar button[data-tag-key]').forEach((b) => {
         b.classList.remove('pulse-hint', 'pulse-hint--sparse');
         b.style.removeProperty('--empty-pulse-frac');
@@ -4689,8 +5406,22 @@
     }
 
     /**
+     * After scope folder navigation (breadcrumb, row, favourites, …), a non-empty search box still
+     * filters the new listing — reuse the same #queryInputGroup pulse as sparse/empty hints (restartPulseHint).
+     * Call only after the search + table refresh for this scope so updateEmptyResultsPulseHints (≥10 rows)
+     * has already cleared classes; otherwise the pulse would be stripped immediately.
+     */
+    function pulseSearchBoxAfterScopeFolderChange() {
+      const q = document.getElementById('query');
+      const qWrap = document.getElementById('queryInputGroup');
+      if (!q || !qWrap || !String(q.value || '').trim()) return;
+      restartPulseHint(qWrap, true, 'empty', 0);
+    }
+
+    /**
      * Visible rows 0: full pulse on filters (non-empty query / recursive off / active tags).
-     * Visible 1–9: same targets, weaker pulse; strength (10−n)/10 → 0 at 10 rows.
+     * Visible 0 + recency ≠ All: also pulse the Recency control (client or Everything dm: filter may hide all rows).
+     * Visible 1–9: same targets, weaker pulse; strength (10−n)/10 → 0 at 10 rows (recency not pulsed here).
      * opts.forceRestart: replay animation after search (row count may change with same fingerprint).
      */
     function updateEmptyResultsPulseHints(visibleRowCount, opts) {
@@ -4705,10 +5436,13 @@
       const qWrap = document.getElementById('queryInputGroup');
       const rec = document.getElementById('folderSearchRecursive');
       const recLbl = document.querySelector('label[for="folderSearchRecursive"]');
+      const recencyGrp = recencyFilterGroupEl();
+      const recencyMode = recencyFilterMode();
       const qNonEmpty = !!(q && q.value && q.value.trim());
       const wantQ = inBand && qNonEmpty;
       const wantRec = inBand && rec && !rec.checked;
       const wantTag = inBand && activeTagKeys.size > 0;
+      const wantRecency = isEmpty && recencyMode !== 'all';
 
       if (!inBand) {
         pulseHintFingerprint = '';
@@ -4726,13 +5460,16 @@
         '\0' +
         (rec && rec.checked ? '1' : '0') +
         '\0' +
-        (tagFilterCombineOr ? 'or' : 'and');
+        (tagFilterCombineOr ? 'or' : 'and') +
+        '\0' +
+        recencyMode;
       const fpChanged = forceRestart || fp !== pulseHintFingerprint;
       if (fpChanged) pulseHintFingerprint = fp;
 
       if (fpChanged) {
         restartPulseHint(qWrap, wantQ, mode, sparseFrac);
         restartPulseHint(recLbl, wantRec, mode, sparseFrac);
+        restartPulseHint(recencyGrp, wantRecency, mode, sparseFrac);
         document.querySelectorAll('#tagBar button.tag-bar-pill-active[data-tag-key]').forEach((btn) => {
           restartPulseHint(btn, wantTag && activeTagKeys.has(btn.dataset.tagKey), mode, sparseFrac);
         });
@@ -4748,6 +5485,11 @@
       recLbl?.classList.toggle('pulse-hint--sparse', wantRec && mode === 'sparse');
       if (wantRec && mode === 'sparse') recLbl?.style.setProperty('--empty-pulse-frac', String(sparseFrac));
       else if (!wantRec || mode === 'empty') recLbl?.style.removeProperty('--empty-pulse-frac');
+
+      recencyGrp?.classList.toggle('pulse-hint', wantRecency);
+      recencyGrp?.classList.toggle('pulse-hint--sparse', wantRecency && mode === 'sparse');
+      if (wantRecency && mode === 'sparse') recencyGrp?.style.setProperty('--empty-pulse-frac', String(sparseFrac));
+      else if (!wantRecency || mode === 'empty') recencyGrp?.style.removeProperty('--empty-pulse-frac');
 
       document.querySelectorAll('#tagBar button.tag-bar-pill-active[data-tag-key]').forEach((btn) => {
         const on = wantTag && activeTagKeys.has(btn.dataset.tagKey);
@@ -4772,24 +5514,17 @@
       const tagBarIconBtnClass =
         'btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0';
       const tagBarIconBtnSize = 'width:2rem;height:2rem';
-      const svgRescan15 =
-        '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">' +
-        '<path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>' +
-        '<path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.02 1.82a.25.25 0 0 1 0 .364L8.41 4.658A.25.25 0 0 1 8 4.466z"/>' +
-        '</svg>';
-      const svgClear15 =
-        '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">' +
-        '<path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854Z"/>' +
-        '</svg>';
+      const faRescan15 = '<i class="fa-solid fa-arrows-rotate fa-fw" aria-hidden="true"></i>';
+      const faClear15 = '<i class="fa-solid fa-xmark fa-fw" aria-hidden="true"></i>';
       const appendRescanAllTags = () => {
         const rescan = document.createElement('button');
         rescan.type = 'button';
         rescan.className = tagBarIconBtnClass;
         rescan.style.cssText = tagBarIconBtnSize;
-        rescan.innerHTML = svgRescan15;
+        rescan.innerHTML = faRescan15;
         rescan.setAttribute('aria-label', 'Refresh search and rescan all tags');
         rescan.title =
-          'Re-run the main Everything search, then a full-index [(…)] bracket-tag scan. Prunes remembered or active tag filters that do not appear in that scan. (Each ordinary search also refreshes tag discovery, without pruning.)';
+          'Re-run the main Everything search, then a full-index [(…)] bracket-tag scan. Prunes remembered or active tag filters that do not appear in that scan. (Ordinary searches do not run this scan — use this when the tag bar is stale.)';
         rescan.addEventListener('click', () => {
           void (async () => {
             rescan.disabled = true;
@@ -4946,7 +5681,7 @@
         clearTags.type = 'button';
         clearTags.className = tagBarIconBtnClass;
         clearTags.style.cssText = tagBarIconBtnSize;
-        clearTags.innerHTML = svgClear15;
+        clearTags.innerHTML = faClear15;
         clearTags.setAttribute('aria-label', 'Clear tag filters');
         clearTags.title = 'Turn off every active tag filter at once.';
         clearTags.addEventListener('click', () => {
@@ -5095,14 +5830,17 @@
       const suffix =
         activeTagKeys.size || recencyFilterMode() !== 'all' ? ' (filtered)' : '';
       const rawN = lastRows.length;
-      // Hide . / ~ / tag filter shrink the list after Everything’s cap — show both so path ▲/▼ “missing rows” isn’t mistaken for truncation at 10.
+      // Hide special / tag filter shrink vs raw row count — show both so path ▲/▼ “missing rows” isn’t mistaken for truncation at 10.
       const visN = rowsForDisplay.length;
       if (!visN) status.textContent = 'No rows' + suffix;
       else if (visN === rawN) status.textContent = visN + ' row(s)' + suffix;
       else status.textContent = visN + ' / ' + rawN + ' row(s)' + suffix;
       const showPathFolderGrouping = shouldShowPathFolderGrouping();
       const showPathTreeGutter = document.getElementById('folderSearchRecursive').checked && sortColumn === 'path';
-      for (const row of rowsForDisplay) {
+      const pathTreeDepths = rowsForDisplay.map((r) => pathTreeUiDepth(r, showPathFolderGrouping));
+      const pathTreeGutters = showPathTreeGutter ? pathTreeGutterStringsForDepths(pathTreeDepths) : null;
+      for (let rowIdx = 0; rowIdx < rowsForDisplay.length; rowIdx++) {
+        const row = rowsForDisplay[rowIdx];
         const fp = fullPathForRow(row);
         const tr = document.createElement('tr');
         if (rowIsFolder(row)) tr.classList.add('results-folder-row');
@@ -5140,14 +5878,13 @@
         {
           const nameInner = renderNameCell(row, parsedName);
           if (showPathTreeGutter) {
-            const dep = showPathFolderGrouping ? Number(row.__pathTreeDepthUi) || 1 : parentSegmentsForRow(row).length;
-            if (dep > 1) {
+            const g = pathTreeGutters && pathTreeGutters[rowIdx];
+            if (g) {
               const outer = document.createElement('div');
               outer.className = 'd-flex align-items-center min-w-0';
               const gut = document.createElement('span');
               gut.className = 'path-tree-gutter flex-shrink-0';
-              /* One │ per depth level — no trailing space so guides sit closer horizontally. */
-              gut.textContent = '\u2502'.repeat(dep - 1);
+              gut.textContent = g;
               nameInner.classList.add('min-w-0');
               outer.appendChild(gut);
               outer.appendChild(nameInner);
@@ -5188,12 +5925,11 @@
         btnScopeParent.type = 'button';
         btnScopeParent.className =
           'btn btn-outline-secondary btn-sm me-1 d-inline-flex align-items-center justify-content-center p-0';
-        btnScopeParent.style.width = '1.85rem';
-        btnScopeParent.style.height = '1.85rem';
+        btnScopeParent.style.width = '1.5rem';
+        btnScopeParent.style.height = '1.5rem';
         btnScopeParent.title = 'Set scope to parent folder';
         btnScopeParent.setAttribute('aria-label', 'Set scope to parent folder');
-        btnScopeParent.innerHTML =
-          '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M7.646 4.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1-.708.708L8 5.707l-5.646 5.647a.5.5 0 0 1-.708-.708l6-6z"/></svg>';
+        btnScopeParent.innerHTML = '<i class="fa-solid fa-chevron-up fa-fw" aria-hidden="true"></i>';
         btnScopeParent.disabled = !parentForScope;
         btnScopeParent.addEventListener('click', async (e) => {
           e.stopPropagation();
@@ -5204,14 +5940,13 @@
         btnOpen.type = 'button';
         btnOpen.className =
           'btn btn-outline-secondary btn-sm me-1 d-inline-flex align-items-center justify-content-center p-0';
-        btnOpen.style.width = '1.85rem';
-        btnOpen.style.height = '1.85rem';
+        btnOpen.style.width = '1.5rem';
+        btnOpen.style.height = '1.5rem';
         /* Files: shell open; folders: Explorer — box-arrow-up-right (same family as toolbar “open”). */
         const openTitle = rowIsFolder(row) ? 'Show in File Explorer' : 'Open with default app';
         btnOpen.title = openTitle;
         btnOpen.setAttribute('aria-label', openTitle);
-        btnOpen.innerHTML =
-          '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M8.636 3.5a.5.5 0 0 0-.5-.5H1.5A1.5 1.5 0 0 0 0 4.5v10A1.5 1.5 0 0 0 1.5 16h10a1.5 1.5 0 0 0 1.5-1.5v-6.636a.5.5 0 0 0-1 0V14.5a.5.5 0 0 1-.5.5h-10a.5.5 0 0 1-.5-.5v-10a.5.5 0 0 1 .5-.5h6.636a.5.5 0 0 0 0-1z"/><path fill-rule="evenodd" d="M16 .5a.5.5 0 0 0-.5-.5h-5a.5.5 0 0 0 0 1h3.793L6.146 9.146a.5.5 0 1 0 .708.708L15 1.707V5.5a.5.5 0 0 0 1 0z"/></svg>';
+        btnOpen.innerHTML = '<i class="fa-solid fa-up-right-from-square fa-fw" aria-hidden="true"></i>';
         btnOpen.addEventListener('click', async (e) => {
           e.stopPropagation();
           if (rowIsFolder(row)) {
@@ -5224,12 +5959,11 @@
         btnClip.type = 'button';
         btnClip.className =
           'btn btn-outline-secondary btn-sm me-1 row-clip-btn d-inline-flex align-items-center justify-content-center p-0';
-        btnClip.style.width = '1.85rem';
-        btnClip.style.height = '1.85rem';
+        btnClip.style.width = '1.5rem';
+        btnClip.style.height = '1.5rem';
         btnClip.title = 'Copy for Explorer paste (Windows)';
         btnClip.setAttribute('aria-label', 'Copy for Explorer paste');
-        btnClip.innerHTML =
-          '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>';
+        btnClip.innerHTML = '<i class="fa-solid fa-clipboard fa-fw" aria-hidden="true"></i>';
         btnClip.addEventListener('click', async (e) => {
           e.stopPropagation();
           const r = await window.tagBrowser.copyExplorerPaste([fp]);
@@ -5239,12 +5973,11 @@
         btnMore.type = 'button';
         btnMore.className =
           'btn btn-outline-secondary btn-sm me-1 d-inline-flex align-items-center justify-content-center p-0';
-        btnMore.style.width = '1.85rem';
-        btnMore.style.height = '1.85rem';
+        btnMore.style.width = '1.5rem';
+        btnMore.style.height = '1.5rem';
         btnMore.title = 'More — copy path, open, Drive search, rename (F2), new folder in scope, delete…';
         btnMore.setAttribute('aria-label', 'More actions');
-        btnMore.innerHTML =
-          '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 9.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3m5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3m5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3"/></svg>';
+        btnMore.innerHTML = '<i class="fa-solid fa-ellipsis fa-fw" aria-hidden="true"></i>';
         btnMore.addEventListener('click', async (e) => {
           e.stopPropagation();
           const r = btnMore.getBoundingClientRect();
@@ -5261,13 +5994,12 @@
         btnTags.type = 'button';
         btnTags.className =
           'btn btn-outline-primary btn-sm me-1 d-inline-flex align-items-center justify-content-center p-0';
-        btnTags.style.width = '1.85rem';
-        btnTags.style.height = '1.85rem';
+        btnTags.style.width = '1.5rem';
+        btnTags.style.height = '1.5rem';
         btnTags.title = 'Edit [(…)] tags in the name';
         btnTags.setAttribute('aria-label', 'Edit tags');
-        /* Same tag SVG as tag toolbar lead (#tagBar row in index.html). */
-        btnTags.innerHTML =
-          '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm-1 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/><path d="M2 2v13.5A1.5 1.5 0 0 0 3.5 17h9a1.5 1.5 0 0 0 1.5-1.5V9.294l-6.5-6.5A1.5 1.5 0 0 0 6.5 2H2zm7.5 1 5.5 5.5v7.793l-6.5-6.5V3.5z"/></svg>';
+        /* Same tag icon as tag toolbar lead (#tagBar row in index.html). */
+        btnTags.innerHTML = '<i class="fa-solid fa-tags fa-fw" aria-hidden="true"></i>';
         btnTags.addEventListener('click', (e) => {
           e.stopPropagation();
           openTagModal(fp);
@@ -5383,8 +6115,8 @@
         span.appendChild(document.createTextNode(tag + ' '));
         const x = document.createElement('button');
         x.type = 'button';
-        x.className = 'btn btn-sm btn-light py-0 px-1 align-baseline';
-        x.textContent = '×';
+        x.className = 'btn btn-sm btn-light py-0 px-1 align-baseline d-inline-flex align-items-center justify-content-center';
+        x.innerHTML = '<i class="fa-solid fa-xmark" style="font-size:0.7rem;line-height:1" aria-hidden="true"></i>';
         x.setAttribute('aria-label', 'Remove');
         x.addEventListener('click', async () => {
           if (tagRenameBusy) return;
@@ -5659,7 +6391,10 @@
     }
 
     async function runSearch() {
+      searchInFlight = true;
       const runId = ++searchRunSeq;
+      try {
+      cancelPropsPreviewSchedule();
       const status = document.getElementById('status');
       saveSettings();
       const baseUrl = document.getElementById('baseUrl').value.trim() || 'http://127.0.0.1';
@@ -5674,17 +6409,23 @@
       } else if (ff === 'files') {
         searchText = (searchText.trim() + ' file:').trim();
       }
-      searchText = appendHideDotFoldersToEverythingQuery(searchText);
+      searchText = appendSpecialHideToEverythingQuery(searchText);
       searchText = appendRecencyToEverythingQuery(searchText);
-      const count = document.getElementById('maxResults').value;
-      const cap = Math.min(5000, Math.max(1, parseInt(String(count).trim(), 10) || 200));
-      const httpUser = document.getElementById('httpUser').value;
-      const httpPassword = document.getElementById('httpPassword').value;
-      const baseSearchOpts = everythingOptionsForRequest();
+      const maxResultsRaw = document.getElementById('maxResults').value;
+      const cap = Math.min(5000, Math.max(1, parseInt(String(maxResultsRaw).trim(), 10) || 200));
       const hideDotServer =
         document.getElementById('optHideDotFolders').checked &&
         !document.getElementById('optRegex').checked;
-      const options = hideDotServer ? { ...baseSearchOpts, pathSearch: true } : baseSearchOpts;
+      const count = String(cap);
+      const httpUser = document.getElementById('httpUser').value;
+      const httpPassword = document.getElementById('httpPassword').value;
+      const baseSearchOpts = everythingOptionsForRequest();
+      /* Scope is sent as path tokens ("…\" or parent:"…"); HTTP path=0 = filename-only and those tokens do not limit the index — force Match path whenever scope is set. */
+      const scopeNeedsPathSearch = !!normalizeFolderPathForEverything(rootFolder);
+      const options = {
+        ...baseSearchOpts,
+        pathSearch: !!(baseSearchOpts.pathSearch || hideDotServer || scopeNeedsPathSearch),
+      };
       const makeDoSearch = (opts) => {
         const payload = { baseUrl, count, httpUser, httpPassword, options: opts };
         return (st) => window.tagBrowser.search({ ...payload, searchText: st });
@@ -5714,6 +6455,7 @@
         const t0 = performance.now();
         searchDebugLog('search.request.base', { runId, searchText: st, options });
         const baseRes = await doSearch(st);
+        if (runId !== searchRunSeq) return null;
         const baseRows = pickRows(baseRes);
         searchDebugLog('search.response.base', {
           runId,
@@ -5723,7 +6465,10 @@
           ms: Math.round(performance.now() - t0),
           err: baseRes && baseRes.ok ? '' : (baseRes && baseRes.error) || 'unknown',
         });
-        if (!baseRes || !baseRes.ok) return { ok: false, error: (baseRes && baseRes.error) || 'Search failed', rows: [] };
+        if (!baseRes || !baseRes.ok) {
+          if (runId !== searchRunSeq) return null;
+          return { ok: false, error: (baseRes && baseRes.error) || 'Search failed', rows: [] };
+        }
         let rows = baseRows;
         let usedFallbackSort = false;
         if (directionCanMisbehave(options) && countLooksWrongForDirection(rows.length)) {
@@ -5732,6 +6477,7 @@
           const t1 = performance.now();
           searchDebugLog('search.request.alt', { runId, searchText: st, altOptions });
           const altRes = await altDoSearch(st);
+          if (runId !== searchRunSeq) return null;
           if (altRes && altRes.ok) {
             const altRows = pickRows(altRes);
             searchDebugLog('search.response.alt', {
@@ -5758,6 +6504,7 @@
             });
           }
         }
+        if (runId !== searchRunSeq) return null;
         return { ok: true, rows, usedFallbackSort };
       }
 
@@ -5772,7 +6519,11 @@
       if (wantFolderFileSplit) {
         const base = searchText.trim();
         const rFo = await doSearchWithDirectionFallback((base + ' folder:').trim());
+        if (rFo == null) return;
+        if (runId !== searchRunSeq) return;
         const rFi = await doSearchWithDirectionFallback((base + ' file:').trim());
+        if (rFi == null) return;
+        if (runId !== searchRunSeq) return;
         searchDebugLog('runSearch.split.results', {
           runId,
           foldersOk: !!rFo.ok,
@@ -5784,7 +6535,7 @@
           lastRows = (rFo.rows || []).concat(rFi.rows || []);
           searchDebugLog('runSearch.split.concat', { runId, concatRows: lastRows.length });
           sortLastRowsForDisplay(true);
-          if (lastRows.length > cap) lastRows = lastRows.slice(0, cap);
+          lastRows = trimLastRowsToVisibleCap(lastRows, cap);
           searchDebugLog('runSearch.split.final', {
             runId,
             finalRows: lastRows.length,
@@ -5796,12 +6547,15 @@
           renderTagBar();
           renderTable();
           pulseEmptyResultHintsAfterSearchOk();
-          kickTagDiscoveryAfterSearch();
           return;
         }
         res = await doSearchWithDirectionFallback(base);
+        if (res == null) return;
+        if (runId !== searchRunSeq) return;
       } else {
         res = await doSearchWithDirectionFallback(searchText);
+        if (res == null) return;
+        if (runId !== searchRunSeq) return;
       }
 
       if (!res.ok) {
@@ -5815,6 +6569,7 @@
       }
       lastRows = Array.isArray(res.rows) ? res.rows : [];
       sortLastRowsForDisplay(!!res.usedFallbackSort);
+      lastRows = trimLastRowsToVisibleCap(lastRows, cap);
       searchDebugLog('runSearch.single.final', {
         runId,
         usedFallbackSort: !!res.usedFallbackSort,
@@ -5827,7 +6582,9 @@
       renderTagBar();
       renderTable();
       pulseEmptyResultHintsAfterSearchOk();
-      kickTagDiscoveryAfterSearch();
+      } finally {
+        if (runId === searchRunSeq) searchInFlight = false;
+      }
     }
 
     const resultsThead = document.getElementById('resultsTable').querySelector('thead');
@@ -5852,6 +6609,7 @@
       }
       saveSettings();
       updateSortHeaders();
+      syncContextualToggleUi();
       commitSearchHistoryNow();
       void runSearchNow();
     });
@@ -5920,6 +6678,7 @@
     document.querySelectorAll('input[name="tagFoxFileFolderFilter"]').forEach((el) => {
       el.addEventListener('change', () => {
         saveSettings();
+        syncContextualToggleUi();
         scheduleSearch();
         commitSearchHistoryNow();
       });
@@ -5945,6 +6704,7 @@
         if (id === 'optCase' && document.getElementById('bulkRenameModal')?.classList.contains('show')) {
           updateBulkRenamePreview();
         }
+        syncContextualToggleUi();
         scheduleSearch();
         commitSearchHistoryNow();
       });
@@ -5963,7 +6723,7 @@
       }
       void syncSelectionAfterSearch();
       renderTable();
-      void runTagDiscoverySearch(false);
+      renderTagBar();
       commitSearchHistoryNow();
     });
 
@@ -5980,10 +6740,23 @@
     ['baseUrl', 'maxResults'].forEach((id) => {
       document.getElementById(id).addEventListener('input', scheduleSearch);
     });
-    document.getElementById('rootFolder').addEventListener('input', () => {
-      renderScopeBreadcrumb();
-      scheduleSearch();
-      scheduleSearchHistoryCommit();
+    document.getElementById('btnEditScopePath')?.addEventListener('click', () => {
+      if (scopePathEditMode) void commitScopePathEditMode();
+      else enterScopePathEditMode();
+    });
+    document.getElementById('scopePathEdit')?.addEventListener('input', () => {
+      scopePathEditCommitError = false;
+      syncScopePathEditValidationVisual();
+    });
+    document.getElementById('scopePathEdit')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        void commitScopePathEditMode();
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelScopePathEditMode();
+      }
     });
     document.getElementById('btnStatusScopeParent').addEventListener('click', () => void goToParentScopeFolder());
     document.getElementById('statusColumnsMenu').addEventListener('change', (e) => {
@@ -6002,6 +6775,11 @@
       colVisible[idx] = next;
       persistColVisibilityToStorage();
       applyTableColumnVisibility();
+      syncContextualToggleUi();
+    });
+    document.getElementById('optContextual')?.addEventListener('change', (e) => {
+      if (e.target.checked) applyContextualBundle();
+      else exitContextualBundle();
     });
     document.getElementById('btnClearQuery').addEventListener('click', () => {
       document.getElementById('query').value = '';
@@ -6011,8 +6789,43 @@
     document.getElementById('btnClearScope').addEventListener('click', () => clearSearchScope());
     document.getElementById('httpUser').addEventListener('input', scheduleSearch);
     document.getElementById('httpPassword').addEventListener('input', scheduleSearch);
+
+    document.getElementById('globalToggleHotkeyDisplay')?.addEventListener('keydown', (ev) => {
+      if (!globalToggleRecording) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (ev.key === 'Escape') {
+        setGlobalToggleRecording(false);
+        return;
+      }
+      const acc = acceleratorFromKeydown(ev);
+      if (!acc) return;
+      void (async () => {
+        if (!window.tagBrowser || typeof window.tagBrowser.globalToggleSet !== 'function') return;
+        const r = await window.tagBrowser.globalToggleSet(acc);
+        const st = document.getElementById('status');
+        const hint = document.getElementById('globalToggleHotkeyHelp');
+        if (r && r.ok) {
+          if (st) st.textContent = 'Global toggle: ' + r.accelerator;
+          if (hint)
+            hint.textContent =
+              'Saved ' +
+              r.accelerator +
+              '. Recording needs at least one modifier. Works while TagFox is hidden.';
+        } else {
+          if (st) st.textContent = (r && r.error) || 'Could not set global shortcut.';
+          if (hint) hint.textContent = (r && r.error) || 'Registration failed — shortcut unchanged.';
+        }
+        setGlobalToggleRecording(false);
+      })();
+    });
+    document.getElementById('btnRecordGlobalToggleHotkey')?.addEventListener('click', () => {
+      if (globalToggleRecording) setGlobalToggleRecording(false);
+      else setGlobalToggleRecording(true);
+    });
     document.getElementById('optSortFoldersWithFiles').addEventListener('change', () => {
       saveSettings();
+      syncContextualToggleUi();
       commitSearchHistoryNow();
       void runSearchNow();
     });
@@ -6130,6 +6943,23 @@
       scheduleMdFileAutosave();
     });
     document.getElementById('mdFileEditor').addEventListener('blur', () => void flushMdFileAutosave());
+    document.getElementById('btnReadmeEdit').addEventListener('click', () => toggleViewerDocEditor('readme'));
+    document.getElementById('btnMdFileEdit').addEventListener('click', () => toggleViewerDocEditor('mdFile'));
+    (function bindViewerDocPreviewActivators() {
+      function bind(prevId, which) {
+        const el = document.getElementById(prevId);
+        if (!el) return;
+        el.addEventListener('dblclick', () => setViewerDocEditorOpen(which, true));
+        el.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setViewerDocEditorOpen(which, true);
+          }
+        });
+      }
+      bind('readmePreview', 'readme');
+      bind('mdFilePreview', 'mdFile');
+    })();
 
     document.getElementById('btnOpenGoogleWorkspace').addEventListener('click', async () => {
       const btn = document.getElementById('btnOpenGoogleWorkspace');
@@ -6145,23 +6975,8 @@
       if (!activeReadmePath) return;
       const text = document.getElementById('readmeEditor').value;
       const r = await window.tagBrowser.writeTextFile({ fullPath: activeReadmePath, text });
-      status.textContent = r.ok ? 'readme.md saved.' : (r.error || 'Save failed');
-    });
-
-    document.getElementById('btnCreateReadme').addEventListener('click', async () => {
-      const status = document.getElementById('status');
-      if (!selectedFullPath || !rowIsFolder(selectedRow)) return;
-      const r = await window.tagBrowser.ensureReadme({ folderPath: selectedFullPath });
-      if (!r.ok) {
-        status.textContent = r.error || 'Could not create readme';
-        return;
-      }
-      activeReadmePath = r.path;
-      document.getElementById('btnCreateReadme').classList.add('d-none');
-      document.getElementById('readmeEditor').value = '';
-      document.getElementById('readmePreview').innerHTML = '';
-      syncReadmePreviewChrome({ pulse: false });
-      status.textContent = r.created ? 'readme.md created.' : 'readme.md ready.';
+      const label = segmentPretty(T.baseName(activeReadmePath));
+      status.textContent = r.ok ? label + ' saved.' : (r.error || 'Save failed');
     });
 
     window.tagBrowser.setPathsMutatedHandler(() => void refreshAfterDiskMutation());
@@ -6222,6 +7037,16 @@
         return true;
       }
       return !!el.isContentEditable;
+    }
+
+    /** User highlighted text — let the browser handle Ctrl+C / Ctrl+X / Ctrl+Shift+C (don’t steal for Explorer paths). */
+    function hasNonEmptyDomTextSelection() {
+      try {
+        const s = window.getSelection && window.getSelection();
+        return !!(s && String(s.toString() || '').trim());
+      } catch (_) {
+        return false;
+      }
     }
 
     /** App shortcuts run in #query too; still block in Settings / modals / multiline fields. (Ctrl+C/X/V keep isTypingTarget for native copy/paste in the box.) */
@@ -6492,6 +7317,7 @@
       else if (m === 'files') setFileFolderFilterMode('folders');
       else setFileFolderFilterMode('both');
       saveSettings();
+      syncContextualToggleUi();
       scheduleSearch();
       commitSearchHistoryNow();
     }
@@ -6500,7 +7326,7 @@
       const status = document.getElementById('status');
       const dest = currentScopeFolderPath();
       if (!dest) {
-        status.textContent = 'Set a scope folder (Settings) to paste into.';
+        status.textContent = 'Set a scope folder (breadcrumb or path editor) to paste into.';
         return;
       }
       const rootPrefix = T.normalizeRootPrefix(document.getElementById('rootFolder').value);
@@ -6533,6 +7359,13 @@
         focusQueryBox(true);
         return;
       }
+      if (modC && !e.shiftKey && (e.key === ',' || e.code === 'Comma')) {
+        if (document.querySelector('.modal.show')) return;
+        if (blockAppShortcutInTextField(e.target)) return;
+        e.preventDefault();
+        document.getElementById('btnToggleSettings')?.click();
+        return;
+      }
       if (e.key === 'F1') {
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
@@ -6551,6 +7384,7 @@
       if (modC && e.shiftKey && (e.key === 'c' || e.key === 'C')) {
         if (document.querySelector('.modal.show')) return;
         if (isTypingTarget(e.target)) return;
+        if (hasNonEmptyDomTextSelection()) return;
         e.preventDefault();
         void keyboardCopyFullPathsText();
         return;
@@ -6558,6 +7392,7 @@
       if (modC && (e.key === 'c' || e.key === 'C')) {
         if (document.querySelector('.modal.show')) return;
         if (isTypingTarget(e.target)) return;
+        if (hasNonEmptyDomTextSelection()) return;
         e.preventDefault();
         void copyShortcutExplorerFiles();
         return;
@@ -6565,6 +7400,7 @@
       if (modC && (e.key === 'x' || e.key === 'X')) {
         if (document.querySelector('.modal.show')) return;
         if (isTypingTarget(e.target)) return;
+        if (hasNonEmptyDomTextSelection()) return;
         e.preventDefault();
         void cutShortcutExplorerFiles();
         return;
@@ -6832,8 +7668,16 @@
       true
     );
 
+    const treeViewDefaultsFreshProfile = localStorage.getItem(LS.sortBy) === null;
     loadSettings();
+    void refreshDriveRootsPickerGate();
+    document.getElementById('autoRefreshSec')?.addEventListener('change', () => {
+      saveSettings();
+      syncAutoRefreshTimer();
+    });
+
     window.addEventListener('beforeunload', () => {
+      stopAutoRefreshTimer();
       if (tagPrefsDiskTimer) {
         clearTimeout(tagPrefsDiskTimer);
         tagPrefsDiskTimer = null;
@@ -6896,10 +7740,20 @@
       if (!t.closest('button, [role="button"], input.btn-check, a.btn, label.btn')) return;
       scheduleRestoreFocusAfterControlClick();
     });
-    const HELP_TAB_IDS = ['shortcuts', 'overview', 'getting-started'];
+    const HELP_TAB_IDS = [
+      'essentials',
+      'motivation',
+      'features',
+      'search',
+      'files-folders',
+      'projects',
+      'gotchas',
+      'installation',
+      'shortcuts',
+    ];
     function restoreHelpModalTab() {
       const raw = localStorage.getItem(LS.helpModalTab);
-      const id = HELP_TAB_IDS.includes(raw) ? raw : 'shortcuts';
+      const id = HELP_TAB_IDS.includes(raw) ? raw : 'essentials';
       const btn = document.getElementById('help-tab-' + id);
       if (btn) bootstrap.Tab.getOrCreateInstance(btn).show();
     }
@@ -6946,6 +7800,12 @@
     loadPaneWidthsFromStorage();
     loadColWidthsFromStorage();
     loadColVisibilityFromStorage();
+    if (treeViewDefaultsFreshProfile) {
+      applyContextualBundle({ deferSearch: true });
+      seedSearchHistoryFromCurrent();
+    } else {
+      syncContextualToggleUi();
+    }
     bindVerticalSplitters();
     document.getElementById('propsTheaterBackdrop').addEventListener('click', () => setPropsTheaterMode(false));
     document.getElementById('btnPropsTheaterToggle').addEventListener('click', () => togglePropsTheaterMode());

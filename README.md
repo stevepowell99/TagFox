@@ -7,7 +7,7 @@ Small Electron UI for [Voidtools Everything](https://www.voidtools.com/) HTTP se
 1. In Everything: **Tools → Options → HTTP Server** — enable the server and note the URL (e.g. `http://127.0.0.1:8080`).
 2. In this folder: `npm install` then `npm start`.
 3. Open **Settings** and set **Everything base URL**. Optionally set **Scope folder** so the app starts in a particular directory—that path is your **current folder** (same idea people sometimes call “scope”).
-4. Press **F1** or the **?** button for in-app help. **Ctrl+/** (**⌘+/** on Mac) focuses the search box; plain **/** does the same when no dialog is open.
+4. Press **F1** or the **?** button for in-app help. **Ctrl+/** (**⌘+/** on Mac) focuses the search box; plain **/** does the same when no dialog is open. **Ctrl+,** (**⌘+,** on Mac) toggles the **Settings** panel.
 
 ## Bulk rename (Ctrl+H)
 
@@ -37,6 +37,7 @@ From this folder after `npm install`: `npm run dist`. The NSIS setup executable 
 - The **breadcrumb** (under Favourites) shows the path: click a segment to jump. **▾** menus list siblings or subfolders; you can open nested flyouts from the last segment’s menu.
 - **Search history** (**Alt+←** / **→**, or the toolbar arrows) restores whole past searches: query, **current folder**, tags, toggles.
 - **Recent folders** (**Ctrl+L** or the clock button) only jumps among folder paths you have used, not full search snapshots.
+- If the **search box** is not empty, changing the current folder (double-click a folder row, **Enter**, breadcrumb, favourites, **Backspace** / **Alt+↑** to parent, etc.) still applies that text to the new folder. The **search row** (field + clear) plays the same short highlight animation as the “few results” hint so you notice the filter is still active.
 
 ## Tag syntax
 
@@ -55,7 +56,7 @@ Plain `[draft]` without inner `()` is **not** a TagFox tag (treated as part of t
 
 Buttons are tags seen in results plus **remembered** tags (local store, max 40). Choosing a tag saves it; the **active** tag filter is restored next launch. A number in parentheses counts rows in the **current results list** (after filters) that carry that tag—capped by **Max results**. If there is no number, the tag is not on any row in that list. Use **Clear all tags** or toggle pills off to drop the filter.
 
-- **↻** (end of the tag pill row): re-runs the main search, then the same **full-index** `[(…)]` scan and **prunes** remembered / active tags missing from that scan (ghost cleanup). Ordinary searches also refresh tag discovery **without** pruning, so caps cannot silently wipe your list.
+- **↻** (end of the tag pill row): re-runs the main search, then the **full-index** `[(…)]` scan and **prunes** remembered / active tags missing from that scan (ghost cleanup). Ordinary searches do **not** run that scan — click ↻ when the tag bar is stale or after bulk renames elsewhere.
 
 With **Regex** off, active tags are also sent to Everything so you can find matches before results load. With **Regex** on, tag filtering is **client-side** on the current list.
 
@@ -84,10 +85,20 @@ The **query** and **Settings** fields update results live (debounced). Toggles m
 
 **Sort** uses column headers; order is sent to Everything. **Sort folders with files** (Settings, default on) merges folders and files by that column; off keeps Everything’s usual folders-first order.
 
-**Hide “dot” folders** (advanced): hides paths under segments like `.git` or `.vscode` (see the in-app tooltip; leaf dotfiles such as `.env` are different).
+**Tree View** (sitemap icon next to the search box): one-click preset for path sort A→Z, **Path** column hidden, recursive on, files and folders, and **Sort folders with files** on. The control stays checked only while that whole bundle matches; changing sort, **Cols**, recursive, type filter, or interleave turns it off. New profiles with no saved sort default to Tree View on first load.
+
+**Hide special** (advanced): hides paths with any segment starting with `.`, `~`, or `$`, plus **`desktop.ini`** (any path segment). **`..`** and **`.shortcut-targets-by-id`** (Google Drive) are not hidden. With **Everything 1.5+**, TagFox adds a `!path:regex:"…"` clause so results are filtered in the index; on **1.4** that modifier stack may not work — the **table** still applies the same rules client-side.
 
 ## Viewer
 
-The **Viewer** shows path, type, size, modified. **Folders**: `readme.md` editor with Markdown preview ([marked](https://marked.js.org/)). **`.md` / `.txt`**: same editor + preview/autosave (UTF-8). **`.gdoc` / `.gsheet` / `.gslides`** (Google Drive shortcuts): **Open in app window** loads Docs/Sheets/Slides in a child Electron window (persistent login partition). **PDF** and other Office types where supported ([mammoth](https://github.com/mwilliamson/mammoth.js) / [SheetJS](https://sheetjs.com/) via CDN; legacy `.doc` stays “use Open”). Large files may not preview.
+The **Viewer** shows path, type, size, modified.
+
+**Folder doc** (folder row or implicit current-folder view): loads the **first** of these that exists (case-insensitive basename only):
+
+`readme.md` → `readme.txt` → `claude.md` → `agents.md` → `about.md` → `about.txt` → `context.md` → `context.txt` → `index.md` → `index.txt`
+
+If none exist, the editor is enabled empty; **Save** (toolbar disk icon) creates **`readme.md`** with the current text. If a listed file was found, **Save** writes that path.
+
+**`.md` / `.txt`** (file rows): same editor + preview/autosave (UTF-8). **`.gdoc` / `.gsheet` / `.gslides`** (Google Drive shortcuts): **Open in app window** loads Docs/Sheets/Slides in a child Electron window (persistent login partition). **PDF** and other Office types where supported ([mammoth](https://github.com/mwilliamson/mammoth.js) / [SheetJS](https://sheetjs.com/) via CDN; legacy `.doc` stays “use Open”). Large files may not preview.
 
 Read/write uses UTF-8. **Tags / rename** still requires paths under **Scope folder** when that field is set.

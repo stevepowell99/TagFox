@@ -22,12 +22,14 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   writeTextFile: (payload) => ipcRenderer.invoke('write-text-file', payload),
   googleWorkspaceShortcutUrl: (payload) => ipcRenderer.invoke('google-workspace-shortcut-url', payload),
   openGoogleWorkspaceWindow: (payload) => ipcRenderer.invoke('open-google-workspace-window', payload),
-  ensureReadme: (payload) => ipcRenderer.invoke('ensure-readme', payload),
+  openUrlDefaultBrowser: (payload) => ipcRenderer.invoke('open-url-default-browser', payload),
+  resolveFolderViewerDoc: (payload) => ipcRenderer.invoke('resolve-folder-viewer-doc', payload),
   showItemActionsMenu: (payload) => ipcRenderer.invoke('show-item-actions-menu', payload),
   copyExplorerPaste: (paths) => ipcRenderer.invoke('copy-explorer-paste', paths),
   cutExplorerPaste: (paths) => ipcRenderer.invoke('cut-explorer-paste', paths),
   pasteClipboardIntoFolder: (payload) => ipcRenderer.invoke('paste-clipboard-into-folder', payload),
   listChildFolders: (payload) => ipcRenderer.invoke('list-child-folders', payload),
+  listDriveRoots: () => ipcRenderer.invoke('list-drive-roots'),
   focusWebContents: () => ipcRenderer.send('tagbrowser-focus-web-contents'),
   /* Must be synchronous with dragstart or OS drag never starts (send is async). */
   startDragFiles: (paths) => ipcRenderer.sendSync('start-drag-files', paths),
@@ -45,4 +47,7 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   tagPrefsReadSync: () => ipcRenderer.sendSync('tag-prefs-read-sync'),
   tagPrefsWrite: (payload) => ipcRenderer.invoke('tag-prefs-write', payload),
   tagPrefsWriteSync: (payload) => ipcRenderer.sendSync('tag-prefs-write-sync', payload),
+  /** OS-wide show/hide shortcut (Electron globalShortcut). */
+  globalToggleGet: () => ipcRenderer.invoke('global-toggle-get'),
+  globalToggleSet: (accelerator) => ipcRenderer.invoke('global-toggle-set', accelerator),
 });
