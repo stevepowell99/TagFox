@@ -55,11 +55,20 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 .tagfox-search-toolbar-row {
   row-gap: 0.35rem;
 }
-/* Grow to fill row so tree / recency / Advanced / scope controls sit flush right */
+/* Grow to fill row so tree / recency / Advanced / current-folder nav sit flush right */
 .tagfox-search-toolbar-row .tagfox-query-input {
   flex: 1 1 0;
   min-width: 7rem;
   max-width: none;
+}
+/* Non-empty search: pale indigo (theme primary subtle) */
+#query.tagfox-query-filled {
+  background-color: var(--bs-primary-bg-subtle);
+  border-color: var(--bs-primary-border-subtle);
+}
+#query.tagfox-query-filled:focus {
+  border-color: rgba(var(--bs-primary-rgb), 0.45);
+  box-shadow: 0 0 0 0.2rem rgba(var(--bs-primary-rgb), 0.18);
 }
 @media (max-width: 720px) {
   .tagfox-search-toolbar-row .tagfox-query-input {
@@ -72,7 +81,7 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   column-gap: 0.65rem;
   row-gap: 0.35rem;
 }
-/* Scope chevrons: ← ↑ → with minimal gap (reads as <^>). */
+/* Current-folder chevrons: ← ↑ → with minimal gap (reads as <^>). */
 .tagfox-search-toolbar-row .tagfox-scope-nav-cluster {
   column-gap: 0.08rem;
 }
@@ -91,6 +100,17 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 .tagfox-search-toolbar-row .tagfox-segmented > .btn-check:last-of-type + .btn {
   border-top-right-radius: var(--bs-border-radius-sm);
   border-bottom-right-radius: var(--bs-border-radius-sm);
+}
+/* Four layout modes: icon-only (titles on labels). */
+.tagfox-search-toolbar-row .tagfox-results-view-mode > .btn-check + .btn.tagfox-results-view-icon {
+  width: 2rem;
+  min-width: 2rem;
+  padding-left: 0;
+  padding-right: 0;
+  line-height: 1;
+}
+.tagfox-search-toolbar-row .tagfox-results-view-mode > .btn-check + .btn .fa-fw {
+  margin: 0;
 }
 /* Row recency dot (same buckets as 1h / 1d / 1w / 1m / 1y); slightly larger + more gap from checkbox in #resultsTable rules. */
 .recency-blob {
@@ -211,9 +231,43 @@ body > .offcanvas-backdrop.show {
   align-items: center;
   justify-content: center;
 }
-/* Plain X clears (scope + query): tiny negative margin so their column lines up with the 2rem leads. */
+/* Plain X clears (current folder + query): tiny negative margin so their column lines up with the 2rem leads. */
 .tagfox-toolbar-clear.btn {
   margin-left: -0.125rem;
+}
+/* Favourite folder / saved-search chips: drag row to reorder (Ctrl+Shift+1…9 / Ctrl+1…9 follow bar order). */
+.tagfox-fav-chip-row {
+  cursor: grab;
+  user-select: none;
+}
+.tagfox-fav-chip-row:active {
+  cursor: grabbing;
+}
+.tagfox-fav-chip-row.tagfox-fav-chip-row--dragging {
+  opacity: 0.55;
+}
+/* While dragging: strip Bootstrap gap so spacer “slots” sit between chips; highlight slots only (not pills). */
+#favFoldersBar.tagfox-fav-bar--dnd,
+#favSearchesBar.tagfox-fav-bar--dnd {
+  gap: 0 !important;
+  column-gap: 0 !important;
+  row-gap: 0.25rem !important;
+}
+.tagfox-fav-drop-gap {
+  flex: 0 0 14px;
+  width: 14px;
+  min-width: 14px;
+  max-width: 14px;
+  align-self: stretch;
+  min-height: 2rem;
+  border-radius: 4px;
+  box-sizing: border-box;
+  background: transparent;
+  pointer-events: auto;
+}
+.tagfox-fav-drop-gap.tagfox-fav-drop-gap--active {
+  background: rgba(var(--bs-primary-rgb), 0.35);
+  box-shadow: inset 0 0 0 2px var(--tb-accent);
 }
 .props-panel { flex-shrink: 0; min-height: 0; min-width: 200px; max-width: 90vw; }
 /* Draggable vertical panes */
@@ -557,7 +611,9 @@ body.tagfox-props-split-drag #propsAside {
 }
 .breadcrumb-center { font-size: 0.8rem; }
 .results-wrap { flex: 1; overflow: auto; min-height: 0; }
-/* Drop target when there are no rows (Shelf → scope folder). */
+.results-status-bar { position: sticky; top: 0; z-index: 3; }
+#resultsTable thead.sticky-top { top: 1.625rem; z-index: 2; }
+/* Drop target when there are no rows (Shelf → current folder). */
 #resultsTable tbody:empty {
   min-height: 10rem;
 }
@@ -568,7 +624,7 @@ body.tagfox-props-split-drag #propsAside {
 #resultsTable tbody tr.tagfox-row-special-path.table-active {
   opacity: 1;
 }
-/* Scope-folder drop highlight: on scroll wrapper so empty area below last row is a valid target. */
+/* Current-folder drop highlight: on scroll wrapper so empty area below last row is a valid target. */
 .results-wrap.results-scope-drop-over {
   outline: 2px dashed var(--bs-primary);
   outline-offset: -4px;
@@ -715,6 +771,8 @@ body.tagfox-props-split-drag #propsAside {
 #propTitleBlock { border-bottom: 1px solid var(--bs-border-color); padding-bottom: 0.5rem; margin-bottom: 0.5rem; }
 #propDisplayName { line-height: 1.25; }
 #imageBlock img#propImagePreview { max-width: 100%; height: auto; display: block; border-radius: 0.25rem; }
+#videoBlock video#propVideoPreview { max-width: 100%; max-height: 60vh; display: block; border-radius: 0.25rem; }
+#audioBlock audio#propAudioPreview { display: block; }
 .status-bar-scope-up:hover:not(:disabled) {
   background-color: var(--bs-secondary-bg);
 }
@@ -787,7 +845,7 @@ ul.breadcrumb-folder-flyout {
 ul.breadcrumb-folder-flyout.is-open {
   display: block;
 }
-/* Breadcrumb ▾ / flyout: row on current scope path — inset bar (not .dropdown-item.active). */
+/* Breadcrumb ▾ / flyout: row on current folder path — inset bar (not .dropdown-item.active). */
 #breadcrumbBar .dropdown-menu li.breadcrumb-folder-on-scope-path > button.dropdown-item,
 ul.breadcrumb-folder-flyout li.breadcrumb-folder-on-scope-path > button.dropdown-item {
   box-shadow: inset 4px 0 0 rgba(var(--bs-emphasis-color-rgb), 0.38);
@@ -882,6 +940,16 @@ ul.breadcrumb-folder-flyout li.breadcrumb-folder-on-scope-path > button.dropdown
 .modal {
   z-index: 1110;
 }
+/* Advanced btn: orange bg when any switch is ON (normal = filled, hover = outline). */
+#btnToggleSearchOptsAdvanced.btn-outline-warning {
+  background-color: var(--bs-warning);
+  color: var(--bs-dark);
+}
+#btnToggleSearchOptsAdvanced.btn-outline-warning:hover,
+#btnToggleSearchOptsAdvanced.btn-outline-warning:focus-visible {
+  background-color: transparent;
+  color: var(--bs-warning);
+}
 /* Advanced: popover below the Advanced button (not inline in the toolbar row). */
 .search-opts-advanced-popover {
   position: absolute;
@@ -942,4 +1010,35 @@ ul.breadcrumb-folder-flyout li.breadcrumb-folder-on-scope-path > button.dropdown
 body > .tooltip {
   z-index: 50000;
   pointer-events: none;
+}
+/* Help modal: vertical side tabs + slightly larger font */
+.help-modal-content { font-size: 0.925rem; }
+.help-modal-body { min-height: 60vh; max-height: 75vh; }
+.help-side-nav {
+  width: 11rem;
+  min-width: 11rem;
+  overflow-y: auto;
+  background: var(--bs-tertiary-bg, #f8f9fa);
+  gap: 0.15rem;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+.help-side-nav .nav-link {
+  font-size: 0.82rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: var(--bs-border-radius-sm);
+  white-space: nowrap;
+  color: var(--bs-body-color);
+}
+.help-side-nav .nav-link.active {
+  background-color: var(--tb-accent);
+  color: #fff;
+}
+.help-side-nav .nav-link:not(.active):hover {
+  background-color: rgba(var(--bs-primary-rgb), 0.08);
+}
+.help-tab-body { font-size: 0.925rem; }
+@media (max-width: 640px) {
+  .help-side-nav { width: 3rem; min-width: 3rem; }
+  .help-side-nav .nav-link { font-size: 0.7rem; overflow: hidden; text-overflow: ellipsis; }
 }

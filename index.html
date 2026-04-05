@@ -158,7 +158,7 @@
           class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
           style="width: 2rem; height: 2rem"
           id="btnSaveFavouriteFolder"
-          title="Save current scope folder to favourites"
+          title="Save current folder to favourites"
           aria-label="Save current folder to favourites"
         >
           <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
@@ -174,18 +174,18 @@
           class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
           style="width: 2rem; height: 2rem"
           id="btnSaveFavouriteSearch"
-          title="Save current search (query, scope, tags, filters, Advanced, sort — same snapshot as search history)"
+          title="Save current search (query, current folder, tags, filters, Advanced, sort — same snapshot as search history)"
           aria-label="Save current search to favourites"
         >
           <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
         </button>
       </div>
 
-      <!-- Hidden: persisted scope path (same id as before — loaders/savers unchanged). -->
+      <!-- Hidden: persisted current folder path (same id as before — loaders/savers unchanged). -->
       <input type="hidden" id="rootFolder" autocomplete="off" />
-      <!-- Clear scope (icon) + scope trail or text edit -->
+      <!-- Clear current folder (icon) + breadcrumb trail or path edit -->
       <div class="d-flex flex-wrap align-items-center gap-1 mb-2 scope-breadcrumb-row">
-        <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0 tagfox-toolbar-clear" style="width: 2rem; height: 2rem" id="btnClearScope" disabled title="Clear scope (search whole index)" aria-label="Clear scope">
+        <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0 tagfox-toolbar-clear" style="width: 2rem; height: 2rem" id="btnClearScope" disabled title="Clear current folder (search whole index)" aria-label="Clear current folder">
           <i class="fa-solid fa-xmark" aria-hidden="true"></i>
         </button>
         <div
@@ -197,12 +197,12 @@
             class="flex-grow-1 min-w-0 d-none px-2 py-1 flex-wrap align-items-center gap-0"
           ></div>
           <div id="scopePathEditWrap" class="flex-grow-1 min-w-0 d-none px-2 py-1 w-100">
-            <label class="visually-hidden" for="scopePathEdit">Scope folder path</label>
+            <label class="visually-hidden" for="scopePathEdit">Current folder path</label>
             <input
               type="text"
               id="scopePathEdit"
               class="form-control form-control-sm font-monospace"
-              placeholder="Scope path (empty = whole index)"
+              placeholder="Current folder path (empty = whole index)"
               autocomplete="off"
               spellcheck="false"
             />
@@ -213,13 +213,13 @@
           class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
           style="width: 2rem; height: 2rem"
           id="btnEditScopePath"
-          title="Edit scope as path (toggle)"
-          aria-label="Edit scope path"
+          title="Edit current folder as path (toggle)"
+          aria-label="Edit current folder path"
           aria-pressed="false"
         >
           <i class="fa-solid fa-pen" aria-hidden="true"></i>
         </button>
-        <!-- Recent scope paths (same list as breadcrumb jumps); Ctrl+L -->
+        <!-- Recent current folders (same list as breadcrumb jumps); Ctrl+L -->
         <div class="dropdown flex-shrink-0">
           <button
             type="button"
@@ -228,8 +228,8 @@
             id="btnScopeFolderHistory"
             data-bs-toggle="dropdown"
             aria-expanded="false"
-            title="Recent scope folders (Ctrl+L)"
-            aria-label="Recent scope folders"
+            title="Recent folders (Ctrl+L)"
+            aria-label="Recent folders"
           >
             <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
           </button>
@@ -253,14 +253,37 @@
           <input type="text" id="query" class="form-control" placeholder="" autocomplete="off" />
         </div>
         <div class="d-flex align-items-center flex-shrink-0 flex-wrap tagfox-search-opts-rhs">
-          <!-- Tree view: nested display + Path column hidden; flat view shows Path and no synthetic folder rows. -->
-          <input type="checkbox" class="btn-check" id="optTreeView" autocomplete="off" />
-          <label
-            class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center px-2"
-            for="optTreeView"
-            title="Tree view: folder structure in the Name column; Path column hidden. Flat view: Path column visible, no reconstructed folders."
-            aria-label="Tree view"
-            ><i class="fa-solid fa-sitemap" aria-hidden="true"></i></label>
+          <!-- Results layout: flat vs three tree strategies (Path column only in flat). -->
+          <div class="btn-group tagfox-segmented tagfox-results-view-mode flex-shrink-0" role="group" aria-label="Results layout">
+            <input type="radio" class="btn-check" name="tagFoxResultsViewMode" id="optRvFlat" value="flat" autocomplete="off" checked />
+            <label
+              class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon"
+              for="optRvFlat"
+              title="Flat: Path column on; all files and folders under the current folder (recursive list)."
+              aria-label="Flat list"
+              ><i class="fa-solid fa-list fa-fw" aria-hidden="true"></i></label>
+            <input type="radio" class="btn-check" name="tagFoxResultsViewMode" id="optRvTree1" value="tree1" autocomplete="off" />
+            <label
+              class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon"
+              for="optRvTree1"
+              title="This Folder Only"
+              aria-label="This Folder Only"
+              ><i class="fa-solid fa-folder fa-fw" aria-hidden="true"></i></label>
+            <input type="radio" class="btn-check" name="tagFoxResultsViewMode" id="optRvTreeBrowse" value="treeBrowse" autocomplete="off" />
+            <label
+              class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon"
+              for="optRvTreeBrowse"
+              title="SubFolders Only"
+              aria-label="SubFolders Only"
+              ><i class="fa-solid fa-folder-tree fa-fw" aria-hidden="true"></i></label>
+            <input type="radio" class="btn-check" name="tagFoxResultsViewMode" id="optRvTreeFull" value="treeFull" autocomplete="off" />
+            <label
+              class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon"
+              for="optRvTreeFull"
+              title="Tree — full: all files and folders under the current folder; path ancestry when sorted by Path."
+              aria-label="Tree full"
+              ><i class="fa-solid fa-sitemap fa-fw" aria-hidden="true"></i></label>
+          </div>
           <div class="btn-group tagfox-segmented flex-shrink-0" role="group" aria-label="Recency">
             <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecency1h" value="1h" autocomplete="off" />
             <label class="btn btn-outline-secondary btn-sm" for="optRecency1h" title="Modified within the last hour">1h</label>
@@ -306,7 +329,7 @@
           <div
             class="d-inline-flex align-items-center flex-shrink-0 tagfox-scope-nav-cluster"
             role="group"
-            aria-label="Scope folder navigation"
+            aria-label="Current folder navigation"
           >
             <button
               type="button"
@@ -314,7 +337,7 @@
               id="btnStatusScopeSiblingPrev"
               disabled
               title="Previous sibling folder (same sort as results table)"
-              aria-label="Previous sibling scope folder"
+              aria-label="Previous sibling folder"
             >
               <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
             </button>
@@ -323,8 +346,8 @@
               class="btn btn-sm btn-link text-secondary flex-shrink-0 p-0 d-inline-flex align-items-center justify-content-center text-decoration-none status-bar-scope-up tagfox-scope-nav-chevron"
               id="btnStatusScopeParent"
               disabled
-              title="Parent scope folder (Ctrl+↑ or Backspace)"
-              aria-label="Open parent scope folder"
+              title="Parent folder (Ctrl+↑ or Backspace)"
+              aria-label="Open parent folder"
             >
               <i class="fa-solid fa-chevron-up" aria-hidden="true"></i>
             </button>
@@ -334,7 +357,7 @@
               id="btnStatusScopeSiblingNext"
               disabled
               title="Next sibling folder (same sort as results table)"
-              aria-label="Next sibling scope folder"
+              aria-label="Next sibling folder"
             >
               <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
             </button>
@@ -383,6 +406,9 @@
           </div>
         </aside>
         <div id="resultsWrap" class="results-wrap card shadow-sm flex-grow-1 min-w-0 min-h-0" tabindex="-1" role="region" aria-label="Search results">
+        <div id="statusBar" class="results-status-bar border-bottom bg-body-secondary px-2 py-1 d-flex align-items-center flex-shrink-0 small" role="status">
+          <span id="status" class="text-muted min-w-0 flex-grow-1" aria-live="polite"></span>
+        </div>
         <table class="table table-sm mb-0" id="resultsTable">
           <colgroup>
             <col style="width:4%" />
@@ -394,7 +420,7 @@
           </colgroup>
           <thead class="table-light sticky-top">
             <tr>
-              <th class="align-middle text-start position-relative results-th-cb" title="Select rows. Drag = in-app. Shelf “OS drag” or Alt+drag = Explorer files.">
+              <th class="align-middle text-start position-relative results-th-cb" title="Select rows. Drag = in-app. Shelf "OS drag" or Alt+drag = Explorer files.">
                 <input type="checkbox" class="form-check-input m-0 results-cb" id="chkSelectAllResults" autocomplete="off" aria-label="Select all in list" />
                 <!-- boundary N = resize between col N and N+1 (0 = chk|Name … 4 = Modified|Actions) -->
                 <span class="th-resize" data-resize-idx="0" title="Drag to resize"></span>
@@ -437,9 +463,9 @@
           <i class="fa-solid fa-up-right-and-down-left-from-center" aria-hidden="true"></i>
         </button>
       </div>
-      <!-- Add TODO: Title[(TODO)].md in scope folder (Enter = same as save button) -->
+      <!-- Add TODO: Title[(TODO)].md in the current folder (Enter = same as save button) -->
       <div class="px-2 py-2 border-bottom d-flex align-items-center gap-2 flex-shrink-0 small min-w-0">
-        <label class="text-muted mb-0 flex-shrink-0" for="newMdTitleInput" title="Creates Title[(TODO)].md in the scope folder">Add TODO</label>
+        <label class="text-muted mb-0 flex-shrink-0" for="newMdTitleInput" title="Creates Title[(TODO)].md in the current folder">Add TODO</label>
         <input
           type="text"
           id="newMdTitleInput"
@@ -452,14 +478,14 @@
           class="btn btn-sm btn-outline-primary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
           style="width: 2rem; height: 2rem"
           id="btnCreateTodoMd"
-          title="Creates Title[(TODO)].md in the scope folder"
-          aria-label="Create TODO markdown file in scope folder"
+          title="Creates Title[(TODO)].md in the current folder"
+          aria-label="Create TODO markdown file in the current folder"
         >
           <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
         </button>
       </div>
       <div id="propsScroll" class="flex-grow-1 overflow-y-auto p-2 small">
-        <p id="propsEmpty" class="text-muted mb-0">Set a scope folder in Settings — or select a row.</p>
+        <p id="propsEmpty" class="text-muted mb-0">Set the current folder in Settings — or select a row.</p>
         <div id="propsDetails" class="d-none">
           <div id="propTitleBlock">
             <div id="propDisplayName" class="fs-5 fw-semibold text-break"></div>
@@ -480,6 +506,20 @@
           <div id="imageBlock" class="d-none border-top pt-2">
             <div class="fw-semibold mb-1">Image</div>
             <img id="propImagePreview" class="border bg-light" alt="" />
+          </div>
+
+          <div id="videoBlock" class="d-none border-top pt-2 d-flex flex-column flex-grow-1">
+            <div class="fw-semibold mb-1 flex-shrink-0">Video</div>
+            <video id="propVideoPreview" class="border rounded bg-dark" controls preload="metadata">
+              Your browser does not support this video.
+            </video>
+          </div>
+
+          <div id="audioBlock" class="d-none border-top pt-2">
+            <div class="fw-semibold mb-1">Audio</div>
+            <audio id="propAudioPreview" class="w-100" controls preload="metadata">
+              Your browser does not support this audio.
+            </audio>
           </div>
 
           <div id="pdfBlock" class="d-none border-top pt-2 d-flex flex-column flex-grow-1">
@@ -580,11 +620,6 @@
     </aside>
   </div>
 
-  <!-- Status text: full window width, bottom of shell. -->
-  <footer class="app-status-bar border-top bg-body px-2 py-1 d-flex align-items-center flex-shrink-0" role="status">
-    <div id="status" class="small text-muted min-w-0 flex-grow-1" aria-live="polite"></div>
-  </footer>
-
   <!-- Tag edit modal -->
   <div class="modal fade" id="tagModal" tabindex="-1" aria-labelledby="tagModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-scrollable">
@@ -597,7 +632,7 @@
           <p class="small text-break text-muted mb-2" id="tagModalPath"></p>
           <p id="tagModalBulkHint" class="small text-muted mb-2 d-none">Several items: chips show the union of tags. <strong>Add</strong> appends to each name; <strong>×</strong> removes that tag from every selected item.</p>
           <div id="tagModalChips" class="d-flex flex-wrap gap-1 mb-2"></div>
-          <div id="tagModalQuickTags" class="d-flex flex-wrap gap-1 mb-2" role="group" aria-label="Quick-add tags from scope"></div>
+          <div id="tagModalQuickTags" class="d-flex flex-wrap gap-1 mb-2" role="group" aria-label="Quick-add tags from the tag list"></div>
           <div class="input-group input-group-sm mb-2">
             <input type="text" id="tagModalInput" class="form-control" list="tagModalExistingTags" placeholder="New tag (type here)" autocomplete="off" />
             <button type="button" class="btn btn-outline-primary" id="tagModalAddBtn">Add</button>
@@ -614,12 +649,12 @@
     </div>
   </div>
 
-  <!-- New folder in scope (Electron: window.prompt is unreliable). -->
+  <!-- New folder in current folder (Electron: window.prompt is unreliable). -->
   <div class="modal fade" id="newFolderModal" tabindex="-1" aria-labelledby="newFolderModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header py-2">
-          <h2 class="modal-title fs-6" id="newFolderModalLabel">New folder in scope</h2>
+          <h2 class="modal-title fs-6" id="newFolderModalLabel">New folder in current folder</h2>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body py-2">
@@ -701,472 +736,19 @@
     </div>
   </div>
 
-  <!-- Help: F1; last-opened tab restored from localStorage (HELP_TAB_IDS in renderer.js). -->
-  <div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
-      <div class="modal-content">
-        <div class="modal-header py-2 border-bottom-0 pb-0">
-          <h2 class="modal-title fs-6" id="helpModalLabel">Help</h2>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body small p-0">
-          <ul class="nav nav-tabs px-3 pt-2 gap-1 flex-nowrap overflow-x-auto" id="helpModalTabs" role="tablist">
-            <li class="nav-item text-nowrap" role="presentation">
-              <button
-                class="nav-link active"
-                id="help-tab-essentials"
-                data-bs-toggle="tab"
-                data-bs-target="#help-pane-essentials"
-                type="button"
-                role="tab"
-                data-help-tab="essentials"
-              >
-                Essentials
-              </button>
-            </li>
-            <li class="nav-item text-nowrap" role="presentation">
-              <button
-                class="nav-link"
-                id="help-tab-motivation"
-                data-bs-toggle="tab"
-                data-bs-target="#help-pane-motivation"
-                type="button"
-                role="tab"
-                data-help-tab="motivation"
-              >
-                Motivation
-              </button>
-            </li>
-            <li class="nav-item text-nowrap" role="presentation">
-              <button
-                class="nav-link"
-                id="help-tab-features"
-                data-bs-toggle="tab"
-                data-bs-target="#help-pane-features"
-                type="button"
-                role="tab"
-                data-help-tab="features"
-              >
-                Features
-              </button>
-            </li>
-            <li class="nav-item text-nowrap" role="presentation">
-              <button
-                class="nav-link"
-                id="help-tab-search"
-                data-bs-toggle="tab"
-                data-bs-target="#help-pane-search"
-                type="button"
-                role="tab"
-                data-help-tab="search"
-              >
-                Search
-              </button>
-            </li>
-            <li class="nav-item text-nowrap" role="presentation">
-              <button
-                class="nav-link"
-                id="help-tab-files-folders"
-                data-bs-toggle="tab"
-                data-bs-target="#help-pane-files-folders"
-                type="button"
-                role="tab"
-                data-help-tab="files-folders"
-              >
-                Files &amp; folders
-              </button>
-            </li>
-            <li class="nav-item text-nowrap" role="presentation">
-              <button
-                class="nav-link"
-                id="help-tab-projects"
-                data-bs-toggle="tab"
-                data-bs-target="#help-pane-projects"
-                type="button"
-                role="tab"
-                data-help-tab="projects"
-              >
-                Projects
-              </button>
-            </li>
-            <li class="nav-item text-nowrap" role="presentation">
-              <button
-                class="nav-link"
-                id="help-tab-gotchas"
-                data-bs-toggle="tab"
-                data-bs-target="#help-pane-gotchas"
-                type="button"
-                role="tab"
-                data-help-tab="gotchas"
-              >
-                Gotchas
-              </button>
-            </li>
-            <li class="nav-item text-nowrap" role="presentation">
-              <button
-                class="nav-link"
-                id="help-tab-installation"
-                data-bs-toggle="tab"
-                data-bs-target="#help-pane-installation"
-                type="button"
-                role="tab"
-                data-help-tab="installation"
-              >
-                Installation
-              </button>
-            </li>
-            <li class="nav-item text-nowrap" role="presentation">
-              <button
-                class="nav-link"
-                id="help-tab-shortcuts"
-                data-bs-toggle="tab"
-                data-bs-target="#help-pane-shortcuts"
-                type="button"
-                role="tab"
-                data-help-tab="shortcuts"
-              >
-                Shortcuts
-              </button>
-            </li>
-          </ul>
-          <div class="tab-content px-3 pb-3">
-            <div class="tab-pane fade show active" id="help-pane-essentials" role="tabpanel" aria-labelledby="help-tab-essentials">
-              <p class="text-muted mt-3 mb-2">Eight things worth knowing before you dig in:</p>
-              <ol class="mb-0 ps-3">
-                <li class="mb-2">
-                  Tag Fox is a fast front-end for <strong>Voidtools Everything</strong> over HTTP. Without Everything’s HTTP server running and the right base URL in <strong>Settings</strong>, the list stays empty.
-                </li>
-                <li class="mb-2">
-                  The <strong>current folder</strong> (breadcrumb under Favourites) is where search, paste, new folder, and “Add TODO” anchor. Empty scope searches the whole index.
-                </li>
-                <li class="mb-2">
-                  <strong>Tree view</strong> (sitemap icon) shows folder structure in the Name column (path sort) and hides the Path column; with an empty query and no tag filters, files in subfolders stay out of the list until you open those folders. Turn it off for a flat list with a visible Path column.
-                </li>
-                <li class="mb-2">
-                  <strong>Tags</strong> live in filenames as <code>[(t1,t2)]</code> on the last segment, e.g. <code>Notes[(draft)].md</code>. They stay visible in Explorer, Drive, and zip exports.
-                </li>
-                <li class="mb-2">
-                  Use <strong>favourite folders</strong> and <strong>saved searches</strong> (numbered chips, <kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>9</kbd>) instead of tabs. Use the vertical <strong>Shelf</strong> to stage copies between locations.
-                </li>
-                <li class="mb-2">
-                  The right <strong>Viewer</strong> previews many file types and edits folder docs / markdown; Google shortcuts open in an app child window, not always inline.
-                </li>
-                <li class="mb-2">
-                  <strong>Cloud “streaming”</strong> (files that look local but fetch on demand) weakens some operations — see <strong>Gotchas</strong>.
-                </li>
-                <li class="mb-0">Press <kbd>F1</kbd> (or the <strong>?</strong> button) anytime; this help remembers which tab you last opened.</li>
-              </ol>
-            </div>
-            <div class="tab-pane fade" id="help-pane-motivation" role="tabpanel" aria-labelledby="help-tab-motivation">
-              <p class="mt-3 mb-2">
-                When the web became searchable, it was surprising that the web could feel faster than your own disk. Local search is still slow unless you use an index tool like <strong>Everything</strong>.
-              </p>
-              <p class="mb-2">
-                Search boxes (and Drive) train us to type a word and expect the right thing — but you usually get a <em>flat</em> list. Complex projects have similar folder names; it is easy to lose the map of what belongs where. Folders are not an end in themselves, yet real work still arrives as trees: zips, phased folders, “here are the sources”.
-              </p>
-              <p class="mb-2">
-                Many desktop file browsers are sluggish; search there feels like a crawl. Tag Fox targets <strong>instant</strong> search with results still shown <strong>in context</strong> (folders, subfolders, tree-style order) so you can stay out of File Explorer for day-to-day navigation.
-              </p>
-              <p class="mb-2">
-                The same need shows up in project management: past a few dozen tasks, flat lists fail; you want a tree and links between tasks and where files live. Tools like Trello or Workflowy add sideways links. Tag Fox keeps todos and notes <em>on the filesystem</em> (tags, small markdown files, folder docs) so search and project structure stay one place. Older apps such as TagSpaces pursue a similar idea but litter hidden metadata folders everywhere — Tag Fox keeps tags in the visible name.
-              </p>
-              <p class="mb-0 text-muted">
-                Tag Fox is intentionally simple: bracket tags, fast preview, keyboard workflow, favourites, and a shelf — not a full proprietary PM system.
-              </p>
-            </div>
-            <div class="tab-pane fade" id="help-pane-features" role="tabpanel" aria-labelledby="help-tab-features">
-              <ul class="mt-3 mb-0 ps-3">
-                <li class="mb-2"><strong>Keyboard-first</strong> — navigation, bulk actions, tags, rename, history; see <strong>Shortcuts</strong>.</li>
-                <li class="mb-2"><strong>Favourite folders</strong> and <strong>saved searches</strong> (full snapshot: query, scope, tags, filters, Advanced, sort, tree view).</li>
-                <li class="mb-2">Search scope can include <strong>Drive folders shared with you</strong> that appear under your synced paths.</li>
-                <li class="mb-2">
-                  <strong>Fast previews</strong> for many Office types, PDF, images, text/json; PowerPoint via text-style preview where supported.
-                </li>
-                <li class="mb-2"><strong>Add TODO</strong> — small markdown file in the current folder, default tag pattern for todos.</li>
-                <li class="mb-2">
-                  <strong>Folder doc</strong> — read/create <code>readme.md</code>, <code>claude.md</code>, <code>agents.md</code>, and other conventional explainer names; see <strong>Projects</strong>.
-                </li>
-                <li class="mb-2">
-                  Besides Tree View, use flat, Everything-style lists — e.g. <strong>recency</strong> buttons (1h, 1d, 1w, …) for “what changed lately”.
-                </li>
-                <li class="mb-2">
-                  <strong>No tabs / dual pane</strong> — use favourites + <strong>Shelf</strong> to copy between folders (visual staging, OS drag when needed).
-                </li>
-                <li class="mb-2">
-                  <strong>Electron</strong> — straightforward to build and run, lightweight enough; some Explorer shell menu actions are missing and must be done manually if you need them.
-                </li>
-                <li class="mb-0">
-                  <strong>Mixed local + Google Docs</strong> — office files preview inline; <code>.gdoc</code> / Workspace shortcuts open in a child window (faster than hunting the browser tab). Shared or streaming-only shortcuts may fail — see <strong>Gotchas</strong>.
-                </li>
-              </ul>
-            </div>
-            <div class="tab-pane fade" id="help-pane-search" role="tabpanel" aria-labelledby="help-tab-search">
-              <h3 class="fs-6 text-secondary mt-3 mb-2">Current folder &amp; query</h3>
-              <ul class="mb-3 ps-3">
-                <li>The <strong>breadcrumb</strong> under Favourites is the <strong>current folder</strong> Everything scopes to (unless you clear scope for the whole index). The <strong>pen</strong> toggles a path editor; <kbd>Enter</kbd> saves, <kbd>Esc</kbd> cancels; invalid paths are rejected.</li>
-                <li>The search box filters what Everything returns. Results update as you type (debounced); <kbd>Enter</kbd> forces a refresh. Tip: <code>!foo</code> excludes matches for <code>foo</code>. <strong>Clear</strong> only clears query text.</li>
-                <li>
-                  Searches under the current folder are <strong>recursive</strong> (subfolders included). With <strong>tree view</strong> on, an <strong>empty</strong> query and <strong>no</strong> active tag filters use a tree-browse pattern: folders everywhere under scope, but <strong>files only in the current folder</strong>; type a query or turn tags on for one merged file+folder list. Tree view off shows a <strong>Path</strong> column and no synthetic folder rows; sort by any column.
-                </li>
-                <li>
-                  Turning <strong>tree view</strong> on sets sort to <strong>Path</strong> A→Z and hides the Path column; turning it off shows Path again. “Special” paths (e.g. segments with <code>.</code>, <code>~</code>, <code>$</code>) may appear dimmed but are not hidden from the list.
-                </li>
-                <li><strong>Recency</strong> filters limit to items modified in the last hour/day/week/month/year.</li>
-                <li>
-                  <strong>Search history</strong> — <kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>→</kbd> or toolbar arrows — steps through full snapshots (query, folder, tags, options). <strong>Recent folders</strong> (<kbd>Ctrl</kbd>+<kbd>L</kbd>, clock) only jumps paths, not full snapshots.
-                </li>
-              </ul>
-              <h3 class="fs-6 text-secondary mb-2">Advanced &amp; sorting</h3>
-              <ul class="mb-3 ps-3">
-                <li><strong>Advanced</strong> (panel below the button): match case, match path, whole word, diacritics. Plain search supports <code>|</code> in Everything without a separate “regex” mode.</li>
-                <li>Header edges resize columns; header clicks sort by name, path, size, or modified (Everything name/path/size/date where applicable).</li>
-                <li>
-                  <strong>Settings</strong> (<kbd>Ctrl</kbd>+<kbd>,</kbd> / <kbd>⌘</kbd>+<kbd>,</kbd>): Everything base URL, results per page (then <strong>Load more</strong> or scroll for the next page), HTTP user/password, auto-refresh timer, global show/hide shortcut, optional search debug log, open the Shelf staging folder in Explorer.
-                </li>
-              </ul>
-            </div>
-            <div class="tab-pane fade" id="help-pane-files-folders" role="tabpanel" aria-labelledby="help-tab-files-folders">
-              <h3 class="fs-6 text-secondary mt-3 mb-2">Breadcrumb</h3>
-              <ul class="mb-3 ps-3">
-                <li>Click a segment to set the <strong>current folder</strong> to that path.</li>
-                <li>
-                  <strong>▾</strong> between segments lists sibling folders; <strong>▾</strong> after the last lists children. Hover opens nested panels; <kbd>→</kbd> / <kbd>←</kbd> move levels. Empty path in the path editor clears scope (whole index).
-                </li>
-              </ul>
-              <h3 class="fs-6 text-secondary mb-2">Favourites &amp; shelf</h3>
-              <ul class="mb-3 ps-3">
-                <li>The <strong>diskette</strong> after folder chips saves the present <strong>current folder</strong>; chip <strong>×</strong> removes it.</li>
-                <li>
-                  The diskette after <strong>saved searches</strong> stores the same snapshot as search history. Chips show numbers; hover for the query; <kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>9</kbd> activates by slot.
-                </li>
-                <li>
-                  Checkboxes drive bulk actions (Explorer copy, delete, tags). <kbd>Ctrl</kbd>+<kbd>H</kbd> bulk renames <strong>names</strong> with wildcards and live preview. Drag rows to folder rows or breadcrumb segments to <strong>move</strong>; <kbd>Shift</kbd> drop <strong>copies</kbd>; <kbd>Alt</kbd> drag or Shelf “OS drag” starts real Explorer drags. The vertical <strong>Shelf</strong> follows the same rules for staging.
-                </li>
-              </ul>
-              <h3 class="fs-6 text-secondary mb-2">Tags</h3>
-              <ul class="mb-3 ps-3">
-                <li>The tag toolbar row starts with a <strong>tag icon</strong> (no “Tags:” label).</li>
-                <li>Bar filters are AND. <strong>↻</strong> at the end of the tag row re-queries and can prune ghost tag chips from the remembered list after a full <code>[(…)]</code> scan.</li>
-                <li>Plain <code>[text]</code> without parentheses is not a Tag Fox tag. <kbd>Ctrl</kbd>+<kbd>T</kbd> edits tags on the selection.</li>
-              </ul>
-              <h3 class="fs-6 text-secondary mb-2">Viewer &amp; row menu</h3>
-              <ul class="mb-0 ps-3">
-                <li>
-                  For a <strong>folder</strong> (or folder context with nothing else open), <strong>Folder doc</strong> picks the first of <code>readme.md</code>, <code>readme.txt</code>, <code>claude.md</code>, <code>agents.md</code>, <code>about.md</code>, <code>about.txt</code>, <code>context.md</code>, <code>context.txt</code>, <code>index.md</code>, <code>index.txt</code> (case-insensitive). If none exist, save creates <code>readme.md</code>.
-                </li>
-                <li><code>.md</code> / <code>.txt</code> files edit with preview; Google shortcuts may open in-app; PDF, images, JSON/text, many Office types preview. Very large files may skip preview.</li>
-                <li>The row <strong>⋯</strong> menu: copy variants (Explorer-ready, paths, URL), open, reveal, Drive helpers — same full-path copy as <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> on checked or highlighted rows.</li>
-              </ul>
-            </div>
-            <div class="tab-pane fade" id="help-pane-projects" role="tabpanel" aria-labelledby="help-tab-projects">
-              <p class="mt-3 mb-2">
-                Tag Fox is meant to reduce the gap between <strong>where files live</strong> and <strong>what you need to do</strong>. Instead of a separate app for every outline, you keep lightweight notes and todos on disk next to the data.
-              </p>
-              <ul class="mb-3 ps-3">
-                <li>
-                  <strong>Add TODO</strong> in the Viewer creates <code>Title[(TODO)].md</code> in the <strong>current folder</strong>. <code>[(TODO)]</code> stays a normal filename everywhere; Tag Fox can present it like a dedicated todo label.
-                </li>
-                <li>
-                  <strong>Folder doc</strong> is for “what this folder is for” in markdown; keep agreed context beside the files it describes. Tag that doc (or any file) with <code>[(active)]</code>, <code>[(archived)]</code>, etc., and filter with the tag bar.
-                </li>
-                <li>
-                  You can run a whole project from markdown notes + tags + Tree View without a proprietary database. Google Drive still lacks a decent native markdown editor in the browser — local editing in Tag Fox is one workaround.
-                </li>
-                <li class="text-muted">
-                  If renaming <strong>folders</strong> on synced Drive proves flaky, fall back to tagging files only (or a metadata/readme at the folder root) and still navigate in tree mode.
-                </li>
-              </ul>
-            </div>
-            <div class="tab-pane fade" id="help-pane-gotchas" role="tabpanel" aria-labelledby="help-tab-gotchas">
-              <ul class="mt-3 mb-0 ps-3">
-                <li class="mb-2">
-                  <strong>Google Drive / OneDrive “streaming”</strong> (files appear in Explorer but download on demand): search and previews may work for placeholders, but renames, moves, and deep paths can fail or feel inconsistent. Full mirroring behaves more like normal disks.
-                </li>
-                <li class="mb-2">
-                  <strong>Bracket tags on folders</strong> require renames on disk. Windows may block renames while something holds a handle (file open, terminal cwd, etc.). Tagging <strong>files</strong> remains reliable.
-                </li>
-                <li class="mb-2">
-                  <strong>Google Docs shortcuts</strong> (<code>.gdoc</code> etc.) show one name in Drive on the web and another locally after tag edits — expect that mismatch.
-                </li>
-                <li class="mb-2">
-                  <strong>Shared Workspace files</strong> / another person’s Drive trees may not open in the child window the same as your own; streaming vs mirrored shortcuts matters.
-                </li>
-                <li class="mb-2">
-                  <strong>Everything 1.5 vs 1.4</strong>: advanced options and some query shapes behave differently over HTTP; prefer Everything 1.5+ when possible.
-                </li>
-                <li class="mb-0">Everything must stay running and indexing; Tag Fox only talks to its HTTP API.</li>
-              </ul>
-            </div>
-            <div class="tab-pane fade" id="help-pane-installation" role="tabpanel" aria-labelledby="help-tab-installation">
-              <ol class="mt-3 ps-3">
-                <li class="mb-2">
-                  <strong>Install Voidtools Everything</strong> and finish its initial index. Tag Fox does not replace it.
-                </li>
-                <li class="mb-2">
-                  <strong>Everything 1.5 Alpha</strong>: HTTP is provided as a <strong>plugin</strong>. Install/enable the HTTP plugin, then <strong>Tools → Options → HTTP Server</strong> — turn the server on, bind address/port (e.g. <code>127.0.0.1:8080</code>), optional username/password, apply.
-                </li>
-                <li class="mb-2">
-                  <strong>Everything 1.4.x</strong>: HTTP is built-in under <strong>Tools → Options → HTTP Server</strong>. Enable it and note URL/port/auth. No 1.5 plugin step.
-                </li>
-                <li class="mb-2">
-                  Without 1.5, use 1.4’s built-in HTTP. With 1.5, use the plugin workflow first — steps differ; Tag Fox’s URL field is the same idea afterward.
-                </li>
-                <li class="mb-2">In the Tag Fox app folder: <code>npm install</code> then <code>npm start</code> (or your packaged build).</li>
-                <li class="mb-2">Open <strong>Settings</strong>, set <strong>Everything base URL</strong> to match the server, and HTTP auth if set.</li>
-                <li class="mb-0">Optional: set a starting folder with the breadcrumb or path editor. Bulk rename: check rows → <kbd>Ctrl</kbd>+<kbd>H</kbd> → preview → <strong>Rename</strong>.</li>
-              </ol>
-            </div>
-            <div class="tab-pane fade" id="help-pane-shortcuts" role="tabpanel" aria-labelledby="help-tab-shortcuts">
-              <p class="text-muted mb-2 mt-3">
-                <kbd>Ctrl</kbd> means <kbd>Ctrl</kbd> on Windows and <kbd>⌘</kbd> on Mac.
-              </p>
-              <div class="table-responsive">
-                <table class="table table-sm table-striped mb-0">
-                  <thead>
-                    <tr>
-                      <th scope="col">Shortcut</th>
-                      <th scope="col">What it does</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td><kbd>Ctrl</kbd>+<kbd>/</kbd> · <kbd>/</kbd></td>
-                      <td>Focus the search box and select its text (<kbd>⌘</kbd>+<kbd>/</kbd> on Mac)</td>
-                    </tr>
-                    <tr>
-                      <td><kbd>F1</kbd></td>
-                      <td>Open this help</td>
-                    </tr>
-                    <tr>
-                      <td><kbd>Ctrl</kbd>+<kbd>,</kbd></td>
-                      <td>Show or hide the <strong>Settings</strong> panel (toolbar <strong>Settings</strong>); <kbd>⌘</kbd>+<kbd>,</kbd> on Mac. Not when typing in a field (except the search box)</td>
-                    </tr>
-                    <tr>
-                      <td><kbd>Ctrl</kbd>+<kbd>Space</kbd> (default)</td>
-                      <td>
-                        <strong>System-wide</strong>: show or hide TagFox (Settings → <strong>Toggle TagFox</strong>). Change via <strong>Record…</strong>; works from other apps when TagFox is in the background.
-                      </td>
-                    </tr>
-                    <tr>
-                      <td><kbd>↓</kbd> (with search focused)</td>
-                      <td>Focus the first row in the list</td>
-                    </tr>
-                    <tr>
-                      <td><kbd>↑</kbd> <kbd>↓</kbd></td>
-                      <td>Move the highlight up or down in the results</td>
-                    </tr>
-                    <tr>
-                      <td><kbd>Shift</kbd>+<kbd>↑</kbd> <kbd>↓</kbd></td>
-                      <td>Extend which rows are checked between anchor and new row</td>
-                    </tr>
-                    <tr>
-                      <td><kbd>Space</kbd></td>
-                      <td>Check or uncheck the current row</td>
-                    </tr>
-                    <tr>
-                      <td><kbd>Ctrl</kbd>+<kbd>A</kbd> (<kbd>⌘</kbd>+<kbd>A</kbd> on Mac)</td>
-                      <td>Select all <strong>visible</strong> rows (same as the header checkbox). Not when typing in a field</td>
-                    </tr>
-                    <tr>
-                      <td>Type letters</td>
-                      <td>Jump to first row whose name starts with what you typed</td>
-                    </tr>
-                    <tr>
-                      <td><kbd>Enter</kbd></td>
-                      <td>Open a file, or make a folder row the new <strong>current folder</strong></td>
-                    </tr>
-                    <tr>
-                      <td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td>
-                      <td>Set <strong>current folder</strong> to the <strong>parent</strong> of the highlighted row (same as the row ▲ button)</td>
-                    </tr>
-                    <tr>
-                      <td><kbd>Home</kbd> · <kbd>End</kbd></td>
-                      <td>Highlight first or last visible row</td>
-                    </tr>
-                    <tr>
-                      <td><kbd>Del</kbd></td>
-                      <td>Delete checked rows, or the current row if none checked (confirmation; Windows sends items to the Recycle Bin)</td>
-                    </tr>
-                    <tr>
-                      <td><kbd>F2</kbd></td>
-                      <td>Rename</td>
-                    </tr>
-                    <tr>
-                      <td><kbd>Ctrl</kbd>+<kbd>H</kbd></td>
-                      <td>
-                        Bulk rename: find/replace on the file or folder <strong>name</strong> only (not parent folders). Uses <strong>checked</strong> rows, or the <strong>highlighted</strong> row if none
-                        checked. Find uses <code>*</code> / <code>?</code> wildcards; matching follows search <strong>Match case</strong>. <strong>Find</strong> and <strong>Replace</strong> prefill with the longest
-                        text common to every name’s <strong>stem</strong> (part before the last <code>.</code> — extensions skipped for that prefill only). <strong>Preview</strong> updates as you type.
-                        <strong>Rename</strong> applies to the list fixed when the dialog opened.
-                      </td>
-                    </tr>
-                    <tr>
-                      <td><kbd>F5</kbd> · <kbd>Ctrl</kbd>+<kbd>R</kbd></td>
-                      <td>Run the search again</td>
-                    </tr>
-                    <tr>
-                      <td><kbd>Ctrl</kbd>+<kbd>F</kbd></td>
-                      <td>Focus the search box and select its text (same idea as <kbd>Ctrl</kbd>+<kbd>/</kbd>)</td>
-                    </tr>
-                    <tr>
-                      <td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd></td>
-                      <td>Copy the <strong>full path</strong> as text (highlighted row, or all <strong>checked</strong> rows — one path per line). Not when typing in a field</td>
-                    </tr>
-                    <tr>
-                      <td><kbd>Ctrl</kbd>+<kbd>C</kbd> · <kbd>X</kbd> · <kbd>V</kbd></td>
-                      <td>Copy or cut in Explorer style, or paste files from the clipboard into the <strong>current folder</strong></td>
-                    </tr>
-                    <tr>
-                      <td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></td>
-                      <td>New folder inside the <strong>current folder</strong></td>
-                    </tr>
-                    <tr>
-                      <td><kbd>Backspace</kbd> · <kbd>Ctrl</kbd>+<kbd>↑</kbd> · <kbd>Alt</kbd>+<kbd>↑</kbd></td>
-                      <td>Go to the parent folder (narrower <strong>current folder</strong>)</td>
-                    </tr>
-                    <tr>
-                      <td><kbd>Ctrl</kbd>+<kbd>L</kbd></td>
-                      <td>Open <strong>recent folders</strong> (same list as the clock button)</td>
-                    </tr>
-                    <tr>
-                      <td><kbd>Alt</kbd>+<kbd>←</kbd> · <kbd>Alt</kbd>+<kbd>→</kbd></td>
-                      <td><strong>Search history</strong> — undo or redo query, tags, options (toolbar arrows do the same)</td>
-                    </tr>
-                    <tr>
-                      <td><kbd>Ctrl</kbd>+<kbd>1</kbd> … <kbd>9</kbd></td>
-                      <td>
-                        Activate saved searches in list order: the chip numbered <strong>1</strong> = <kbd>Ctrl</kbd>+<kbd>1</kbd>, <strong>2</strong> = <kbd>Ctrl</kbd>+<kbd>2</kbd>, and so on (no shortcut if that slot is empty)
-                      </td>
-                    </tr>
-                    <tr>
-                      <td><kbd>Ctrl</kbd>+<kbd>T</kbd></td>
-                      <td>Edit tags for the selection or checked rows</td>
-                    </tr>
-                    <tr>
-                      <td><kbd>Shift</kbd>+<kbd>Space</kbd></td>
-                      <td>Expand the <strong>Viewer</strong> to a large overlay; <kbd>Esc</kbd> closes it</td>
-                    </tr>
-                    <tr>
-                      <td><kbd>Esc</kbd></td>
-                      <td>Close the large Viewer; with no dialog open, close breadcrumb flyouts one step at a time, then the open ▾ menu</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <p class="text-muted mb-0 mt-3 small">
-                Typing letters jumps to matching rows in the results table; this is ignored while the cursor is in a text field.
-                <kbd>Ctrl</kbd>+<kbd>/</kbd> focuses the search box even from other fields. Many shortcuts are off while a <strong>dialog</strong> is open, including <kbd>Ctrl</kbd>+<kbd>C</kbd>,
-                <kbd>X</kbd>, and <kbd>V</kbd>.
-              </p>
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer py-2">
-          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
-        </div>
-      </div>
-    </div>
-  </div>
+  <!-- Help modal loaded from help.html at startup -->
+  <div id="helpModalContainer"></div>
+  <script>
+    (function () {
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', './help.html', false);
+      xhr.send();
+      if (xhr.status === 200 || xhr.status === 0) {
+        document.getElementById('helpModalContainer').innerHTML = xhr.responseText;
+      }
+    })();
+  </script>
+
 
   <!-- Vendor JS: sync fetch + eval so order is guaranteed if primary CDN is slow/down (script onerror would race). -->
   <script>

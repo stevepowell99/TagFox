@@ -455,8 +455,8 @@ async function copySourcesIntoScopeFolder(sourcePaths, destDirRaw, rootPrefix, r
   const v = await validateScopePasteDestination(destDirRaw, rootPrefix, {
     noDest: 'No destination folder.',
     destNotUnderRoot: 'Destination must stay under the configured root folder.',
-    destMissing: 'Scope folder does not exist or is not reachable.',
-    destNotDir: 'Scope path is not a folder.',
+    destMissing: 'Current folder does not exist or is not reachable.',
+    destNotDir: 'Current folder path is not a folder.',
   });
   if (!v.ok) return v;
   const destDir = v.destDir;
@@ -1231,7 +1231,7 @@ function toggleMainWindowFromGlobalShortcut() {
       ? mainWindowRef
       : BrowserWindow.getAllWindows().find((x) => x && !x.isDestroyed());
   if (!w || w.isDestroyed()) return;
-  if (w.isVisible() && !w.isMinimized()) w.hide();
+  if (w.isVisible() && !w.isMinimized() && w.isFocused()) w.hide();
   else {
     if (w.isMinimized()) w.restore();
     w.show();
@@ -2149,7 +2149,7 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
       { type: 'separator' },
       { label: 'Folder', enabled: false },
       {
-        label: 'New folder in scope…',
+        label: 'New folder in current folder…',
         enabled: scopeAvail,
         click: () => {
           done({ ok: true, action: 'newFolderInScope' });

@@ -1,0 +1,330 @@
+<!-- Help modal – loaded into index.html via sync XHR at startup -->
+<div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style="max-width: 56rem">
+    <div class="modal-content help-modal-content">
+      <div class="modal-header py-2">
+        <h2 class="modal-title fs-5" id="helpModalLabel">&#x1F98A; TagFox Help</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-0 d-flex help-modal-body">
+        <!-- Side nav -->
+        <ul class="nav nav-pills flex-column flex-shrink-0 help-side-nav py-2 border-end" id="helpModalTabs" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active text-start" id="help-tab-essentials" data-bs-toggle="tab" data-bs-target="#help-pane-essentials" type="button" role="tab" data-help-tab="essentials">&#x1F680; Get started</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link text-start" id="help-tab-motivation" data-bs-toggle="tab" data-bs-target="#help-pane-motivation" type="button" role="tab" data-help-tab="motivation">&#x1F4A1; Why TagFox?</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link text-start" id="help-tab-features" data-bs-toggle="tab" data-bs-target="#help-pane-features" type="button" role="tab" data-help-tab="features">&#x2728; Features</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link text-start" id="help-tab-search" data-bs-toggle="tab" data-bs-target="#help-pane-search" type="button" role="tab" data-help-tab="search">&#x1F50D; Search &amp; views</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link text-start" id="help-tab-files-folders" data-bs-toggle="tab" data-bs-target="#help-pane-files-folders" type="button" role="tab" data-help-tab="files-folders">&#x1F4C1; Files &amp; folders</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link text-start" id="help-tab-favourites" data-bs-toggle="tab" data-bs-target="#help-pane-favourites" type="button" role="tab" data-help-tab="favourites">&#x2B50; Favourites</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link text-start" id="help-tab-shelf" data-bs-toggle="tab" data-bs-target="#help-pane-shelf" type="button" role="tab" data-help-tab="shelf">&#x1F4E6; Shelf</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link text-start" id="help-tab-projects" data-bs-toggle="tab" data-bs-target="#help-pane-projects" type="button" role="tab" data-help-tab="projects">&#x1F4CB; Projects &amp; TODOs</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link text-start" id="help-tab-gotchas" data-bs-toggle="tab" data-bs-target="#help-pane-gotchas" type="button" role="tab" data-help-tab="gotchas">&#x26A0;&#xFE0F; Gotchas</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link text-start" id="help-tab-installation" data-bs-toggle="tab" data-bs-target="#help-pane-installation" type="button" role="tab" data-help-tab="installation">&#x1F4E6; Installation</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link text-start" id="help-tab-shortcuts" data-bs-toggle="tab" data-bs-target="#help-pane-shortcuts" type="button" role="tab" data-help-tab="shortcuts">&#x2328;&#xFE0F; Shortcuts</button>
+          </li>
+        </ul>
+        <!-- Tab content -->
+        <div class="tab-content flex-grow-1 min-w-0 px-3 pb-3 overflow-y-auto help-tab-body">
+          <!-- GET STARTED -->
+          <div class="tab-pane fade show active" id="help-pane-essentials" role="tabpanel" aria-labelledby="help-tab-essentials">
+            <p class="mt-3 mb-3">Welcome! Here's the quick version &mdash; everything you need to know to start using TagFox.</p>
+            <ol class="mb-0 ps-3">
+              <li class="mb-2">
+                <strong>&#x1F50C; TagFox needs Everything.</strong> It's a fast file-finder app by Voidtools. TagFox talks to Everything's HTTP server &mdash; without it running, you'll see an empty list. Set the URL in <strong>Settings</strong> (top-left).
+              </li>
+              <li class="mb-2">
+                <strong>&#x1F4C2; Pick a folder to work in.</strong> The breadcrumb bar (under the favourite chips) shows your <em>current folder</em>. Search, paste, and new files all happen inside it. Leave it empty to search your whole disk.
+              </li>
+              <li class="mb-2">
+                <strong>&#x1F441;&#xFE0F; Four ways to view results.</strong> The icon buttons next to the search box switch between: <em>Flat list</em> (shows a Path column), <em>One level</em> (just this folder), <em>Directories only</em> (folders only), and <em>Full tree</em> (files + folders in a tree). Hover each icon for a description.
+              </li>
+              <li class="mb-2">
+                <strong>&#x1F3F7;&#xFE0F; Tags live in filenames.</strong> TagFox adds tags like <code>[(draft)]</code> or <code>[(TODO)]</code> to file and folder names. They work everywhere &mdash; Explorer, Google Drive, zip files. No hidden database.
+              </li>
+              <li class="mb-2">
+                <strong>&#x2B50; Favourites instead of tabs.</strong> Save folders and searches as chips; <strong>drag</strong> chips to reorder keyboard slots. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>&hellip;<kbd>9</kbd> &mdash; folders; <kbd>Ctrl</kbd>+<kbd>1</kbd>&hellip;<kbd>9</kbd> &mdash; saved searches. See <strong>&#x2B50; Favourites</strong> and <strong>&#x1F4E6; Shelf</strong>.
+              </li>
+              <li class="mb-2">
+                <strong>&#x1F440; The Viewer panel</strong> (right side) previews images, PDFs, Office files, markdown, and more. For folders, it shows a &ldquo;folder doc&rdquo; (<code>readme.md</code> etc.) you can edit right there.
+              </li>
+              <li class="mb-2">
+                <strong>&#x2601;&#xFE0F; Cloud sync has limits.</strong> Google Drive and OneDrive &ldquo;streaming&rdquo; mode (files download on demand) can make renames and moves unreliable &mdash; see <strong>&#x26A0;&#xFE0F; Gotchas</strong>.
+              </li>
+              <li class="mb-0">
+                <strong>&#x2753; Press <kbd>F1</kbd> anytime</strong> to reopen this help. It remembers which tab you were on.
+              </li>
+            </ol>
+          </div>
+
+          <!-- WHY TAGFOX? -->
+          <div class="tab-pane fade" id="help-pane-motivation" role="tabpanel" aria-labelledby="help-tab-motivation">
+            <h3 class="fs-6 text-secondary mt-3 mb-2">&#x1F914; The problem</h3>
+            <p class="mb-2">
+              Searching the web feels instant. Searching your own hard drive? Painfully slow &mdash; unless you use an index tool like <strong>Voidtools Everything</strong>. But even Everything gives you a flat list of results without showing <em>where</em> things fit in your folder structure.
+            </p>
+            <p class="mb-2">
+              Meanwhile, tools like Google Drive train you to type a word and expect the right file. But you still get a flat list. When your projects have folders with similar names, you quickly lose track of what belongs where.
+            </p>
+            <h3 class="fs-6 text-secondary mb-2">&#x1F98A; What TagFox does differently</h3>
+            <p class="mb-2">
+              TagFox combines <strong>instant search</strong> (powered by Everything) with a <strong>folder tree view</strong> &mdash; so you see results <em>in context</em>. You can navigate folders, tag files, preview documents, and manage simple project TODOs without ever opening File Explorer.
+            </p>
+            <p class="mb-2">
+              Tags are stored in the filename itself (e.g. <code>Report[(draft,urgent)].docx</code>), so they travel with the file &mdash; no proprietary database, no hidden metadata folders. They work in Explorer, Google Drive, zip exports, everywhere.
+            </p>
+            <p class="mb-0 text-muted">
+              TagFox is deliberately simple: fast search, tags, previews, keyboard shortcuts, favourites, and a shelf &mdash; not a full project-management suite.
+            </p>
+          </div>
+
+          <!-- FEATURES -->
+          <div class="tab-pane fade" id="help-pane-features" role="tabpanel" aria-labelledby="help-tab-features">
+            <ul class="mt-3 mb-0 ps-3">
+              <li class="mb-2">&#x2328;&#xFE0F; <strong>Keyboard-first</strong> &mdash; navigate, tag, rename, bulk-edit and search without touching the mouse. See <strong>&#x2328;&#xFE0F; Shortcuts</strong>.</li>
+              <li class="mb-2">&#x2B50; <strong>Favourite folders &amp; saved searches</strong> &mdash; drag chips to reorder; folders: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>&hellip;<kbd>9</kbd>; saved searches: <kbd>Ctrl</kbd>+<kbd>1</kbd>&hellip;<kbd>9</kbd> (or click).</li>
+              <li class="mb-2">&#x1F50D; <strong>Four result views</strong> &mdash; flat list, one-level, directories-only, or full tree. Plus recency buttons (1h, 1d, 1w, 1m, 1y) to filter &ldquo;what changed recently&rdquo;.</li>
+              <li class="mb-2">&#x1F441;&#xFE0F; <strong>Fast previews</strong> &mdash; images, PDFs, Word, Excel, PowerPoint, text, JSON, markdown and more, right in the Viewer panel.</li>
+              <li class="mb-2">&#x1F3F7;&#xFE0F; <strong>Filename tags</strong> &mdash; add, remove and filter by <code>[(tag)]</code> labels. Tags scan your folder automatically; click them to filter results.</li>
+              <li class="mb-2">&#x1F4CB; <strong>Add TODO</strong> &mdash; create a small markdown file tagged <code>[(TODO)]</code> in the current folder, right from the Viewer panel.</li>
+              <li class="mb-2">&#x1F4DD; <strong>Folder docs</strong> &mdash; every folder can have a <code>readme.md</code> (or <code>claude.md</code>, <code>agents.md</code>, <code>about.md</code>&hellip;) describing what's inside. Edit it right in the Viewer.</li>
+              <li class="mb-2">&#x1F4E6; <strong>Shelf</strong> &mdash; a visual staging area for files. Copy items onto the Shelf, navigate to another folder, paste them. No tabs or split panes needed.</li>
+              <li class="mb-2">&#x1F504; <strong>Bulk rename</strong> &mdash; check several files, press <kbd>Ctrl</kbd>+<kbd>H</kbd>, use wildcards (<code>*</code> / <code>?</code>) to find-and-replace in filenames with a live preview.</li>
+              <li class="mb-0">&#x2601;&#xFE0F; <strong>Mixed local + Google Docs</strong> &mdash; local Office files preview inline; Google Workspace shortcuts (<code>.gdoc</code> etc.) open in a popup window so you don't lose your place.</li>
+            </ul>
+          </div>
+
+          <!-- SEARCH & VIEWS -->
+          <div class="tab-pane fade" id="help-pane-search" role="tabpanel" aria-labelledby="help-tab-search">
+            <h3 class="fs-6 text-secondary mt-3 mb-2">&#x1F4C2; Current folder</h3>
+            <ul class="mb-3 ps-3">
+              <li>The <strong>breadcrumb</strong> under the favourites row shows your <strong>current folder</strong>. Everything you search, create and paste goes here. Clear it (&#x2715; button) to search your whole index.</li>
+              <li>The &#x270F;&#xFE0F; <strong>pen button</strong> lets you type a path directly. Press <kbd>Enter</kbd> to apply, <kbd>Esc</kbd> to cancel.</li>
+              <li>The &#x1F550; <strong>clock button</strong> (or <kbd>Ctrl</kbd>+<kbd>L</kbd>) shows your recently-used folders.</li>
+            </ul>
+            <h3 class="fs-6 text-secondary mb-2">&#x1F50D; Searching</h3>
+            <ul class="mb-3 ps-3">
+              <li>Type in the search box &mdash; results update as you type. Press <kbd>Enter</kbd> to force a refresh.</li>
+              <li>Tip: <code>foo|bar</code> matches either word. <code>!foo</code> excludes files matching &ldquo;foo&rdquo;.</li>
+              <li>The <strong>Advanced</strong> button opens extra options: match case, match path, whole word, diacritics.</li>
+            </ul>
+            <h3 class="fs-6 text-secondary mb-2">&#x1F441;&#xFE0F; Four result views</h3>
+            <p class="mb-2">The four icon buttons next to the search box control how results are displayed:</p>
+            <ul class="mb-3 ps-3">
+              <li><i class="fa-solid fa-list fa-fw"></i> <strong>Flat</strong> &mdash; a simple list of all matching files and folders. Shows the Path column so you can see where each item lives.</li>
+              <li><i class="fa-solid fa-folder fa-fw"></i> <strong>One level</strong> &mdash; only items directly in the current folder (no deeper). Great for browsing.</li>
+              <li><i class="fa-solid fa-folder-tree fa-fw"></i> <strong>Directories only</strong> &mdash; shows folders only (no files), recursively under the current folder. Useful for navigating a project structure.</li>
+              <li><i class="fa-solid fa-sitemap fa-fw"></i> <strong>Full tree</strong> &mdash; all files and folders in a tree layout with nesting. Path column is hidden because the tree structure shows it.</li>
+            </ul>
+            <h3 class="fs-6 text-secondary mb-2">&#x23F1;&#xFE0F; Recency &amp; sorting</h3>
+            <ul class="mb-3 ps-3">
+              <li>The <strong>recency buttons</strong> (1h, 1d, 1w, 1m, 1y, All) filter results to items modified recently &mdash; handy for &ldquo;what did I change today?&rdquo;.</li>
+              <li>Click any <strong>column header</strong> to sort by that column. Click again to reverse. Drag the edges between headers to resize columns.</li>
+            </ul>
+            <h3 class="fs-6 text-secondary mb-2">&#x23EA; Search history</h3>
+            <ul class="mb-0 ps-3">
+              <li>Use <kbd>Alt</kbd>+<kbd>&#x2190;</kbd> / <kbd>&#x2192;</kbd> (or the arrow buttons top-left) to step back and forward through your recent searches. Each step restores the full search &mdash; query, folder, tags, sort, and filters.</li>
+            </ul>
+          </div>
+
+          <!-- FILES & FOLDERS -->
+          <div class="tab-pane fade" id="help-pane-files-folders" role="tabpanel" aria-labelledby="help-tab-files-folders">
+            <h3 class="fs-6 text-secondary mt-3 mb-2">&#x1F9ED; Breadcrumb navigation</h3>
+            <ul class="mb-3 ps-3">
+              <li>Click any segment of the breadcrumb to jump to that folder.</li>
+              <li>The small <strong>&#x25BE;</strong> arrows between segments show sibling folders; the one after the last segment shows children. You can hover into nested menus to drill down quickly.</li>
+              <li>The &#x25C0; &#x25B2; &#x25B6; chevrons next to the search box go to the previous sibling, parent, or next sibling folder.</li>
+            </ul>
+            <h3 class="fs-6 text-secondary mb-2">&#x1F3F7;&#xFE0F; Tags</h3>
+            <ul class="mb-3 ps-3">
+              <li>Tags appear as coloured chips in the tag bar (below the breadcrumb). Click a tag to filter results; click again to remove the filter.</li>
+              <li>To edit a file's tags: select the row and press <kbd>Ctrl</kbd>+<kbd>T</kbd>, or use the <strong>Tags</strong> button in the bulk bar.</li>
+              <li>Tags are stored as <code>[(tag1,tag2)]</code> at the end of the filename &mdash; e.g. <code>Notes[(draft)].md</code>. Plain <code>[text]</code> without parentheses is <em>not</em> a TagFox tag.</li>
+            </ul>
+            <h3 class="fs-6 text-secondary mb-2">&#x1F4C4; Viewer panel</h3>
+            <ul class="mb-0 ps-3">
+              <li>Select a file to see its details and preview on the right. Supports images, PDFs, Office files, markdown, text, audio, and video.</li>
+              <li>For folders, the Viewer shows a <strong>folder doc</strong> &mdash; the first <code>readme.md</code>, <code>about.md</code>, <code>claude.md</code> etc. it finds. You can edit and save it right there. If none exists, saving creates <code>readme.md</code>.</li>
+              <li>The row <strong>&#x22EF;</strong> menu gives you options to open, reveal in Explorer, copy the path, and more.</li>
+              <li>Press <kbd>Shift</kbd>+<kbd>Space</kbd> to expand the Viewer to near-fullscreen.</li>
+            </ul>
+          </div>
+
+          <!-- FAVOURITES -->
+          <div class="tab-pane fade" id="help-pane-favourites" role="tabpanel" aria-labelledby="help-tab-favourites">
+            <h3 class="fs-6 text-secondary mt-3 mb-2">&#x1F4C2; Favourite folders</h3>
+            <ul class="mb-3 ps-3">
+              <li>The &#x1F4BE; <strong>save button</strong> on the favourites row saves the current folder as a chip. Click a chip to jump there; &#x2715; removes it.</li>
+              <li><strong>Drag</strong> a folder chip (grab anywhere except the subfolder &#x25BE; control or &#x2715;) to reorder. While dragging, the <strong>gaps</strong> between chips widen and the <strong>active gap</strong> highlights &mdash; drop there (not on a pill). <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>&hellip;<kbd>9</kbd> follows <em>left-to-right</em> order.</li>
+            </ul>
+            <h3 class="fs-6 text-secondary mb-2">&#x1F516; Saved searches</h3>
+            <ul class="mb-0 ps-3">
+              <li>The &#x1F4BE; on the <strong>saved searches</strong> row saves your entire search state &mdash; query, folder, tags, filters, sort, and view mode.</li>
+              <li><strong>Drag</strong> a numbered chip (not &#x2715;) to reorder; the <strong>highlighted gap</strong> is the drop target. <kbd>Ctrl</kbd>+<kbd>1</kbd>&hellip;<kbd>9</kbd> restores the search in that slot, or click the chip.</li>
+              <li>Together, favourite folders and saved searches replace browser-style tabs &mdash; you get instant switching without the clutter.</li>
+            </ul>
+          </div>
+
+          <!-- SHELF -->
+          <div class="tab-pane fade" id="help-pane-shelf" role="tabpanel" aria-labelledby="help-tab-shelf">
+            <h3 class="fs-6 text-secondary mt-3 mb-2">&#x1F4E6; What is the Shelf?</h3>
+            <p class="mb-2">The Shelf is the narrow vertical strip to the left of the results table. It's a <strong>staging area</strong> for files you want to move or copy between folders.</p>
+            <h3 class="fs-6 text-secondary mb-2">&#x1F504; How to use it</h3>
+            <ol class="mb-3 ps-3">
+              <li class="mb-2">Select files in the results and click <strong>Add to Shelf</strong> (or drag them onto the Shelf strip).</li>
+              <li class="mb-2">Navigate to a different folder.</li>
+              <li class="mb-2">Open the Shelf, select the items, and paste or drag them into the new location.</li>
+            </ol>
+            <h3 class="fs-6 text-secondary mb-2">&#x1F4A1; Tips</h3>
+            <ul class="mb-0 ps-3">
+              <li>The <strong>OS drag</strong> button lets you drag Shelf items straight into Explorer or other apps.</li>
+              <li>The Shelf remembers its contents until you clear it &mdash; you can collect files from multiple folders before pasting.</li>
+              <li>Think of it as a clipboard for files that doesn't disappear when you navigate away.</li>
+            </ul>
+          </div>
+
+          <!-- PROJECTS & TODOS -->
+          <div class="tab-pane fade" id="help-pane-projects" role="tabpanel" aria-labelledby="help-tab-projects">
+            <p class="mt-3 mb-2">
+              TagFox lets you manage simple projects right on your filesystem &mdash; no separate app needed.
+            </p>
+            <ul class="mb-3 ps-3">
+              <li class="mb-2">
+                &#x1F4CB; <strong>Add TODO</strong> &mdash; in the Viewer panel, type a title and hit save. TagFox creates a markdown file like <code>Buy milk[(TODO)].md</code> in your current folder. The <code>[(TODO)]</code> tag makes it easy to find later.
+              </li>
+              <li class="mb-2">
+                &#x1F4DD; <strong>Folder docs</strong> &mdash; write a short description of what a folder is for. Tag it <em>active</em>, <em>archived</em>, etc. to track project status. Filter by tag to see only active work.
+              </li>
+              <li class="mb-2">
+                &#x1F332; <strong>Tree view + tags = lightweight project management.</strong> You can organise a whole project with markdown notes, tags, and folder docs &mdash; no proprietary database. Everything stays as normal files that work in Explorer, Drive, and zip exports.
+              </li>
+              <li class="text-muted mb-0">
+                &#x1F4A1; Tip: if renaming <strong>folders</strong> on synced Google Drive is unreliable, just tag <em>files</em> instead and add a <code>readme.md</code> in the folder root.
+              </li>
+            </ul>
+          </div>
+
+          <!-- GOTCHAS -->
+          <div class="tab-pane fade" id="help-pane-gotchas" role="tabpanel" aria-labelledby="help-tab-gotchas">
+            <p class="mt-3 mb-2">Things that might trip you up:</p>
+            <ul class="mt-2 mb-0 ps-3">
+              <li class="mb-2">
+                &#x2601;&#xFE0F; <strong>Cloud &ldquo;streaming&rdquo; mode</strong> (Google Drive / OneDrive) &mdash; files look local but download on demand. Search and previews usually work, but renames, moves and deep paths can fail or behave oddly. If you switch to &ldquo;full mirroring&rdquo; in your sync app, things work more reliably.
+              </li>
+              <li class="mb-2">
+                &#x1F4C2; <strong>Tagging folders</strong> means renaming them on disk. Windows sometimes blocks renames if something has the folder open (e.g. a terminal, an editor). Tagging <em>files</em> is always reliable.
+              </li>
+              <li class="mb-2">
+                &#x1F4C4; <strong>Google Docs shortcuts</strong> (<code>.gdoc</code> etc.) show one name in Drive on the web and a different name locally after you tag them &mdash; this mismatch is expected.
+              </li>
+              <li class="mb-2">
+                &#x1F465; <strong>Shared Drive files</strong> from other people may not open in the popup window the same way your own do &mdash; it depends on whether they're streamed or mirrored.
+              </li>
+              <li class="mb-2">
+                &#x1F527; <strong>Everything 1.5 vs 1.4</strong> &mdash; some advanced search features work better with Everything 1.5+. Both versions work, but 1.5 is recommended.
+              </li>
+              <li class="mb-0">
+                &#x26A1; <strong>Everything must be running.</strong> TagFox only talks to Everything's HTTP server &mdash; if Everything is closed, you'll get no results.
+              </li>
+            </ul>
+          </div>
+
+          <!-- INSTALLATION -->
+          <div class="tab-pane fade" id="help-pane-installation" role="tabpanel" aria-labelledby="help-tab-installation">
+            <p class="mt-3 mb-2">Getting TagFox up and running takes about five minutes:</p>
+            <ol class="ps-3">
+              <li class="mb-2">
+                <strong>Install <a href="https://www.voidtools.com/" target="_blank" rel="noopener">Voidtools Everything</a></strong> and let it finish its first index. TagFox uses Everything for search &mdash; it won't work without it.
+              </li>
+              <li class="mb-2">
+                <strong>Turn on the HTTP server</strong> in Everything:
+                <ul class="mt-1">
+                  <li><strong>Everything 1.5 (Alpha)</strong>: install the HTTP Server <em>plugin</em> first, then go to <strong>Tools &rarr; Options &rarr; HTTP Server</strong> &mdash; turn it on, set address to <code>127.0.0.1</code> and port to <code>8080</code> (or your preference). Optionally set a username/password.</li>
+                  <li><strong>Everything 1.4.x</strong>: HTTP is built in &mdash; just go to <strong>Tools &rarr; Options &rarr; HTTP Server</strong> and enable it. No plugin needed.</li>
+                </ul>
+              </li>
+              <li class="mb-2">
+                <strong>Start TagFox:</strong> in the TagFox folder, run <code>npm install</code> then <code>npm start</code>.
+              </li>
+              <li class="mb-2">
+                <strong>Configure the connection:</strong> open <strong>Settings</strong> (top-left), set <strong>Everything base URL</strong> to match (e.g. <code>http://127.0.0.1:8080</code>). If you set HTTP auth in Everything, enter the same username/password here.
+              </li>
+              <li class="mb-0">
+                <strong>Start browsing!</strong> Set a folder using the breadcrumb or path editor, type in the search box, and you should see results instantly.
+              </li>
+            </ol>
+          </div>
+
+          <!-- SHORTCUTS -->
+          <div class="tab-pane fade" id="help-pane-shortcuts" role="tabpanel" aria-labelledby="help-tab-shortcuts">
+            <p class="text-muted mb-2 mt-3">
+              <kbd>Ctrl</kbd> = <kbd>Ctrl</kbd> on Windows, <kbd>&#x2318;</kbd> on Mac.
+            </p>
+            <div class="table-responsive">
+              <table class="table table-sm table-striped mb-0">
+                <thead>
+                  <tr><th scope="col">Shortcut</th><th scope="col">What it does</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>/</kbd></td><td>Jump to the search box</td></tr>
+                  <tr><td><kbd>F1</kbd></td><td>Open this help</td></tr>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>,</kbd></td><td>Open / close Settings</td></tr>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>Space</kbd></td><td>Show / hide TagFox (works system-wide, even from other apps)</td></tr>
+                  <tr><td><kbd>&#x2191;</kbd> <kbd>&#x2193;</kbd></td><td>Move through the results list</td></tr>
+                  <tr><td><kbd>Space</kbd></td><td>Check / uncheck the current row</td></tr>
+                  <tr><td><kbd>Shift</kbd>+<kbd>&#x2191;</kbd>/<kbd>&#x2193;</kbd></td><td>Extend selection up or down</td></tr>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>A</kbd></td><td>Select all visible rows</td></tr>
+                  <tr><td><kbd>Enter</kbd></td><td>Open a file, or enter a folder</td></tr>
+                  <tr><td><kbd>&#x2190;</kbd></td><td>Change current folder: if the row is directly in this folder, go to its parent; if the row is nested, scope to the first subfolder on its path</td></tr>
+                  <tr><td><kbd>&#x2192;</kbd></td><td>On a folder row, scope into that folder</td></tr>
+                  <tr><td><kbd>Backspace</kbd></td><td>Go up to the parent folder</td></tr>
+                  <tr><td><kbd>F2</kbd></td><td>Rename the selected item</td></tr>
+                  <tr><td><kbd>Del</kbd></td><td>Delete selected items (Recycle Bin)</td></tr>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>H</kbd></td><td>Bulk rename with wildcards (<code>*</code> / <code>?</code>)</td></tr>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>T</kbd></td><td>Edit tags on the selected items</td></tr>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>X</kbd> / <kbd>V</kbd></td><td>Copy, cut, paste files (Explorer-compatible)</td></tr>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd></td><td>Copy full path(s) as text</td></tr>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></td><td>Create a new folder here</td></tr>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>L</kbd></td><td>Recent folders list</td></tr>
+                  <tr><td><kbd>Alt</kbd>+<kbd>&#x2190;</kbd> / <kbd>&#x2192;</kbd></td><td>Search history back / forward</td></tr>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>&hellip;<kbd>9</kbd></td><td>Jump to favourite folder #1&ndash;9 (chip order)</td></tr>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>1</kbd>&hellip;<kbd>9</kbd></td><td>Restore saved search #1&ndash;9</td></tr>
+                  <tr><td><kbd>F5</kbd></td><td>Refresh results</td></tr>
+                  <tr><td><kbd>Shift</kbd>+<kbd>Space</kbd></td><td>Expand Viewer to fullscreen</td></tr>
+                  <tr><td><kbd>Esc</kbd></td><td>Close expanded Viewer / menus</td></tr>
+                  <tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>Jump to first / last row</td></tr>
+                  <tr><td>Type letters</td><td>Jump to matching row by name</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="text-muted mb-0 mt-3">
+              Most shortcuts are disabled while a dialog (rename, tags, etc.) is open. <kbd>Ctrl</kbd>+<kbd>/</kbd> works from anywhere.
+            </p>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
