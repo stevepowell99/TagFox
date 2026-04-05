@@ -7,7 +7,7 @@ Small Electron UI for [Voidtools Everything](https://www.voidtools.com/) HTTP se
 1. In Everything: **Tools → Options → HTTP Server** — enable the server and note the URL (e.g. `http://127.0.0.1:8080`).
 2. In this folder: `npm install` then `npm start`.
 3. Open **Settings** and set **Everything base URL**. Optionally set a **starting current folder** (breadcrumb / path editor) so the app opens in a particular folder.
-4. Press **F1** or the **?** button for in-app help. **Ctrl+/** (**⌘+/** on Mac) focuses the search box; plain **/** does the same when no dialog is open. **Ctrl+,** (**⌘+,** on Mac) toggles the **Settings** panel.
+4. Press **F1** or the **?** button for in-app help. **Ctrl+/** (**⌘+/** on Mac) focuses the search box; plain **/** does the same when no dialog is open. **Esc** clears the search query when it has text, if no dialog or open dropdown is using **Esc** and focus is not in another text field (same as the search-row **×**). **Ctrl+,** (**⌘+,** on Mac) toggles the **Settings** panel.
 
 ## Bulk rename (Ctrl+H)
 

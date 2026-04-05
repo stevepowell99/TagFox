@@ -922,6 +922,14 @@
       commitSearchHistoryNow();
     }
 
+    /** Empty #query and refresh — same as the search-row ✕ (not current folder / scope). */
+    function clearSearchQuery() {
+      document.getElementById('query').value = '';
+      syncQueryFilledChrome();
+      scheduleSearch();
+      commitSearchHistoryNow();
+    }
+
     function applyPaneWidths() {
       document.getElementById('propsAside').style.width = propsPanePx + 'px';
     }
@@ -7052,12 +7060,7 @@
         commitSearchHistoryNow();
       });
     });
-    document.getElementById('btnClearQuery').addEventListener('click', () => {
-      document.getElementById('query').value = '';
-      syncQueryFilledChrome();
-      scheduleSearch();
-      commitSearchHistoryNow();
-    });
+    document.getElementById('btnClearQuery').addEventListener('click', () => clearSearchQuery());
     document.getElementById('btnClearScope').addEventListener('click', () => clearSearchScope());
     document.getElementById('httpUser').addEventListener('input', scheduleSearch);
     document.getElementById('httpPassword').addEventListener('input', scheduleSearch);
@@ -7720,6 +7723,23 @@
         e.preventDefault();
         hideBreadcrumbSubfolderFlyout();
         return;
+      }
+
+      /* Esc: clear query when it has text — only if no modal, no open Bootstrap dropdown, and not typing elsewhere (path editor, Settings, etc.). */
+      if (
+        e.key === 'Escape' &&
+        !document.querySelector('.modal.show') &&
+        !document.querySelector('.dropdown-menu.show')
+      ) {
+        const q = document.getElementById('query');
+        if (q && String(q.value || '').trim()) {
+          const t = e.target;
+          if (!isTypingTarget(t) || t === q) {
+            e.preventDefault();
+            clearSearchQuery();
+            return;
+          }
+        }
       }
 
       const modC = (e.ctrlKey || e.metaKey) && !e.altKey;
