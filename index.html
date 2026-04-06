@@ -265,28 +265,29 @@
           <input type="text" id="query" class="form-control" placeholder="" autocomplete="off" />
         </div>
         <div class="d-flex align-items-center flex-shrink-0 flex-wrap tagfox-search-opts-rhs">
-          <!-- Results layout: 3 independent toggles (Flat / Show subfolders / Hide files). -->
-          <div class="btn-group tagfox-segmented tagfox-results-view-mode flex-shrink-0" role="group" aria-label="Results layout">
-            <input type="checkbox" class="btn-check" id="optRvFlat" autocomplete="off" />
-            <label
-              class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon"
-              for="optRvFlat"
-              title="Flat view: show Path column, flat list."
-              aria-label="Flat view"
+          <!-- Results layout: 3 binary radio pairs (View / Subfolders / Content). -->
+          <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair flex-shrink-0" role="group" aria-label="View mode">
+            <input type="radio" class="btn-check" name="rvViewMode" id="optRvFlat" value="flat" autocomplete="off" />
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvFlat" title="Flat view"
               ><i class="fa-solid fa-list fa-fw" aria-hidden="true"></i></label>
-            <input type="checkbox" class="btn-check" id="optRvShowSubfolders" autocomplete="off" checked />
-            <label
-              class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon"
-              for="optRvShowSubfolders"
-              title="Show subfolders: include items from subdirectories."
-              aria-label="Show subfolders"
+            <input type="radio" class="btn-check" name="rvViewMode" id="optRvTree" value="tree" autocomplete="off" checked />
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvTree" title="Tree view"
+              ><i class="fa-solid fa-sitemap fa-fw" aria-hidden="true"></i></label>
+          </div>
+          <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair flex-shrink-0" role="group" aria-label="Subfolders">
+            <input type="radio" class="btn-check" name="rvSubfolders" id="optRvSubsOn" value="on" autocomplete="off" checked />
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvSubsOn" title="Include subfolders"
               ><i class="fa-solid fa-folder-tree fa-fw" aria-hidden="true"></i></label>
-            <input type="checkbox" class="btn-check" id="optRvHideFiles" autocomplete="off" />
-            <label
-              class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon"
-              for="optRvHideFiles"
-              title="Hide files: show only folders."
-              aria-label="Hide files"
+            <input type="radio" class="btn-check" name="rvSubfolders" id="optRvSubsOff" value="off" autocomplete="off" />
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvSubsOff" title="This folder only"
+              ><i class="fa-solid fa-folder fa-fw" aria-hidden="true"></i></label>
+          </div>
+          <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair flex-shrink-0" role="group" aria-label="Content filter">
+            <input type="radio" class="btn-check" name="rvContent" id="optRvAll" value="all" autocomplete="off" checked />
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvAll" title="Files and folders"
+              ><i class="fa-solid fa-copy fa-fw" aria-hidden="true"></i></label>
+            <input type="radio" class="btn-check" name="rvContent" id="optRvDirsOnly" value="dirs" autocomplete="off" />
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvDirsOnly" title="Folders only"
               ><i class="fa-solid fa-folder fa-fw" aria-hidden="true"></i></label>
           </div>
           <div class="btn-group tagfox-segmented flex-shrink-0" role="group" aria-label="Recency">
@@ -332,17 +333,17 @@
             >
               <span id="shelfEmptyHint" class="text-muted fw-semibold">Shelf</span>
               <div id="shelfChips" class="d-flex flex-wrap align-items-center gap-1"></div>
+              <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0" style="width: 1.5rem; height: 1.5rem" id="btnShelfClear" title="Delete everything in Shelf">
+                <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+              </button>
             </div>
-            <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0" id="btnShelfClear" title="Delete everything in Shelf">
-              Clear
-            </button>
             <button
               type="button"
               class="btn btn-sm btn-outline-secondary flex-shrink-0"
               id="btnShelfOsDrag"
-              title="Arm the next row or Shelf-chip drag as a real OS file drag (Explorer). Normal drags stay in-app."
+              title="Makes your next drag work like dragging a real file — you can drop it into File Explorer or any other app outside TagFox"
             >
-              OS drag
+              <i class="fa-solid fa-hand" aria-hidden="true"></i>
             </button>
           </div>
         </aside>

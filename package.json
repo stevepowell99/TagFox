@@ -18,6 +18,8 @@
     },
     "files": [
       "main.js",
+      "google-workspace-toolbar.html",
+      "google-workspace-toolbar-preload.js",
       "preload.js",
       "index.html",
       "help.html",

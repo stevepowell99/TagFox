@@ -40,7 +40,7 @@ Welcome! Here's the quick version — everything you need to know to start using
 
 1. **🔌 TagFox needs Everything Search.** It's a fast file-finder app by Voidtools. TagFox talks to Everything's HTTP server — without it running, you'll see an empty list. Set the URL in **Settings** (top-left).
 2. **📂 Pick a folder to work in.** The breadcrumb bar (under the favourite chips) shows your *current folder*. Search, paste, and new files all happen inside it. Leave it empty to search your whole disk.
-3. **👁️ Three view toggles.** The icon buttons next to the search box are independent on/off switches: *Flat view* (shows a Path column), *Show subfolders* (include items from subdirectories), and *Hide files* (show only folders). Combine them as you like — keyboard shortcuts: `l`, `s`, `f`.
+3. **👁️ Three view switches.** The icon-pair buttons next to the search box each let you pick between two modes: *Flat / Tree* view, *Subfolders on / off*, and *Files+folders / Folders only*. The active choice is highlighted. Keyboard shortcuts: `l`, `s`, `f`.
 4. **🏷️ Tags live in filenames.** TagFox adds tags in a `[(tag1,tag2)]` block in the **last** `[ ( … ) ]` pair of a name segment (e.g. `Notes[(draft,review)].md` shows as `Notes.md`). Plain `[text]` without inner `()` is not a TagFox tag. They work everywhere — Explorer, Google Drive, zip files. No hidden database.
 5. **⭐ Favourites instead of tabs.** Save folders and searches as chips; **drag** chips to reorder keyboard slots. `Ctrl`+`Shift`+`1`…`9` — folders; `Ctrl`+`1`…`9` — saved searches. See **⭐ Favourites** and **📦 Shelf**.
 6. **👀 The Viewer panel** (right side) previews images, PDFs, Office files, markdown, and more. For folders, it shows a “folder doc” (`readme.md` etc.) you can edit right there.
@@ -67,7 +67,7 @@ Tags are stored in the filename itself (e.g. `Report[(draft,urgent)].docx`), so 
 
 - ⌨️ **Keyboard-first** — navigate, tag, rename, bulk-edit and search without touching the mouse. See **⌨️ Shortcuts**.
 - ⭐ **Favourite folders & saved searches** — drag chips to reorder; folders: `Ctrl`+`Shift`+`1`…`9`; saved searches: `Ctrl`+`1`…`9` (or click).
-- 🔍 **Three view toggles** — Flat view, Show subfolders, Hide files (combine freely). Plus recency buttons (1h, 1d, 1w, 1m, 1y) to filter “what changed recently”.
+- 🔍 **Three view switches** — Flat/Tree, Subfolders on/off, Files+folders/Folders only (combine freely). Plus recency buttons (1h, 1d, 1w, 1m, 1y) to filter “what changed recently”.
 - 👁️ **Fast previews** — images, PDFs, Word, Excel, PowerPoint, text, JSON, markdown and more, right in the Viewer panel.
 - 🏷️ **Filename tags** — add, remove and filter by `[(tag)]` labels. Tags scan your folder automatically; click them to filter results.
 - 📋 **Add TODO** — create a small markdown file tagged `[(TODO)]` in the current folder, right from the Viewer panel.
@@ -96,11 +96,11 @@ Tags are stored in the filename itself (e.g. `Report[(draft,urgent)].docx`), so 
 
 ### 👁️ View toggles
 
-Three independent toggle buttons next to the search box — combine them freely:
+Three icon-pair switches next to the search box — combine them freely:
 
-- <i class="fa-solid fa-list fa-fw"></i> **Flat view** (`l`) — shows the Path column for a flat list. When off, results use a tree layout.
-- <i class="fa-solid fa-folder-tree fa-fw"></i> **Show subfolders** (`s`) — include items from subdirectories. When off, only items directly in the current folder appear.
-- <i class="fa-solid fa-folder fa-fw"></i> **Hide files** (`f`) — show only folders (no files). Useful for navigating a project structure.
+- <i class="fa-solid fa-list fa-fw"></i> / <i class="fa-solid fa-sitemap fa-fw"></i> **Flat / Tree** (`l`) — flat list with Path column, or tree layout grouped by folder.
+- <i class="fa-solid fa-folder-tree fa-fw"></i> / <i class="fa-solid fa-folder fa-fw"></i> **Subfolders on / off** (`s`) — include items from subdirectories, or show only this folder.
+- <i class="fa-solid fa-copy fa-fw"></i> / <i class="fa-solid fa-folder fa-fw"></i> **Files+folders / Folders only** (`f`) — show everything, or folders only.
 
 ### ⏱️ Recency & sorting
 
@@ -218,10 +218,10 @@ Getting TagFox up and running takes about five minutes:
 <tr><td><kbd>Esc</kbd></td><td>Close expanded Viewer / flyouts; if no dialog or open menu needs it — clear query when it has text, or with focus in the search box and an empty query, clear current folder (whole index)</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>Backspace</kbd></td><td>Clear current folder (whole index) from any focus when a folder is set; skipped if a dialog is open (replaces the usual “delete word” shortcut in text fields while scope is active)</td></tr>
 <tr><td><kbd>F5</kbd> or <kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>Refresh results</td></tr>
-<tr><td><kbd>l</kbd></td><td>Toggle Flat view (list with Path column)</td></tr>
-<tr><td><kbd>s</kbd></td><td>Toggle Show subfolders</td></tr>
-<tr><td><kbd>f</kbd></td><td>Toggle Hide files (folders only)</td></tr>
-<tr><td><kbd>z</kbd> / <kbd>m</kbd> / <kbd>n</kbd> / <kbd>p</kbd></td><td>Sort by Size / Modified / Name / Path (repeat to toggle direction; <kbd>p</kbd> useful in tree view where Path column is hidden)</td></tr>
+<tr><td><kbd>l</kbd></td><td>Switch Flat / Tree view</td></tr>
+<tr><td><kbd>s</kbd></td><td>Switch Subfolders on / off</td></tr>
+<tr><td><kbd>f</kbd></td><td>Switch Files+folders / Folders only</td></tr>
+<tr><td><kbd>z</kbd> / <kbd>m</kbd> / <kbd>n</kbd></td><td>Sort by Size / Modified / Name (repeat toggles direction). In <strong>Tree</strong> view, those sorts or the same column headers switch to <strong>Flat</strong> first (status bar note); Tree alone keeps path A→Z.</td></tr>
 </tbody></table></div>
 
 <h6 class="text-secondary mt-3 mb-1">Navigation</h6>

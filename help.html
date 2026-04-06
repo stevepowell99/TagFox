@@ -83,7 +83,7 @@
               <ol>
               <li><strong>🔌 TagFox needs Everything Search.</strong> It&#39;s a fast file-finder app by Voidtools. TagFox talks to Everything&#39;s HTTP server — without it running, you&#39;ll see an empty list. Set the URL in <strong>Settings</strong> (top-left).</li>
               <li><strong>📂 Pick a folder to work in.</strong> The breadcrumb bar (under the favourite chips) shows your <em>current folder</em>. Search, paste, and new files all happen inside it. Leave it empty to search your whole disk.</li>
-              <li><strong>👁️ Three view toggles.</strong> The icon buttons next to the search box are independent on/off switches: <em>Flat view</em> (shows a Path column), <em>Show subfolders</em> (include items from subdirectories), and <em>Hide files</em> (show only folders). Combine them as you like — keyboard shortcuts: <code>l</code>, <code>s</code>, <code>f</code>.</li>
+              <li><strong>👁️ Three view switches.</strong> The icon-pair buttons next to the search box each let you pick between two modes: <em>Flat / Tree</em> view, <em>Subfolders on / off</em>, and <em>Files+folders / Folders only</em>. The active choice is highlighted. Keyboard shortcuts: <code>l</code>, <code>s</code>, <code>f</code>.</li>
               <li><strong>🏷️ Tags live in filenames.</strong> TagFox adds tags in a <code>[(tag1,tag2)]</code> block in the <strong>last</strong> <code>[ ( … ) ]</code> pair of a name segment (e.g. <code>Notes[(draft,review)].md</code> shows as <code>Notes.md</code>). Plain <code>[text]</code> without inner <code>()</code> is not a TagFox tag. They work everywhere — Explorer, Google Drive, zip files. No hidden database.</li>
               <li><strong>⭐ Favourites instead of tabs.</strong> Save folders and searches as chips; <strong>drag</strong> chips to reorder keyboard slots. <code>Ctrl</code>+<code>Shift</code>+<code>1</code>…<code>9</code> — folders; <code>Ctrl</code>+<code>1</code>…<code>9</code> — saved searches. See <strong>⭐ Favourites</strong> and <strong>📦 Shelf</strong>.</li>
               <li><strong>👀 The Viewer panel</strong> (right side) previews images, PDFs, Office files, markdown, and more. For folders, it shows a “folder doc” (<code>readme.md</code> etc.) you can edit right there.</li>
@@ -109,7 +109,7 @@
               <ul>
               <li>⌨️ <strong>Keyboard-first</strong> — navigate, tag, rename, bulk-edit and search without touching the mouse. See <strong>⌨️ Shortcuts</strong>.</li>
               <li>⭐ <strong>Favourite folders &amp; saved searches</strong> — drag chips to reorder; folders: <code>Ctrl</code>+<code>Shift</code>+<code>1</code>…<code>9</code>; saved searches: <code>Ctrl</code>+<code>1</code>…<code>9</code> (or click).</li>
-              <li>🔍 <strong>Three view toggles</strong> — Flat view, Show subfolders, Hide files (combine freely). Plus recency buttons (1h, 1d, 1w, 1m, 1y) to filter “what changed recently”.</li>
+              <li>🔍 <strong>Three view switches</strong> — Flat/Tree, Subfolders on/off, Files+folders/Folders only (combine freely). Plus recency buttons (1h, 1d, 1w, 1m, 1y) to filter “what changed recently”.</li>
               <li>👁️ <strong>Fast previews</strong> — images, PDFs, Word, Excel, PowerPoint, text, JSON, markdown and more, right in the Viewer panel.</li>
               <li>🏷️ <strong>Filename tags</strong> — add, remove and filter by <code>[(tag)]</code> labels. Tags scan your folder automatically; click them to filter results.</li>
               <li>📋 <strong>Add TODO</strong> — create a small markdown file tagged <code>[(TODO)]</code> in the current folder, right from the Viewer panel.</li>
@@ -139,12 +139,12 @@
               <li>The <strong>Advanced</strong> button opens extra options: match case, match path, whole word, diacritics. <strong>Hide special</strong> (there) hides paths with segments starting with <code>.</code>, <code>~</code>, or <code>$</code>, plus <code>desktop.ini</code>; works best server-side on Everything 1.5+.</li>
               <li><strong>Tree View</strong> (sitemap icon next to the search box) is a one-click preset: path sort A→Z, Path column hidden, recursive on, files and folders. It stays on only while that whole bundle matches; changing sort, columns, recursive, or type filter turns it off.</li>
               </ul>
-              <h3>👁️ View toggles</h3>
-              <p>Three independent toggle buttons next to the search box — combine them freely:</p>
+              <h3>👁️ View switches</h3>
+              <p>Three icon-pair switches next to the search box — combine them freely:</p>
               <ul>
-              <li><i class="fa-solid fa-list fa-fw"></i> <strong>Flat view</strong> (<code>l</code>) — shows the Path column for a flat list. When off, results use a tree layout.</li>
-              <li><i class="fa-solid fa-folder-tree fa-fw"></i> <strong>Show subfolders</strong> (<code>s</code>) — include items from subdirectories. When off, only items directly in the current folder appear.</li>
-              <li><i class="fa-solid fa-folder fa-fw"></i> <strong>Hide files</strong> (<code>f</code>) — show only folders (no files). Useful for navigating a project structure.</li>
+              <li><i class="fa-solid fa-list fa-fw"></i> / <i class="fa-solid fa-sitemap fa-fw"></i> <strong>Flat / Tree</strong> (<code>l</code>) — flat list with Path column, or tree layout grouped by folder.</li>
+              <li><i class="fa-solid fa-folder-tree fa-fw"></i> / <i class="fa-solid fa-folder fa-fw"></i> <strong>Subfolders on / off</strong> (<code>s</code>) — include items from subdirectories, or show only this folder.</li>
+              <li><i class="fa-solid fa-copy fa-fw"></i> / <i class="fa-solid fa-folder fa-fw"></i> <strong>Files+folders / Folders only</strong> (<code>f</code>) — show everything, or folders only.</li>
               </ul>
               <h3>⏱️ Recency &amp; sorting</h3>
               <ul>
@@ -281,10 +281,10 @@
               <tr><td><kbd>Esc</kbd></td><td>Close expanded Viewer / flyouts; if no dialog or open menu needs it — clear query when it has text, or with focus in the search box and an empty query, clear current folder (whole index)</td></tr>
               <tr><td><kbd>Ctrl</kbd>+<kbd>Backspace</kbd></td><td>Clear current folder (whole index) from any focus when a folder is set; skipped if a dialog is open (replaces the usual “delete word” shortcut in text fields while scope is active)</td></tr>
               <tr><td><kbd>F5</kbd> or <kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>Refresh results</td></tr>
-              <tr><td><kbd>l</kbd></td><td>Toggle Flat view (list with Path column)</td></tr>
-              <tr><td><kbd>s</kbd></td><td>Toggle Show subfolders</td></tr>
-              <tr><td><kbd>f</kbd></td><td>Toggle Hide files (folders only)</td></tr>
-              <tr><td><kbd>z</kbd> / <kbd>m</kbd> / <kbd>n</kbd> / <kbd>p</kbd></td><td>Sort by Size / Modified / Name / Path (repeat to toggle direction; <kbd>p</kbd> useful in tree view where Path column is hidden)</td></tr>
+              <tr><td><kbd>l</kbd></td><td>Switch Flat / Tree view</td></tr>
+              <tr><td><kbd>s</kbd></td><td>Switch Subfolders on / off</td></tr>
+              <tr><td><kbd>f</kbd></td><td>Switch Files+folders / Folders only</td></tr>
+              <tr><td><kbd>z</kbd> / <kbd>m</kbd> / <kbd>n</kbd></td><td>Sort by Size / Modified / Name (repeat toggles direction). In <strong>Tree</strong> view, those sorts or the same column headers switch to <strong>Flat</strong> first (status bar note); Tree alone keeps path A→Z.</td></tr>
               </tbody></table></div>
               
               <h6 class="text-secondary mt-3 mb-1">Navigation</h6>

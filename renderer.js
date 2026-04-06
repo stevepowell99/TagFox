@@ -283,13 +283,23 @@
 
     const SORT_LABELS = { name: 'Name', path: 'Path', size: 'Size', date_modified: 'Modified' };
 
-    /* Three independent view toggles (Flat / Show subfolders / Hide files). */
-    function isFlatView() { return !!document.getElementById('optRvFlat')?.checked; }
-    function isShowSubfolders() { return !!document.getElementById('optRvShowSubfolders')?.checked; }
-    function isHideFiles() { return !!document.getElementById('optRvHideFiles')?.checked; }
+    /* Three binary radio pairs (View mode / Subfolders / Content). */
+    function isFlatView() { return document.getElementById('optRvFlat')?.checked; }
+    function isShowSubfolders() { return document.getElementById('optRvSubsOn')?.checked; }
+    function isHideFiles() { return document.getElementById('optRvDirsOnly')?.checked; }
 
     /** Path column hidden + tree gutter when not flat. */
     function isTreeViewOn() { return !isFlatView(); }
+
+    /** Tree layout follows path order — keep Everything sort Path A→Z whenever tree is on (any entry path). */
+    function applyNaturalSortWhenTreeViewOn() {
+      if (!isTreeViewOn()) return;
+      sortColumn = 'path';
+      sortAsc = true;
+      localStorage.setItem(LS.sortBy, sortColumn);
+      localStorage.setItem(LS.optAsc, '1');
+    }
+
     function isTreeFoldingOn() { return !!document.getElementById('optTreeFolding')?.checked; }
     function isTreeGroupHLOn() { return !!document.getElementById('optTreeGroupHL')?.checked; }
 
@@ -498,7 +508,6 @@
       'ndjson',
       'text',
       'log',
-      'csv',
       'tsv',
       'xml',
       'xsl',
@@ -677,6 +686,112 @@
         }
       }
       return t;
+    }
+
+    /** CSV → rows (RFC 4180-style: commas, quoted fields, "" → "). Newlines inside quotes supported. */
+    function parseCsvRows(raw) {
+      const text = String(raw ?? '').replace(/^\uFEFF/, '');
+      if (!text.length) return [];
+      const rows = [];
+      let row = [];
+      let field = '';
+      let i = 0;
+      let inQ = false;
+      while (i < text.length) {
+        const c = text[i];
+        if (inQ) {
+          if (c === '"') {
+            if (text[i + 1] === '"') {
+              field += '"';
+              i += 2;
+              continue;
+            }
+            inQ = false;
+            i++;
+            continue;
+          }
+          field += c;
+          i++;
+          continue;
+        }
+        if (c === '"') {
+          inQ = true;
+          i++;
+          continue;
+        }
+        if (c === ',') {
+          row.push(field);
+          field = '';
+          i++;
+          continue;
+        }
+        if (c === '\r') {
+          i++;
+          if (text[i] === '\n') i++;
+          row.push(field);
+          rows.push(row);
+          row = [];
+          field = '';
+          continue;
+        }
+        if (c === '\n') {
+          row.push(field);
+          rows.push(row);
+          row = [];
+          field = '';
+          i++;
+          continue;
+        }
+        field += c;
+        i++;
+      }
+      row.push(field);
+      rows.push(row);
+      return rows;
+    }
+
+    /** Bootstrap table for Viewer CSV preview (first row thead when 2+ rows). */
+    function csvPreviewTableHtml(rows, maxRows) {
+      if (!rows.length) return '<p class="text-muted mb-0">(empty)</p>';
+      const cap = maxRows > 0 ? maxRows : rows.length;
+      const capped = rows.length > cap ? rows.slice(0, cap) : rows;
+      const total = rows.length;
+      const nCols = Math.max.apply(
+        null,
+        capped.map((r) => r.length)
+      );
+      function pad(r) {
+        const out = r.slice();
+        while (out.length < nCols) out.push('');
+        return out;
+      }
+      let html =
+        '<div class="table-responsive"><table class="table table-sm table-bordered table-striped mb-0 align-middle">';
+      if (capped.length === 1) {
+        html += '<tbody><tr>';
+        for (const cell of pad(capped[0])) html += '<td>' + escapeHtmlForPreview(cell) + '</td>';
+        html += '</tr></tbody>';
+      } else {
+        html += '<thead class="table-light"><tr>';
+        for (const cell of pad(capped[0])) html += '<th scope="col">' + escapeHtmlForPreview(cell) + '</th>';
+        html += '</tr></thead><tbody>';
+        for (let r = 1; r < capped.length; r++) {
+          html += '<tr>';
+          for (const cell of pad(capped[r])) html += '<td>' + escapeHtmlForPreview(cell) + '</td>';
+          html += '</tr>';
+        }
+        html += '</tbody>';
+      }
+      html += '</table></div>';
+      if (maxRows > 0 && total > maxRows) {
+        html +=
+          '<p class="text-muted small mb-0 mt-2">Preview: first ' +
+          maxRows +
+          ' rows only (' +
+          total +
+          ' rows).</p>';
+      }
+      return html;
     }
 
     function revokePreviewBlobs() {
@@ -1279,7 +1394,7 @@
     }
 
     /** Same rules as clicking a sort column: switching column sets default direction (size/modified = largest/newest first); same column again toggles. */
-    function applySortColumnKey(key) {
+    function applySortColumnKey(key, statusNoteAfterSearch) {
       if (!['name', 'path', 'date_modified', 'size'].includes(key)) return;
       if (sortColumn === key) sortAsc = !sortAsc;
       else {
@@ -1287,10 +1402,47 @@
         // Size / Modified: first activation = largest / newest first; Name & Path = A→Z.
         sortAsc = key !== 'size' && key !== 'date_modified';
       }
+      applyNaturalSortWhenTreeViewOn();
       saveSettings();
       updateSortHeaders();
       commitSearchHistoryNow();
-      void runSearchNow();
+      void (async () => {
+        try {
+          await runSearchNow();
+        } finally {
+          if (statusNoteAfterSearch) {
+            const st = document.getElementById('status');
+            if (st) {
+              const cur = String(st.textContent || '').trim();
+              st.textContent = cur ? cur + ' — ' + statusNoteAfterSearch : statusNoteAfterSearch;
+            }
+            pulseStatusBarBrief();
+          }
+        }
+      })();
+    }
+
+    /** Status strip: brief primary glow (matches pulse-hint accent; one-shot). */
+    function pulseStatusBarBrief() {
+      const bar = document.getElementById('statusBar');
+      if (!bar) return;
+      bar.classList.remove('status-bar--pulse-hint');
+      void bar.offsetWidth;
+      bar.classList.add('status-bar--pulse-hint');
+      bar.addEventListener(
+        'animationend',
+        () => bar.classList.remove('status-bar--pulse-hint'),
+        { once: true }
+      );
+    }
+
+    /** Tree + Size/Modified/Name (z/m/n or those headers): Flat on so sort sticks. */
+    function flatViewOnIfTreeForColumnSort() {
+      if (!isTreeViewOn()) return '';
+      const el = document.getElementById('optRvFlat');
+      if (el) { el.checked = true; }
+      applyResultsTablePathColumnVisibility();
+      return 'Switched to Flat — column sort; Tree view uses path A→Z only.';
     }
 
     /** Folder that scopes the search (Settings “Scope folder” field). */
@@ -3731,6 +3883,35 @@
         return;
       }
 
+      if (ext === 'csv' && window.tagBrowser.readTextFile && officeBlock) {
+        activeReadmePath = null;
+        activeMdPath = null;
+        mdAutosaveTargetPath = null;
+        const sz = rowSizeBytes(targetRow);
+        if (sz != null && sz > TEXT_PREVIEW_MAX_BYTES) {
+          propPh.classList.remove('d-none');
+          propPh.textContent = 'CSV preview: file too large (max ~2 MB same as text). Use Open.';
+          return;
+        }
+        const rCsv = await window.tagBrowser.readTextFile({ fullPath: targetFp });
+        if (!propsViewStill(targetFp)) return;
+        if (!rCsv.ok) {
+          propPh.classList.remove('d-none');
+          propPh.textContent = 'CSV: ' + (rCsv.error || 'Could not load.');
+          return;
+        }
+        officeBlock.classList.remove('d-none');
+        document.getElementById('officeTitle').textContent = 'CSV';
+        const prev = document.getElementById('officePreview');
+        try {
+          const rows = parseCsvRows(rCsv.text);
+          prev.innerHTML = csvPreviewTableHtml(rows, EXCEL_PREVIEW_MAX_ROWS);
+        } catch (e) {
+          prev.innerHTML = '<p class="text-danger small">' + escapeHtmlForPreview(String(e.message || e)) + '</p>';
+        }
+        return;
+      }
+
       if (TEXT_PREVIEW_EXT.has(ext) && window.tagBrowser.readTextFile && textFileBlock) {
         activeReadmePath = null;
         activeMdPath = null;
@@ -4503,7 +4684,7 @@
       if (!zone || !chips || !hint || !window.tagBrowser.shelfState) return;
       const r = await window.tagBrowser.shelfState();
       const shelfDropHelp =
-        'Drop here (move; Shift+copy). Drag rows for in-app. “OS drag” or Alt+drag → Explorer files.';
+        'Drop here (move; Shift+copy). Drag chips within TagFox, or use the hand button / Alt+drag to drag into Explorer.';
       zone.title = r.ok ? shelfDropHelp + ' Staging folder: ' + r.path : shelfDropHelp + ' ' + String(r.error || 'Shelf unavailable');
       chips.innerHTML = '';
       if (!r.ok || !r.entries.length) {
@@ -4519,7 +4700,7 @@
         chip.title =
           ent.fullPath +
           (ent.isDirectory ? ' (folder)' : '') +
-          ' — in-app drag; OS drag / Alt+drag → Explorer';
+          ' — drag within TagFox; use hand button or Alt+drag to send to Explorer';
         chip.draggable = true;
         chip.addEventListener('dragstart', (e) => {
           const wantOs = e.altKey || tagBrowserNextOsFileDrag;
@@ -5087,21 +5268,25 @@
       document.getElementById('optDiacritics').checked = localStorage.getItem(LS.optDiacritics) === '1';
       syncAdvancedBtnWarning();
       {
-        /* Migrate from old 4-radio resultsViewMode to 3 independent toggles. */
+        /* Migrate from old 4-radio resultsViewMode to 3 radio pairs. */
         const hasFlatKey = localStorage.getItem(LS.flatView) !== null;
         if (hasFlatKey) {
-          document.getElementById('optRvFlat').checked = localStorage.getItem(LS.flatView) === '1';
-          document.getElementById('optRvShowSubfolders').checked = localStorage.getItem(LS.showSubfolders) !== '0';
-          document.getElementById('optRvHideFiles').checked = localStorage.getItem(LS.hideFiles) === '1';
+          setViewRadios(
+            localStorage.getItem(LS.flatView) === '1',
+            localStorage.getItem(LS.showSubfolders) !== '0',
+            localStorage.getItem(LS.hideFiles) === '1',
+          );
         } else {
           let mode = localStorage.getItem(LS.resultsViewMode);
           if (!mode || !['flat','tree1','treeBrowse','treeFull'].includes(mode)) {
             const tv = localStorage.getItem(LS.treeView);
             mode = tv === '1' ? 'treeBrowse' : 'flat';
           }
-          document.getElementById('optRvFlat').checked = mode === 'flat';
-          document.getElementById('optRvShowSubfolders').checked = mode === 'flat' || mode === 'treeFull';
-          document.getElementById('optRvHideFiles').checked = mode === 'treeBrowse';
+          setViewRadios(
+            mode === 'flat',
+            mode === 'flat' || mode === 'treeFull',
+            mode === 'treeBrowse',
+          );
         }
       }
       {
@@ -5112,6 +5297,7 @@
       if (sortColumn === 'ext') sortColumn = 'name';
       if (!['name', 'path', 'date_modified', 'size'].includes(sortColumn)) sortColumn = 'name';
       sortAsc = localStorage.getItem(LS.optAsc) !== '0';
+      applyNaturalSortWhenTreeViewOn();
       document.getElementById('optTreeFolding').checked = localStorage.getItem(LS.treeFolding) !== '0';
       document.getElementById('optTreeGroupHL').checked = localStorage.getItem(LS.treeGroupHighlight) !== '0';
       document.getElementById('optSearchDebug').checked = localStorage.getItem(LS.searchDebug) === '1';
@@ -5318,14 +5504,10 @@
       tagFilterCombineOr = !!s.tagFilterCombineOr;
       {
         if (s.flatView !== undefined) {
-          document.getElementById('optRvFlat').checked = !!s.flatView;
-          document.getElementById('optRvShowSubfolders').checked = s.showSubfolders !== false;
-          document.getElementById('optRvHideFiles').checked = !!s.hideFiles;
+          setViewRadios(!!s.flatView, s.showSubfolders !== false, !!s.hideFiles);
         } else if (s.resultsViewMode) {
           const m = s.resultsViewMode;
-          document.getElementById('optRvFlat').checked = m === 'flat';
-          document.getElementById('optRvShowSubfolders').checked = m === 'flat' || m === 'treeFull';
-          document.getElementById('optRvHideFiles').checked = m === 'treeBrowse';
+          setViewRadios(m === 'flat', m === 'flat' || m === 'treeFull', m === 'treeBrowse');
         }
       }
       document.getElementById('optCase').checked = !!s.optCase;
@@ -5340,6 +5522,7 @@
       if (sc === 'ext') sc = 'name';
       sortColumn = sc && ['name', 'path', 'date_modified', 'size'].includes(sc) ? sc : 'name';
       sortAsc = s.sortAsc !== false;
+      applyNaturalSortWhenTreeViewOn();
       const panel = document.getElementById('searchOptsAdvancedPanel');
       const advBtn = document.getElementById('btnToggleSearchOptsAdvanced');
       if (panel && advBtn) {
@@ -5545,8 +5728,8 @@
     /** View toggle labels for zero-row pulse hint. */
     function resultsViewPulseLabels() {
       return {
-        showSubfolders: document.querySelector('label[for="optRvShowSubfolders"]'),
-        hideFiles: document.querySelector('label[for="optRvHideFiles"]'),
+        showSubfolders: document.querySelector('label[for="optRvSubsOff"]'),
+        hideFiles: document.querySelector('label[for="optRvDirsOnly"]'),
       };
     }
 
@@ -7037,7 +7220,10 @@
       if (e.target.closest('#chkSelectAllResults')) return;
       const th = e.target.closest('th[data-sort]');
       if (!th) return;
-      applySortColumnKey(th.dataset.sort);
+      const sk = th.dataset.sort;
+      const note =
+        ['size', 'date_modified', 'name'].includes(String(sk || '')) ? flatViewOnIfTreeForColumnSort() : '';
+      applySortColumnKey(sk, note || undefined);
     });
 
     document.getElementById('query').addEventListener('input', () => {
@@ -7179,15 +7365,10 @@
     document.getElementById('btnStatusScopeSiblingPrev')?.addEventListener('click', () => void goToSiblingScopeFolder(-1));
     document.getElementById('btnStatusScopeSiblingNext')?.addEventListener('click', () => void goToSiblingScopeFolder(1));
     document.getElementById('btnStatusScopeParent').addEventListener('click', () => void goToParentScopeFolder());
-    ['optRvFlat', 'optRvShowSubfolders', 'optRvHideFiles'].forEach((id) => {
+    ['optRvFlat', 'optRvTree', 'optRvSubsOn', 'optRvSubsOff', 'optRvAll', 'optRvDirsOnly'].forEach((id) => {
       document.getElementById(id)?.addEventListener('change', () => {
+        applyNaturalSortWhenTreeViewOn();
         saveSettings();
-        if (!isFlatView()) {
-          sortColumn = 'path';
-          sortAsc = true;
-          localStorage.setItem(LS.sortBy, sortColumn);
-          localStorage.setItem(LS.optAsc, '1');
-        }
         updateSortHeaders();
         applyResultsTablePathColumnVisibility();
         void runSearchNow();
@@ -7537,12 +7718,21 @@
       });
     }
 
-    /** Toggle a view checkbox + trigger the same save/search cycle as clicking the button. */
-    function toggleViewCheckbox(id) {
-      const el = document.getElementById(id);
-      if (!el) return;
-      el.checked = !el.checked;
-      el.dispatchEvent(new Event('change', { bubbles: true }));
+    /** Toggle between two radios in a pair + trigger the save/search cycle. */
+    function toggleViewRadioPair(idA, idB) {
+      const a = document.getElementById(idA);
+      const b = document.getElementById(idB);
+      if (!a || !b) return;
+      const target = a.checked ? b : a;
+      target.checked = true;
+      target.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    /** Set all three view radio pairs at once (for restore / migration). */
+    function setViewRadios(flat, showSubs, hideFiles) {
+      document.getElementById(flat ? 'optRvFlat' : 'optRvTree').checked = true;
+      document.getElementById(showSubs ? 'optRvSubsOn' : 'optRvSubsOff').checked = true;
+      document.getElementById(hideFiles ? 'optRvDirsOnly' : 'optRvAll').checked = true;
     }
 
     /** True when scope has a parent path we can navigate to. */
@@ -8187,15 +8377,29 @@
         return;
       }
 
-      /* l / f / s: toggle Flat / Hide-files / Show-subfolders view buttons */
-      if (e.key === 'l') { e.preventDefault(); toggleViewCheckbox('optRvFlat'); return; }
-      if (e.key === 'f') { e.preventDefault(); toggleViewCheckbox('optRvHideFiles'); return; }
-      if (e.key === 's') { e.preventDefault(); toggleViewCheckbox('optRvShowSubfolders'); return; }
-      /* z / m / n: sort by size / modified / name (same as header; repeat toggles direction). t: tags like Ctrl+T. */
-      if (e.key === 'z') { e.preventDefault(); applySortColumnKey('size'); return; }
-      if (e.key === 'm') { e.preventDefault(); applySortColumnKey('date_modified'); return; }
-      if (e.key === 'n') { e.preventDefault(); applySortColumnKey('name'); return; }
-      if (e.key === 'p') { e.preventDefault(); applySortColumnKey('path'); return; }
+      /* l / f / s: toggle View / Content / Subfolders radio pairs */
+      if (e.key === 'l') { e.preventDefault(); toggleViewRadioPair('optRvFlat', 'optRvTree'); return; }
+      if (e.key === 'f') { e.preventDefault(); toggleViewRadioPair('optRvAll', 'optRvDirsOnly'); return; }
+      if (e.key === 's') { e.preventDefault(); toggleViewRadioPair('optRvSubsOn', 'optRvSubsOff'); return; }
+      /* z / m / n: sort by size / modified / name (in Tree, switches to Flat first — see status bar). */
+      if (e.key === 'z') {
+        e.preventDefault();
+        const note = flatViewOnIfTreeForColumnSort();
+        applySortColumnKey('size', note || undefined);
+        return;
+      }
+      if (e.key === 'm') {
+        e.preventDefault();
+        const note = flatViewOnIfTreeForColumnSort();
+        applySortColumnKey('date_modified', note || undefined);
+        return;
+      }
+      if (e.key === 'n') {
+        e.preventDefault();
+        const note = flatViewOnIfTreeForColumnSort();
+        applySortColumnKey('name', note || undefined);
+        return;
+      }
       if (e.key === 't') { e.preventDefault(); keyboardOpenTagsModal(); return; }
       if (e.key === 'Delete') {
         e.preventDefault();
@@ -8377,7 +8581,7 @@
     document.getElementById('btnShelfOsDrag').addEventListener('click', () => {
       tagBrowserNextOsFileDrag = true;
       document.getElementById('status').textContent =
-        'Next row or Shelf-chip drag: OS files (Explorer). Drag without this stays in-app.';
+        'Next drag armed as a real file drag — drop into Explorer or another app. Without this, drags stay inside TagFox.';
     });
     document.getElementById('btnShelfClear').addEventListener('click', async () => {
       if (!confirm('Remove everything from Shelf?')) return;
@@ -8389,9 +8593,7 @@
     loadColWidthsFromStorage();
     if (treeViewDefaultsFreshProfile) {
       if (localStorage.getItem(LS.flatView) === null && localStorage.getItem(LS.resultsViewMode) === null) {
-        document.getElementById('optRvFlat').checked = false;
-        document.getElementById('optRvShowSubfolders').checked = true;
-        document.getElementById('optRvHideFiles').checked = false;
+        setViewRadios(false, true, false);
         localStorage.setItem(LS.flatView, '0');
         localStorage.setItem(LS.showSubfolders, '1');
         localStorage.setItem(LS.hideFiles, '0');

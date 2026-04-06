@@ -1,5 +1,16 @@
 // TagBrowser — Electron main: window + IPC to Everything HTTP + open/rename files
-const { app, BrowserWindow, ipcMain, shell, Menu, clipboard, nativeImage, globalShortcut, screen } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  BrowserView,
+  ipcMain,
+  shell,
+  Menu,
+  clipboard,
+  nativeImage,
+  globalShortcut,
+  screen,
+} = require('electron');
 const { spawn, spawnSync, execFileSync } = require('child_process');
 const { pathToFileURL } = require('url');
 const fs = require('fs').promises;
@@ -2112,11 +2123,144 @@ function isAllowedGoogleWorkspaceUrl(u) {
   }
 }
 
+/** URLs the user may type or paste in the child-window address bar (sign-in lives on accounts.google.com). */
+function isAllowedGoogleWorkspaceAddressBarUrl(u) {
+  try {
+    const { protocol, hostname } = new URL(String(u || '').trim());
+    if (protocol !== 'https:' && protocol !== 'http:') return false;
+    const h = hostname.toLowerCase();
+    return (
+      h === 'docs.google.com' ||
+      h === 'drive.google.com' ||
+      h === 'accounts.google.com' ||
+      h === 'myaccount.google.com'
+    );
+  } catch {
+    return false;
+  }
+}
+
+const GOOGLE_WORKSPACE_TOOLBAR_PX = 40;
+
+function layoutGoogleWorkspaceBrowserViews(win) {
+  if (!win || win.isDestroyed()) return;
+  const tb = win.gwsToolbarBV;
+  const cv = win.gwsContentBV;
+  if (!tb || !cv) return;
+  const [w, h] = win.getContentSize();
+  const th = GOOGLE_WORKSPACE_TOOLBAR_PX;
+  const innerH = Math.max(0, h - th);
+  try {
+    cv.setBounds({ x: 0, y: th, width: w, height: innerH });
+    tb.setBounds({ x: 0, y: 0, width: w, height: th });
+  } catch (_) {}
+}
+
+function syncGoogleWorkspaceToolbarFromContent(win) {
+  if (!win || win.isDestroyed() || win !== googleWorkspaceWin) return;
+  const wc = win.gwsContentWc;
+  const tb = win.gwsToolbarWc;
+  if (!wc || !tb || wc.isDestroyed() || tb.isDestroyed()) return;
+  const u = wc.getURL();
+  if (u && !u.startsWith('about:')) tb.send('gws-toolbar-set-url', u);
+  tb.send('gws-toolbar-nav-state', {
+    canGoBack: wc.canGoBack(),
+    canGoForward: wc.canGoForward(),
+  });
+}
+
+function attachGoogleWorkspaceContentNavigationSync(win, contentWc) {
+  const tick = () => syncGoogleWorkspaceToolbarFromContent(win);
+  contentWc.on('did-navigate', tick);
+  contentWc.on('did-navigate-in-page', tick);
+  contentWc.on('did-finish-load', tick);
+}
+
+let googleWorkspaceToolbarIpcRegistered = false;
+function registerGoogleWorkspaceToolbarIpcOnce() {
+  if (googleWorkspaceToolbarIpcRegistered) return;
+  googleWorkspaceToolbarIpcRegistered = true;
+  ipcMain.on('gws-toolbar-go', (event, urlRaw) => {
+    const w = BrowserWindow.fromWebContents(event.sender);
+    if (!w || w.isDestroyed() || w !== googleWorkspaceWin) return;
+    const wc = w.gwsContentWc;
+    if (!wc || wc.isDestroyed()) return;
+    const u = String(urlRaw || '').trim();
+    if (!isAllowedGoogleWorkspaceAddressBarUrl(u)) return;
+    void wc.loadURL(u);
+  });
+  ipcMain.on('gws-toolbar-back', (event) => {
+    const w = BrowserWindow.fromWebContents(event.sender);
+    if (!w || w.isDestroyed() || w !== googleWorkspaceWin) return;
+    const wc = w.gwsContentWc;
+    if (!wc || wc.isDestroyed()) return;
+    if (wc.canGoBack()) wc.goBack();
+  });
+  ipcMain.on('gws-toolbar-forward', (event) => {
+    const w = BrowserWindow.fromWebContents(event.sender);
+    if (!w || w.isDestroyed() || w !== googleWorkspaceWin) return;
+    const wc = w.gwsContentWc;
+    if (!wc || wc.isDestroyed()) return;
+    if (wc.canGoForward()) wc.goForward();
+  });
+  ipcMain.on('gws-toolbar-reload', (event) => {
+    const w = BrowserWindow.fromWebContents(event.sender);
+    if (!w || w.isDestroyed() || w !== googleWorkspaceWin) return;
+    const wc = w.gwsContentWc;
+    if (!wc || wc.isDestroyed()) return;
+    wc.reload();
+  });
+}
+
+function mountGoogleWorkspaceBrowserViews(win, targetUrlArg, useBounds) {
+  const url = String(targetUrlArg || '').trim();
+  const contentBV = new BrowserView({
+    webPreferences: {
+      partition: 'persist:tagfox-google-workspace',
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  const toolbarBV = new BrowserView({
+    webPreferences: {
+      preload: path.join(__dirname, 'google-workspace-toolbar-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  win.addBrowserView(contentBV);
+  win.addBrowserView(toolbarBV);
+  win.gwsContentBV = contentBV;
+  win.gwsToolbarBV = toolbarBV;
+  win.gwsContentWc = contentBV.webContents;
+  win.gwsToolbarWc = toolbarBV.webContents;
+
+  win.on('resize', () => layoutGoogleWorkspaceBrowserViews(win));
+
+  attachPageZoomShortcuts(contentBV.webContents);
+  attachGoogleWorkspaceContentNavigationSync(win, contentBV.webContents);
+
+  const showFramed = () => {
+    if (!win || win.isDestroyed()) return;
+    layoutGoogleWorkspaceBrowserViews(win);
+    syncGoogleWorkspaceToolbarFromContent(win);
+    if (useBounds && useBounds.maximized) win.maximize();
+    win.show();
+  };
+
+  toolbarBV.webContents.once('did-finish-load', showFramed);
+  layoutGoogleWorkspaceBrowserViews(win);
+  void toolbarBV.webContents.loadFile(path.join(__dirname, 'google-workspace-toolbar.html'));
+  void contentBV.webContents.loadURL(url);
+}
+
 function openGoogleWorkspaceEditorWindow(parentWin, targetUrl) {
+  registerGoogleWorkspaceToolbarIpcOnce();
   const url = String(targetUrl || '').trim();
   if (!isAllowedGoogleWorkspaceUrl(url)) return { ok: false, error: 'Not a Google Docs/Drive URL.' };
   if (googleWorkspaceWin && !googleWorkspaceWin.isDestroyed()) {
-    void googleWorkspaceWin.loadURL(url);
+    const wc = googleWorkspaceWin.gwsContentWc;
+    if (wc && !wc.isDestroyed()) void wc.loadURL(url);
     googleWorkspaceWin.focus();
     return { ok: true };
   }
@@ -2133,24 +2277,18 @@ function openGoogleWorkspaceEditorWindow(parentWin, targetUrl) {
     width: use.width,
     height: use.height,
     show: false,
+    backgroundColor: '#f1f3f4',
     webPreferences: {
-      partition: 'persist:tagfox-google-workspace',
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
   attachGoogleWorkspaceWindowBoundsPersistence(googleWorkspaceWin);
-  attachPageZoomShortcuts(googleWorkspaceWin.webContents);
   googleWorkspaceWin.setMenuBarVisibility(false);
-  googleWorkspaceWin.once('ready-to-show', () => {
-    if (!googleWorkspaceWin || googleWorkspaceWin.isDestroyed()) return;
-    if (use.maximized) googleWorkspaceWin.maximize();
-    googleWorkspaceWin.show();
-  });
   googleWorkspaceWin.on('closed', () => {
     googleWorkspaceWin = null;
   });
-  void googleWorkspaceWin.loadURL(url);
+  mountGoogleWorkspaceBrowserViews(googleWorkspaceWin, url, use);
   return { ok: true };
 }
 
