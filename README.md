@@ -33,13 +33,13 @@ From this folder after `npm install`: `npm run dist`. The NSIS setup executable 
 
 ## Current folder, breadcrumb, history
 
-- **Current folder** is where the app searches and what row actions treat as “here”. Set it with the **breadcrumb** or path editor (value is persisted); clearing it searches the whole index.
-- The **breadcrumb** (under Favourites) shows the path: click a segment to jump. **▾** menus list siblings or subfolders; you can open nested flyouts from the last segment’s menu.
+- **Current folder** is where the app searches and what row actions treat as "here". Set it with the **breadcrumb** or path editor (value is persisted); clearing it searches the whole index. **Ctrl+Backspace** (**⌘+Backspace** on Mac) clears it from **any** focus when a folder is set (skipped when a dialog is open; overrides the usual “delete previous word” in text fields while scope is active).
+- The **breadcrumb** (under Favourites) shows the path: click a segment to jump. **▾** menus list siblings or subfolders; you can open nested flyouts from the last segment's menu.
 - **Search history** (**Alt+←** / **→**, or the toolbar arrows) restores whole past searches: query, **current folder**, tags, toggles.
 - **Recent folders** (**Ctrl+L** or the clock button) only jumps among folder paths you have used, not full search snapshots.
 - **Favourite folders** (heart row): **Ctrl+Shift+1…9** (**⌘+Shift+1…9** on Mac) jumps to favourite folder #1–9 in left-to-right chip order. **Drag** a folder chip to reorder (not the subfolder **▾** or **×**); while dragging, **highlighted gaps** between chips are the drop targets. **Saved searches** (magnifier row): **Ctrl+1…9** restores saved search #1–9; **drag** numbered chips the same way (gap targets, not **×**). **Ctrl+Shift+N** remains **new folder** (digit + Shift shortcuts are folders-only).
-- If the **search box** is not empty, changing the current folder (double-click a folder row, **Enter**, breadcrumb, favourites, **Backspace** / **Alt+↑** to parent, etc.) still applies that text to the new folder. The **search row** (field + clear) plays the same short highlight animation as the “few results” hint so you notice the filter is still active.
-- **Left arrow** on a results row always changes the **current folder**: if the row sits directly in the current folder, the scope moves to the **parent** of that folder; if the row is nested deeper, the scope moves to the **first subfolder** under the current folder on the path to that row (not the row’s immediate parent unless that is that subfolder). **Right arrow** still enters a **folder** row only. With no current folder set, **Left** matches **Ctrl+Enter** (scope to the parent of the row).
+- If the **search box** is not empty, changing the current folder (double-click a folder row, **Enter**, breadcrumb, favourites, **Backspace** / **Alt+↑** to parent, etc.) still applies that text to the new folder. **Alt+↑** moves to the parent **current folder** even when the caret is in the search box. The **search row** (field + clear) plays the same short highlight animation as the "few results" hint so you notice the filter is still active.
+- **Left arrow** on a results row always changes the **current folder**: if the row sits directly in the current folder, the scope moves to the **parent** of that folder; if the row is nested deeper, the scope moves to the **first subfolder** under the current folder on the path to that row (not the row's immediate parent unless that is that subfolder). **Right arrow** still enters a **folder** row only. With no current folder set, **Left** matches **Ctrl+Enter** (scope to the parent of the row).
 
 ## Tag syntax
 
@@ -54,7 +54,7 @@ Plain `[draft]` without inner `()` is **not** a TagFox tag (treated as part of t
 
 ## Tag bar
 
-The **current folder** (same path as the breadcrumb) is the Everything search prefix and the rename-safety root; it is not “ignored.” The tag bar lists tags from **`[(…)]`** blocks in names (discovered via a full-index scan for `[(`, plus remembered tags). Plain `[foo]` without parens is ignored by that scan.
+The **current folder** (same path as the breadcrumb) is the Everything search prefix and the rename-safety root; it is not "ignored." The tag bar lists tags from **`[(…)]`** blocks in names (discovered via a full-index scan for `[(`, plus remembered tags). Plain `[foo]` without parens is ignored by that scan.
 
 Buttons are tags seen in results plus **remembered** tags (local store, max 40). Choosing a tag saves it; the **active** tag filter is restored next launch. A number in parentheses counts rows in the **current results list** (after filters) that carry that tag—capped by **Max results**. If there is no number, the tag is not on any row in that list. Use **Clear all tags** or toggle pills off to drop the filter.
 
@@ -85,9 +85,11 @@ Drag the **splitter** between the main area and the **Viewer** (width saved). Dr
 
 The **query** and **Settings** fields update results live (debounced). Toggles map to Everything: case, whole word, path, regex, diacritics. Next to the search row, **Both** / **Folders only** / **Files only** pick what Everything returns (`folder:` / `file:` when narrowed; [docs](https://www.voidtools.com/support/everything/searching/)).
 
-**Sort** uses column headers; order is sent to Everything. **Sort folders with files** (Settings, default on) merges folders and files by that column; off keeps Everything’s usual folders-first order.
+**Sort** uses column headers; order is sent to Everything. With focus **not** in a text field: **z** / **m** / **n** sort by size / modified / name the same way as clicking that column (first press: size & modified use largest/newest first, name A→Z); press the same letter again to flip direction. **t** opens tag edit like **Ctrl+T**.
 
-**Tree View** (sitemap icon next to the search box): one-click preset for path sort A→Z, **Path** column hidden, recursive on, files and folders, and **Sort folders with files** on. The control stays checked only while that whole bundle matches; changing sort, **Cols**, recursive, type filter, or interleave turns it off. New profiles with no saved sort default to Tree View on first load.
+**Everything `sort-mix:` (critical — do not remove).** Everything's HTTP API groups all folders before all files by default, regardless of sort column. With a 200-row cap and >200 folders under the scope, the response contains only folders and zero files. Everything 1.5a supports the `sort-mix:` search syntax modifier which interleaves files and folders in true sort order. TagFox appends `sort-mix:` to the search text whenever Hide files is OFF (in `renderer.js`, `runSearch()`). **Never remove this line** — without it, large folders silently show only folders. This is not a UI preference; it is required for correct results. See [voidtools forum: mix files and folders](https://www.voidtools.com/forum/viewtopicvoid.php?t=8994).
+
+**Tree View** (sitemap icon next to the search box): one-click preset for path sort A→Z, **Path** column hidden, recursive on, files and folders. The control stays checked only while that whole bundle matches; changing sort, **Cols**, recursive, or type filter turns it off. New profiles with no saved sort default to Tree View on first load.
 
 **Hide special** (advanced): hides paths with any segment starting with `.`, `~`, or `$`, plus **`desktop.ini`** (any path segment). **`..`** and **`.shortcut-targets-by-id`** (Google Drive) are not hidden. With **Everything 1.5+**, TagFox adds a `!path:regex:"…"` clause so results are filtered in the index; on **1.4** that modifier stack may not work — the **table** still applies the same rules client-side.
 
@@ -101,6 +103,6 @@ The **Viewer** shows path, type, size, modified.
 
 If none exist, the editor is enabled empty; **Save** (toolbar disk icon) creates **`readme.md`** with the current text. If a listed file was found, **Save** writes that path.
 
-**`.md` / `.txt`** (file rows): same editor + preview/autosave (UTF-8). **`.gdoc` / `.gsheet` / `.gslides`** (Google Drive shortcuts): **Open in app window** loads Docs/Sheets/Slides in a child Electron window (persistent login partition). **PDF** and other Office types where supported ([mammoth](https://github.com/mwilliamson/mammoth.js) / [SheetJS](https://sheetjs.com/) via CDN; legacy `.doc` stays “use Open”). Large files may not preview.
+**`.md` / `.txt`** (file rows): same editor + preview/autosave (UTF-8). **`.gdoc` / `.gsheet` / `.gslides`** (Google Drive shortcuts): **Open in app window** loads Docs/Sheets/Slides in a child Electron window (persistent login partition). **PDF** and other Office types where supported ([mammoth](https://github.com/mwilliamson/mammoth.js) / [SheetJS](https://sheetjs.com/) via CDN; legacy `.doc` stays "use Open"). Large files may not preview.
 
 Read/write uses UTF-8. **Tags / rename** still requires paths under the **current folder** when one is set.

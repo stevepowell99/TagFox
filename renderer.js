@@ -20,6 +20,9 @@
       resultsViewMode: 'tagBrowserResultsViewMode',
       foldersOnly: 'tagBrowserFoldersOnly',
       filesOnly: 'tagBrowserFilesOnly',
+      flatView: 'tagBrowserFlatView',
+      showSubfolders: 'tagBrowserShowSubfolders',
+      hideFiles: 'tagBrowserHideFiles',
       propsWidthPx: 'tagBrowserPropsW',
       tableCols: 'tagBrowserTableCols',
       favFolders: 'tagBrowserFavFolders',
@@ -33,6 +36,7 @@
       searchDebug: 'tagBrowserSearchDebug',
       helpModalTab: 'tagBrowserHelpModalTab',
       autoRefreshSec: 'tagBrowserAutoRefreshSec',
+      darkMode: 'tagBrowserDarkMode',
     };
 
     /** One-time copy when upgrading from the old app name (everythang* keys). */
@@ -277,19 +281,13 @@
 
     const SORT_LABELS = { name: 'Name', path: 'Path', size: 'Size', date_modified: 'Modified' };
 
-    /** flat | tree1 | treeBrowse | treeFull — four-way results layout (toolbar radio group). */
-    const RESULTS_VIEW_MODES = ['flat', 'tree1', 'treeBrowse', 'treeFull'];
+    /* Three independent view toggles (Flat / Show subfolders / Hide files). */
+    function isFlatView() { return !!document.getElementById('optRvFlat')?.checked; }
+    function isShowSubfolders() { return !!document.getElementById('optRvShowSubfolders')?.checked; }
+    function isHideFiles() { return !!document.getElementById('optRvHideFiles')?.checked; }
 
-    function resultsViewMode() {
-      const el = document.querySelector('input[name="tagFoxResultsViewMode"]:checked');
-      const v = el && el.value;
-      return RESULTS_VIEW_MODES.includes(v) ? v : 'flat';
-    }
-
-    /** Any tree-style layout: Path column hidden, tree gutter when path sort. */
-    function isTreeViewOn() {
-      return resultsViewMode() !== 'flat';
-    }
+    /** Path column hidden + tree gutter when not flat. */
+    function isTreeViewOn() { return !isFlatView(); }
 
     /** @type {Set<string>} lowercase keys; tag bar filters with AND (click toggles each). */
     let activeTagKeys = new Set();
@@ -1276,6 +1274,21 @@
       if (rt) rt.classList.toggle('results-sort-path', sortColumn === 'path');
     }
 
+    /** Same rules as clicking a sort column: switching column sets default direction (size/modified = largest/newest first); same column again toggles. */
+    function applySortColumnKey(key) {
+      if (!['name', 'path', 'date_modified', 'size'].includes(key)) return;
+      if (sortColumn === key) sortAsc = !sortAsc;
+      else {
+        sortColumn = key;
+        // Size / Modified: first activation = largest / newest first; Name & Path = A→Z.
+        sortAsc = key !== 'size' && key !== 'date_modified';
+      }
+      saveSettings();
+      updateSortHeaders();
+      commitSearchHistoryNow();
+      void runSearchNow();
+    }
+
     /** Folder that scopes the search (Settings “Scope folder” field). */
     function currentScopeFolderPath() {
       const rootRaw = document.getElementById('rootFolder').value.trim();
@@ -1290,14 +1303,10 @@
       return s.split('\\').filter(Boolean);
     }
 
-    /** Path folder grouping: synthetic ancestor folders when path-sorted tree (mode-dependent). */
+    /** Path folder grouping: synthetic ancestor folders when path-sorted non-flat + subfolders shown. */
     function shouldShowPathFolderGrouping() {
       if (!isTreeViewOn() || sortColumn !== 'path') return false;
-      const mode = resultsViewMode();
-      if (mode === 'tree1') return false;
-      if (mode === 'treeBrowse') return true;
-      if (mode === 'treeFull') return true;
-      return false;
+      return isShowSubfolders();
     }
 
     /**
@@ -1306,9 +1315,9 @@
      * as ancestors of surviving files. Simple tree browse keeps folder rows.
      */
     function treeRecencyDropRealFolderHits() {
-      /* Dirs (+ dirs) is folder-only — never strip folder rows here. Tree-full file+folder tree uses file recency. */
       return (
-        resultsViewMode() === 'treeFull' &&
+        !isHideFiles() &&
+        isShowSubfolders() &&
         shouldShowPathFolderGrouping() &&
         recencyFilterMode() !== 'all'
       );
@@ -1886,7 +1895,7 @@
       );
       if (tags.length) lines.push('Tags: ' + tags.join(', '));
       lines.push('Tag combine: ' + (s.tagFilterCombineOr ? 'OR' : 'AND'));
-      lines.push('Tree view: ' + (s.treeView !== false ? 'on' : 'off'));
+      lines.push('Flat: ' + (s.flatView ? 'on' : 'off') + ' | Subfolders: ' + (s.showSubfolders ? 'on' : 'off') + ' | Hide files: ' + (s.hideFiles ? 'on' : 'off'));
       lines.push(
         'Match: case=' +
           !!s.optCase +
@@ -2509,7 +2518,7 @@
         const parsed = T.parseSegmentTags(part);
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = 'btn btn-link btn-sm p-0 align-baseline';
+        btn.className = 'btn btn-link btn-sm p-0 align-baseline breadcrumb-folder-seg' + (i === parts.length - 1 ? ' breadcrumb-folder-seg-current' : '');
         btn.textContent = parsed.pretty;
         const folderForSearch = normalizeFolderPathForEverything(acc);
         wrap.dataset.dropPath = folderForSearch; // internal drag-drop target (move into this folder)
@@ -5071,25 +5080,21 @@
       document.getElementById('optDiacritics').checked = localStorage.getItem(LS.optDiacritics) === '1';
       syncAdvancedBtnWarning();
       {
-        let mode = localStorage.getItem(LS.resultsViewMode);
-        if (!RESULTS_VIEW_MODES.includes(mode)) {
-          const tv = localStorage.getItem(LS.treeView);
-          if (tv === null) {
-            const legacyRec = localStorage.getItem('tagBrowserFolderRec');
-            const legacy =
-              legacyRec !== '0' &&
-              localStorage.getItem(LS.sortBy) === 'path' &&
-              localStorage.getItem(LS.optAsc) !== '0';
-            mode = legacy ? 'treeBrowse' : 'flat';
-          } else {
+        /* Migrate from old 4-radio resultsViewMode to 3 independent toggles. */
+        const hasFlatKey = localStorage.getItem(LS.flatView) !== null;
+        if (hasFlatKey) {
+          document.getElementById('optRvFlat').checked = localStorage.getItem(LS.flatView) === '1';
+          document.getElementById('optRvShowSubfolders').checked = localStorage.getItem(LS.showSubfolders) !== '0';
+          document.getElementById('optRvHideFiles').checked = localStorage.getItem(LS.hideFiles) === '1';
+        } else {
+          let mode = localStorage.getItem(LS.resultsViewMode);
+          if (!mode || !['flat','tree1','treeBrowse','treeFull'].includes(mode)) {
+            const tv = localStorage.getItem(LS.treeView);
             mode = tv === '1' ? 'treeBrowse' : 'flat';
           }
-        }
-        const pick = document.querySelector('input[name="tagFoxResultsViewMode"][value="' + mode + '"]');
-        if (pick) pick.checked = true;
-        else {
-          const fb = document.querySelector('input[name="tagFoxResultsViewMode"][value="flat"]');
-          if (fb) fb.checked = true;
+          document.getElementById('optRvFlat').checked = mode === 'flat';
+          document.getElementById('optRvShowSubfolders').checked = mode === 'flat' || mode === 'treeFull';
+          document.getElementById('optRvHideFiles').checked = mode === 'treeBrowse';
         }
       }
       {
@@ -5135,8 +5140,10 @@
       localStorage.setItem(LS.optWholeWord, document.getElementById('optWholeWord').checked ? '1' : '0');
       localStorage.setItem(LS.optPath, document.getElementById('optPath').checked ? '1' : '0');
       localStorage.setItem(LS.optDiacritics, document.getElementById('optDiacritics').checked ? '1' : '0');
-      localStorage.setItem(LS.resultsViewMode, resultsViewMode());
-      localStorage.setItem(LS.treeView, resultsViewMode() === 'flat' ? '0' : '1');
+      localStorage.setItem(LS.flatView, isFlatView() ? '1' : '0');
+      localStorage.setItem(LS.showSubfolders, isShowSubfolders() ? '1' : '0');
+      localStorage.setItem(LS.hideFiles, isHideFiles() ? '1' : '0');
+      localStorage.setItem(LS.treeView, isFlatView() ? '0' : '1');
       localStorage.setItem(LS.recencyFilter, recencyFilterMode());
       localStorage.setItem(LS.sortBy, sortColumn);
       localStorage.setItem(LS.optAsc, sortAsc ? '1' : '0');
@@ -5225,7 +5232,9 @@
         rootFolder: document.getElementById('rootFolder').value,
         activeTagKeys: [...activeTagKeys].sort(),
         tagFilterCombineOr: !!tagFilterCombineOr,
-        resultsViewMode: resultsViewMode(),
+        flatView: isFlatView(),
+        showSubfolders: isShowSubfolders(),
+        hideFiles: isHideFiles(),
         optCase: document.getElementById('optCase').checked,
         optWholeWord: document.getElementById('optWholeWord').checked,
         optPath: document.getElementById('optPath').checked,
@@ -5297,16 +5306,15 @@
       }
       tagFilterCombineOr = !!s.tagFilterCombineOr;
       {
-        const rvm = s.resultsViewMode;
-        if (RESULTS_VIEW_MODES.includes(rvm)) {
-          const inp = document.querySelector('input[name="tagFoxResultsViewMode"][value="' + rvm + '"]');
-          if (inp) inp.checked = true;
-        } else if (s.treeView !== undefined) {
-          const flat = s.treeView === false || s.treeView === 0;
-          const inp = document.querySelector(
-            'input[name="tagFoxResultsViewMode"][value="' + (flat ? 'flat' : 'treeBrowse') + '"]'
-          );
-          if (inp) inp.checked = true;
+        if (s.flatView !== undefined) {
+          document.getElementById('optRvFlat').checked = !!s.flatView;
+          document.getElementById('optRvShowSubfolders').checked = s.showSubfolders !== false;
+          document.getElementById('optRvHideFiles').checked = !!s.hideFiles;
+        } else if (s.resultsViewMode) {
+          const m = s.resultsViewMode;
+          document.getElementById('optRvFlat').checked = m === 'flat';
+          document.getElementById('optRvShowSubfolders').checked = m === 'flat' || m === 'treeFull';
+          document.getElementById('optRvHideFiles').checked = m === 'treeBrowse';
         }
       }
       document.getElementById('optCase').checked = !!s.optCase;
@@ -5523,11 +5531,11 @@
       return document.querySelector('.tagfox-search-toolbar-row [aria-label="Recency"]');
     }
 
-    /** Results layout radios 2–3 (this-folder-only / subfolders-only): pulse targets when row count is 0. */
+    /** View toggle labels for zero-row pulse hint. */
     function resultsViewPulseLabels() {
       return {
-        tree1: document.querySelector('label[for="optRvTree1"]'),
-        treeBrowse: document.querySelector('label[for="optRvTreeBrowse"]'),
+        showSubfolders: document.querySelector('label[for="optRvShowSubfolders"]'),
+        hideFiles: document.querySelector('label[for="optRvHideFiles"]'),
       };
     }
 
@@ -5547,7 +5555,7 @@
       advBtn?.classList.remove('pulse-hint', 'pulse-hint--sparse');
       advBtn?.style.removeProperty('--empty-pulse-frac');
       const rvLbl = resultsViewPulseLabels();
-      [rvLbl.tree1, rvLbl.treeBrowse].forEach((el) => {
+      [rvLbl.showSubfolders, rvLbl.hideFiles].forEach((el) => {
         el?.classList.remove('pulse-hint', 'pulse-hint--sparse');
         el?.style.removeProperty('--empty-pulse-frac');
       });
@@ -5603,10 +5611,9 @@
       const wantTag = inBand && activeTagKeys.size > 0;
       const wantRecency = isEmpty && recencyMode !== 'all';
       const wantAdv = inBand && anyAdvancedSwitchOn();
-      const rvm = resultsViewMode();
       const rvLbl = resultsViewPulseLabels();
-      const wantRvThisFolder = isEmpty && rvm === 'tree1';
-      const wantRvSubfolders = isEmpty && rvm === 'treeBrowse';
+      const wantRvHideFiles = isEmpty && isHideFiles();
+      const wantRvShowSub = isEmpty && !isShowSubfolders();
 
       if (!inBand) {
         pulseHintFingerprint = '';
@@ -5628,7 +5635,7 @@
         '\0' +
         recencyMode +
         '\0' +
-        rvm;
+        (isFlatView() ? 'F' : '') + (isShowSubfolders() ? 'S' : '') + (isHideFiles() ? 'H' : '');
       const fpChanged = forceRestart || fp !== pulseHintFingerprint;
       if (fpChanged) pulseHintFingerprint = fp;
 
@@ -5636,8 +5643,8 @@
         restartPulseHint(qWrap, wantQ, mode, sparseFrac);
         restartPulseHint(recencyGrp, wantRecency, mode, sparseFrac);
         restartPulseHint(advBtn, wantAdv, mode, sparseFrac);
-        restartPulseHint(rvLbl.tree1, wantRvThisFolder, mode, sparseFrac);
-        restartPulseHint(rvLbl.treeBrowse, wantRvSubfolders, mode, sparseFrac);
+        restartPulseHint(rvLbl.hideFiles, wantRvHideFiles, mode, sparseFrac);
+        restartPulseHint(rvLbl.showSubfolders, wantRvShowSub, mode, sparseFrac);
         document.querySelectorAll('#tagBar button.tag-bar-pill-active[data-tag-key]').forEach((btn) => {
           restartPulseHint(btn, wantTag && activeTagKeys.has(btn.dataset.tagKey), mode, sparseFrac);
         });
@@ -5665,8 +5672,8 @@
         if (want && mode === 'sparse') el?.style.setProperty('--empty-pulse-frac', String(sparseFrac));
         else if (!want || mode === 'empty') el?.style.removeProperty('--empty-pulse-frac');
       };
-      toggleRvPulse(rvLbl.tree1, wantRvThisFolder);
-      toggleRvPulse(rvLbl.treeBrowse, wantRvSubfolders);
+      toggleRvPulse(rvLbl.hideFiles, wantRvHideFiles);
+      toggleRvPulse(rvLbl.showSubfolders, wantRvShowSub);
 
       document.querySelectorAll('#tagBar button.tag-bar-pill-active[data-tag-key]').forEach((btn) => {
         const on = wantTag && activeTagKeys.has(btn.dataset.tagKey);
@@ -5956,9 +5963,15 @@
       const tbody = document.getElementById('tbody');
       if (!tbody) return;
       const want = selectedFullPath;
+      let childPrefix = '';
       for (const tr of tbody.querySelectorAll('tr')) {
         const p = tr.dataset.rowPath;
-        tr.classList.toggle('table-active', !!(want && p === want));
+        const isActive = !!(want && p === want);
+        tr.classList.toggle('table-active', isActive);
+        if (isActive && tr.classList.contains('results-folder-row')) {
+          childPrefix = p.endsWith('\\') || p.endsWith('/') ? p : p + '\\';
+        }
+        tr.classList.toggle('table-active-child', !isActive && !!childPrefix && !!p && p.startsWith(childPrefix));
       }
     }
 
@@ -6008,23 +6021,15 @@
       /* Display rows: path-tree may inject ancestor folders not in lastRows (visN > rawN), or filters may hide rows (visN < rawN). */
       const visN = rowsForDisplay.length;
       const scopePath = normalizeFolderPathForEverything(document.getElementById('rootFolder').value.trim());
-      const rvm = resultsViewMode();
+      const flat = isFlatView(), sub = isShowSubfolders(), hf = isHideFiles();
       let viewHint = '';
-      if (rvm === 'flat') {
-        viewHint = scopePath ? ' — Flat: all subfolders under the current folder' : ' — Flat: whole index';
-      } else if (rvm === 'tree1') {
-        viewHint = scopePath
-          ? ' — Tree: this folder only (no files from deeper subfolders in this list)'
-          : ' — This folder only: set the current folder';
-      } else if (rvm === 'treeBrowse') {
-        viewHint =
-          scopePath
-            ? ' — Subfolders only under the current folder (search/tags filter folder names). No files in this list.'
-            : ' — Subfolders only (set the current folder).';
-      } else if (rvm === 'treeFull') {
-        viewHint = scopePath
-          ? ' — Tree (full): every file and folder under the current folder'
-          : ' — Tree (full): whole index (path sort + grouping when applicable)';
+      {
+        const parts = [];
+        parts.push(flat ? 'Flat' : 'Tree');
+        if (sub) parts.push('subfolders');
+        if (hf) parts.push('folders only');
+        if (!sub && !scopePath) parts.push('(set a current folder)');
+        viewHint = ' — ' + parts.join(', ');
       }
       if (!visN) status.textContent = 'No rows' + suffix + viewHint;
       else if (visN === rawN) status.textContent = visN + ' row(s)' + suffix + viewHint;
@@ -6751,7 +6756,7 @@
           return;
         }
         let add = res.rows || [];
-        if (resultsViewMode() === 'treeBrowse') add = add.filter(rowIsFolder);
+        if (isHideFiles()) add = add.filter(rowIsFolder);
         if (!add.length) {
           resultsPagingCtx = { ...ctx, hasMore: false };
         } else {
@@ -6787,20 +6792,14 @@
       const rootFolder = document.getElementById('rootFolder').value.trim();
       const query = document.getElementById('query').value;
       const hasScope = !!normalizeFolderPathForEverything(rootFolder);
-      const mode = resultsViewMode();
-      let searchText;
-      if (mode === 'treeBrowse') {
-        /* Folders only (even when searching / tagging); Everything folder: filter. */
-        searchText = composeScopedEverythingSearch(rootFolder, query, true);
-        searchText = appendActiveTagToEverythingQuery(searchText);
-        searchText = (String(searchText).trim() + ' folder:').trim();
-        searchText = appendRecencyToEverythingQuery(searchText);
-      } else {
-        const recursive = mode === 'tree1' && hasScope ? false : true;
-        searchText = composeScopedEverythingSearch(rootFolder, query, recursive);
-        searchText = appendActiveTagToEverythingQuery(searchText);
-        searchText = appendRecencyToEverythingQuery(searchText);
-      }
+      const showSub = isShowSubfolders();
+      const hideF = isHideFiles();
+      const recursive = showSub || !hasScope;
+      let searchText = composeScopedEverythingSearch(rootFolder, query, recursive);
+      searchText = appendActiveTagToEverythingQuery(searchText);
+      if (hideF) searchText = (String(searchText).trim() + ' folder:').trim();
+      if (!hideF) searchText = (String(searchText).trim() + ' sort-mix:').trim();
+      searchText = appendRecencyToEverythingQuery(searchText);
       const maxResultsRaw = document.getElementById('maxResults').value;
       const cap = Math.min(5000, Math.max(1, parseInt(String(maxResultsRaw).trim(), 10) || 200));
       const countStr = String(cap);
@@ -6815,7 +6814,7 @@
       };
       searchDebugLog('runSearch.start', {
         runId,
-        resultsViewMode: mode,
+        flat: isFlatView(), showSubfolders: showSub, hideFiles: hideF,
         sortColumn,
         sortAsc,
         cap,
@@ -6826,7 +6825,7 @@
 
       status.textContent = 'Searching…';
 
-      searchDebugLog('runSearch.branch', { runId, resultsViewMode: mode });
+      searchDebugLog('runSearch.branch', { runId, flat: isFlatView(), showSubfolders: showSub, hideFiles: hideF });
 
       const pageArgs = {
         runId,
@@ -6857,7 +6856,7 @@
         return;
       }
       let got = Array.isArray(res.rows) ? res.rows : [];
-      if (mode === 'treeBrowse') got = got.filter(rowIsFolder);
+      if (hideF) got = got.filter(rowIsFolder);
       lastRows = got;
       sortLastRowsForDisplay(!!res.usedFallbackSort);
       searchDebugLog('runSearch.single.final', {
@@ -6905,17 +6904,7 @@
       if (e.target.closest('#chkSelectAllResults')) return;
       const th = e.target.closest('th[data-sort]');
       if (!th) return;
-      const key = th.dataset.sort;
-      if (sortColumn === key) sortAsc = !sortAsc;
-      else {
-        sortColumn = key;
-        // Size / Modified: first click = largest / newest first; Name & Path stay A→Z.
-        sortAsc = key !== 'size' && key !== 'date_modified';
-      }
-      saveSettings();
-      updateSortHeaders();
-      commitSearchHistoryNow();
-      void runSearchNow();
+      applySortColumnKey(th.dataset.sort);
     });
 
     document.getElementById('query').addEventListener('input', () => {
@@ -6940,6 +6929,18 @@
         e.target.blur();
       }
     });
+    /* capture: Alt+↑ = scope parent — before input defaults; window keydown defers #query to this so it always fires in the search box. */
+    document.getElementById('query').addEventListener(
+      'keydown',
+      (e) => {
+        if (!e.altKey || e.ctrlKey || e.metaKey) return;
+        if (e.key !== 'ArrowUp' && e.code !== 'ArrowUp') return;
+        if (document.querySelector('.modal.show')) return;
+        e.preventDefault();
+        void goToParentScopeFolder();
+      },
+      true
+    );
 
     document.getElementById('btnSaveFavouriteFolder').addEventListener('click', () => {
       const status = document.getElementById('status');
@@ -7045,10 +7046,10 @@
     document.getElementById('btnStatusScopeSiblingPrev')?.addEventListener('click', () => void goToSiblingScopeFolder(-1));
     document.getElementById('btnStatusScopeSiblingNext')?.addEventListener('click', () => void goToSiblingScopeFolder(1));
     document.getElementById('btnStatusScopeParent').addEventListener('click', () => void goToParentScopeFolder());
-    document.querySelectorAll('input[name="tagFoxResultsViewMode"]').forEach((el) => {
-      el.addEventListener('change', () => {
+    ['optRvFlat', 'optRvShowSubfolders', 'optRvHideFiles'].forEach((id) => {
+      document.getElementById(id)?.addEventListener('change', () => {
         saveSettings();
-        if (resultsViewMode() !== 'flat') {
+        if (!isFlatView()) {
           sortColumn = 'path';
           sortAsc = true;
           localStorage.setItem(LS.sortBy, sortColumn);
@@ -7403,23 +7404,12 @@
       });
     }
 
-    /* Type-ahead search: accumulates chars typed within 800ms, jumps to first matching row */
-    let _typeAheadBuf = '';
-    let _typeAheadTimer = null;
-    function typeAheadJumpToRow(ch) {
-      clearTimeout(_typeAheadTimer);
-      _typeAheadBuf += ch.toLowerCase();
-      _typeAheadTimer = setTimeout(() => { _typeAheadBuf = ''; }, 800);
-      const rows = listRowsForUi();
-      const match = rows.find(r => (r.name || '').toLowerCase().startsWith(_typeAheadBuf));
-      if (match) {
-        resultsShiftRangeAnchorIdx = null;
-        setSelection(match, fullPathForRow(match));
-        requestAnimationFrame(() => {
-          const tr = document.querySelector('#resultsTable tbody tr.table-active');
-          if (tr) tr.scrollIntoView({ block: 'nearest' });
-        });
-      }
+    /** Toggle a view checkbox + trigger the same save/search cycle as clicking the button. */
+    function toggleViewCheckbox(id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.checked = !el.checked;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
     /** True when scope has a parent path we can navigate to. */
@@ -7725,7 +7715,7 @@
         return;
       }
 
-      /* Esc: clear query when it has text — only if no modal, no open Bootstrap dropdown, and not typing elsewhere (path editor, Settings, etc.). */
+      /* Esc: non-empty query → clear query (from #query or non-text focus). Empty query + focus in #query → clear current folder (whole index). No modal / open dropdown. */
       if (
         e.key === 'Escape' &&
         !document.querySelector('.modal.show') &&
@@ -7739,10 +7729,27 @@
             clearSearchQuery();
             return;
           }
+        } else if (
+          q &&
+          e.target === q &&
+          !String(q.value || '').trim() &&
+          String(document.getElementById('rootFolder').value || '').trim()
+        ) {
+          e.preventDefault();
+          clearSearchScope();
+          return;
         }
       }
 
       const modC = (e.ctrlKey || e.metaKey) && !e.altKey;
+      /* Clear current folder from any focus (steals Ctrl/Cmd+Backspace from “delete word” in fields when scope is set). */
+      if (modC && !e.shiftKey && e.key === 'Backspace') {
+        if (document.querySelector('.modal.show')) return;
+        if (!String(document.getElementById('rootFolder').value || '').trim()) return;
+        e.preventDefault();
+        clearSearchScope();
+        return;
+      }
       if (modC && !e.shiftKey && (e.key === '/' || e.code === 'Slash')) {
         e.preventDefault();
         focusQueryBox(true);
@@ -7860,8 +7867,10 @@
         void keyboardScopeParentOfSelection();
         return;
       }
-      if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === 'ArrowUp') {
+      if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowUp' || e.code === 'ArrowUp')) {
         if (document.querySelector('.modal.show')) return;
+        /* #query: dedicated capture listener handles (reliable while caret is in the search box). */
+        if (e.target && e.target.id === 'query') return;
         if (blockAppShortcutInTextField(e.target)) return;
         e.preventDefault();
         void goToParentScopeFolder();
@@ -7916,6 +7925,8 @@
         e.key === '/' || e.code === 'NumpadDivide' || (e.code === 'Slash' && !e.shiftKey);
       if (isSlashFocusSearch) {
         if (document.querySelector('.modal.show')) return;
+        const q = document.getElementById('query');
+        if (e.target === q) { e.preventDefault(); q.blur(); return; }
         if (isTypingTarget(e.target)) return;
         e.preventDefault();
         focusQueryBox(true);
@@ -8017,12 +8028,15 @@
         return;
       }
 
-      /* Type-ahead: printable single chars jump to first matching row by name */
-      if (e.key.length === 1 && !e.shiftKey) {
-        e.preventDefault();
-        typeAheadJumpToRow(e.key);
-        return;
-      }
+      /* l / f / s: toggle Flat / Hide-files / Show-subfolders view buttons */
+      if (e.key === 'l') { e.preventDefault(); toggleViewCheckbox('optRvFlat'); return; }
+      if (e.key === 'f') { e.preventDefault(); toggleViewCheckbox('optRvHideFiles'); return; }
+      if (e.key === 's') { e.preventDefault(); toggleViewCheckbox('optRvShowSubfolders'); return; }
+      /* z / m / n: sort by size / modified / name (same as header; repeat toggles direction). t: tags like Ctrl+T. */
+      if (e.key === 'z') { e.preventDefault(); applySortColumnKey('size'); return; }
+      if (e.key === 'm') { e.preventDefault(); applySortColumnKey('date_modified'); return; }
+      if (e.key === 'n') { e.preventDefault(); applySortColumnKey('name'); return; }
+      if (e.key === 't') { e.preventDefault(); keyboardOpenTagsModal(); return; }
       if (e.key === 'Delete') {
         e.preventDefault();
         void keyboardRecycleConfirm();
@@ -8199,10 +8213,13 @@
     loadPaneWidthsFromStorage();
     loadColWidthsFromStorage();
     if (treeViewDefaultsFreshProfile) {
-      if (localStorage.getItem(LS.resultsViewMode) === null) {
-        const rb = document.querySelector('input[name="tagFoxResultsViewMode"][value="treeBrowse"]');
-        if (rb) rb.checked = true;
-        localStorage.setItem(LS.resultsViewMode, 'treeBrowse');
+      if (localStorage.getItem(LS.flatView) === null && localStorage.getItem(LS.resultsViewMode) === null) {
+        document.getElementById('optRvFlat').checked = false;
+        document.getElementById('optRvShowSubfolders').checked = true;
+        document.getElementById('optRvHideFiles').checked = false;
+        localStorage.setItem(LS.flatView, '0');
+        localStorage.setItem(LS.showSubfolders, '1');
+        localStorage.setItem(LS.hideFiles, '0');
         localStorage.setItem(LS.treeView, '1');
       }
       sortColumn = 'path';
@@ -8210,6 +8227,18 @@
       localStorage.setItem(LS.sortBy, sortColumn);
       localStorage.setItem(LS.optAsc, '1');
     }
+    /* Dark / light mode: apply saved preference, wire toggle button */
+    (function initDarkMode() {
+      const html = document.documentElement;
+      const saved = localStorage.getItem(LS.darkMode);
+      if (saved === '1') html.setAttribute('data-bs-theme', 'dark');
+      document.getElementById('btnToggleDarkMode')?.addEventListener('click', () => {
+        const isDark = html.getAttribute('data-bs-theme') === 'dark';
+        if (isDark) { html.removeAttribute('data-bs-theme'); localStorage.setItem(LS.darkMode, '0'); }
+        else { html.setAttribute('data-bs-theme', 'dark'); localStorage.setItem(LS.darkMode, '1'); }
+      });
+    })();
+
     seedSearchHistoryFromCurrent();
     bindVerticalSplitters();
     document.getElementById('propsTheaterBackdrop').addEventListener('click', () => setPropsTheaterMode(false));

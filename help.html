@@ -56,7 +56,7 @@
                 <strong>&#x1F4C2; Pick a folder to work in.</strong> The breadcrumb bar (under the favourite chips) shows your <em>current folder</em>. Search, paste, and new files all happen inside it. Leave it empty to search your whole disk.
               </li>
               <li class="mb-2">
-                <strong>&#x1F441;&#xFE0F; Four ways to view results.</strong> The icon buttons next to the search box switch between: <em>Flat list</em> (shows a Path column), <em>One level</em> (just this folder), <em>Directories only</em> (folders only), and <em>Full tree</em> (files + folders in a tree). Hover each icon for a description.
+                <strong>&#x1F441;&#xFE0F; Three view toggles.</strong> The icon buttons next to the search box are independent on/off switches: <em>Flat view</em> (shows a Path column), <em>Show subfolders</em> (include items from subdirectories), and <em>Hide files</em> (show only folders). Combine them as you like &mdash; keyboard shortcuts: <kbd>l</kbd>, <kbd>s</kbd>, <kbd>f</kbd>.
               </li>
               <li class="mb-2">
                 <strong>&#x1F3F7;&#xFE0F; Tags live in filenames.</strong> TagFox adds tags like <code>[(draft)]</code> or <code>[(TODO)]</code> to file and folder names. They work everywhere &mdash; Explorer, Google Drive, zip files. No hidden database.
@@ -102,7 +102,7 @@
             <ul class="mt-3 mb-0 ps-3">
               <li class="mb-2">&#x2328;&#xFE0F; <strong>Keyboard-first</strong> &mdash; navigate, tag, rename, bulk-edit and search without touching the mouse. See <strong>&#x2328;&#xFE0F; Shortcuts</strong>.</li>
               <li class="mb-2">&#x2B50; <strong>Favourite folders &amp; saved searches</strong> &mdash; drag chips to reorder; folders: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>&hellip;<kbd>9</kbd>; saved searches: <kbd>Ctrl</kbd>+<kbd>1</kbd>&hellip;<kbd>9</kbd> (or click).</li>
-              <li class="mb-2">&#x1F50D; <strong>Four result views</strong> &mdash; flat list, one-level, directories-only, or full tree. Plus recency buttons (1h, 1d, 1w, 1m, 1y) to filter &ldquo;what changed recently&rdquo;.</li>
+              <li class="mb-2">&#x1F50D; <strong>Three view toggles</strong> &mdash; Flat view, Show subfolders, Hide files (combine freely). Plus recency buttons (1h, 1d, 1w, 1m, 1y) to filter &ldquo;what changed recently&rdquo;.</li>
               <li class="mb-2">&#x1F441;&#xFE0F; <strong>Fast previews</strong> &mdash; images, PDFs, Word, Excel, PowerPoint, text, JSON, markdown and more, right in the Viewer panel.</li>
               <li class="mb-2">&#x1F3F7;&#xFE0F; <strong>Filename tags</strong> &mdash; add, remove and filter by <code>[(tag)]</code> labels. Tags scan your folder automatically; click them to filter results.</li>
               <li class="mb-2">&#x1F4CB; <strong>Add TODO</strong> &mdash; create a small markdown file tagged <code>[(TODO)]</code> in the current folder, right from the Viewer panel.</li>
@@ -127,13 +127,12 @@
               <li>Tip: <code>foo|bar</code> matches either word. <code>!foo</code> excludes files matching &ldquo;foo&rdquo;.</li>
               <li>The <strong>Advanced</strong> button opens extra options: match case, match path, whole word, diacritics.</li>
             </ul>
-            <h3 class="fs-6 text-secondary mb-2">&#x1F441;&#xFE0F; Four result views</h3>
-            <p class="mb-2">The four icon buttons next to the search box control how results are displayed:</p>
+            <h3 class="fs-6 text-secondary mb-2">&#x1F441;&#xFE0F; View toggles</h3>
+            <p class="mb-2">Three independent toggle buttons next to the search box &mdash; combine them freely:</p>
             <ul class="mb-3 ps-3">
-              <li><i class="fa-solid fa-list fa-fw"></i> <strong>Flat</strong> &mdash; a simple list of all matching files and folders. Shows the Path column so you can see where each item lives.</li>
-              <li><i class="fa-solid fa-folder fa-fw"></i> <strong>One level</strong> &mdash; only items directly in the current folder (no deeper). Great for browsing.</li>
-              <li><i class="fa-solid fa-folder-tree fa-fw"></i> <strong>Directories only</strong> &mdash; shows folders only (no files), recursively under the current folder. Useful for navigating a project structure.</li>
-              <li><i class="fa-solid fa-sitemap fa-fw"></i> <strong>Full tree</strong> &mdash; all files and folders in a tree layout with nesting. Path column is hidden because the tree structure shows it.</li>
+              <li><i class="fa-solid fa-list fa-fw"></i> <strong>Flat view</strong> (<kbd>l</kbd>) &mdash; shows the Path column for a flat list. When off, results use a tree layout.</li>
+              <li><i class="fa-solid fa-folder-tree fa-fw"></i> <strong>Show subfolders</strong> (<kbd>s</kbd>) &mdash; include items from subdirectories. When off, only items directly in the current folder appear.</li>
+              <li><i class="fa-solid fa-folder fa-fw"></i> <strong>Hide files</strong> (<kbd>f</kbd>) &mdash; show only folders (no files). Useful for navigating a project structure.</li>
             </ul>
             <h3 class="fs-6 text-secondary mb-2">&#x23F1;&#xFE0F; Recency &amp; sorting</h3>
             <ul class="mb-3 ps-3">
@@ -277,48 +276,77 @@
           <!-- SHORTCUTS -->
           <div class="tab-pane fade" id="help-pane-shortcuts" role="tabpanel" aria-labelledby="help-tab-shortcuts">
             <p class="text-muted mb-2 mt-3">
-              <kbd>Ctrl</kbd> = <kbd>Ctrl</kbd> on Windows, <kbd>&#x2318;</kbd> on Mac.
+              <kbd>Ctrl</kbd> = <kbd>Ctrl</kbd> on Windows, <kbd>&#x2318;</kbd> on Mac. Most shortcuts are disabled while a dialog is open.
             </p>
+
+            <h6 class="text-secondary mt-3 mb-1">Search &amp; view</h6>
             <div class="table-responsive">
               <table class="table table-sm table-striped mb-0">
-                <thead>
-                  <tr><th scope="col">Shortcut</th><th scope="col">What it does</th></tr>
-                </thead>
+                <thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead>
                 <tbody>
-                  <tr><td><kbd>Ctrl</kbd>+<kbd>/</kbd></td><td>Jump to the search box</td></tr>
-                  <tr><td><kbd>F1</kbd></td><td>Open this help</td></tr>
-                  <tr><td><kbd>Ctrl</kbd>+<kbd>,</kbd></td><td>Open / close Settings</td></tr>
-                  <tr><td><kbd>Ctrl</kbd>+<kbd>Space</kbd></td><td>Show / hide TagFox (works system-wide, even from other apps)</td></tr>
-                  <tr><td><kbd>&#x2191;</kbd> <kbd>&#x2193;</kbd></td><td>Move through the results list</td></tr>
-                  <tr><td><kbd>Space</kbd></td><td>Check / uncheck the current row</td></tr>
-                  <tr><td><kbd>Shift</kbd>+<kbd>&#x2191;</kbd>/<kbd>&#x2193;</kbd></td><td>Extend selection up or down</td></tr>
-                  <tr><td><kbd>Ctrl</kbd>+<kbd>A</kbd></td><td>Select all visible rows</td></tr>
-                  <tr><td><kbd>Enter</kbd></td><td>Open a file, or enter a folder</td></tr>
-                  <tr><td><kbd>&#x2190;</kbd></td><td>Change current folder: if the row is directly in this folder, go to its parent; if the row is nested, scope to the first subfolder on its path</td></tr>
-                  <tr><td><kbd>&#x2192;</kbd></td><td>On a folder row, scope into that folder</td></tr>
-                  <tr><td><kbd>Backspace</kbd></td><td>Go up to the parent folder</td></tr>
-                  <tr><td><kbd>F2</kbd></td><td>Rename the selected item</td></tr>
-                  <tr><td><kbd>Del</kbd></td><td>Delete selected items (Recycle Bin)</td></tr>
-                  <tr><td><kbd>Ctrl</kbd>+<kbd>H</kbd></td><td>Bulk rename with wildcards (<code>*</code> / <code>?</code>)</td></tr>
-                  <tr><td><kbd>Ctrl</kbd>+<kbd>T</kbd></td><td>Edit tags on the selected items</td></tr>
-                  <tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>X</kbd> / <kbd>V</kbd></td><td>Copy, cut, paste files (Explorer-compatible)</td></tr>
-                  <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd></td><td>Copy full path(s) as text</td></tr>
-                  <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></td><td>Create a new folder here</td></tr>
-                  <tr><td><kbd>Ctrl</kbd>+<kbd>L</kbd></td><td>Recent folders list</td></tr>
-                  <tr><td><kbd>Alt</kbd>+<kbd>&#x2190;</kbd> / <kbd>&#x2192;</kbd></td><td>Search history back / forward</td></tr>
-                  <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>&hellip;<kbd>9</kbd></td><td>Jump to favourite folder #1&ndash;9 (chip order)</td></tr>
-                  <tr><td><kbd>Ctrl</kbd>+<kbd>1</kbd>&hellip;<kbd>9</kbd></td><td>Restore saved search #1&ndash;9</td></tr>
-                  <tr><td><kbd>F5</kbd></td><td>Refresh results</td></tr>
-                  <tr><td><kbd>Shift</kbd>+<kbd>Space</kbd></td><td>Expand Viewer to fullscreen</td></tr>
-                  <tr><td><kbd>Esc</kbd></td><td>Close expanded Viewer and breadcrumb flyouts; if the search box has text and focus is not in another text field (and no dialog or open dropdown needs <kbd>Esc</kbd>), clears the query like the search-row <strong>×</strong></td></tr>
-                  <tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>Jump to first / last row</td></tr>
-                  <tr><td>Type letters</td><td>Jump to matching row by name</td></tr>
+                  <tr><td><kbd>/</kbd></td><td>Toggle focus into / out of the search box (also <kbd>Ctrl</kbd>+<kbd>/</kbd> or <kbd>Ctrl</kbd>+<kbd>F</kbd>)</td></tr>
+                  <tr><td><kbd>Esc</kbd></td><td>Close expanded Viewer / flyouts; if no dialog or open menu needs it — clear query when it has text, or with focus in the search box and an empty query, clear current folder (whole index)</td></tr>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>Backspace</kbd></td><td>Clear current folder (whole index) from any focus when a folder is set; skipped if a dialog is open (replaces the usual “delete word” shortcut in text fields while scope is active)</td></tr>
+                  <tr><td><kbd>F5</kbd> or <kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>Refresh results</td></tr>
+                  <tr><td><kbd>l</kbd></td><td>Toggle Flat view (list with Path column)</td></tr>
+                  <tr><td><kbd>s</kbd></td><td>Toggle Show subfolders</td></tr>
+                  <tr><td><kbd>f</kbd></td><td>Toggle Hide files (folders only)</td></tr>
+                  <tr><td><kbd>z</kbd> / <kbd>m</kbd> / <kbd>n</kbd></td><td>Sort by Size / Modified / Name (same as column header; repeat the same key to toggle direction)</td></tr>
                 </tbody>
               </table>
             </div>
-            <p class="text-muted mb-0 mt-3">
-              Most shortcuts are disabled while a dialog (rename, tags, etc.) is open. <kbd>Ctrl</kbd>+<kbd>/</kbd> works from anywhere.
-            </p>
+
+            <h6 class="text-secondary mt-3 mb-1">Navigation</h6>
+            <div class="table-responsive">
+              <table class="table table-sm table-striped mb-0">
+                <thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead>
+                <tbody>
+                  <tr><td><kbd>&#x2191;</kbd> <kbd>&#x2193;</kbd></td><td>Move through the results list</td></tr>
+                  <tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>Jump to first / last row</td></tr>
+                  <tr><td><kbd>Enter</kbd></td><td>Open file or enter folder</td></tr>
+                  <tr><td><kbd>&#x2192;</kbd></td><td>Scope into selected folder</td></tr>
+                  <tr><td><kbd>&#x2190;</kbd></td><td>Scope to parent or first subfolder on the row's path</td></tr>
+                  <tr><td><kbd>Backspace</kbd></td><td>Go up to the parent folder</td></tr>
+                  <tr><td><kbd>Alt</kbd>+<kbd>&#x2191;</kbd></td><td>Go up to the parent of the <strong>current folder</strong> (including while the search box is focused)</td></tr>
+                  <tr><td><kbd>Alt</kbd>+<kbd>&#x2190;</kbd> / <kbd>&#x2192;</kbd></td><td>Search history back / forward</td></tr>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>L</kbd></td><td>Recent folders list</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h6 class="text-secondary mt-3 mb-1">Selection &amp; file operations</h6>
+            <div class="table-responsive">
+              <table class="table table-sm table-striped mb-0">
+                <thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead>
+                <tbody>
+                  <tr><td><kbd>Space</kbd></td><td>Check / uncheck the current row</td></tr>
+                  <tr><td><kbd>Shift</kbd>+<kbd>&#x2191;</kbd>/<kbd>&#x2193;</kbd></td><td>Extend selection up or down</td></tr>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>A</kbd></td><td>Select all visible rows</td></tr>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>X</kbd> / <kbd>V</kbd></td><td>Copy, cut, paste files (Explorer-compatible)</td></tr>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd></td><td>Copy full path(s) as text</td></tr>
+                  <tr><td><kbd>F2</kbd></td><td>Rename the selected item</td></tr>
+                  <tr><td><kbd>Del</kbd></td><td>Delete selected items (Recycle Bin)</td></tr>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></td><td>Create a new folder</td></tr>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>T</kbd> or <kbd>t</kbd></td><td>Edit tags on selected items (<kbd>t</kbd> when not typing in a field — use <kbd>Ctrl</kbd>+<kbd>T</kbd> from the search box)</td></tr>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>H</kbd></td><td>Bulk rename with wildcards</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h6 class="text-secondary mt-3 mb-1">Favourites &amp; app</h6>
+            <div class="table-responsive">
+              <table class="table table-sm table-striped mb-0">
+                <thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead>
+                <tbody>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>&hellip;<kbd>9</kbd></td><td>Jump to favourite folder #1&ndash;9</td></tr>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>1</kbd>&hellip;<kbd>9</kbd></td><td>Restore saved search #1&ndash;9</td></tr>
+                  <tr><td><kbd>Shift</kbd>+<kbd>Space</kbd></td><td>Toggle Viewer fullscreen</td></tr>
+                  <tr><td><kbd>F1</kbd></td><td>Open this help</td></tr>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>,</kbd></td><td>Open / close Settings</td></tr>
+                  <tr><td><kbd>Ctrl</kbd>+<kbd>Space</kbd></td><td>Show / hide TagFox (system-wide; changeable in Settings)</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
