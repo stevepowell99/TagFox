@@ -1411,6 +1411,59 @@ ipcMain.handle('show-in-folder', async (_event, fullPath) => {
 /** ─── Google Drive “.gdoc / .gsheet / .gslides” shortcuts → child window (docs.google.com) ─── */
 let googleWorkspaceWin = null;
 
+function googleWorkspaceLayoutPrefsPath() {
+  return path.join(app.getPath('userData'), 'tagBrowser-google-workspace-layout.json');
+}
+
+function loadGoogleWorkspaceLayoutFromDisk() {
+  try {
+    const p = googleWorkspaceLayoutPrefsPath();
+    if (!fssync.existsSync(p)) return 'center';
+    const j = JSON.parse(fssync.readFileSync(p, 'utf8'));
+    const l = j && typeof j.layout === 'string' ? j.layout.trim().toLowerCase() : '';
+    if (l === 'left' || l === 'right' || l === 'center') return l;
+  } catch (_) {}
+  return 'center';
+}
+
+function saveGoogleWorkspaceLayoutToDisk(layout) {
+  const p = googleWorkspaceLayoutPrefsPath();
+  const dir = path.dirname(p);
+  if (!fssync.existsSync(dir)) fssync.mkdirSync(dir, { recursive: true });
+  fssync.writeFileSync(p, JSON.stringify({ layout }), 'utf8');
+}
+
+/** Navbar cycle: centred (90%) → left (40%) → right (40%) → centred. Persisted for the next Google window. */
+let googleWorkspaceLayout = loadGoogleWorkspaceLayoutFromDisk();
+
+function notifyMainGoogleWorkspaceChildOpen(open) {
+  const w = mainWindowRef;
+  if (w && !w.isDestroyed()) {
+    try {
+      w.webContents.send('google-workspace-open-changed', { open: !!open });
+    } catch (_) {}
+  }
+}
+
+/** Apply googleWorkspaceLayout to the Google child using primary display workArea (≈vw/vh). */
+function applyGoogleWorkspaceWindowBounds() {
+  if (!googleWorkspaceWin || googleWorkspaceWin.isDestroyed()) return;
+  const wa = screen.getPrimaryDisplay().workArea;
+  if (googleWorkspaceLayout === 'left') {
+    const ww = Math.round(wa.width * 0.4);
+    googleWorkspaceWin.setBounds({ x: wa.x, y: wa.y, width: ww, height: wa.height });
+  } else if (googleWorkspaceLayout === 'right') {
+    const ww = Math.round(wa.width * 0.4);
+    googleWorkspaceWin.setBounds({ x: wa.x + wa.width - ww, y: wa.y, width: ww, height: wa.height });
+  } else {
+    const gw = Math.round(wa.width * 0.9);
+    const gh = Math.round(wa.height * 0.9);
+    const x = Math.round(wa.x + (wa.width - gw) / 2);
+    const y = Math.round(wa.y + (wa.height - gh) / 2);
+    googleWorkspaceWin.setBounds({ x, y, width: gw, height: gh });
+  }
+}
+
 function targetUrlFromGoogleDriveShortcut(fullPath, rawText) {
   const text = String(rawText || '')
     .replace(/^\uFEFF/, '')
@@ -1884,14 +1937,8 @@ function openGoogleWorkspaceEditorWindow(parentWin, targetUrl) {
     googleWorkspaceWin.focus();
     return { ok: true };
   }
-  // ~90vw × 90vh of usable desktop (Electron has no CSS units; workArea excludes taskbar).
-  const wa = screen.getPrimaryDisplay().workArea;
-  const gw = Math.round(wa.width * 0.9);
-  const gh = Math.round(wa.height * 0.9);
   googleWorkspaceWin = new BrowserWindow({
     parent: parentWin || undefined,
-    width: gw,
-    height: gh,
     show: false,
     webPreferences: {
       partition: 'persist:tagfox-google-workspace',
@@ -1899,12 +1946,17 @@ function openGoogleWorkspaceEditorWindow(parentWin, targetUrl) {
       nodeIntegration: false,
     },
   });
+  applyGoogleWorkspaceWindowBounds();
   attachPageZoomShortcuts(googleWorkspaceWin.webContents);
   googleWorkspaceWin.setMenuBarVisibility(false);
   googleWorkspaceWin.once('ready-to-show', () => {
-    if (googleWorkspaceWin && !googleWorkspaceWin.isDestroyed()) googleWorkspaceWin.show();
+    if (googleWorkspaceWin && !googleWorkspaceWin.isDestroyed()) {
+      googleWorkspaceWin.show();
+      notifyMainGoogleWorkspaceChildOpen(true);
+    }
   });
   googleWorkspaceWin.on('closed', () => {
+    notifyMainGoogleWorkspaceChildOpen(false);
     googleWorkspaceWin = null;
   });
   void googleWorkspaceWin.loadURL(url);
@@ -1973,6 +2025,23 @@ ipcMain.handle('google-workspace-shortcut-url', async (_event, { fullPath }) => 
 ipcMain.handle('open-google-workspace-window', async (event, { url }) => {
   const parent = BrowserWindow.fromWebContents(event.sender);
   return openGoogleWorkspaceEditorWindow(parent, url);
+});
+
+ipcMain.handle('google-workspace-cycle-layout', () => {
+  if (!googleWorkspaceWin || googleWorkspaceWin.isDestroyed()) {
+    return { ok: false, error: 'No Google doc window open.' };
+  }
+  if (googleWorkspaceLayout === 'center') googleWorkspaceLayout = 'left';
+  else if (googleWorkspaceLayout === 'left') googleWorkspaceLayout = 'right';
+  else googleWorkspaceLayout = 'center';
+  applyGoogleWorkspaceWindowBounds();
+  try {
+    saveGoogleWorkspaceLayoutToDisk(googleWorkspaceLayout);
+  } catch (_) {}
+  try {
+    googleWorkspaceWin.focus();
+  } catch (_) {}
+  return { ok: true, layout: googleWorkspaceLayout };
 });
 
 ipcMain.handle('open-url-default-browser', async (_event, { url }) => {

@@ -37,6 +37,8 @@
       helpModalTab: 'tagBrowserHelpModalTab',
       autoRefreshSec: 'tagBrowserAutoRefreshSec',
       darkMode: 'tagBrowserDarkMode',
+      treeFolding: 'tagBrowserTreeFolding',
+      treeGroupHighlight: 'tagBrowserTreeGroupHL',
     };
 
     /** One-time copy when upgrading from the old app name (everythang* keys). */
@@ -288,6 +290,8 @@
 
     /** Path column hidden + tree gutter when not flat. */
     function isTreeViewOn() { return !isFlatView(); }
+    function isTreeFoldingOn() { return !!document.getElementById('optTreeFolding')?.checked; }
+    function isTreeGroupHLOn() { return !!document.getElementById('optTreeGroupHL')?.checked; }
 
     /** @type {Set<string>} lowercase keys; tag bar filters with AND (click toggles each). */
     let activeTagKeys = new Set();
@@ -4216,9 +4220,9 @@
       return String(fp || '').replace(/[/\\]+$/, '').toLowerCase();
     }
 
-    /** Stable sort key for path column: one separator style + lower case (localeCompare numeric breaks badly on full paths). */
+    /** Natural full-path sort key: separator replaced with \x00 so children always follow their parent (e.g. abc\file < abc2). */
     function pathSortKey(row) {
-      return pathNormKey(fullPathForRow(row)).replace(/\//g, '\\');
+      return pathNormKey(fullPathForRow(row)).replace(/[/\\]/g, '\x00');
     }
 
     function toggleCheckPath(fp, on) {
@@ -5105,6 +5109,8 @@
       if (sortColumn === 'ext') sortColumn = 'name';
       if (!['name', 'path', 'date_modified', 'size'].includes(sortColumn)) sortColumn = 'name';
       sortAsc = localStorage.getItem(LS.optAsc) !== '0';
+      document.getElementById('optTreeFolding').checked = localStorage.getItem(LS.treeFolding) !== '0';
+      document.getElementById('optTreeGroupHL').checked = localStorage.getItem(LS.treeGroupHighlight) !== '0';
       document.getElementById('optSearchDebug').checked = localStorage.getItem(LS.searchDebug) === '1';
       activeTagKeys = activeTagKeysFromStored(localStorage.getItem(LS.activeTagFilter));
       tagFilterCombineOr = localStorage.getItem(LS.tagFilterCombineOr) === '1';
@@ -5147,6 +5153,8 @@
       localStorage.setItem(LS.recencyFilter, recencyFilterMode());
       localStorage.setItem(LS.sortBy, sortColumn);
       localStorage.setItem(LS.optAsc, sortAsc ? '1' : '0');
+      localStorage.setItem(LS.treeFolding, document.getElementById('optTreeFolding').checked ? '1' : '0');
+      localStorage.setItem(LS.treeGroupHighlight, document.getElementById('optTreeGroupHL').checked ? '1' : '0');
       localStorage.setItem(LS.searchDebug, document.getElementById('optSearchDebug').checked ? '1' : '0');
       localStorage.setItem(LS.tagFilterCombineOr, tagFilterCombineOr ? '1' : '0');
       persistActiveTagFilter();
@@ -5958,20 +5966,77 @@
       td.removeAttribute('title');
     }
 
+    /**
+     * Path-sorted tree: cosmetic hide of nested rows under a collapsed folder (display only; new search resets).
+     * Uses tr[data-tree-depth] and results-tree-collapsed on folder rows; toggles results-tree-collapse-hidden.
+     */
+    function refreshResultsTreeCollapseHidden() {
+      const tbody = document.getElementById('tbody');
+      if (!tbody) return;
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      if (!rows.length || rows[0].dataset.treeDepth === undefined) return;
+      let collapseDepth = null;
+      for (const tr of rows) {
+        const d = Number(tr.dataset.treeDepth);
+        if (collapseDepth !== null && d <= collapseDepth) collapseDepth = null;
+        const hide = collapseDepth !== null && d > collapseDepth;
+        tr.classList.toggle('results-tree-collapse-hidden', hide);
+        if (
+          !hide &&
+          tr.classList.contains('results-folder-row') &&
+          tr.classList.contains('results-tree-collapsed')
+        ) {
+          collapseDepth = d;
+        }
+      }
+    }
+
     /** Keyboard ↑/↓: move highlight only — avoids full renderTable() (O(n) per key). */
     function syncResultsSelectionHighlight() {
       const tbody = document.getElementById('tbody');
       if (!tbody) return;
       const want = selectedFullPath;
+      const groupHL = isTreeGroupHLOn();
       let childPrefix = '';
-      for (const tr of tbody.querySelectorAll('tr')) {
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      for (const tr of rows) {
+        tr.classList.remove(
+          'table-active-group-member',
+          'table-active-group-top',
+          'table-active-group-bottom'
+        );
         const p = tr.dataset.rowPath;
         const isActive = !!(want && p === want);
         tr.classList.toggle('table-active', isActive);
-        if (isActive && tr.classList.contains('results-folder-row')) {
-          childPrefix = p.endsWith('\\') || p.endsWith('/') ? p : p + '\\';
+        if (groupHL) {
+          if (isActive && tr.classList.contains('results-folder-row')) {
+            childPrefix = p.endsWith('\\') || p.endsWith('/') ? p : p + '\\';
+          }
+          tr.classList.toggle('table-active-child', !isActive && !!childPrefix && !!p && p.startsWith(childPrefix));
+        } else {
+          tr.classList.remove('table-active-child');
         }
-        tr.classList.toggle('table-active-child', !isActive && !!childPrefix && !!p && p.startsWith(childPrefix));
+      }
+      if (groupHL) {
+        let groupStart = -1;
+        let groupEnd = -1;
+        for (let i = 0; i < rows.length; i++) {
+          const tr = rows[i];
+          if (tr.classList.contains('table-active') && tr.classList.contains('results-folder-row')) {
+            groupStart = i;
+            groupEnd = i;
+            for (let j = i + 1; j < rows.length; j++) {
+              if (rows[j].classList.contains('table-active-child')) groupEnd = j;
+              else break;
+            }
+            break;
+          }
+        }
+        if (groupStart >= 0) {
+          for (let i = groupStart; i <= groupEnd; i++) rows[i].classList.add('table-active-group-member');
+          rows[groupStart].classList.add('table-active-group-top');
+          rows[groupEnd].classList.add('table-active-group-bottom');
+        }
       }
     }
 
@@ -6086,18 +6151,40 @@
         {
           const nameInner = renderNameCell(row, parsedName);
           if (showPathTreeGutter) {
-            const g = pathTreeGutters && pathTreeGutters[rowIdx];
-            if (g) {
-              const outer = document.createElement('div');
-              outer.className = 'd-flex align-items-center min-w-0';
-              const gut = document.createElement('span');
-              gut.className = 'path-tree-gutter flex-shrink-0';
-              gut.textContent = g;
-              nameInner.classList.add('min-w-0');
-              outer.appendChild(gut);
-              outer.appendChild(nameInner);
-              tdName.appendChild(outer);
-            } else tdName.appendChild(nameInner);
+            const g = (pathTreeGutters && pathTreeGutters[rowIdx]) || '';
+            const outer = document.createElement('div');
+            outer.className = 'd-flex align-items-center min-w-0';
+            if (rowIsFolder(row) && isTreeFoldingOn()) {
+              const twisty = document.createElement('button');
+              twisty.type = 'button';
+              twisty.className =
+                'btn btn-outline-secondary btn-sm results-tree-twisty flex-shrink-0 p-0 d-inline-flex align-items-center justify-content-center';
+              twisty.textContent = '\u2212';
+              twisty.title = 'Hide folder contents in this list (cosmetic; resets when you search again)';
+              twisty.setAttribute('aria-expanded', 'true');
+              twisty.setAttribute('aria-label', 'Toggle showing contents under this folder');
+              twisty.addEventListener('click', (e) => {
+                e.stopPropagation();
+                tr.classList.toggle('results-tree-collapsed');
+                const collapsed = tr.classList.contains('results-tree-collapsed');
+                twisty.textContent = collapsed ? '+' : '\u2212';
+                twisty.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+                refreshResultsTreeCollapseHidden();
+              });
+              outer.appendChild(twisty);
+            } else {
+              const sp = document.createElement('span');
+              sp.className = 'results-tree-twisty-spacer flex-shrink-0';
+              sp.setAttribute('aria-hidden', 'true');
+              outer.appendChild(sp);
+            }
+            const gut = document.createElement('span');
+            gut.className = 'path-tree-gutter flex-shrink-0';
+            gut.textContent = g;
+            nameInner.classList.add('min-w-0');
+            outer.appendChild(gut);
+            outer.appendChild(nameInner);
+            tdName.appendChild(outer);
           } else tdName.appendChild(nameInner);
         }
         const nameTip =
@@ -6227,6 +6314,7 @@
         tr.appendChild(tdAct);
 
         tr.dataset.rowPath = fp;
+        if (showPathTreeGutter) tr.dataset.treeDepth = String(pathTreeDepths[rowIdx]);
         // Drop target: folder row → that folder; file row → parent folder
         {
           const dropDir = rowIsFolder(row)
@@ -6280,6 +6368,7 @@
       });
       applyResultsTablePathColumnVisibility();
       syncResultsSelectionHighlight();
+      if (isTreeFoldingOn()) refreshResultsTreeCollapseHidden();
       updateSelectAllCheckboxState();
       updateEmptyResultsPulseHints(rowsForDisplay.length);
       updateResultsLoadMoreUi();
@@ -6714,9 +6803,9 @@
       }
     }
 
-    /** Near bottom of #resultsWrap: fetch next page (debounced). */
+    /** Near bottom of #resultsScroll: fetch next page (debounced). */
     function onResultsWrapScrollForPaging() {
-      const el = document.getElementById('resultsWrap');
+      const el = document.getElementById('resultsScroll');
       if (!el || !resultsPagingCtx || !resultsPagingCtx.hasMore) return;
       if (resultsLoadMoreBusy || searchInFlight) return;
       if (el.scrollTop + el.clientHeight < el.scrollHeight - 140) return;
@@ -6934,8 +7023,8 @@
       }
     }
 
-    const resultsWrapScroll = document.getElementById('resultsWrap');
-    if (resultsWrapScroll) resultsWrapScroll.addEventListener('scroll', onResultsWrapScrollForPaging, { passive: true });
+    const resultsTableScrollEl = document.getElementById('resultsScroll');
+    if (resultsTableScrollEl) resultsTableScrollEl.addEventListener('scroll', onResultsWrapScrollForPaging, { passive: true });
     document.getElementById('btnLoadMoreResults')?.addEventListener('click', () => void loadMoreResults());
 
     const resultsThead = document.getElementById('resultsTable').querySelector('thead');
@@ -7300,6 +7389,23 @@
     window.tagBrowser.setShellActionErrorHandler((msg) => {
       document.getElementById('status').textContent = String(msg || 'Action failed');
     });
+    /* Google child window: enable layout toggle when open (main sends on show/closed). */
+    (function wireGoogleWorkspaceLayoutToggle() {
+      const btn = document.getElementById('btnGoogleWorkspaceLayout');
+      if (!btn || !window.tagBrowser.setGoogleWorkspaceOpenChangedHandler) return;
+      window.tagBrowser.setGoogleWorkspaceOpenChangedHandler((payload) => {
+        btn.disabled = !payload || !payload.open;
+      });
+      btn.addEventListener('click', async () => {
+        if (!window.tagBrowser.googleWorkspaceCycleLayout) return;
+        const r = await window.tagBrowser.googleWorkspaceCycleLayout();
+        const st = document.getElementById('status');
+        if (r.ok && st) {
+          const lab = r.layout === 'left' ? 'left (40%)' : r.layout === 'right' ? 'right (40%)' : 'centre (90%)';
+          st.textContent = 'Google window: ' + lab + '.';
+        } else if (!r.ok && st) st.textContent = r.error || 'Layout toggle failed.';
+      });
+    })();
 
     /** Electron: webContents can stop receiving keys after button clicks until main focuses it again. */
     function pullWebContentsKeyboardFocus() {
@@ -7938,11 +8044,11 @@
         return;
       }
       /* Ctrl+Shift+1…9 / ⌘+Shift+1…9: favourite folder by bar order (1-based); Ctrl+Shift+N stays “new folder”. */
-      if (modC && e.shiftKey && /^[1-9]$/.test(e.key)) {
+      if (modC && e.shiftKey && /^Digit[1-9]$/.test(e.code)) {
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
         const list = loadFavouriteFolders();
-        const idx = e.key.charCodeAt(0) - 49;
+        const idx = Number(e.code.charAt(5)) - 1;
         if (!list[idx]) return;
         e.preventDefault();
         void applySearchScopeAndRefresh(list[idx]);
@@ -8075,6 +8181,32 @@
         return;
       }
 
+      /* +/- toggle tree expand/collapse — multi-select: all top-level folder twisties; single: selected row */
+      if ((e.key === '+' || e.key === '-') && isTreeFoldingOn()) {
+        e.preventDefault();
+        if (checkedPathsMap.size > 1) {
+          const tbody = document.getElementById('tbody');
+          if (!tbody) return;
+          const folderTrs = Array.from(tbody.querySelectorAll('tr.results-folder-row'));
+          if (!folderTrs.length) return;
+          const minDepth = Math.min(...folderTrs.map(tr => Number(tr.dataset.treeDepth) || 1));
+          for (const tr of folderTrs) {
+            if (Number(tr.dataset.treeDepth) !== minDepth) continue;
+            const twisty = tr.querySelector('.results-tree-twisty');
+            if (twisty) twisty.click();
+          }
+          return;
+        }
+        if (!selectedFullPath) return;
+        const row = selectedRowForActions();
+        if (!row || !rowIsFolder(row)) return;
+        const tr = document.querySelector('#resultsTable tbody tr.table-active');
+        if (!tr) return;
+        const twisty = tr.querySelector('.results-tree-twisty');
+        if (twisty) twisty.click();
+        return;
+      }
+
       /* l / f / s: toggle Flat / Hide-files / Show-subfolders view buttons */
       if (e.key === 'l') { e.preventDefault(); toggleViewCheckbox('optRvFlat'); return; }
       if (e.key === 'f') { e.preventDefault(); toggleViewCheckbox('optRvHideFiles'); return; }
@@ -8083,6 +8215,7 @@
       if (e.key === 'z') { e.preventDefault(); applySortColumnKey('size'); return; }
       if (e.key === 'm') { e.preventDefault(); applySortColumnKey('date_modified'); return; }
       if (e.key === 'n') { e.preventDefault(); applySortColumnKey('name'); return; }
+      if (e.key === 'p') { e.preventDefault(); applySortColumnKey('path'); return; }
       if (e.key === 't') { e.preventDefault(); keyboardOpenTagsModal(); return; }
       if (e.key === 'Delete') {
         e.preventDefault();

@@ -150,12 +150,19 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 }
 .form-check-input:checked { background-color: var(--tb-accent); border-color: var(--tb-accent); }
 /* Widths from <colgroup> only — auto layout re-measures every cell on each pane resize (splitter jank). */
-#resultsTable { table-layout: fixed; }
+/* separate + 0 spacing: sticky th works; collapse breaks sticky in Chromium */
+#resultsTable { table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+/* Sticky per th (thead sticky is flaky); scroll is #resultsScroll so top:0 clears “toolbar” clipping */
 #resultsTable thead th {
+  position: sticky;
+  top: 0;
+  /* Above tbody rows / buttons so header labels aren’t covered when sticky */
+  z-index: 4;
   font-weight: 600; font-size: 0.72rem; text-transform: uppercase;
   letter-spacing: 0.04em; color: #71717a; background: #fff; border-bottom-width: 2px;
   padding-top: 0.15rem;
   padding-bottom: 0.15rem;
+  box-shadow: 0 1px 0 var(--bs-border-color);
 }
 #resultsTable tbody tr { border-bottom-color: #f0f0f3; }
 /* Folder rows: light orange tint only while Path is the active sort (path/tree cues). */
@@ -169,13 +176,38 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   outline: 2px dotted var(--bs-primary);
   outline-offset: -2px;
 }
-/* Children of an active folder row: pale tint + left border */
-#resultsTable tbody tr.table-active-child td {
-  background-color: rgba(13, 110, 253, 0.04);
-  border-left: 2px solid rgba(13, 110, 253, 0.15);
+/* Focused folder + descendants: one solid outer box (see syncResultsSelectionHighlight group classes). */
+#resultsTable tbody tr.table-active.table-active-group-member {
+  outline: none;
 }
-#resultsTable tbody tr.table-active-child td:first-child {
-  border-left: 3px solid rgba(13, 110, 253, 0.25);
+#resultsTable tbody tr.table-active-group-member td:first-child {
+  border-left: 2px solid rgba(var(--bs-primary-rgb), 0.75);
+}
+#resultsTable tbody tr.table-active-group-member td:last-child {
+  border-right: 2px solid rgba(var(--bs-primary-rgb), 0.75);
+}
+#resultsTable tbody tr.table-active-group-top td {
+  border-top: 2px solid rgba(var(--bs-primary-rgb), 0.75);
+}
+#resultsTable tbody tr.table-active-group-bottom td {
+  border-bottom: 2px solid rgba(var(--bs-primary-rgb), 0.75);
+}
+#resultsTable tbody tr.table-active-group-top td:first-child {
+  border-top-left-radius: var(--bs-border-radius-sm);
+}
+#resultsTable tbody tr.table-active-group-top td:last-child {
+  border-top-right-radius: var(--bs-border-radius-sm);
+}
+#resultsTable tbody tr.table-active-group-bottom td:first-child {
+  border-bottom-left-radius: var(--bs-border-radius-sm);
+}
+#resultsTable tbody tr.table-active-group-bottom td:last-child {
+  border-bottom-right-radius: var(--bs-border-radius-sm);
+}
+/* Stronger fill inside the group frame (folder row uses .table-active; descendants .table-active-child). */
+#resultsTable tbody tr.table-active-group-member.table-active td,
+#resultsTable tbody tr.table-active-child td {
+  background-color: rgba(var(--bs-primary-rgb), 0.11);
 }
 .results-wrap.card {
   border: 1px solid #e4e4e7; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
@@ -533,6 +565,24 @@ body.tagfox-props-split-drag #propsAside {
   user-select: none;
   letter-spacing: 0;
 }
+/* Path tree: +/- hides deeper rows only (client-side; re-render clears it). */
+.results-tree-twisty {
+  width: 1.35rem;
+  height: 1.35rem;
+  min-width: 1.35rem;
+  font-size: 0.9rem;
+  line-height: 1;
+  font-weight: 600;
+}
+.results-tree-twisty-spacer {
+  display: inline-block;
+  width: 1.35rem;
+  min-width: 1.35rem;
+  flex-shrink: 0;
+}
+#resultsTable tbody tr.results-tree-collapse-hidden {
+  display: none;
+}
 /* Default cap for ad-hoc MD previews; RHS viewer blocks override with flex + max-height: none */
 .prop-md-preview { max-height: 220px; overflow: auto; }
 /* Folder readme preview: highlight when readme has text; pulse once after load */
@@ -618,9 +668,12 @@ body.tagfox-props-split-drag #propsAside {
   background: #f8f9fa;
 }
 .breadcrumb-center { font-size: 0.8rem; }
-.results-wrap { flex: 1; overflow: auto; min-height: 0; }
-.results-status-bar { position: sticky; top: 0; z-index: 3; }
-#resultsTable thead.sticky-top { top: 1.625rem; z-index: 2; }
+/* Flex column: alert + status fixed; inner #resultsScroll owns vertical scroll */
+.results-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+/* Sit above table sticky headers if anything ever paints into the same band */
+.results-status-bar { flex-shrink: 0; position: relative; z-index: 5; }
+.results-wrap > #everythingHttpHelpAlert { flex-shrink: 0; }
+.results-table-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
 /* Drop target when there are no rows (Shelf → current folder). */
 #resultsTable tbody:empty {
   min-height: 10rem;
@@ -753,10 +806,11 @@ body.tagfox-props-split-drag #propsAside {
   padding-right: calc(var(--bs-btn-padding-x) - 2px);
 }
 #tagBar .tag-bar-pill:focus-visible { box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.35); }
-#resultsTable thead th.sortable-th { cursor: pointer; user-select: none; white-space: nowrap; position: relative; }
+/* sticky comes from #resultsTable thead th — don’t use position:relative here (kills sticky) */
+#resultsTable thead th.sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
 #resultsTable thead th.sortable-th:hover { background-color: var(--bs-secondary-bg); }
 #resultsTable thead th .th-resize {
-  position: absolute; top: 0; right: 0; bottom: 0; width: 8px; margin-right: -4px; z-index: 3;
+  position: absolute; top: 0; right: 0; bottom: 0; width: 8px; margin-right: -4px; z-index: 1;
   cursor: col-resize; touch-action: none;
 }
 #resultsTable thead th .th-resize:hover { background: rgba(13, 110, 253, 0.15); }

@@ -1,4 +1,36 @@
-<!-- Help modal – loaded into index.html via sync XHR at startup -->
+<!--
+  Help modal — loaded into index.html via sync XHR at startup → #helpModalContainer (index.html).
+
+  ========== DEVELOPER / TECHNICAL (hidden from the UI) ==========
+
+  Dev: Enable Everything HTTP → in repo: npm install && npm start → Settings: base URL (optional starting current folder).
+
+  Hot reload: View menu — Reload (Ctrl+R), Force reload (Ctrl+Shift+R), Ctrl+F5 / Ctrl+Shift+F5, Toggle DevTools (Ctrl+Shift+I).
+  On Windows the menu bar is hidden by default; Alt toggles it.
+  | Renderer: index.html, styles.css, tags.js, renderer.js | hard reload (Ctrl+Shift+R / Ctrl+F5 / Ctrl+Shift+F5); if UI still stale, npm start again |
+  | preload.js, main.js | quit app and npm start |
+
+  Ship: npm run dist (electron-builder) → NSIS under dist/. Not code-signed; SmartScreen may warn recipients.
+
+  Everything sort-mix: (implementation — do not remove) The HTTP API returns all folders before all files for a given sort. With Max results capped,
+  a scope with many folders can yield folder-only pages and zero visible files. Everything 1.5a adds sort-mix: so files and folders interleave in true sort order.
+  TagFox appends sort-mix: when Hide files is OFF (renderer.js, runSearch()).
+  Ref: https://www.voidtools.com/forum/viewtopic.php?t=8994
+
+  Row ⋯ menu: main process (Menu, shell, clipboard). Windows: Copy for Explorer paste (CF_HDROP), full path, parent, name only, slashes, file:// where applicable.
+  Ctrl+Shift+C (⌘+Shift+C on Mac): copy full path(s) as text. Paste from Explorer into current folder (Windows). Then Open, Reveal, Terminal, Notepad, Delete, etc.
+
+  Drag and drop: default row/Shelf drag uses TagFox’s in-page protocol (move/copy inside the app; Shift = copy). External apps need Alt+drag or the Shelf “OS drag” arm for native paths (CF_HDROP). Native drag blocks the UI thread, hence the split.
+
+  Hide special (advanced): hides paths with any segment starting with ., ~, or $, plus desktop.ini; .. and .shortcut-targets-by-id are not hidden.
+  With Everything 1.5+, TagFox adds a !path:regex clause; on 1.4 that stack may not apply server-side — the table still filters the same client-side.
+
+  Active tag filters: sent to Everything as a regex clause so matches exist before results load. Tag bar ↻ runs a full-index [( scan and prunes ghosts; normal searches do not.
+
+  Bulk rename preview: first 200 rows in the dialog only; Rename applies to the full batch captured at open. Wildcard Find uses same Match case as the search row.
+
+  Keyboard nuance (README): Ctrl+/ (⌘+/ on Mac) focuses search; plain / when no dialog is open. Esc clears the query when it has text if no dialog or open dropdown needs Esc and focus is not in another text field (see Shortcuts table for fuller behaviour).
+-->
 <div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style="max-width: 56rem">
     <div class="modal-content help-modal-content">
@@ -59,7 +91,7 @@
                 <strong>&#x1F441;&#xFE0F; Three view toggles.</strong> The icon buttons next to the search box are independent on/off switches: <em>Flat view</em> (shows a Path column), <em>Show subfolders</em> (include items from subdirectories), and <em>Hide files</em> (show only folders). Combine them as you like &mdash; keyboard shortcuts: <kbd>l</kbd>, <kbd>s</kbd>, <kbd>f</kbd>.
               </li>
               <li class="mb-2">
-                <strong>&#x1F3F7;&#xFE0F; Tags live in filenames.</strong> TagFox adds tags like <code>[(draft)]</code> or <code>[(TODO)]</code> to file and folder names. They work everywhere &mdash; Explorer, Google Drive, zip files. No hidden database.
+                <strong>&#x1F3F7;&#xFE0F; Tags live in filenames.</strong> TagFox adds tags in a <code>[(tag1,tag2)]</code> block in the <strong>last</strong> <code>[ ( … ) ]</code> pair of a name segment (e.g. <code>Notes[(draft,review)].md</code> shows as <code>Notes.md</code>). Plain <code>[text]</code> without inner <code>()</code> is not a TagFox tag. They work everywhere &mdash; Explorer, Google Drive, zip files. No hidden database.
               </li>
               <li class="mb-2">
                 <strong>&#x2B50; Favourites instead of tabs.</strong> Save folders and searches as chips; <strong>drag</strong> chips to reorder keyboard slots. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>&hellip;<kbd>9</kbd> &mdash; folders; <kbd>Ctrl</kbd>+<kbd>1</kbd>&hellip;<kbd>9</kbd> &mdash; saved searches. See <strong>&#x2B50; Favourites</strong> and <strong>&#x1F4E6; Shelf</strong>.
@@ -106,9 +138,10 @@
               <li class="mb-2">&#x1F441;&#xFE0F; <strong>Fast previews</strong> &mdash; images, PDFs, Word, Excel, PowerPoint, text, JSON, markdown and more, right in the Viewer panel.</li>
               <li class="mb-2">&#x1F3F7;&#xFE0F; <strong>Filename tags</strong> &mdash; add, remove and filter by <code>[(tag)]</code> labels. Tags scan your folder automatically; click them to filter results.</li>
               <li class="mb-2">&#x1F4CB; <strong>Add TODO</strong> &mdash; create a small markdown file tagged <code>[(TODO)]</code> in the current folder, right from the Viewer panel.</li>
-              <li class="mb-2">&#x1F4DD; <strong>Folder docs</strong> &mdash; every folder can have a <code>readme.md</code> (or <code>claude.md</code>, <code>agents.md</code>, <code>about.md</code>&hellip;) describing what's inside. Edit it right in the Viewer.</li>
+              <li class="mb-2">&#x1F4DD; <strong>Folder docs</strong> &mdash; Viewer loads the first of <code>readme.md</code> &rarr; <code>readme.txt</code> &rarr; <code>claude.md</code> &rarr; <code>agents.md</code> &rarr; <code>about.md</code> &rarr; <code>about.txt</code> &rarr; <code>context.md</code> &rarr; <code>context.txt</code> &rarr; <code>index.md</code> &rarr; <code>index.txt</code> (details under <strong>Files &amp; folders</strong>).</li>
               <li class="mb-2">&#x1F4E6; <strong>Shelf</strong> &mdash; a visual staging area for files. Copy items onto the Shelf, navigate to another folder, paste them. No tabs or split panes needed.</li>
-              <li class="mb-2">&#x1F504; <strong>Bulk rename</strong> &mdash; check several files, press <kbd>Ctrl</kbd>+<kbd>H</kbd>, use wildcards (<code>*</code> / <code>?</code>) to find-and-replace in filenames with a live preview.</li>
+              <li class="mb-2">&#x1F504; <strong>Bulk rename</strong> &mdash; check several files (or highlight one), press <kbd>Ctrl</kbd>+<kbd>H</kbd>, use wildcards (<code>*</code> / <code>?</code>) on the <strong>last path segment only</strong>; live preview shows the first 200 rows but <strong>Rename</strong> still applies to the whole batch captured when the dialog opened. <strong>Match case</strong> follows the search row toggle.</li>
+              <li class="mb-2">&#x1F4CF; <strong>Layout</strong> &mdash; drag the splitter between results and the Viewer (width saved).</li>
               <li class="mb-0">&#x2601;&#xFE0F; <strong>Mixed local + Google Docs</strong> &mdash; local Office files preview inline; Google Workspace shortcuts (<code>.gdoc</code>, <code>.gsheet</code>, <code>.gslides</code>) open in a popup window. On Windows with Google Drive for Desktop, TagFox resolves the Doc URL from the shortcut file or from the <code>user.drive.id</code> virtual stream when the stub JSON cannot be read (including many <code>.shortcut-targets-by-id</code> paths). That path usually works for <strong>streamed</strong> (on-demand) files too, not only fully mirrored ones.</li>
             </ul>
           </div>
@@ -117,15 +150,18 @@
           <div class="tab-pane fade" id="help-pane-search" role="tabpanel" aria-labelledby="help-tab-search">
             <h3 class="fs-6 text-secondary mt-3 mb-2">&#x1F4C2; Current folder</h3>
             <ul class="mb-3 ps-3">
-              <li>The <strong>breadcrumb</strong> under the favourites row shows your <strong>current folder</strong>. Everything you search, create and paste goes here. Clear it (&#x2715; button) to search your whole index.</li>
+              <li>The <strong>breadcrumb</strong> under the favourites row shows your <strong>current folder</strong>. Everything you search, create and paste goes here. Clear it (&#x2715; button) to search your whole index. If the search box still has text when you change folder (double-click a folder row, breadcrumb, favourites, etc.), that filter stays on; the search row flashes briefly as a reminder.</li>
+              <li><kbd>Ctrl</kbd>+<kbd>Backspace</kbd> (<kbd>&#x2318;</kbd>+<kbd>Backspace</kbd> on Mac) clears the current folder from <strong>any</strong> focus when a folder is set &mdash; skipped while a dialog is open (and it overrides the usual &ldquo;delete previous word&rdquo; in text fields while a scope is active).</li>
               <li>The &#x270F;&#xFE0F; <strong>pen button</strong> lets you type a path directly. Press <kbd>Enter</kbd> to apply, <kbd>Esc</kbd> to cancel.</li>
-              <li>The &#x1F550; <strong>clock button</strong> (or <kbd>Ctrl</kbd>+<kbd>L</kbd>) shows your recently-used folders.</li>
+              <li>The &#x1F550; <strong>clock button</strong> (or <kbd>Ctrl</kbd>+<kbd>L</kbd>) lists <strong>recent folders</strong> only (paths you have used), not full search snapshots. Full search history is <kbd>Alt</kbd>+<kbd>&#x2190;</kbd> / <kbd>&#x2192;</kbd> (or the toolbar arrows).</li>
             </ul>
             <h3 class="fs-6 text-secondary mb-2">&#x1F50D; Searching</h3>
             <ul class="mb-3 ps-3">
               <li>Type in the search box &mdash; results update as you type. Press <kbd>Enter</kbd> to force a refresh.</li>
               <li>Tip: <code>foo|bar</code> matches either word. <code>!foo</code> excludes files matching &ldquo;foo&rdquo;.</li>
-              <li>The <strong>Advanced</strong> button opens extra options: match case, match path, whole word, diacritics.</li>
+              <li>Next to the search row, <strong>Both</strong> / <strong>Folders only</strong> / <strong>Files only</strong> narrow what Everything returns (<code>folder:</code> / <code>file:</code> when narrowed). See <a href="https://www.voidtools.com/support/everything/searching/" target="_blank" rel="noopener">Everything searching</a>.</li>
+              <li>The <strong>Advanced</strong> button opens extra options: match case, match path, whole word, diacritics. <strong>Hide special</strong> (there) hides paths with segments starting with <code>.</code>, <code>~</code>, or <code>$</code>, plus <code>desktop.ini</code>; works best server-side on Everything 1.5+.</li>
+              <li><strong>Tree View</strong> (sitemap icon next to the search box) is a one-click preset: path sort A&rarr;Z, Path column hidden, recursive on, files and folders. It stays on only while that whole bundle matches; changing sort, columns, recursive, or type filter turns it off.</li>
             </ul>
             <h3 class="fs-6 text-secondary mb-2">&#x1F441;&#xFE0F; View toggles</h3>
             <p class="mb-2">Three independent toggle buttons next to the search box &mdash; combine them freely:</p>
@@ -137,11 +173,13 @@
             <h3 class="fs-6 text-secondary mb-2">&#x23F1;&#xFE0F; Recency &amp; sorting</h3>
             <ul class="mb-3 ps-3">
               <li>The <strong>recency buttons</strong> (1h, 1d, 1w, 1m, 1y, All) filter results to items modified recently &mdash; handy for &ldquo;what did I change today?&rdquo;.</li>
-              <li>Click any <strong>column header</strong> to sort by that column. Click again to reverse. Drag the edges between headers to resize columns.</li>
+              <li>Click any <strong>column header</strong> to sort by that column. Click again to reverse. Drag the edges between headers to resize columns &mdash; widths are saved.</li>
+              <li>With focus outside a text field, <kbd>z</kbd> / <kbd>m</kbd> / <kbd>n</kbd> sort by size / modified / name (like clicking those columns; repeat to flip). <kbd>p</kbd> sorts by path (useful in tree view when the Path column is hidden). <kbd>t</kbd> opens tag edit like <kbd>Ctrl</kbd>+<kbd>T</kbd>.</li>
+              <li>On large scopes, Everything 1.5+ is recommended so files don&rsquo;t get pushed entirely off the first &ldquo;page&rdquo; of results by folders (TagFox asks the index for mixed file/folder ordering when folders and files are shown together).</li>
             </ul>
             <h3 class="fs-6 text-secondary mb-2">&#x23EA; Search history</h3>
             <ul class="mb-0 ps-3">
-              <li>Use <kbd>Alt</kbd>+<kbd>&#x2190;</kbd> / <kbd>&#x2192;</kbd> (or the arrow buttons top-left) to step back and forward through your recent searches. Each step restores the full search &mdash; query, folder, tags, sort, and filters.</li>
+              <li>Use <kbd>Alt</kbd>+<kbd>&#x2190;</kbd> / <kbd>&#x2192;</kbd> (or the arrow buttons top-left) to step back and forward through your recent searches. Each step restores the full search &mdash; query, folder, tags, toggles, and sort.</li>
             </ul>
           </div>
 
@@ -155,14 +193,15 @@
             </ul>
             <h3 class="fs-6 text-secondary mb-2">&#x1F3F7;&#xFE0F; Tags</h3>
             <ul class="mb-3 ps-3">
-              <li>Tags appear as coloured chips in the tag bar (below the breadcrumb). Click a tag to filter results; click again to remove the filter.</li>
-              <li>To edit a file's tags: select the row and press <kbd>Ctrl</kbd>+<kbd>T</kbd>, or use the <strong>Tags</strong> button in the bulk bar.</li>
-              <li>Tags are stored as <code>[(tag1,tag2)]</code> at the end of the filename &mdash; e.g. <code>Notes[(draft)].md</code>. Plain <code>[text]</code> without parentheses is <em>not</em> a TagFox tag.</li>
+              <li>Tags appear as coloured chips in the tag bar (below the breadcrumb). Click a tag to filter results; click again to remove the filter. Counts in parentheses reflect the current result list (after filters), capped by <strong>Max results</strong>.</li>
+              <li>The <strong>&#x21BB;</strong> control at the end of the tag row re-runs the main search and rescans the whole index for <code>[(…)]</code> patterns, pruning remembered/active tags that no longer appear &mdash; use if the bar looks stale or after bulk renames outside TagFox. Ordinary searches do not do that full scan.</li>
+              <li>To edit a file's tags: select the row and press <kbd>Ctrl</kbd>+<kbd>T</kbd>, or use the <strong>Tags</strong> button in the bulk bar. <strong>Add</strong> or removing a chip renames on disk immediately. When a <strong>current folder</strong> is set, renames must stay under that path.</li>
+              <li>Tags are stored as <code>[(tag1,tag2)]</code> inside the <strong>last</strong> bracketed segment of a name piece &mdash; e.g. <code>Notes[(draft)].md</code> or a folder <code>Project[(2024,clientA)]</code>. Plain <code>[text]</code> without inner <code>()</code> is <em>not</em> a TagFox tag.</li>
             </ul>
             <h3 class="fs-6 text-secondary mb-2">&#x1F4C4; Viewer panel</h3>
             <ul class="mb-0 ps-3">
               <li>Select a file to see its details and preview on the right. Supports images, PDFs, Office files, markdown, text, audio, and video.</li>
-              <li>For folders, the Viewer shows a <strong>folder doc</strong> &mdash; the first <code>readme.md</code>, <code>about.md</code>, <code>claude.md</code> etc. it finds. You can edit and save it right there. If none exists, saving creates <code>readme.md</code>.</li>
+              <li>For folders, the Viewer shows a <strong>folder doc</strong> &mdash; the first match it finds (case-insensitive basename): <code>readme.md</code> &rarr; <code>readme.txt</code> &rarr; <code>claude.md</code> &rarr; <code>agents.md</code> &rarr; <code>about.md</code> &rarr; <code>about.txt</code> &rarr; <code>context.md</code> &rarr; <code>context.txt</code> &rarr; <code>index.md</code> &rarr; <code>index.txt</code>. You can edit and save there; if none exist, <strong>Save</strong> creates <code>readme.md</code>.</li>
               <li>The row <strong>&#x22EF;</strong> menu gives you options to open, reveal in Explorer, copy the path, and more.</li>
               <li>Press <kbd>Shift</kbd>+<kbd>Space</kbd> to expand the Viewer to near-fullscreen.</li>
               <li>Google Workspace shortcuts (<code>.gdoc</code> / <code>.gsheet</code> / <code>.gslides</code>): <strong>Open</strong> uses an in-app window when TagFox can get the document URL (from the stub JSON, or on Windows from the Drive stream <code>filename:user.drive.id</code>). Streamed-only files are usually fine; if not, use Open again, context &ldquo;Search Google Drive&hellip;&rdquo;, or hydrate the file in Drive.</li>
@@ -196,7 +235,7 @@
             </ol>
             <h3 class="fs-6 text-secondary mb-2">&#x1F4A1; Tips</h3>
             <ul class="mb-0 ps-3">
-              <li>The <strong>OS drag</strong> button lets you drag Shelf items straight into Explorer or other apps.</li>
+              <li>The <strong>OS drag</strong> button arms one drag from a row or Shelf chip with a native path for Explorer and other apps. Alternatively, hold <kbd>Alt</kbd> while starting a drag from a result row or Shelf chip. A normal drag without <kbd>Alt</kbd> stays inside TagFox only.</li>
               <li>The Shelf remembers its contents until you clear it &mdash; you can collect files from multiple folders before pasting.</li>
               <li>Think of it as a clipboard for files that doesn't disappear when you navigate away.</li>
             </ul>
@@ -278,7 +317,7 @@
                 <strong>Start TagFox:</strong> in the TagFox folder, run <code>npm install</code> then <code>npm start</code>.
               </li>
               <li class="mb-2">
-                <strong>Configure the connection:</strong> open <strong>Settings</strong> (top-left), set <strong>Everything base URL</strong> to match (e.g. <code>http://127.0.0.1:8080</code>). If you set HTTP auth in Everything, enter the same username/password here.
+                <strong>Configure the connection:</strong> open <strong>Settings</strong> (top-left), set <strong>Everything base URL</strong> to match (e.g. <code>http://127.0.0.1:8080</code>). Optionally set a <strong>starting current folder</strong> so the breadcrumb opens in a chosen path (clear it to search the whole index). If you set HTTP auth in Everything, enter the same username/password here.
               </li>
               <li class="mb-0">
                 <strong>Start browsing!</strong> Set a folder using the breadcrumb or path editor, type in the search box, and you should see results instantly.
@@ -304,7 +343,7 @@
                   <tr><td><kbd>l</kbd></td><td>Toggle Flat view (list with Path column)</td></tr>
                   <tr><td><kbd>s</kbd></td><td>Toggle Show subfolders</td></tr>
                   <tr><td><kbd>f</kbd></td><td>Toggle Hide files (folders only)</td></tr>
-                  <tr><td><kbd>z</kbd> / <kbd>m</kbd> / <kbd>n</kbd></td><td>Sort by Size / Modified / Name (same as column header; repeat the same key to toggle direction)</td></tr>
+                  <tr><td><kbd>z</kbd> / <kbd>m</kbd> / <kbd>n</kbd> / <kbd>p</kbd></td><td>Sort by Size / Modified / Name / Path (repeat to toggle direction; <kbd>p</kbd> useful in tree view where Path column is hidden)</td></tr>
                 </tbody>
               </table>
             </div>
@@ -319,6 +358,7 @@
                   <tr><td><kbd>Enter</kbd></td><td>Open file or enter folder</td></tr>
                   <tr><td><kbd>&#x2192;</kbd></td><td>Scope into selected folder</td></tr>
                   <tr><td><kbd>&#x2190;</kbd></td><td>Scope to parent or first subfolder on the row's path</td></tr>
+                  <tr><td><kbd>+</kbd> / <kbd>-</kbd></td><td>Expand / collapse folder in tree view; with multi-select (e.g.&nbsp;<kbd>Ctrl</kbd>+<kbd>A</kbd>) toggles all top-level folders</td></tr>
                   <tr><td><kbd>Backspace</kbd></td><td>Go up to the parent folder</td></tr>
                   <tr><td><kbd>Alt</kbd>+<kbd>&#x2191;</kbd></td><td>Go up to the parent of the <strong>current folder</strong> (including while the search box is focused)</td></tr>
                   <tr><td><kbd>Alt</kbd>+<kbd>&#x2190;</kbd> / <kbd>&#x2192;</kbd></td><td>Search history back / forward</td></tr>
