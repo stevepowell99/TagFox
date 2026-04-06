@@ -1,5 +1,5 @@
 // TagBrowser — Electron main: window + IPC to Everything HTTP + open/rename files
-const { app, BrowserWindow, ipcMain, shell, Menu, clipboard, nativeImage, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, clipboard, nativeImage, globalShortcut, screen } = require('electron');
 const { spawn, spawnSync, execFileSync } = require('child_process');
 const { pathToFileURL } = require('url');
 const fs = require('fs').promises;
@@ -1433,6 +1433,62 @@ function targetUrlFromGoogleDriveShortcut(fullPath, rawText) {
   return `https://docs.google.com/document/d/${id}/edit`;
 }
 
+/**
+ * Google Drive for Desktop: cloud file id is exposed as a synthetic stream `file.gdoc:user.drive.id`.
+ * Often readable when the main stream throws EISDIR to Node (placeholder stub). Not on all mounts.
+ */
+function tryReadGoogleDriveVirtualFileIdWindowsSync(fullPathRaw, diag) {
+  if (process.platform !== 'win32') return null;
+  const norm = normalizePathForShellOpen(String(fullPathRaw || '')).trim();
+  if (!norm) return null;
+  const back = norm.replace(/\//g, '\\');
+  const stream = ':user.drive.id';
+  const candidates = [];
+  candidates.push(`${back}${stream}`);
+  try {
+    const resolved = path.resolve(back);
+    const longBase = toWinLongRenamePath(resolved);
+    if (longBase !== resolved) candidates.push(`${longBase}${stream}`);
+  } catch (_) {}
+  const comspec = process.env.ComSpec || (process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32', 'cmd.exe') : 'cmd.exe');
+  const attempts = [];
+  for (const adsPath of candidates) {
+    for (const label of ['fs.readFileSync', 'cmd.type']) {
+      try {
+        const raw =
+          label === 'fs.readFileSync'
+            ? fssync.readFileSync(adsPath, 'utf8')
+            : execFileSync(comspec, ['/d', '/s', '/c', 'type', adsPath], {
+                encoding: 'utf8',
+                windowsHide: true,
+                maxBuffer: 4096,
+              });
+        const id = String(raw || '')
+          .replace(/^\uFEFF/, '')
+          .trim()
+          .split(/\r?\n/)[0]
+          .trim();
+        if (!id || /^local/i.test(id)) {
+          attempts.push({ label, adsPath, note: 'empty_or_local_placeholder' });
+          continue;
+        }
+        if (id.length < 10 || id.length > 256 || !/^[A-Za-z0-9_-]+$/.test(id)) {
+          attempts.push({ label, adsPath, note: 'id_shape' });
+          continue;
+        }
+        if (diag) {
+          diag.driveVirtualIdStream = { ok: true, via: label, adsPath, idLen: id.length };
+        }
+        return id;
+      } catch (e) {
+        attempts.push({ label, adsPath, code: e.code || null, msg: String(e.message || e) });
+      }
+    }
+  }
+  if (diag) diag.driveVirtualIdStream = { ok: false, attempts };
+  return null;
+}
+
 /** Node readFile EISDIR on `.gdoc` while stat says file: try .NET ReadAllText (Explorer-style) for normal + `\\?\` paths. */
 const PS1_READ_UTF8_PATH_VARIANTS = `param([Parameter(Mandatory)][string]$JsonPath)
 try {
@@ -1746,6 +1802,14 @@ async function readGoogleWorkspaceShortcutText(fullPathRaw) {
     return { ok: false, error: 'Shortcut file unexpectedly large.', diag };
   }
 
+  const virtualId = tryReadGoogleDriveVirtualFileIdWindowsSync(fullPath, diag);
+  if (virtualId) {
+    const raw = JSON.stringify({ doc_id: virtualId });
+    diag.source = 'driveVirtualIdStream';
+    diag.outcome = 'ok_virtualIdStream';
+    return { ok: true, raw, diag };
+  }
+
   diag.readFile = { attempted: fullPath, expectedSize: st.size };
   try {
     const raw = await fs.readFile(fullPath, 'utf8');
@@ -1820,10 +1884,14 @@ function openGoogleWorkspaceEditorWindow(parentWin, targetUrl) {
     googleWorkspaceWin.focus();
     return { ok: true };
   }
+  // ~90vw × 90vh of usable desktop (Electron has no CSS units; workArea excludes taskbar).
+  const wa = screen.getPrimaryDisplay().workArea;
+  const gw = Math.round(wa.width * 0.9);
+  const gh = Math.round(wa.height * 0.9);
   googleWorkspaceWin = new BrowserWindow({
     parent: parentWin || undefined,
-    width: 1180,
-    height: 820,
+    width: gw,
+    height: gh,
     show: false,
     webPreferences: {
       partition: 'persist:tagfox-google-workspace',
@@ -2246,16 +2314,37 @@ ipcMain.handle('list-child-folders', async (_event, { parentPath }) => {
   return { ok: true, folders };
 });
 
+/**
+ * Windows breadcrumb roots: `existsSync('X:\\')` often lies for Google Drive / cloud letter mounts;
+ * `readdirSync` + `\\\\?\\` still see them (same pattern as rename long-path helpers elsewhere in this file).
+ */
+function win32DriveRootIfReady(letter) {
+  const L = String(letter || '').toUpperCase();
+  if (!/^[A-Z]$/.test(L)) return null;
+  const ordinary = `${L}:\\`;
+  const longRoot = `\\\\?\\${ordinary}`;
+  try {
+    if (fssync.existsSync(ordinary) || fssync.existsSync(longRoot)) return ordinary;
+  } catch (_) {}
+  try {
+    fssync.readdirSync(ordinary);
+    return ordinary;
+  } catch (_) {}
+  try {
+    fssync.readdirSync(longRoot);
+    return ordinary;
+  } catch (_) {}
+  return null;
+}
+
 /** Drive letters / volume mount points for breadcrumb (Windows: ready drives; macOS: / + /Volumes/*; else /). */
 function listDriveRootsForPlatform() {
   if (process.platform === 'win32') {
     const roots = [];
     for (let i = 0; i < 26; i++) {
       const letter = String.fromCharCode(65 + i);
-      const fp = letter + ':\\';
-      try {
-        if (fssync.existsSync(fp)) roots.push({ label: letter + ':', fullPath: fp });
-      } catch (_) {}
+      const fp = win32DriveRootIfReady(letter);
+      if (fp) roots.push({ label: letter + ':', fullPath: fp });
     }
     return { platform: 'win32', roots };
   }

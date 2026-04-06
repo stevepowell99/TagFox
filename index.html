@@ -336,6 +336,24 @@
           </div>
         </aside>
         <div id="resultsWrap" class="results-wrap card shadow-sm flex-grow-1 min-w-0 min-h-0" tabindex="-1" role="region" aria-label="Search results">
+        <!-- Shown when Everything HTTP is unreachable or returns non-API data (see renderer.js). -->
+        <div
+          id="everythingHttpHelpAlert"
+          class="alert alert-warning border-0 border-bottom rounded-0 mb-0 py-2 px-3 small d-none"
+          role="alert"
+        >
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <i class="fa-solid fa-plug-circle-xmark flex-shrink-0" aria-hidden="true"></i>
+            <span id="everythingHttpHelpMsg" class="flex-grow-1 min-w-0"></span>
+            <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0" id="btnEverythingHttpOpenSettings">
+              Settings
+            </button>
+            <button type="button" class="btn btn-sm btn-primary flex-shrink-0" id="btnEverythingHttpSetupHelp">
+              Setup help
+            </button>
+            <button type="button" class="btn-close flex-shrink-0" id="btnEverythingHttpHelpDismiss" aria-label="Dismiss"></button>
+          </div>
+        </div>
         <div id="statusBar" class="results-status-bar border-bottom bg-body-secondary px-2 py-1 d-flex align-items-center flex-shrink-0 small" role="status">
           <span id="status" class="text-muted min-w-0 flex-grow-1" aria-live="polite"></span>
           <div class="d-inline-flex align-items-center flex-shrink-0 tagfox-scope-nav-cluster ms-2" role="group" aria-label="Current folder navigation">

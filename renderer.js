@@ -6751,10 +6751,12 @@
         if (!res || !res.ok) {
           resultsPagingCtx = { ...ctx, hasMore: false };
           if (status) status.textContent = (res && res.error) || 'Load more failed';
+          maybeShowEverythingHttpHelpBanner(res && res.error);
           renderTable();
           updateResultsLoadMoreUi();
           return;
         }
+        hideEverythingHttpHelpBanner();
         let add = res.rows || [];
         if (isHideFiles()) add = add.filter(rowIsFolder);
         if (!add.length) {
@@ -6778,6 +6780,49 @@
         resultsLoadMoreBusy = false;
         updateResultsLoadMoreUi();
       }
+    }
+
+    /** Map Everything bridge errors to a short hint class (only for setup / connectivity, not “no rows”). */
+    function everythingHttpSetupHintKind(errMsg) {
+      const s = String(errMsg || '');
+      const sl = s.toLowerCase();
+      if (/http\s+401\b/.test(s) || /http\s+403\b/.test(s)) return 'auth';
+      if (/response was not json/i.test(s)) return 'json';
+      if (/http\s+404\b/.test(s)) return 'http';
+      if (/http\s+50[0-9]\b/.test(s)) return 'http';
+      if (/econnrefused|etimedout|enotfound/i.test(s)) return 'net';
+      if (sl.includes('failed to fetch')) return 'net';
+      if (sl.includes('networkerror') || sl.includes('network request failed')) return 'net';
+      if (/^fetch failed\b/i.test(sl)) return 'net';
+      return null;
+    }
+
+    function hideEverythingHttpHelpBanner() {
+      document.getElementById('everythingHttpHelpAlert')?.classList.add('d-none');
+    }
+
+    /** Offer Settings + Installation tab when search can’t talk to Everything HTTP. */
+    function maybeShowEverythingHttpHelpBanner(errMsg) {
+      const kind = everythingHttpSetupHintKind(errMsg);
+      if (!kind) return;
+      const wrap = document.getElementById('everythingHttpHelpAlert');
+      const span = document.getElementById('everythingHttpHelpMsg');
+      if (!wrap || !span) return;
+      const detail = String(errMsg || '').trim();
+      if (kind === 'auth') {
+        span.textContent =
+          'Everything HTTP auth failed. Use the same username/password as Tools → Options → HTTP Server. ' +
+          (detail ? '(' + detail + ')' : '');
+      } else if (kind === 'json') {
+        span.textContent =
+          'This URL did not return Everything JSON — wrong port, not the HTTP server, or a proxy. Check the base URL. ' +
+          (detail ? '(' + detail + ')' : '');
+      } else {
+        span.textContent =
+          'Cannot reach Everything HTTP — is Everything running, HTTP enabled (on 1.5a: HTTP plug-in installed), URL/port correct? ' +
+          (detail ? '(' + detail + ')' : '');
+      }
+      wrap.classList.remove('d-none');
     }
 
     async function runSearch() {
@@ -6850,11 +6895,13 @@
         resultsPagingCtx = null;
         searchDebugLog('runSearch.error', { runId, err: res.error || 'Search failed' });
         status.textContent = res.error || 'Search failed';
+        maybeShowEverythingHttpHelpBanner(res.error);
         await syncSelectionAfterSearch();
         renderTagBar();
         renderTable();
         return;
       }
+      hideEverythingHttpHelpBanner();
       let got = Array.isArray(res.rows) ? res.rows : [];
       if (hideF) got = got.filter(rowIsFolder);
       lastRows = got;
@@ -8194,6 +8241,21 @@
     installTagFoxTooltipGuardsOnce();
     bindBreadcrumbBarDragDrop();
     bindShelfDrop();
+    document.getElementById('btnEverythingHttpOpenSettings')?.addEventListener('click', () => {
+      document.getElementById('btnToggleSettings')?.click();
+    });
+    document.getElementById('btnEverythingHttpSetupHelp')?.addEventListener('click', () => {
+      try {
+        localStorage.setItem(LS.helpModalTab, 'installation');
+      } catch (_) {
+        /* ignore */
+      }
+      const hm = document.getElementById('helpModal');
+      if (hm) bootstrap.Modal.getOrCreateInstance(hm).show();
+    });
+    document.getElementById('btnEverythingHttpHelpDismiss')?.addEventListener('click', () => {
+      hideEverythingHttpHelpBanner();
+    });
     document.getElementById('btnShelfOpen').addEventListener('click', async () => {
       const st = await window.tagBrowser.shelfState();
       if (st.ok) void window.tagBrowser.openPath(st.path);
