@@ -1410,11 +1410,13 @@
             const fullDir = prefixSegs.join('\\');
             if (realFolderKeys.has(pathNormKey(fullDir))) continue;
             const synthetic = syntheticFolderRow(fullDir);
-            synthetic.__pathTreeDepthUi = j + 1;
+            // Depth under scope: relParts = under.slice(stripPrefixLen), so j indexes the tail only.
+            synthetic.__pathTreeDepthUi = stripPrefixLen + j + 1;
             out.push(synthetic);
           }
         }
-        row.__pathTreeDepthUi = (relParts.length === 0 ? under.length : relParts.length) + 1;
+        // Always use full parent chain under scope — relParts.length is only the tail after stripPrefixLen (bug: child matched same depth as parent folder).
+        row.__pathTreeDepthUi = under.length + 1;
         out.push(row);
         prevRelParent = relParts;
       }
