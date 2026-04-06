@@ -4,4 +4,6 @@ Small Electron UI for [Voidtools Everything](https://www.voidtools.com/) HTTP se
 
 **Documentation:** edit [`help.md`](help.md), then run `npm run build:help` (or `npm start` / `npm run dist`, which run it automatically). That writes [`help.html`](help.html), which the app loads for **F1** help. Maintainer notes are **HTML comments** at the top of `help.md`.
 
-**Run:** `npm install` then `npm start`. Enable Everything’s HTTP server and set **Settings → Everything base URL** in the app.
+**Run:** `npm install` then `npm start`. Enable Everything's HTTP server and set **Settings → Everything base URL** in the app.
+
+**Performance:** If search feels slow, try deselecting **Folder-contents highlight** and/or **Hide special** in Advanced.

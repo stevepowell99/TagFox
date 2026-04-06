@@ -112,11 +112,15 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 .tagfox-search-toolbar-row .tagfox-results-view-mode > .btn-check + .btn .fa-fw {
   margin: 0;
 }
-/* Subtle outline to visually join each icon pair. */
+/* Tinted background to visually group each icon pair. */
 .tagfox-view-pair {
-  border: 1px solid var(--bs-border-color);
-  border-radius: var(--bs-border-radius-sm);
-  padding: 1px;
+  background: var(--bs-secondary-bg);
+  border-radius: var(--bs-border-radius);
+  padding: 2px;
+  gap: 0;
+}
+.tagfox-search-toolbar-row .tagfox-view-pair + .tagfox-view-pair {
+  margin-left: 0.25rem;
 }
 /* Row recency dot (same buckets as 1h / 1d / 1w / 1m / 1y); slightly larger + more gap from checkbox in #resultsTable rules. */
 .recency-blob {

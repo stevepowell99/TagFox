@@ -380,7 +380,7 @@
             </button>
           </div>
           <div class="position-relative flex-shrink-0 ms-2 tagfox-advanced-wrap">
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnToggleSearchOptsAdvanced" aria-expanded="false" aria-controls="searchOptsAdvancedPanel" title="Match case, match path, whole word, diacritics">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnToggleSearchOptsAdvanced" aria-expanded="false" aria-controls="searchOptsAdvancedPanel" title="Match case, path, whole word, respect accents; hide special paths (client-side)">
               Advanced
             </button>
             <div id="searchOptsAdvancedPanel" class="search-opts-advanced-popover border rounded px-2 py-2 bg-body shadow-sm d-flex flex-wrap align-items-center gap-1" role="group" aria-label="Everything advanced search options" hidden>
@@ -391,7 +391,12 @@
               <input type="checkbox" class="btn-check" id="optWholeWord" autocomplete="off" />
               <label class="btn btn-outline-secondary btn-sm" for="optWholeWord">Whole word</label>
               <input type="checkbox" class="btn-check" id="optDiacritics" autocomplete="off" />
-              <label class="btn btn-outline-secondary btn-sm" for="optDiacritics">Diacritics</label>
+              <label class="btn btn-outline-secondary btn-sm" for="optDiacritics">Respect accents</label>
+              <input type="checkbox" class="btn-check" id="optHideSpecial" autocomplete="off" />
+              <label class="btn btn-outline-secondary btn-sm" for="optHideSpecial" title="Hide from the table only: any path segment starting with . ~ or $, plus desktop.ini (.shortcut-targets-by-id kept). Does not change Everything — raise Results per page if the list looks empty. With this on, rows are filtered after each page; hits in deeper subfolders may not appear until you load more (scroll or Load more).">Hide special</label>
+              <p class="small text-muted mb-0 w-100 mt-1">
+                Turning on <strong>Hide special</strong> filters rows after each page from Everything — items in deeper subfolders may not show until you load more (scroll or <strong>Load more</strong>).
+              </p>
             </div>
           </div>
         </div>

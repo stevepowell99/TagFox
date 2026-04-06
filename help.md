@@ -22,8 +22,7 @@
 
   Drag and drop: default row/Shelf drag uses TagFox’s in-page protocol (move/copy inside the app; Shift = copy). External apps need Alt+drag or the Shelf “OS drag” arm for native paths (CF_HDROP). Native drag blocks the UI thread, hence the split.
 
-  Hide special (advanced): hides paths with any segment starting with ., ~, or $, plus desktop.ini; .. and .shortcut-targets-by-id are not hidden.
-  With Everything 1.5+, TagFox adds a !path:regex clause; on 1.4 that stack may not apply server-side — the table still filters the same client-side.
+  Hide special (Advanced): client-side only — filteredRows() drops paths matching pathUnderDotFolder() in renderer.js; Everything query unchanged (pagination still uses raw hit count per page).
 
   Active tag filters: sent to Everything as a regex clause so matches exist before results load. Tag bar ↻ runs a full-index [( scan and prunes ghosts; normal searches do not.
 
@@ -36,30 +35,29 @@
 
 <!-- help:tab {"id":"essentials","label":"🚀 Get started","active":true} -->
 
-Welcome! Here's the quick version — everything you need to know to start using TagFox.
+Welcome to TagFox — a fast, keyboard-friendly file manager powered by instant search.
 
-1. **🔌 TagFox needs Everything Search.** It's a fast file-finder app by Voidtools. TagFox talks to Everything's HTTP server — without it running, you'll see an empty list. Set the URL in **Settings** (top-left).
-2. **📂 Pick a folder to work in.** The breadcrumb bar (under the favourite chips) shows your *current folder*. Search, paste, and new files all happen inside it. Leave it empty to search your whole disk.
-3. **👁️ Three view switches.** The icon-pair buttons next to the search box each let you pick between two modes: *Flat / Tree* view, *Subfolders on / off*, and *Files+folders / Folders only*. The active choice is highlighted. Keyboard shortcuts: `l`, `s`, `f`.
-4. **🏷️ Tags live in filenames.** TagFox adds tags in a `[(tag1,tag2)]` block in the **last** `[ ( … ) ]` pair of a name segment (e.g. `Notes[(draft,review)].md` shows as `Notes.md`). Plain `[text]` without inner `()` is not a TagFox tag. They work everywhere — Explorer, Google Drive, zip files. No hidden database.
-5. **⭐ Favourites instead of tabs.** Save folders and searches as chips; **drag** chips to reorder keyboard slots. `Ctrl`+`Shift`+`1`…`9` — folders; `Ctrl`+`1`…`9` — saved searches. See **⭐ Favourites** and **📦 Shelf**.
-6. **👀 The Viewer panel** (right side) previews images, PDFs, Office files, markdown, and more. For folders, it shows a “folder doc” (`readme.md` etc.) you can edit right there.
-7. **☁️ Cloud sync has limits.** Google Drive and OneDrive “streaming” mode (files download on demand) can make renames and moves unreliable — see **⚠️ Gotchas**.
-8. **❓ Press `F1` anytime** to reopen this help. It remembers which tab you were on.
+1. **🔌 First, make sure Everything Search is running.** TagFox relies on [Voidtools Everything](https://www.voidtools.com/) for its speed. See **📦 Installation** for setup. If results are empty, Everything probably isn't running.
+2. **📂 Pick a folder to work in.** The breadcrumb bar shows your current folder — search, paste, and new files all happen inside it. Leave it empty to search your whole disk.
+3. **👁️ Switch views to suit the task.** Toggle between Flat/Tree, Subfolders on/off, and Files+Folders/Folders only with the buttons next to the search box (or keys `l`, `s`, `f`).
+4. **🏷️ Tag your files and folders for easy organisation.** Add tags like `draft`, `urgent`, or `2026` to any file or folder — then filter by tag to find exactly what you need. Tags are stored in the filename itself, so they travel with your files everywhere (Explorer, Google Drive, zip files). See **🏷️ Tags** for details.
+5. **⭐ Save favourite folders and searches.** Click 💾 to bookmark a folder or an entire search. Jump back with a click or `Ctrl`+`1`…`9`. See **⭐ Favourites**.
+6. **👀 Preview files without leaving TagFox.** The Viewer panel (right side) shows images, PDFs, Office docs, markdown, and more. For folders, it shows a folder readme doc you can edit in place. View and edit google files like gdocs, gslides without leaving TagFox.
+7. **❓ Press `F1` anytime** to reopen this help.
 
 <!-- help:tab {"id":"motivation","label":"💡 Why TagFox?"} -->
-
-### 🤔 The problem
-
-Searching the web feels instant. Searching your own hard drive? Painfully slow — unless you use an index tool like **Voidtools Everything**. But even Everything gives you a flat list of results without showing *where* things fit in your folder structure.
-
-Meanwhile, tools like Google Drive train you to type a word and expect the right file. But you still get a flat list. When your projects have folders with similar names, you quickly lose track of what belongs where.
 
 ### 🦊 What TagFox does differently
 
 TagFox combines **instant search** (powered by Everything) with a **folder tree view** — so you see results *in context*. You can navigate folders, tag files, preview documents, and manage simple project TODOs without ever opening File Explorer.
 
-Tags are stored in the filename itself (e.g. `Report[(draft,urgent)].docx`), so they travel with the file — no proprietary database, no hidden metadata folders. They work in Explorer, Google Drive, zip exports, everywhere.
+**Tags** are labels like `draft`, `urgent`, or `2026` that you attach to files and folders to organise your work. You can filter by tag to instantly find everything marked that way. TagFox stores tags in the filename itself (e.g. `Report[(draft,urgent)].docx`), so they travel with the file — no database, no hidden metadata. They work in Explorer, Google Drive, zip exports, everywhere.
+
+### 🤔 The problem TagFox solves
+
+Searching the web feels instant. Searching your own hard drive? Painfully slow — unless you use an index tool like **Voidtools Everything**. But even Everything gives you a flat list of results without showing *where* things fit in your folder structure.
+
+Meanwhile, tools like Google Drive train you to type a word and expect the right file. But you still get a flat list. When your projects have folders with similar names, you quickly lose track of what belongs where.
 
 <p class="text-muted mb-0">TagFox is deliberately simple: fast search, tags, previews, keyboard shortcuts, favourites, and a shelf — not a full project-management suite.</p>
 
@@ -91,8 +89,8 @@ Tags are stored in the filename itself (e.g. `Report[(draft,urgent)].docx`), so 
 - Type in the search box — results update as you type. Press `Enter` to force a refresh.
 - Tip: `foo|bar` matches either word. `!foo` excludes files matching “foo”.
 - Next to the search row, **Both** / **Folders only** / **Files only** narrow what Everything returns (`folder:` / `file:` when narrowed). See [Everything searching](https://www.voidtools.com/support/everything/searching/).
-- The **Advanced** button opens extra options: match case, match path, whole word, diacritics. **Hide special** (there) hides paths with segments starting with `.`, `~`, or `$`, plus `desktop.ini`; works best server-side on Everything 1.5+.
-- **Tree View** (sitemap icon next to the search box) is a one-click preset: path sort A→Z, Path column hidden, recursive on, files and folders. It stays on only while that whole bundle matches; changing sort, columns, recursive, or type filter turns it off.
+- The **Advanced** button opens extra options: match case, match path, whole word, diacritics, **Hide special**. **Hide special** removes matching rows from the **table only** (paths with any segment starting with `.`, `~`, or `$`, plus `desktop.ini`; `..` and `.shortcut-targets-by-id` are not hidden). Everything still fetches up to **Results per page** hits before filtering — if the list looks empty, raise that limit, use **Load more**, or narrow scope/query.
+- **Tree** vs **Flat** (`l`): Tree hides the Path column and groups by folder; Tree mode keeps path sort A→Z. Size/Modified/Name sorts switch to Flat (status bar note).
 
 ### 👁️ View toggles
 

@@ -14,6 +14,7 @@
       optWholeWord: 'tagBrowserOptWW',
       optPath: 'tagBrowserOptPath',
       optDiacritics: 'tagBrowserOptDiac',
+      optHideSpecial: 'tagBrowserOptHideSpecial',
       sortBy: 'tagBrowserSortBy',
       optAsc: 'tagBrowserOptAsc',
       treeView: 'tagBrowserTreeView',
@@ -287,6 +288,11 @@
     function isFlatView() { return document.getElementById('optRvFlat')?.checked; }
     function isShowSubfolders() { return document.getElementById('optRvSubsOn')?.checked; }
     function isHideFiles() { return document.getElementById('optRvDirsOnly')?.checked; }
+
+    /** Advanced: drop dot/~/$/desktop.ini paths from the table only (Everything page size unchanged). */
+    function isHideSpecialPaths() {
+      return !!document.getElementById('optHideSpecial')?.checked;
+    }
 
     /** Path column hidden + tree gutter when not flat. */
     function isTreeViewOn() { return !isFlatView(); }
@@ -1768,6 +1774,10 @@
       if (!el) return;
       el.innerHTML = '';
       const paths = loadFavouriteFolders();
+      if (!paths.length) {
+        el.innerHTML = '<span class="text-muted small fst-italic px-2">Click <i class="fa-solid fa-floppy-disk"></i> to save the current folder</span>';
+        return;
+      }
       for (let idx = 0; idx < paths.length; idx++) {
         const fp = paths[idx];
         const row = document.createElement('span');
@@ -2063,7 +2073,9 @@
           ' whole=' +
           !!s.optWholeWord +
           ' diacritics=' +
-          !!s.optDiacritics
+          !!s.optDiacritics +
+          ' hideSpecial=' +
+          !!s.optHideSpecial
       );
       lines.push(
         'Recency: ' +
@@ -2079,6 +2091,10 @@
       if (!el) return;
       el.innerHTML = '';
       const entries = loadFavouriteSearches();
+      if (!entries.length) {
+        el.innerHTML = '<span class="text-muted small fst-italic px-2">Click <i class="fa-solid fa-floppy-disk"></i> to save the current search</span>';
+        return;
+      }
       entries.forEach((s, idx) => {
         const row = document.createElement('span');
         row.className = 'd-inline-flex align-items-stretch tagfox-fav-chip-row';
@@ -5266,6 +5282,7 @@
       document.getElementById('optWholeWord').checked = localStorage.getItem(LS.optWholeWord) === '1';
       document.getElementById('optPath').checked = localStorage.getItem(LS.optPath) === '1';
       document.getElementById('optDiacritics').checked = localStorage.getItem(LS.optDiacritics) === '1';
+      document.getElementById('optHideSpecial').checked = localStorage.getItem(LS.optHideSpecial) === '1';
       syncAdvancedBtnWarning();
       {
         /* Migrate from old 4-radio resultsViewMode to 3 radio pairs. */
@@ -5335,6 +5352,7 @@
       localStorage.setItem(LS.optWholeWord, document.getElementById('optWholeWord').checked ? '1' : '0');
       localStorage.setItem(LS.optPath, document.getElementById('optPath').checked ? '1' : '0');
       localStorage.setItem(LS.optDiacritics, document.getElementById('optDiacritics').checked ? '1' : '0');
+      localStorage.setItem(LS.optHideSpecial, document.getElementById('optHideSpecial').checked ? '1' : '0');
       localStorage.setItem(LS.flatView, isFlatView() ? '1' : '0');
       localStorage.setItem(LS.showSubfolders, isShowSubfolders() ? '1' : '0');
       localStorage.setItem(LS.hideFiles, isHideFiles() ? '1' : '0');
@@ -5436,6 +5454,7 @@
         optWholeWord: document.getElementById('optWholeWord').checked,
         optPath: document.getElementById('optPath').checked,
         optDiacritics: document.getElementById('optDiacritics').checked,
+        optHideSpecial: document.getElementById('optHideSpecial').checked,
         recencyFilter: recencyFilterMode(),
         sortColumn: sortColumn,
         sortAsc: sortAsc,
@@ -5514,6 +5533,7 @@
       document.getElementById('optWholeWord').checked = !!s.optWholeWord;
       document.getElementById('optPath').checked = !!s.optPath;
       document.getElementById('optDiacritics').checked = !!s.optDiacritics;
+      document.getElementById('optHideSpecial').checked = !!s.optHideSpecial;
       syncAdvancedBtnWarning();
       setRecencyFilterMode(
         s.recencyFilter && ['all', '1h', '1d', '1w', '1m', '1y'].includes(s.recencyFilter) ? s.recencyFilter : 'all'
@@ -5689,6 +5709,9 @@
           rows = rows.filter((r) => !rowIsFolder(r));
         }
       }
+      if (isHideSpecialPaths()) {
+        rows = rows.filter((r) => !pathUnderDotFolder(fullPathForRow(r)));
+      }
       return rows;
     }
 
@@ -5697,9 +5720,9 @@
       return buildPathGroupedDisplayRows(filteredRows());
     }
 
-    /** True when any Advanced toggle (case / path / whole-word / diacritics) is checked. */
+    /** True when any Advanced toggle (case / path / whole-word / diacritics / hide special) is checked. */
     function anyAdvancedSwitchOn() {
-      return ['optCase', 'optWholeWord', 'optPath', 'optDiacritics'].some(
+      return ['optCase', 'optWholeWord', 'optPath', 'optDiacritics', 'optHideSpecial'].some(
         (id) => document.getElementById(id)?.checked
       );
     }
@@ -6261,7 +6284,8 @@
       const rows = filteredRows();
       const rowsForDisplay = buildPathGroupedDisplayRows(rows);
       const suffix =
-        activeTagKeys.size || recencyFilterMode() !== 'all' ? ' (filtered)' : '';
+        (activeTagKeys.size || recencyFilterMode() !== 'all' ? ' (filtered)' : '') +
+        (isHideSpecialPaths() ? ' · hide special' : '');
       const rawN = lastRows.length;
       /* Display rows: path-tree may inject ancestor folders not in lastRows (visN > rawN), or filters may hide rows (visN < rawN). */
       const visN = rowsForDisplay.length;
@@ -6973,12 +6997,24 @@
       const btn = document.getElementById('btnLoadMoreResults');
       const hint = document.getElementById('resultsLoadMoreHint');
       if (!wrap || !btn) return;
-      const more = !!(resultsPagingCtx && resultsPagingCtx.hasMore && lastRows.length);
+      /* Show strip if another raw page may exist — not only when lastRows non-empty (folders-only can drop a whole page). */
+      const more = !!(
+        resultsPagingCtx &&
+        resultsPagingCtx.hasMore &&
+        (lastRows.length || resultsPagingCtx.singleOffset > 0)
+      );
       wrap.classList.toggle('d-none', !more);
-      btn.disabled = resultsLoadMoreBusy || searchInFlight;
+      /* Allow click while searchInFlight — handler shows hint; disabling looked like a dead button. */
+      btn.disabled = resultsLoadMoreBusy;
       if (hint) {
         if (resultsLoadMoreBusy) hint.textContent = 'Loading…';
-        else if (more) hint.textContent = 'Scroll or click for the next page from Everything.';
+        else if (more) {
+          let t = 'Scroll or click for the next page.';
+          if (isHideSpecialPaths()) {
+            t += ' Hide Special is on, so scrolling may not work as expected.';
+          }
+          hint.textContent = t;
+        }
         else hint.textContent = '';
       }
     }
@@ -6998,7 +7034,12 @@
 
     /** Next Everything offset page; same query/sort as resultsPagingCtx. */
     async function loadMoreResults() {
-      if (!resultsPagingCtx || !resultsPagingCtx.hasMore || resultsLoadMoreBusy || searchInFlight) return;
+      if (!resultsPagingCtx || !resultsPagingCtx.hasMore || resultsLoadMoreBusy) return;
+      if (searchInFlight) {
+        const hint = document.getElementById('resultsLoadMoreHint');
+        if (hint) hint.textContent = 'Wait for the current search to finish, then try again.';
+        return;
+      }
       const ctx = resultsPagingCtx;
       const runId = searchRunSeq;
       const status = document.getElementById('status');
@@ -7027,16 +7068,17 @@
         }
         hideEverythingHttpHelpBanner();
         let add = res.rows || [];
+        const addRawLen = add.length;
         if (isHideFiles()) add = add.filter(rowIsFolder);
-        if (!add.length) {
+        if (!addRawLen) {
           resultsPagingCtx = { ...ctx, hasMore: false };
         } else {
           lastRows = mergeSearchRowsDedupe(lastRows, add);
           sortLastRowsForDisplay(!!res.usedFallbackSort);
-          const hasMore = add.length === ctx.pageSize;
+          const hasMore = addRawLen === ctx.pageSize;
           resultsPagingCtx = {
             ...ctx,
-            singleOffset: ctx.singleOffset + add.length,
+            singleOffset: ctx.singleOffset + addRawLen,
             seedOptions: stripOffsetFromOpts(res.optionsUsed),
             hasMore,
           };
@@ -7172,6 +7214,8 @@
       }
       hideEverythingHttpHelpBanner();
       let got = Array.isArray(res.rows) ? res.rows : [];
+      /* Everything offset is in raw API rows — never use client-filtered count (e.g. folders-only). */
+      const rawPageLen = got.length;
       if (hideF) got = got.filter(rowIsFolder);
       lastRows = got;
       sortLastRowsForDisplay(!!res.usedFallbackSort);
@@ -7185,8 +7229,8 @@
       resultsPagingCtx = {
         mode: 'single',
         pageSize: cap,
-        singleOffset: got.length,
-        hasMore: got.length === cap,
+        singleOffset: rawPageLen,
+        hasMore: rawPageLen === cap,
         baseUrl,
         httpUser,
         httpPassword,
@@ -7308,14 +7352,22 @@
         void runSearchNow();
       });
     });
-    ['optCase', 'optWholeWord', 'optPath', 'optDiacritics'].forEach((id) => {
+    ['optCase', 'optWholeWord', 'optPath', 'optDiacritics', 'optHideSpecial'].forEach((id) => {
       document.getElementById(id).addEventListener('change', () => {
         saveSettings();
         syncAdvancedBtnWarning();
         if (id === 'optCase' && document.getElementById('bulkRenameModal')?.classList.contains('show')) {
           updateBulkRenamePreview();
         }
-        scheduleSearch();
+        if (id === 'optHideSpecial') {
+          renderTable();
+          renderTagBar();
+          updateEmptyResultsPulseHints(listRowsForUi().length, { forceRestart: true });
+          updateSelectAllCheckboxState();
+          syncResultsSelectionHighlight();
+        } else {
+          scheduleSearch();
+        }
         commitSearchHistoryNow();
       });
     });
@@ -7365,16 +7417,42 @@
     document.getElementById('btnStatusScopeSiblingPrev')?.addEventListener('click', () => void goToSiblingScopeFolder(-1));
     document.getElementById('btnStatusScopeSiblingNext')?.addEventListener('click', () => void goToSiblingScopeFolder(1));
     document.getElementById('btnStatusScopeParent').addEventListener('click', () => void goToParentScopeFolder());
-    ['optRvFlat', 'optRvTree', 'optRvSubsOn', 'optRvSubsOff', 'optRvAll', 'optRvDirsOnly'].forEach((id) => {
-      document.getElementById(id)?.addEventListener('change', () => {
-        applyNaturalSortWhenTreeViewOn();
-        saveSettings();
-        updateSortHeaders();
-        applyResultsTablePathColumnVisibility();
-        void runSearchNow();
-        commitSearchHistoryNow();
-      });
-    });
+    /* Click on the already-active radio in a pair toggles to the other one. */
+    const viewPairs = [['optRvFlat','optRvTree'], ['optRvSubsOn','optRvSubsOff'], ['optRvAll','optRvDirsOnly']];
+    const viewRadioActive = {};
+    for (const [a, b] of viewPairs) {
+      for (const id of [a, b]) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        viewRadioActive[id] = el.checked;
+        const other = id === a ? b : a;
+        el.addEventListener('click', () => {
+          if (viewRadioActive[id]) {
+            document.getElementById(other).checked = true;
+            viewRadioActive[other] = true;
+            viewRadioActive[id] = false;
+            document.getElementById(other).dispatchEvent(new Event('change', { bubbles: true }));
+          } else {
+            for (const [x, y] of viewPairs) {
+              viewRadioActive[x] = document.getElementById(x)?.checked;
+              viewRadioActive[y] = document.getElementById(y)?.checked;
+            }
+          }
+        });
+        el.addEventListener('change', () => {
+          for (const [x, y] of viewPairs) {
+            viewRadioActive[x] = document.getElementById(x)?.checked;
+            viewRadioActive[y] = document.getElementById(y)?.checked;
+          }
+          applyNaturalSortWhenTreeViewOn();
+          saveSettings();
+          updateSortHeaders();
+          applyResultsTablePathColumnVisibility();
+          void runSearchNow();
+          commitSearchHistoryNow();
+        });
+      }
+    }
     document.getElementById('btnClearQuery').addEventListener('click', () => clearSearchQuery());
     document.getElementById('btnClearScope').addEventListener('click', () => clearSearchScope());
     document.getElementById('httpUser').addEventListener('input', scheduleSearch);
