@@ -1388,32 +1388,33 @@
       const parentSegsList = src.map((r) => parentSegmentsUnderScope(r));
       const stripPrefixLen = segmentArraysCommonPrefixLen(parentSegsList);
       const out = [];
+      // Shared parent prefix (stripPrefixLen) was only injected when row 0 had relParts empty; if path order
+      // puts a deeper hit first, those ancestor folders never appeared — emit the chain once up front.
+      if (stripPrefixLen > 0) {
+        const u0 = parentSegsList[0];
+        for (let k = 0; k < stripPrefixLen; k++) {
+          const prefixSegs = scopeParts.concat(u0.slice(0, k + 1));
+          const fullDir = prefixSegs.join('\\');
+          if (realFolderKeys.has(pathNormKey(fullDir))) continue;
+          const synthetic = syntheticFolderRow(fullDir);
+          synthetic.__pathTreeDepthUi = k + 1;
+          out.push(synthetic);
+        }
+      }
       let prevRelParent = [];
       for (let rowIdx = 0; rowIdx < src.length; rowIdx++) {
         const row = src[rowIdx];
         const under = parentSegsList[rowIdx];
         const relParts = under.slice(stripPrefixLen);
         const l = commonPrefixLen(prevRelParent, relParts);
-        /* One row (or shared strip eats all rel segments): emit each folder under scope, not one collapsed leaf. */
-        if (rowIdx === 0 && relParts.length === 0 && under.length > 0) {
-          for (let k = 0; k < under.length; k++) {
-            const prefixSegs = scopeParts.concat(under.slice(0, k + 1));
-            const fullDir = prefixSegs.join('\\');
-            if (realFolderKeys.has(pathNormKey(fullDir))) continue;
-            const synthetic = syntheticFolderRow(fullDir);
-            synthetic.__pathTreeDepthUi = k + 1;
-            out.push(synthetic);
-          }
-        } else {
-          for (let j = l; j < relParts.length; j++) {
-            const prefixSegs = scopeParts.concat(under.slice(0, stripPrefixLen + j + 1));
-            const fullDir = prefixSegs.join('\\');
-            if (realFolderKeys.has(pathNormKey(fullDir))) continue;
-            const synthetic = syntheticFolderRow(fullDir);
-            // Depth under scope: relParts = under.slice(stripPrefixLen), so j indexes the tail only.
-            synthetic.__pathTreeDepthUi = stripPrefixLen + j + 1;
-            out.push(synthetic);
-          }
+        for (let j = l; j < relParts.length; j++) {
+          const prefixSegs = scopeParts.concat(under.slice(0, stripPrefixLen + j + 1));
+          const fullDir = prefixSegs.join('\\');
+          if (realFolderKeys.has(pathNormKey(fullDir))) continue;
+          const synthetic = syntheticFolderRow(fullDir);
+          // Depth under scope: relParts = under.slice(stripPrefixLen), so j indexes the tail only.
+          synthetic.__pathTreeDepthUi = stripPrefixLen + j + 1;
+          out.push(synthetic);
         }
         // Always use full parent chain under scope — relParts.length is only the tail after stripPrefixLen (bug: child matched same depth as parent folder).
         row.__pathTreeDepthUi = under.length + 1;
