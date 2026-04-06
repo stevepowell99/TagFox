@@ -3,15 +3,11 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 let onPathsMutated = null;
 let onShellActionError = null;
-let onGoogleWorkspaceOpenChanged = null;
 ipcRenderer.on('paths-mutated', () => {
   if (onPathsMutated) onPathsMutated();
 });
 ipcRenderer.on('shell-action-error', (_e, msg) => {
   if (onShellActionError) onShellActionError(msg);
-});
-ipcRenderer.on('google-workspace-open-changed', (_e, payload) => {
-  if (onGoogleWorkspaceOpenChanged) onGoogleWorkspaceOpenChanged(payload);
 });
 
 contextBridge.exposeInMainWorld('tagBrowser', {
@@ -26,7 +22,6 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   writeTextFile: (payload) => ipcRenderer.invoke('write-text-file', payload),
   googleWorkspaceShortcutUrl: (payload) => ipcRenderer.invoke('google-workspace-shortcut-url', payload),
   openGoogleWorkspaceWindow: (payload) => ipcRenderer.invoke('open-google-workspace-window', payload),
-  googleWorkspaceCycleLayout: () => ipcRenderer.invoke('google-workspace-cycle-layout'),
   openUrlDefaultBrowser: (payload) => ipcRenderer.invoke('open-url-default-browser', payload),
   resolveFolderViewerDoc: (payload) => ipcRenderer.invoke('resolve-folder-viewer-doc', payload),
   resolveShellShortcut: (payload) => ipcRenderer.invoke('resolve-shell-shortcut', payload),
@@ -48,9 +43,6 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   },
   setShellActionErrorHandler: (fn) => {
     onShellActionError = typeof fn === 'function' ? fn : null;
-  },
-  setGoogleWorkspaceOpenChangedHandler: (fn) => {
-    onGoogleWorkspaceOpenChanged = typeof fn === 'function' ? fn : null;
   },
   /** Tag bar persistence in userData (read before first paint — sync IPC). */
   tagPrefsReadSync: () => ipcRenderer.sendSync('tag-prefs-read-sync'),

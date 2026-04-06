@@ -68,6 +68,28 @@ function runPowershellScriptFileWithArg(ps1Body, argForScript, failMsgPrefix) {
     });
     if (r.status !== 0) {
       const msg = [r.stderr, r.stdout].filter(Boolean).join(' ').trim();
+      // #region agent log
+      const __psf = (globalThis.__tagfoxDbgPsFail = (globalThis.__tagfoxDbgPsFail || 0) + 1);
+      if (__psf <= 20) {
+        fetch('http://127.0.0.1:7460/ingest/0dfbb0a0-7bdd-458e-8476-39dae77fc97d', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0677d7' },
+          body: JSON.stringify({
+            sessionId: '0677d7',
+            location: 'main.js:runPowershellScriptFileWithArg',
+            message: 'PowerShell script non-zero',
+            data: {
+              hypothesisId: 'H2',
+              status: r.status,
+              msgSnippet: String(msg).slice(0, 220),
+              argSnippet: String(argForScript || '').slice(0, 180),
+            },
+            timestamp: Date.now(),
+            runId: 'pre',
+          }),
+        }).catch(() => {});
+      }
+      // #endregion
       return msg || failMsgPrefix + ' (exit ' + r.status + ').';
     }
   } catch (e) {
@@ -334,6 +356,32 @@ function renameSameDirViaCmdRen(fromRaw, toRaw) {
     });
     if (r.status === 0) return null;
     const tail = [r.stderr, r.stdout].filter(Boolean).join(' ').trim();
+    // #region agent log
+    if (/syntax is incorrect|filename, directory name/i.test(tail)) {
+      const __rn = (globalThis.__tagfoxDbgRenFail = (globalThis.__tagfoxDbgRenFail || 0) + 1);
+      if (__rn <= 15) {
+        fetch('http://127.0.0.1:7460/ingest/0dfbb0a0-7bdd-458e-8476-39dae77fc97d', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0677d7' },
+          body: JSON.stringify({
+            sessionId: '0677d7',
+            location: 'main.js:renameSameDirViaCmdRen',
+            message: 'cmd ren stderr',
+            data: {
+              hypothesisId: 'H4',
+              n: __rn,
+              tail: String(tail).slice(0, 220),
+              dir: String(dir).slice(0, 180),
+              oldLeaf,
+              newLeaf,
+            },
+            timestamp: Date.now(),
+            runId: 'pre',
+          }),
+        }).catch(() => {});
+      }
+    }
+    // #endregion
     return tail || 'cmd ren failed (exit ' + r.status + ').';
   } catch (e) {
     return String(e.message || e);
@@ -1411,57 +1459,113 @@ ipcMain.handle('show-in-folder', async (_event, fullPath) => {
 /** ─── Google Drive “.gdoc / .gsheet / .gslides” shortcuts → child window (docs.google.com) ─── */
 let googleWorkspaceWin = null;
 
-function googleWorkspaceLayoutPrefsPath() {
-  return path.join(app.getPath('userData'), 'tagBrowser-google-workspace-layout.json');
+/** Persist window frame in userData (Renderer localStorage is not TagFox’s for google.com). */
+function googleWorkspaceBoundsPrefsPath() {
+  return path.join(app.getPath('userData'), 'tagBrowser-google-workspace-bounds.json');
 }
 
-function loadGoogleWorkspaceLayoutFromDisk() {
+function rectIntersectsWorkArea(rect, wa) {
+  const rx2 = rect.x + rect.width;
+  const ry2 = rect.y + rect.height;
+  const wx2 = wa.x + wa.width;
+  const wy2 = wa.y + wa.height;
+  return rect.x < wx2 && rx2 > wa.x && rect.y < wy2 && ry2 > wa.y;
+}
+
+function isGoogleWorkspaceBoundsUsable(rect) {
+  if (!rect || !Number.isFinite(rect.width) || !Number.isFinite(rect.height)) return false;
+  if (rect.width < 200 || rect.height < 200) return false;
   try {
-    const p = googleWorkspaceLayoutPrefsPath();
-    if (!fssync.existsSync(p)) return 'center';
-    const j = JSON.parse(fssync.readFileSync(p, 'utf8'));
-    const l = j && typeof j.layout === 'string' ? j.layout.trim().toLowerCase() : '';
-    if (l === 'left' || l === 'right' || l === 'center') return l;
+    for (const d of screen.getAllDisplays()) {
+      if (rectIntersectsWorkArea(rect, d.workArea)) return true;
+    }
   } catch (_) {}
-  return 'center';
+  return false;
 }
 
-function saveGoogleWorkspaceLayoutToDisk(layout) {
-  const p = googleWorkspaceLayoutPrefsPath();
+function defaultGoogleWorkspaceWindowBounds() {
+  const wa = screen.getPrimaryDisplay().workArea;
+  const width = Math.round(wa.width * 0.9);
+  const height = Math.round(wa.height * 0.9);
+  const x = Math.round(wa.x + (wa.width - width) / 2);
+  const y = Math.round(wa.y + (wa.height - height) / 2);
+  return { x, y, width, height, maximized: false };
+}
+
+function loadGoogleWorkspaceBoundsFromDisk() {
+  try {
+    const p = googleWorkspaceBoundsPrefsPath();
+    if (!fssync.existsSync(p)) return null;
+    const j = JSON.parse(fssync.readFileSync(p, 'utf8'));
+    const x = Number(j.x);
+    const y = Number(j.y);
+    const width = Number(j.width);
+    const height = Number(j.height);
+    if (![x, y, width, height].every(Number.isFinite)) return null;
+    return {
+      x: Math.round(x),
+      y: Math.round(y),
+      width: Math.round(width),
+      height: Math.round(height),
+      maximized: !!j.maximized,
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+function saveGoogleWorkspaceBoundsToDisk(state) {
+  const p = googleWorkspaceBoundsPrefsPath();
   const dir = path.dirname(p);
   if (!fssync.existsSync(dir)) fssync.mkdirSync(dir, { recursive: true });
-  fssync.writeFileSync(p, JSON.stringify({ layout }), 'utf8');
+  fssync.writeFileSync(
+    p,
+    JSON.stringify({
+      x: state.x,
+      y: state.y,
+      width: state.width,
+      height: state.height,
+      maximized: !!state.maximized,
+    }),
+    'utf8'
+  );
 }
 
-/** Navbar cycle: centred (90%) → left (40%) → right (40%) → centred. Persisted for the next Google window. */
-let googleWorkspaceLayout = loadGoogleWorkspaceLayoutFromDisk();
+function snapshotGoogleWorkspaceWindowState(win) {
+  if (!win || win.isDestroyed()) return null;
+  const maximized = win.isMaximized();
+  const b = maximized ? win.getNormalBounds() : win.getBounds();
+  return {
+    x: b.x,
+    y: b.y,
+    width: b.width,
+    height: b.height,
+    maximized: !!maximized,
+  };
+}
 
-function notifyMainGoogleWorkspaceChildOpen(open) {
-  const w = mainWindowRef;
-  if (w && !w.isDestroyed()) {
+/** Debounced save on move/resize; flush on close. */
+function attachGoogleWorkspaceWindowBoundsPersistence(win) {
+  let timer = null;
+  const flush = () => {
+    timer = null;
     try {
-      w.webContents.send('google-workspace-open-changed', { open: !!open });
+      const s = snapshotGoogleWorkspaceWindowState(win);
+      if (s) saveGoogleWorkspaceBoundsToDisk(s);
     } catch (_) {}
-  }
-}
-
-/** Apply googleWorkspaceLayout to the Google child using primary display workArea (≈vw/vh). */
-function applyGoogleWorkspaceWindowBounds() {
-  if (!googleWorkspaceWin || googleWorkspaceWin.isDestroyed()) return;
-  const wa = screen.getPrimaryDisplay().workArea;
-  if (googleWorkspaceLayout === 'left') {
-    const ww = Math.round(wa.width * 0.4);
-    googleWorkspaceWin.setBounds({ x: wa.x, y: wa.y, width: ww, height: wa.height });
-  } else if (googleWorkspaceLayout === 'right') {
-    const ww = Math.round(wa.width * 0.4);
-    googleWorkspaceWin.setBounds({ x: wa.x + wa.width - ww, y: wa.y, width: ww, height: wa.height });
-  } else {
-    const gw = Math.round(wa.width * 0.9);
-    const gh = Math.round(wa.height * 0.9);
-    const x = Math.round(wa.x + (wa.width - gw) / 2);
-    const y = Math.round(wa.y + (wa.height - gh) / 2);
-    googleWorkspaceWin.setBounds({ x, y, width: gw, height: gh });
-  }
+  };
+  const schedule = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(flush, 400);
+  };
+  win.on('resize', schedule);
+  win.on('move', schedule);
+  win.on('maximize', schedule);
+  win.on('unmaximize', schedule);
+  win.on('close', () => {
+    if (timer) clearTimeout(timer);
+    flush();
+  });
 }
 
 function targetUrlFromGoogleDriveShortcut(fullPath, rawText) {
@@ -1505,17 +1609,55 @@ function tryReadGoogleDriveVirtualFileIdWindowsSync(fullPathRaw, diag) {
   } catch (_) {}
   const comspec = process.env.ComSpec || (process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32', 'cmd.exe') : 'cmd.exe');
   const attempts = [];
+  // #region agent log
+  const __dvEnter = (globalThis.__tagfoxDbgDriveVirtEnter = (globalThis.__tagfoxDbgDriveVirtEnter || 0) + 1);
+  if (__dvEnter <= 25) {
+    fetch('http://127.0.0.1:7460/ingest/0dfbb0a0-7bdd-458e-8476-39dae77fc97d', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0677d7' },
+      body: JSON.stringify({
+        sessionId: '0677d7',
+        location: 'main.js:tryReadGoogleDriveVirtualFileIdWindowsSync:enter',
+        message: 'virtual id probe',
+        data: { hypothesisId: 'H1', n: __dvEnter, back, candidates },
+        timestamp: Date.now(),
+        runId: 'pre',
+      }),
+    }).catch(() => {});
+  }
+  // #endregion
   for (const adsPath of candidates) {
     for (const label of ['fs.readFileSync', 'cmd.type']) {
       try {
-        const raw =
-          label === 'fs.readFileSync'
-            ? fssync.readFileSync(adsPath, 'utf8')
-            : execFileSync(comspec, ['/d', '/s', '/c', 'type', adsPath], {
-                encoding: 'utf8',
-                windowsHide: true,
-                maxBuffer: 4096,
-              });
+        let raw;
+        if (label === 'fs.readFileSync') {
+          raw = fssync.readFileSync(adsPath, 'utf8');
+        } else {
+          // #region agent log
+          const __ct = (globalThis.__tagfoxDbgCmdType = (globalThis.__tagfoxDbgCmdType || 0) + 1);
+          if (__ct <= 30) {
+            fetch('http://127.0.0.1:7460/ingest/0dfbb0a0-7bdd-458e-8476-39dae77fc97d', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0677d7' },
+              body: JSON.stringify({
+                sessionId: '0677d7',
+                location: 'main.js:tryReadGoogleDriveVirtualFileIdWindowsSync:cmdType',
+                message: 'before execFileSync type',
+                data: { hypothesisId: 'H1', n: __ct, adsPath },
+                timestamp: Date.now(),
+                runId: 'pre',
+              }),
+            }).catch(() => {});
+          }
+          // #endregion
+          // Drop cmd stderr (invalid ADS / path) — default pipes can still surface "filename… syntax is incorrect" on the npm/electron parent console on Windows.
+          raw = execFileSync(comspec, ['/d', '/s', '/c', 'type', adsPath], {
+            encoding: 'utf8',
+            windowsHide: true,
+            maxBuffer: 4096,
+            stdio: ['ignore', 'pipe', 'ignore'],
+          });
+        }
         const id = String(raw || '')
           .replace(/^\uFEFF/, '')
           .trim()
@@ -1534,7 +1676,27 @@ function tryReadGoogleDriveVirtualFileIdWindowsSync(fullPathRaw, diag) {
         }
         return id;
       } catch (e) {
-        attempts.push({ label, adsPath, code: e.code || null, msg: String(e.message || e) });
+        const emsg = String(e.message || e);
+        attempts.push({ label, adsPath, code: e.code || null, msg: emsg });
+        // #region agent log
+        if (/syntax is incorrect|filename, directory name/i.test(emsg)) {
+          const __ce = (globalThis.__tagfoxDbgCmdTypeErr = (globalThis.__tagfoxDbgCmdTypeErr || 0) + 1);
+          if (__ce <= 25) {
+            fetch('http://127.0.0.1:7460/ingest/0dfbb0a0-7bdd-458e-8476-39dae77fc97d', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0677d7' },
+              body: JSON.stringify({
+                sessionId: '0677d7',
+                location: 'main.js:tryReadGoogleDriveVirtualFileIdWindowsSync:catch',
+                message: 'read virtual id failed',
+                data: { hypothesisId: 'H1', label, adsPath, emsg: emsg.slice(0, 220) },
+                timestamp: Date.now(),
+                runId: 'pre',
+              }),
+            }).catch(() => {});
+          }
+        }
+        // #endregion
       }
     }
   }
@@ -1722,6 +1884,27 @@ async function readGoogleWorkspaceShortcutText(fullPathRaw) {
 
   const fullPath = normalizePathForShellOpen(fullPathRaw);
   diag.path = fullPath;
+  // #region agent log
+  const __gws = (globalThis.__tagfoxDbgGwsRead = (globalThis.__tagfoxDbgGwsRead || 0) + 1);
+  if (__gws <= 20 && /\.gdoc$/i.test(fullPath)) {
+    fetch('http://127.0.0.1:7460/ingest/0dfbb0a0-7bdd-458e-8476-39dae77fc97d', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0677d7' },
+      body: JSON.stringify({
+        sessionId: '0677d7',
+        location: 'main.js:readGoogleWorkspaceShortcutText',
+        message: 'shortcut read enter',
+        data: {
+          hypothesisId: 'H3',
+          n: __gws,
+          pathSample: fullPath.length > 240 ? fullPath.slice(0, 240) + '…' : fullPath,
+        },
+        timestamp: Date.now(),
+        runId: 'pre',
+      }),
+    }).catch(() => {});
+  }
+  // #endregion
   if (!fullPath) {
     diag.outcome = 'empty_path';
     return { ok: false, error: 'Empty path.', diag };
@@ -1937,8 +2120,18 @@ function openGoogleWorkspaceEditorWindow(parentWin, targetUrl) {
     googleWorkspaceWin.focus();
     return { ok: true };
   }
+  const saved = loadGoogleWorkspaceBoundsFromDisk();
+  const fallback = defaultGoogleWorkspaceWindowBounds();
+  const use =
+    saved && isGoogleWorkspaceBoundsUsable({ x: saved.x, y: saved.y, width: saved.width, height: saved.height })
+      ? saved
+      : fallback;
   googleWorkspaceWin = new BrowserWindow({
     parent: parentWin || undefined,
+    x: use.x,
+    y: use.y,
+    width: use.width,
+    height: use.height,
     show: false,
     webPreferences: {
       partition: 'persist:tagfox-google-workspace',
@@ -1946,17 +2139,15 @@ function openGoogleWorkspaceEditorWindow(parentWin, targetUrl) {
       nodeIntegration: false,
     },
   });
-  applyGoogleWorkspaceWindowBounds();
+  attachGoogleWorkspaceWindowBoundsPersistence(googleWorkspaceWin);
   attachPageZoomShortcuts(googleWorkspaceWin.webContents);
   googleWorkspaceWin.setMenuBarVisibility(false);
   googleWorkspaceWin.once('ready-to-show', () => {
-    if (googleWorkspaceWin && !googleWorkspaceWin.isDestroyed()) {
-      googleWorkspaceWin.show();
-      notifyMainGoogleWorkspaceChildOpen(true);
-    }
+    if (!googleWorkspaceWin || googleWorkspaceWin.isDestroyed()) return;
+    if (use.maximized) googleWorkspaceWin.maximize();
+    googleWorkspaceWin.show();
   });
   googleWorkspaceWin.on('closed', () => {
-    notifyMainGoogleWorkspaceChildOpen(false);
     googleWorkspaceWin = null;
   });
   void googleWorkspaceWin.loadURL(url);
@@ -2025,23 +2216,6 @@ ipcMain.handle('google-workspace-shortcut-url', async (_event, { fullPath }) => 
 ipcMain.handle('open-google-workspace-window', async (event, { url }) => {
   const parent = BrowserWindow.fromWebContents(event.sender);
   return openGoogleWorkspaceEditorWindow(parent, url);
-});
-
-ipcMain.handle('google-workspace-cycle-layout', () => {
-  if (!googleWorkspaceWin || googleWorkspaceWin.isDestroyed()) {
-    return { ok: false, error: 'No Google doc window open.' };
-  }
-  if (googleWorkspaceLayout === 'center') googleWorkspaceLayout = 'left';
-  else if (googleWorkspaceLayout === 'left') googleWorkspaceLayout = 'right';
-  else googleWorkspaceLayout = 'center';
-  applyGoogleWorkspaceWindowBounds();
-  try {
-    saveGoogleWorkspaceLayoutToDisk(googleWorkspaceLayout);
-  } catch (_) {}
-  try {
-    googleWorkspaceWin.focus();
-  } catch (_) {}
-  return { ok: true, layout: googleWorkspaceLayout };
 });
 
 ipcMain.handle('open-url-default-browser', async (_event, { url }) => {

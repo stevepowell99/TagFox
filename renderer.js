@@ -5997,47 +5997,41 @@
       if (!tbody) return;
       const want = selectedFullPath;
       const groupHL = isTreeGroupHLOn();
-      let childPrefix = '';
-      const rows = Array.from(tbody.querySelectorAll('tr'));
-      for (const tr of rows) {
-        tr.classList.remove(
-          'table-active-group-member',
-          'table-active-group-top',
-          'table-active-group-bottom'
-        );
-        const p = tr.dataset.rowPath;
-        const isActive = !!(want && p === want);
-        tr.classList.toggle('table-active', isActive);
-        if (groupHL) {
-          if (isActive && tr.classList.contains('results-folder-row')) {
-            childPrefix = p.endsWith('\\') || p.endsWith('/') ? p : p + '\\';
-          }
-          tr.classList.toggle('table-active-child', !isActive && !!childPrefix && !!p && p.startsWith(childPrefix));
-        } else {
-          tr.classList.remove('table-active-child');
-        }
+
+      /* 1. Clear previous highlights — only touches rows that had them */
+      const prev = tbody.querySelector('tr.table-active');
+      if (prev) prev.classList.remove('table-active');
+      for (const tr of tbody.querySelectorAll('tr.table-active-child'))
+        tr.classList.remove('table-active-child');
+      for (const tr of tbody.querySelectorAll('tr.table-active-group-member'))
+        tr.classList.remove('table-active-group-member', 'table-active-group-top', 'table-active-group-bottom');
+
+      if (!want) return;
+
+      /* 2. Find and activate the new row */
+      let newActive = null;
+      for (const tr of tbody.children) {
+        if (tr.dataset.rowPath === want) { newActive = tr; break; }
       }
-      if (groupHL) {
-        let groupStart = -1;
-        let groupEnd = -1;
-        for (let i = 0; i < rows.length; i++) {
-          const tr = rows[i];
-          if (tr.classList.contains('table-active') && tr.classList.contains('results-folder-row')) {
-            groupStart = i;
-            groupEnd = i;
-            for (let j = i + 1; j < rows.length; j++) {
-              if (rows[j].classList.contains('table-active-child')) groupEnd = j;
-              else break;
-            }
-            break;
-          }
-        }
-        if (groupStart >= 0) {
-          for (let i = groupStart; i <= groupEnd; i++) rows[i].classList.add('table-active-group-member');
-          rows[groupStart].classList.add('table-active-group-top');
-          rows[groupEnd].classList.add('table-active-group-bottom');
-        }
+      if (!newActive) return;
+      newActive.classList.add('table-active');
+
+      if (!groupHL || !newActive.classList.contains('results-folder-row')) return;
+
+      /* 3. Walk forward from the active folder to mark consecutive children */
+      const cp = want.endsWith('\\') || want.endsWith('/') ? want : want + '\\';
+      const group = [newActive];
+      let sib = newActive.nextElementSibling;
+      while (sib) {
+        const p = sib.dataset.rowPath;
+        if (!p || !p.startsWith(cp)) break;
+        sib.classList.add('table-active-child');
+        group.push(sib);
+        sib = sib.nextElementSibling;
       }
+      for (const tr of group) tr.classList.add('table-active-group-member');
+      group[0].classList.add('table-active-group-top');
+      group[group.length - 1].classList.add('table-active-group-bottom');
     }
 
     /** Shift+↑/↓ updates checkedPathsMap but not the row inputs; keep UI in sync without rebuilding the table. */
@@ -7389,23 +7383,6 @@
     window.tagBrowser.setShellActionErrorHandler((msg) => {
       document.getElementById('status').textContent = String(msg || 'Action failed');
     });
-    /* Google child window: enable layout toggle when open (main sends on show/closed). */
-    (function wireGoogleWorkspaceLayoutToggle() {
-      const btn = document.getElementById('btnGoogleWorkspaceLayout');
-      if (!btn || !window.tagBrowser.setGoogleWorkspaceOpenChangedHandler) return;
-      window.tagBrowser.setGoogleWorkspaceOpenChangedHandler((payload) => {
-        btn.disabled = !payload || !payload.open;
-      });
-      btn.addEventListener('click', async () => {
-        if (!window.tagBrowser.googleWorkspaceCycleLayout) return;
-        const r = await window.tagBrowser.googleWorkspaceCycleLayout();
-        const st = document.getElementById('status');
-        if (r.ok && st) {
-          const lab = r.layout === 'left' ? 'left (40%)' : r.layout === 'right' ? 'right (40%)' : 'centre (90%)';
-          st.textContent = 'Google window: ' + lab + '.';
-        } else if (!r.ok && st) st.textContent = r.error || 'Layout toggle failed.';
-      });
-    })();
 
     /** Electron: webContents can stop receiving keys after button clicks until main focuses it again. */
     function pullWebContentsKeyboardFocus() {
