@@ -4,24 +4,32 @@
   "description": "TagFox — local Everything search UI (Electron)",
   "main": "main.js",
   "scripts": {
+    "build:help": "node scripts/build-help.js",
+    "prestart": "npm run build:help",
+    "predist": "npm run build:help",
     "start": "electron .",
     "dist": "electron-builder --win"
   },
   "build": {
     "appId": "app.tagbrowser",
     "productName": "TagFox",
-    "directories": { "output": "dist" },
+    "directories": {
+      "output": "dist"
+    },
     "files": [
       "main.js",
       "preload.js",
       "index.html",
+      "help.html",
       "styles.css",
       "tags.js",
       "renderer.js",
       "package.json"
     ],
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "signAndEditExecutable": false
     },
     "nsis": {
@@ -31,7 +39,7 @@
   },
   "devDependencies": {
     "electron": "^33.2.0",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^25.1.8",
+    "marked": "^14.1.3"
   }
 }
-

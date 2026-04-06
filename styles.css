@@ -1112,6 +1112,15 @@ body > .tooltip {
   background-color: rgba(var(--bs-primary-rgb), 0.08);
 }
 .help-tab-body { font-size: 0.925rem; }
+/* Markdown-built help panes (see help.md → build-help.js). */
+.help-md h3 { font-size: 1rem; color: var(--bs-secondary-color); margin-top: 1rem; margin-bottom: 0.5rem; }
+.help-md h6 { font-size: 0.875rem; color: var(--bs-secondary-color); margin-top: 1rem; margin-bottom: 0.25rem; }
+.help-md ol > li,
+.help-md ul > li { margin-bottom: 0.5rem; }
+.help-md ol > li:last-child,
+.help-md ul > li:last-child { margin-bottom: 0; }
+.help-md p { margin-bottom: 0.5rem; }
+.help-md p:last-child { margin-bottom: 0; }
 @media (max-width: 640px) {
   .help-side-nav { width: 3rem; min-width: 3rem; }
   .help-side-nav .nav-link { font-size: 0.7rem; overflow: hidden; text-overflow: ellipsis; }
