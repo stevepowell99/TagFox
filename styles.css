@@ -358,28 +358,51 @@ body.tagfox-props-split-drag #propsAside {
 .app-shelf {
   flex-shrink: 0;
   width: 3rem;
+  min-width: 3rem;
   min-height: 0;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
+/*
+ * rotate(-90deg) geometry:
+ *   pre-rot WIDTH  = screen VERTICAL (along results column)
+ *   pre-rot HEIGHT = screen HORIZONTAL (aside column width)
+ * JS sets rot.style.minWidth = parent height so strip fills column vertically.
+ * Height stays intrinsic (content-only) so aside stays thin.
+ */
 .app-shelf-rot {
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%) rotate(-90deg);
   transform-origin: center center;
-  display: inline-flex;
+  display: flex;
   flex-direction: row;
   align-items: center;
   gap: 0.5rem;
   white-space: nowrap;
-  max-width: min(78vh, 920px);
+  box-sizing: border-box;
 }
 #shelfDropZone {
-  min-width: 14rem; /* easy drop target along the rotated strip */
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 2rem;
+  box-sizing: border-box;
+}
+#shelfDropZone:has(#shelfEmptyHint:not(.d-none)) {
+  min-width: 14rem;
+}
+/* Chips: row + wrap. Pre-rot row fills WIDTH first (screen vertical after -90deg),
+   then wraps to new rows growing HEIGHT (screen horizontal = aside widens). */
+#shelfChips {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
 }
 #shelfDropZone.shelf-drag-over { outline: 2px dashed var(--bs-primary); outline-offset: 1px; }
-/* Drop listeners on #appShelf — outside .app-shelf-rot transform (Chromium DnD breaks on rotated ancestors). */
 #appShelf.shelf-aside-drag-over {
   outline: 2px dashed var(--bs-primary);
   outline-offset: -2px;
@@ -715,11 +738,18 @@ body.tagfox-props-split-drag #propsAside {
 #resultsTable tbody:empty {
   min-height: 10rem;
 }
-/* Paths TagFox treats as “special” (. ~ $ desktop.ini, etc.): faint in the list when shown. */
+/* Paths with . / $ / desktop.ini: faint in the list when shown. */
 #resultsTable tbody tr.tagfox-row-special-path {
   opacity: 0.6;
 }
 #resultsTable tbody tr.tagfox-row-special-path.table-active {
+  opacity: 1;
+}
+/* ~ segments: slightly less fade so users can tell the two “special” kinds apart. */
+#resultsTable tbody tr.tagfox-row-tilde-path {
+  opacity: 0.78;
+}
+#resultsTable tbody tr.tagfox-row-tilde-path.table-active {
   opacity: 1;
 }
 /* Current-folder drop highlight: on scroll wrapper so empty area below last row is a valid target. */

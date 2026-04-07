@@ -22,7 +22,7 @@
 
   Drag and drop: default row/Shelf drag uses TagFox’s in-page protocol (move/copy inside the app; Shift = copy). External apps need Alt+drag or the Shelf “OS drag” arm for native paths (CF_HDROP). Native drag blocks the UI thread, hence the split.
 
-  Hide special (Advanced): client-side only — filteredRows() drops paths matching pathUnderDotFolder() in renderer.js; Everything query unchanged (pagination still uses raw hit count per page).
+  Hide special / Hide ~ (Advanced): client-side only — filteredRows() uses pathUnderHideSpecialSegments() and pathUnderTildeSegment() in renderer.js; Everything query unchanged (pagination still uses raw hit count per page).
 
   Active tag filters: sent to Everything as a regex clause so matches exist before results load. Tag bar ↻ runs a full-index [( scan and prunes ghosts; normal searches do not.
 
@@ -147,7 +147,7 @@
               <li>Type in the search box — results update as you type. Press <code>Enter</code> to force a refresh.</li>
               <li>Tip: <code>foo|bar</code> matches either word. <code>!foo</code> excludes files matching “foo”.</li>
               <li>Next to the search row, <strong>Both</strong> / <strong>Folders only</strong> / <strong>Files only</strong> narrow what Everything returns (<code>folder:</code> / <code>file:</code> when narrowed). See <a href="https://www.voidtools.com/support/everything/searching/">Everything searching</a>.</li>
-              <li>The <strong>Advanced</strong> button opens extra options: match case, match path, whole word, diacritics, <strong>Hide special</strong>. <strong>Hide special</strong> removes matching rows from the <strong>table only</strong> (paths with any segment starting with <code>.</code>, <code>~</code>, or <code>$</code>, plus <code>desktop.ini</code>; <code>..</code> and <code>.shortcut-targets-by-id</code> are not hidden). Everything still fetches up to <strong>Results per page</strong> hits before filtering — if the list looks empty, raise that limit, use <strong>Load more</strong>, or narrow scope/query.</li>
+              <li>The <strong>Advanced</strong> button opens extra options: match case, match path, whole word, diacritics, <strong>Hide special</strong>, <strong>Hide ~</strong>. <strong>Hide special</strong> removes rows whose path has a segment starting with <code>.</code> or <code>$</code>, or equals <code>desktop.ini</code> (<code>..</code> is ignored; <code>.shortcut-targets-by-id</code> is kept). <strong>Hide ~</strong> removes rows with any segment starting with <code>~</code> (e.g. profile junctions). Both are <strong>table only</strong>; Everything still fetches up to <strong>Results per page</strong> before filtering — if the list looks empty, raise that limit, use <strong>Load more</strong>, or narrow scope/query. When those rows are still shown (toggles off), <strong>Hide special</strong> matches fade more (lower opacity) than <strong>~</strong> matches.</li>
               <li><strong>Tree</strong> vs <strong>Flat</strong> (<code>l</code>): Tree hides the Path column and groups by folder; Tree mode keeps path sort A→Z. Size/Modified/Name sorts switch to Flat (status bar note).</li>
               </ul>
               <h3>👁️ View toggles</h3>
@@ -304,6 +304,7 @@
               <div class="table-responsive">
               <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
               <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Move through the results list</td></tr>
+              <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>Jump to next / previous <strong>sibling folder</strong> (same parent directory). At the last/first sibling, the next key press moves at the parent level (then grandparent, etc.). Scrolls the target row to the top of the results list.</td></tr>
               <tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>Jump to first / last row</td></tr>
               <tr><td><kbd>Enter</kbd></td><td>Open file or enter folder</td></tr>
               <tr><td><kbd>→</kbd></td><td>Scope into selected folder</td></tr>

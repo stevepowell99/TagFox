@@ -290,30 +290,36 @@
           <input type="text" id="query" class="form-control" placeholder="" autocomplete="off" />
         </div>
         <div class="d-flex align-items-center flex-shrink-0 flex-wrap tagfox-search-opts-rhs">
-          <!-- Results layout: 3 binary radio pairs (View / Subfolders / Content). -->
-          <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair flex-shrink-0" role="group" aria-label="View mode">
+          <!-- Results layout: View (Tree | Smart | Flat) + Subfolders + Content. -->
+          <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair tagfox-view-trio flex-shrink-0" role="group" aria-label="View mode">
+            <input type="radio" class="btn-check" name="rvViewMode" id="optRvTree" value="tree" autocomplete="off" />
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvTree" title="Tree view"
+              ><i class="fa-solid fa-sitemap fa-fw" aria-hidden="true"></i></label>
+            <input type="radio" class="btn-check" name="rvViewMode" id="optRvSmart" value="smart" autocomplete="off" checked />
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvSmart" title="Smart view — auto-adjust subfolders/content to fit the result cap"
+              ><i class="fa-solid fa-wand-magic-sparkles fa-fw" aria-hidden="true"></i></label>
             <input type="radio" class="btn-check" name="rvViewMode" id="optRvFlat" value="flat" autocomplete="off" />
             <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvFlat" title="Flat view"
               ><i class="fa-solid fa-list fa-fw" aria-hidden="true"></i></label>
-            <input type="radio" class="btn-check" name="rvViewMode" id="optRvTree" value="tree" autocomplete="off" checked />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvTree" title="Tree view"
-              ><i class="fa-solid fa-sitemap fa-fw" aria-hidden="true"></i></label>
           </div>
           <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair flex-shrink-0" role="group" aria-label="Subfolders">
-            <input type="radio" class="btn-check" name="rvSubfolders" id="optRvSubsOn" value="on" autocomplete="off" checked />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvSubsOn" title="Include subfolders"
-              ><i class="fa-solid fa-folder-tree fa-fw" aria-hidden="true"></i></label>
             <input type="radio" class="btn-check" name="rvSubfolders" id="optRvSubsOff" value="off" autocomplete="off" />
             <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvSubsOff" title="This folder only"
               ><i class="fa-solid fa-folder fa-fw" aria-hidden="true"></i></label>
+            <input type="radio" class="btn-check" name="rvSubfolders" id="optRvSubsOn" value="on" autocomplete="off" checked />
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvSubsOn" title="Include subfolders"
+              ><i class="fa-solid fa-folder-tree fa-fw" aria-hidden="true"></i></label>
           </div>
-          <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair flex-shrink-0" role="group" aria-label="Content filter">
-            <input type="radio" class="btn-check" name="rvContent" id="optRvAll" value="all" autocomplete="off" checked />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvAll" title="Files and folders"
-              ><i class="fa-solid fa-copy fa-fw" aria-hidden="true"></i></label>
+          <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair tagfox-content-trio flex-shrink-0" role="group" aria-label="Content filter">
             <input type="radio" class="btn-check" name="rvContent" id="optRvDirsOnly" value="dirs" autocomplete="off" />
             <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvDirsOnly" title="Folders only"
               ><i class="fa-solid fa-folder fa-fw" aria-hidden="true"></i></label>
+            <input type="radio" class="btn-check" name="rvContent" id="optRvAll" value="all" autocomplete="off" checked />
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvAll" title="Files and folders"
+              ><i class="fa-solid fa-copy fa-fw" aria-hidden="true"></i></label>
+            <input type="radio" class="btn-check" name="rvContent" id="optRvFilesOnly" value="files" autocomplete="off" />
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvFilesOnly" title="Files only"
+              ><i class="fa-solid fa-file-lines fa-fw" aria-hidden="true"></i></label>
           </div>
           <div class="btn-group tagfox-segmented flex-shrink-0" role="group" aria-label="Recency">
             <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecency1h" value="1h" autocomplete="off" />
@@ -353,11 +359,10 @@
           <div class="app-shelf-rot">
             <div
               id="shelfDropZone"
-              class="d-inline-flex flex-wrap align-items-center gap-1 rounded border border-dashed px-2 py-1 bg-body-secondary"
-              style="min-height: 2rem"
+              class="d-flex flex-wrap gap-1 rounded border border-dashed px-2 py-1 bg-body-secondary"
             >
               <span id="shelfEmptyHint" class="text-muted fw-semibold">Shelf</span>
-              <div id="shelfChips" class="d-flex flex-wrap align-items-center gap-1"></div>
+              <div id="shelfChips"></div>
               <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0" style="width: 1.5rem; height: 1.5rem" id="btnShelfClear" title="Delete everything in Shelf">
                 <i class="fa-solid fa-xmark" aria-hidden="true"></i>
               </button>
@@ -405,7 +410,7 @@
             </button>
           </div>
           <div class="position-relative flex-shrink-0 ms-2 tagfox-advanced-wrap">
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnToggleSearchOptsAdvanced" aria-expanded="false" aria-controls="searchOptsAdvancedPanel" title="Match case, path, whole word, respect accents; hide special paths (client-side)">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnToggleSearchOptsAdvanced" aria-expanded="false" aria-controls="searchOptsAdvancedPanel" title="Match case, path, whole word, respect accents; hide special / hide ~ paths (client-side)">
               Advanced
             </button>
             <div id="searchOptsAdvancedPanel" class="search-opts-advanced-popover border rounded px-2 py-2 bg-body shadow-sm d-flex flex-wrap align-items-center gap-1" role="group" aria-label="Everything advanced search options" hidden>
@@ -418,9 +423,11 @@
               <input type="checkbox" class="btn-check" id="optDiacritics" autocomplete="off" />
               <label class="btn btn-outline-secondary btn-sm" for="optDiacritics">Respect accents</label>
               <input type="checkbox" class="btn-check" id="optHideSpecial" autocomplete="off" />
-              <label class="btn btn-outline-secondary btn-sm" for="optHideSpecial" title="Hide from the table only: any path segment starting with . ~ or $, plus desktop.ini (.shortcut-targets-by-id kept). Does not change Everything — raise Results per page if the list looks empty. With this on, rows are filtered after each page; hits in deeper subfolders may not appear until you load more (scroll or Load more).">Hide special</label>
+              <label class="btn btn-outline-secondary btn-sm" for="optHideSpecial" title="Hide from the table only: any path segment starting with . or $, plus desktop.ini (.shortcut-targets-by-id kept). Does not change Everything — raise Results per page if the list looks empty.">Hide special</label>
+              <input type="checkbox" class="btn-check" id="optHideTilde" autocomplete="off" />
+              <label class="btn btn-outline-secondary btn-sm" for="optHideTilde" title="Hide from the table only: any path segment starting with ~ (e.g. profile junctions). Client-side only; same paging caveats as Hide special.">Hide ~</label>
               <p class="small text-muted mb-0 w-100 mt-1">
-                Turning on <strong>Hide special</strong> filters rows after each page from Everything — items in deeper subfolders may not show until you load more (scroll or <strong>Load more</strong>).
+                <strong>Hide special</strong> / <strong>Hide ~</strong> filter rows after each page from Everything — items in deeper subfolders may not show until you load more (scroll or <strong>Load more</strong>).
               </p>
             </div>
           </div>

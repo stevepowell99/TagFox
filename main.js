@@ -2704,6 +2704,25 @@ ipcMain.handle('trash-paths', async (event, paths) => {
   return { ok: true };
 });
 
+/** True if folder segment sorts “tilde-prefixed” for flyouts: ASCII ~, fullwidth ～ (common on Drive/sync). */
+function folderNameStartsWithTildeLike(name) {
+  const c = String(name || '').codePointAt(0);
+  return c === 0x7e || c === 0xff5e;
+}
+
+/**
+ * Match path-sorted table (path string order: ~ after letters). localeCompare puts ~ first; send ~ / ～ names last
+ * (renderer pathUnderTildeSegment is ASCII ~ only; main listing still orders ～ last here for consistency).
+ */
+function compareChildFolderDisplayName(a, b) {
+  const sa = String(a || '');
+  const sb = String(b || '');
+  const za = folderNameStartsWithTildeLike(sa) ? 1 : 0;
+  const zb = folderNameStartsWithTildeLike(sb) ? 1 : 0;
+  if (za !== zb) return za - zb;
+  return sa.localeCompare(sb, undefined, { sensitivity: 'base', numeric: true });
+}
+
 /** Subfolders only (breadcrumb sibling picker). */
 ipcMain.handle('list-child-folders', async (_event, { parentPath }) => {
   let p = path.normalize(String(parentPath || '').trim());
@@ -2724,7 +2743,7 @@ ipcMain.handle('list-child-folders', async (_event, { parentPath }) => {
     if (name.startsWith('.') && name.toLowerCase() !== '.shortcut-targets-by-id') continue;
     folders.push({ name, fullPath: path.join(p, name) });
   }
-  folders.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }));
+  folders.sort((a, b) => compareChildFolderDisplayName(a.name, b.name));
   return { ok: true, folders };
 });
 
@@ -3038,6 +3057,30 @@ async function movePathsToShelf(sourcePaths) {
   return { ok: true };
 }
 
+/** Split display name for Explorer-like order: `base.ext` before `base (1).ext` (plain localeCompare puts space before `.`). */
+function parseShelfFilenameStemCopyExt(name) {
+  const s = String(name || '');
+  let ext = '';
+  let base = s;
+  const dot = s.lastIndexOf('.');
+  if (dot > 0) {
+    ext = s.slice(dot);
+    base = s.slice(0, dot);
+  }
+  const m = /^(.*) \((\d+)\)$/.exec(base);
+  if (!m) return { stem: base, copy: 0, ext };
+  return { stem: m[1], copy: parseInt(m[2], 10) || 0, ext };
+}
+
+function compareShelfEntryNames(a, b) {
+  const na = parseShelfFilenameStemCopyExt(a);
+  const nb = parseShelfFilenameStemCopyExt(b);
+  const c = na.stem.localeCompare(nb.stem, undefined, { sensitivity: 'base', numeric: true });
+  if (c !== 0) return c;
+  if (na.copy !== nb.copy) return na.copy - nb.copy;
+  return na.ext.localeCompare(nb.ext, undefined, { sensitivity: 'base', numeric: true });
+}
+
 ipcMain.handle('shelf-state', async () => {
   const dir = getShelfDirResolved();
   try {
@@ -3048,7 +3091,7 @@ ipcMain.handle('shelf-state', async () => {
         fullPath: path.join(dir, e.name),
         isDirectory: e.isDirectory(),
       }))
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+      .sort((a, b) => compareShelfEntryNames(a.name, b.name));
     return { ok: true, path: dir, entries };
   } catch (e) {
     return { ok: false, error: String(e.message || e), path: dir, entries: [] };

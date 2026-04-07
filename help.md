@@ -22,7 +22,7 @@
 
   Drag and drop: default row/Shelf drag uses TagFox’s in-page protocol (move/copy inside the app; Shift = copy). External apps need Alt+drag or the Shelf “OS drag” arm for native paths (CF_HDROP). Native drag blocks the UI thread, hence the split.
 
-  Hide special (Advanced): client-side only — filteredRows() drops paths matching pathUnderDotFolder() in renderer.js; Everything query unchanged (pagination still uses raw hit count per page).
+  Hide special / Hide ~ (Advanced): client-side only — filteredRows() uses pathUnderHideSpecialSegments() and pathUnderTildeSegment() in renderer.js; Everything query unchanged (pagination still uses raw hit count per page).
 
   Active tag filters: sent to Everything as a regex clause so matches exist before results load. Tag bar ↻ runs a full-index [( scan and prunes ghosts; normal searches do not.
 
@@ -102,7 +102,7 @@ Meanwhile, tools like Google Drive train you to type a word and expect the right
 - Type in the search box — results update as you type. Press `Enter` to force a refresh.
 - Tip: `foo|bar` matches either word. `!foo` excludes files matching “foo”.
 - Next to the search row, **Both** / **Folders only** / **Files only** narrow what Everything returns (`folder:` / `file:` when narrowed). See [Everything searching](https://www.voidtools.com/support/everything/searching/).
-- The **Advanced** button opens extra options: match case, match path, whole word, diacritics, **Hide special**. **Hide special** removes matching rows from the **table only** (paths with any segment starting with `.`, `~`, or `$`, plus `desktop.ini`; `..` and `.shortcut-targets-by-id` are not hidden). Everything still fetches up to **Results per page** hits before filtering — if the list looks empty, raise that limit, use **Load more**, or narrow scope/query.
+- The **Advanced** button opens extra options: match case, match path, whole word, diacritics, **Hide special**, **Hide ~**. **Hide special** removes rows whose path has a segment starting with `.` or `$`, or equals `desktop.ini` (`..` is ignored; `.shortcut-targets-by-id` is kept). **Hide ~** removes rows with any segment starting with `~` (e.g. profile junctions). Both are **table only**; Everything still fetches up to **Results per page** before filtering — if the list looks empty, raise that limit, use **Load more**, or narrow scope/query. When those rows are still shown (toggles off), **Hide special** matches fade more (lower opacity) than **~** matches.
 - **Tree** vs **Flat** (`l`): Tree hides the Path column and groups by folder; Tree mode keeps path sort A→Z. Size/Modified/Name sorts switch to Flat (status bar note).
 
 ### 👁️ View toggles
