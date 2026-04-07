@@ -51,4 +51,6 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   /** OS-wide show/hide shortcut (Electron globalShortcut). */
   globalToggleGet: () => ipcRenderer.invoke('global-toggle-get'),
   globalToggleSet: (accelerator) => ipcRenderer.invoke('global-toggle-set', accelerator),
+  pickScopeFolder: () => ipcRenderer.invoke('pick-scope-folder'),
+  userHomeDir: () => ipcRenderer.invoke('user-home-dir'),
 });

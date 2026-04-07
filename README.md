@@ -1,9 +1,11 @@
 # TagFox
 
-Small Electron UI for [Voidtools Everything](https://www.voidtools.com/) HTTP search, with optional **bracket tags** in file and folder names.
+A small desktop app that uses [Voidtools Everything](https://www.voidtools.com/) to search your files very quickly. You can also add **tags** in file and folder names (text in square brackets) to sort and filter your stuff.
 
-**Documentation:** edit [`help.md`](help.md), then run `npm run build:help` (or `npm start` / `npm run dist`, which run it automatically). That writes [`help.html`](help.html), which the app loads for **F1** help. Maintainer notes are **HTML comments** at the top of `help.md`.
+**First run:** In a terminal, run `npm install` and then `npm start`. Everything must be installed and running. Turn on its **HTTP server** (in Everything’s settings), then in TagFox open **Settings** and paste the **Everything base URL** it shows you (or the address you use for Everything in the browser).
 
-**Run:** `npm install` then `npm start`. Enable Everything's HTTP server and set **Settings → Everything base URL** in the app.
+**In the app:** Press **F1** for the full guide.
 
-**Performance:** If search feels slow, try deselecting **Folder-contents highlight** and/or **Hide special** in Advanced.
+**If search feels slow:** Open **Advanced** and try turning off **Folder-contents highlight** and **Hide special**.
+
+**Editing help:** Change [`help.md`](help.md), then run `npm run build:help` (or just `npm start` / `npm run dist`, which rebuild help for you). Notes for maintainers only are in HTML comments at the top of `help.md`.

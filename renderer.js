@@ -29,6 +29,9 @@
       favFolders: 'tagBrowserFavFolders',
       favSearches: 'tagBrowserFavSearches',
       scopeFolderHistory: 'tagBrowserScopeFolderHist',
+      searchScopeCeilings: 'tagBrowserSearchScopeCeilings',
+      searchScopeMax: 'tagBrowserSearchScopeMax',
+      scopeRootsTipDismissed: 'tagBrowserScopeRootsTipDismissed',
       tagStore: 'tagBrowserTagStore',
       knownBracketTags: 'tagBrowserKnownBracketTags',
       activeTagFilter: 'tagBrowserActiveTag',
@@ -40,6 +43,8 @@
       darkMode: 'tagBrowserDarkMode',
       treeFolding: 'tagBrowserTreeFolding',
       treeGroupHighlight: 'tagBrowserTreeGroupHL',
+      collapsedFolders: 'tagBrowserCollapsedFolders',
+      gdriveShortcutNames: 'tagBrowserGDriveShortcutNames',
     };
 
     /** One-time copy when upgrading from the old app name (everythang* keys). */
@@ -307,6 +312,10 @@
     }
 
     function isTreeFoldingOn() { return !!document.getElementById('optTreeFolding')?.checked; }
+    /** +/- twisties only when this result set is complete (no Load more pending). */
+    function isTreeFoldUiActive() {
+      return isTreeFoldingOn() && !(resultsPagingCtx && resultsPagingCtx.hasMore);
+    }
     function isTreeGroupHLOn() { return !!document.getElementById('optTreeGroupHL')?.checked; }
 
     /** @type {Set<string>} lowercase keys; tag bar filters with AND (click toggles each). */
@@ -318,6 +327,8 @@
     let modalTags = [];
     /** Multi-select checkboxes: path key lowercase → canonical path */
     const checkedPathsMap = new Map();
+    /** Persisted set of folder paths the user has collapsed in tree view. */
+    const collapsedFolderPaths = new Set();
     let tagModalInst = null;
     let bulkRenameModalInst = null;
     /** Paths captured when bulk rename opens — preview and Apply use this list. */
@@ -942,6 +953,148 @@
       return '';
     }
 
+    /** Settings: one optional “universe” root for Everything + breadcrumb top; combined with current-folder (AND). */
+    let searchScopeMaxFolder = '';
+
+    function normalizeSearchScopeMaxPath(p) {
+      return normalizeFolderPathForEverything(String(p || '').trim()).replace(/[/\\]+$/, '');
+    }
+
+    function getSearchScopeMaxFolderNorm() {
+      return normalizeSearchScopeMaxPath(searchScopeMaxFolder);
+    }
+
+    /** True if absNorm is the ceiling or a subdirectory (same drive / mixed slashes tolerated). */
+    function pathIsUnderOrEqualFolder(absNorm, ceilingNorm) {
+      const a = pathNormKey(absNorm);
+      const c = pathNormKey(ceilingNorm);
+      if (!c) return true;
+      if (!a) return false;
+      if (a === c) return true;
+      return a.startsWith(c + '\\') || a.startsWith(c + '/');
+    }
+
+    /** Clamp an absolute folder to stay at or under the scope max (returns normalized path). */
+    function clampFolderPathToSearchMax(absPath) {
+      const max = getSearchScopeMaxFolderNorm();
+      const n = normalizeSearchScopeMaxPath(absPath);
+      if (!max) return n;
+      if (!n) return max;
+      if (pathIsUnderOrEqualFolder(n, max)) return n;
+      return max;
+    }
+
+    function clampRootFolderUnderSearchScopeMax() {
+      const max = getSearchScopeMaxFolderNorm();
+      if (!max) return;
+      const inp = document.getElementById('rootFolder');
+      if (!inp) return;
+      const raw = inp.value.trim();
+      if (!raw) return;
+      const fixed = clampFolderPathToSearchMax(raw);
+      if (pathNormKey(fixed) !== pathNormKey(raw)) inp.value = fixed;
+    }
+
+    /** @returns {string[]} 0 or 1 path for combineFolderScopeGroup (Everything ceiling). */
+    function getSearchScopeCeilingFoldersNorms() {
+      const m = getSearchScopeMaxFolderNorm();
+      return m ? [m] : [];
+    }
+
+    function setSearchScopeMaxFolderFromString(s) {
+      searchScopeMaxFolder = normalizeSearchScopeMaxPath(s);
+    }
+
+    /** Migrate legacy JSON array key → single string; then drop legacy. */
+    function loadSearchScopeMaxFromStorage() {
+      searchScopeMaxFolder = '';
+      try {
+        const single = localStorage.getItem(LS.searchScopeMax);
+        if (single != null && String(single).trim()) {
+          searchScopeMaxFolder = normalizeSearchScopeMaxPath(single);
+          return;
+        }
+        const raw = localStorage.getItem(LS.searchScopeCeilings);
+        if (!raw) return;
+        const a = JSON.parse(raw);
+        if (!Array.isArray(a) || !a.length) return;
+        const first = normalizeSearchScopeMaxPath(a[0]);
+        if (first) {
+          searchScopeMaxFolder = first;
+          localStorage.setItem(LS.searchScopeMax, first);
+        }
+        localStorage.removeItem(LS.searchScopeCeilings);
+      } catch (_) {
+        searchScopeMaxFolder = '';
+      }
+    }
+
+    function persistSearchScopeMax() {
+      const n = getSearchScopeMaxFolderNorm();
+      if (!n) {
+        localStorage.removeItem(LS.searchScopeMax);
+        return;
+      }
+      localStorage.setItem(LS.searchScopeMax, n);
+    }
+
+    function syncSearchScopeRootsTipVisibility() {
+      const el = document.getElementById('searchScopeRootsTip');
+      if (!el) return;
+      const dismissed = localStorage.getItem(LS.scopeRootsTipDismissed) === '1';
+      const has = !!getSearchScopeMaxFolderNorm();
+      el.classList.toggle('d-none', dismissed || has);
+    }
+
+    function renderSearchScopeMaxUi() {
+      const box = document.getElementById('searchScopeMaxDisplay');
+      if (!box) return;
+      const n = getSearchScopeMaxFolderNorm();
+      box.className =
+        'small border rounded px-2 py-2 bg-body font-monospace text-break' + (n ? '' : ' text-muted');
+      box.textContent = n || 'No scope folder — entire index (subject to current folder).';
+    }
+
+    /** Validate path via IPC; replace scope max; clamp breadcrumb + search. */
+    async function setSearchScopeMaxFromPicker(rawPath) {
+      const norm0 = normalizeSearchScopeMaxPath(rawPath);
+      if (!norm0) return;
+      const syn = scopePathClientSyntaxError(norm0);
+      if (syn) {
+        const st = document.getElementById('status');
+        if (st) st.textContent = syn;
+        return;
+      }
+      if (window.tagBrowser && typeof window.tagBrowser.listChildFolders === 'function') {
+        const r = await window.tagBrowser.listChildFolders({ parentPath: norm0 });
+        if (!r || !r.ok) {
+          const st = document.getElementById('status');
+          if (st)
+            st.textContent =
+              'Invalid folder: ' + (r && r.error ? String(r.error) : 'Not a folder or not reachable.');
+          return;
+        }
+      }
+      searchScopeMaxFolder = norm0;
+      renderSearchScopeMaxUi();
+      syncSearchScopeRootsTipVisibility();
+      clampRootFolderUnderSearchScopeMax();
+      saveSettings();
+      renderScopeBreadcrumb();
+      void runSearchNow();
+      commitSearchHistoryNow();
+    }
+
+    function clearSearchScopeMaxSetting() {
+      searchScopeMaxFolder = '';
+      renderSearchScopeMaxUi();
+      syncSearchScopeRootsTipVisibility();
+      saveSettings();
+      renderScopeBreadcrumb();
+      void runSearchNow();
+      commitSearchHistoryNow();
+    }
+
     /** Set scope path only; query text stays as the in-scope filter. */
     function setSearchScopeFolder(folderAbsPath) {
       const folder = normalizeFolderPathForEverything(folderAbsPath);
@@ -1241,7 +1394,7 @@
      */
     async function applySearchScopeAndRefresh(folderAbsPath) {
       leaveScopePathEditChrome();
-      setSearchScopeFolder(folderAbsPath);
+      setSearchScopeFolder(clampFolderPathToSearchMax(folderAbsPath));
       const scopeNorm = normalizeFolderPathForEverything(document.getElementById('rootFolder').value.trim());
       if (scopeNorm) rememberScopeFolderHistory(scopeNorm);
       saveSettings();
@@ -2050,6 +2203,12 @@
     function favouriteSearchTooltip(s, slotIdx) {
       const q = s.query != null ? String(s.query) : '';
       const sc = (s.rootFolder != null ? String(s.rootFolder) : '').trim();
+      const ceilOne =
+        s.searchScopeMax != null && String(s.searchScopeMax).trim()
+          ? String(s.searchScopeMax).trim()
+          : Array.isArray(s.searchScopeCeilings) && s.searchScopeCeilings.length
+            ? String(s.searchScopeCeilings[0]).trim()
+            : '';
       const tags = Array.isArray(s.activeTagKeys) ? [...s.activeTagKeys].filter(Boolean).sort() : [];
       const lines = [];
       if (slotIdx >= 0 && slotIdx < 9) {
@@ -2060,6 +2219,7 @@
         'Click to restore this search. Drag chip on bar to reorder (Ctrl+1…9 follow left-to-right order).',
         '',
         'Query: ' + (q.trim() || '(empty)'),
+        'Search scope folder (Settings): ' + (ceilOne || '(none)'),
         'Current folder: ' + (sc || '(entire index)'),
       );
       if (tags.length) lines.push('Tags: ' + tags.join(', '));
@@ -2144,12 +2304,13 @@
     function updateQueryPlaceholder() {
       const q = document.getElementById('query');
       if (!q) return;
+      const max = getSearchScopeMaxFolderNorm();
       const scopeRaw = document.getElementById('rootFolder').value.trim();
-      if (!scopeRaw) {
+      if (!scopeRaw && !max) {
         q.placeholder = 'Search inside (entire index)';
         return;
       }
-      const norm = normalizeFolderPathForEverything(scopeRaw).replace(/[/\\]+$/, '');
+      const norm = normalizeFolderPathForEverything(scopeRaw || max).replace(/[/\\]+$/, '');
       const seg = T.baseName(norm);
       const pretty = (segmentPretty(seg) || seg || 'folder').trim();
       q.placeholder = 'Search inside ' + pretty;
@@ -2197,7 +2358,7 @@
     }
 
     function currentScopeBreadcrumbKey() {
-      return document.getElementById('rootFolder').value.trim();
+      return getSearchScopeMaxFolderNorm() + '\n' + document.getElementById('rootFolder').value.trim();
     }
 
     /** Avoid rebuilding breadcrumb when selection/table updates would destroy open ▾ + flyouts for nothing. */
@@ -2439,7 +2600,8 @@
 
     /** Normalized (trim trail sep, lower) child of `parentPath` that continues toward current scope, or '' if none. */
     function breadcrumbHighlightChildPathNorm(parentPath) {
-      const scopeRaw = document.getElementById('rootFolder').value.trim();
+      let scopeRaw = document.getElementById('rootFolder').value.trim();
+      if (!scopeRaw) scopeRaw = getSearchScopeMaxFolderNorm() || '';
       if (!scopeRaw) return '';
       const scopeNorm = normalizeFolderPathForEverything(scopeRaw).replace(/[/\\]+$/, '').toLowerCase();
       const parentNorm = normalizeFolderPathForEverything(String(parentPath || '').trim()).replace(/[/\\]+$/, '').toLowerCase();
@@ -2649,7 +2811,15 @@
       barEl.appendChild(ddWrap);
     }
 
-    /** Folder trail: segments set scope; ▾ opens sibling/subfolder menus (hover or click). */
+    /** Split normalized folder path into segments (C:, UNC, etc.). */
+    function splitFolderPathSegments(normPath) {
+      return normalizeFolderPathForEverything(String(normPath || '').trim())
+        .replace(/[/\\]+$/, '')
+        .split(/[/\\]/)
+        .filter((p) => p !== '');
+    }
+
+    /** Folder trail: segments set scope; with Settings scope max, that folder is the first crumb (no drive picker). */
     function renderScopeBreadcrumb() {
       hideBreadcrumbSubfolderFlyout();
       updateQueryPlaceholder();
@@ -2658,9 +2828,10 @@
       const shell = document.getElementById('breadcrumbShell');
       const editWrap = document.getElementById('scopePathEditWrap');
       el.innerHTML = '';
+      const maxNorm = getSearchScopeMaxFolderNorm();
       const scopeRaw = document.getElementById('rootFolder').value.trim();
       const btnClear = document.getElementById('btnClearScope');
-      if (!scopeRaw) {
+      if (!maxNorm && !scopeRaw) {
         el.classList.add('d-none');
         el.classList.remove('d-flex', 'align-items-center', 'flex-wrap', 'gap-0');
         if (shell) {
@@ -2673,7 +2844,7 @@
         renderedScopeBreadcrumbKey = currentScopeBreadcrumbKey();
         return;
       }
-      if (btnClear) btnClear.disabled = false;
+      if (btnClear) btnClear.disabled = !scopeRaw;
       if (shell) {
         shell.classList.remove('d-none');
         shell.classList.add('d-flex');
@@ -2681,131 +2852,222 @@
       if (editWrap) editWrap.classList.add('d-none');
       el.classList.remove('d-none');
       el.classList.add('d-flex', 'align-items-center', 'flex-wrap', 'gap-0');
-      const norm = normalizeFolderPathForEverything(scopeRaw).replace(/[/\\]+$/, '');
+
+      const rfEl = document.getElementById('rootFolder');
+      let norm = '';
+      if (scopeRaw) {
+        norm = normalizeFolderPathForEverything(scopeRaw).replace(/[/\\]+$/, '');
+        if (maxNorm) {
+          const clamped = clampFolderPathToSearchMax(norm);
+          if (pathNormKey(clamped) !== pathNormKey(norm)) {
+            rfEl.value = clamped;
+            norm = clamped;
+          }
+        }
+      } else {
+        norm = maxNorm;
+      }
+
       const sep = norm.includes('/') ? '/' : '\\';
       const parts = norm.split(/[/\\]/).filter((p) => p !== '');
-      prependDriveRootPicker(el, norm, sep);
-      let acc = '';
-      parts.forEach((part, i) => {
-        acc = i === 0 ? part : acc + sep + part;
-        const wrap = document.createElement('span');
-        wrap.className = 'd-inline-flex align-items-center flex-wrap';
-        const parsed = T.parseSegmentTags(part);
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'btn btn-link btn-sm p-0 align-baseline breadcrumb-folder-seg' + (i === parts.length - 1 ? ' breadcrumb-folder-seg-current' : '');
-        btn.textContent = parsed.pretty;
-        const folderForSearch = normalizeFolderPathForEverything(acc);
-        wrap.dataset.dropPath = folderForSearch; // internal drag-drop target (move into this folder)
-        btn.title = 'Current folder: ' + folderForSearch + ' (recursive under this folder)';
-        btn.addEventListener('click', async (e) => {
+
+      function appendSiblingChevron(iSeg, parentForPeers, partsArr) {
+        let accNext = '';
+        for (let j = 0; j <= iSeg + 1; j++) {
+          accNext = j === 0 ? partsArr[j] : accNext + sep + partsArr[j];
+        }
+        const targetChildNorm = normalizeFolderPathForEverything(accNext).replace(/[/\\]+$/, '').toLowerCase();
+
+        const chevronWrap = document.createElement('span');
+        chevronWrap.className = 'd-inline-flex align-items-center text-muted user-select-none breadcrumb-scope-dd ps-1';
+
+        const ddWrap = document.createElement('div');
+        ddWrap.className = 'dropdown d-inline-block';
+        const ddBtn = document.createElement('button');
+        ddBtn.type = 'button';
+        ddBtn.className =
+          'btn btn-link btn-sm text-secondary py-0 px-2 align-baseline breadcrumb-dd-toggle tagfox-scope-chevron';
+        ddBtn.innerHTML = breadcrumbDropdownChevronHtml();
+        ddBtn.title = 'Other folders in this location';
+        ddBtn.setAttribute('aria-label', 'Other folders in this location');
+        ddBtn.setAttribute('data-bs-toggle', 'dropdown');
+        ddBtn.setAttribute('aria-expanded', 'false');
+        const menu = document.createElement('ul');
+        menu.className = 'dropdown-menu dropdown-menu-start py-1 small shadow';
+        menu.style.maxHeight = 'min(50vh, 280px)';
+        menu.style.overflow = 'auto';
+        menu.addEventListener('scroll', () => repositionBreadcrumbFlyoutChain());
+        menu.addEventListener('mouseenter', cancelBreadcrumbFlyoutHideTimer);
+        menu.addEventListener('keydown', (e) => {
+          if (e.key !== 'ArrowRight') return;
+          const t = e.target;
+          if (!t.classList || !t.classList.contains('dropdown-item') || !menu.contains(t)) return;
+          const li = t.closest('li');
+          const path = li && li.dataset.breadcrumbFlyoutPath;
+          if (!path) return;
+          e.preventDefault();
           e.stopPropagation();
-          await applySearchScopeAndRefresh(folderForSearch);
+          cancelBreadcrumbFlyoutHideTimer();
+          void (async () => {
+            await openBreadcrumbSubfolderFlyoutForPath(path, li, ddBtn, 0);
+            const fly0 = breadcrumbSubfolderFlyoutChain[0];
+            const first = fly0 && fly0.querySelector('button.dropdown-item');
+            if (first) first.focus();
+          })();
         });
-        wrap.appendChild(btn);
-        for (const tag of parsed.tags) {
-          const b = document.createElement('span');
-          b.className = 'badge ms-1';
-          b.style.backgroundColor = tagColorCss(tag);
-          b.style.color = '#212529';
-          b.textContent = tag;
-          wrap.appendChild(b);
-        }
-        el.appendChild(wrap);
-        if (i < parts.length - 1) {
-          const parentForPeers = folderForSearch;
-          let accNext = '';
-          for (let j = 0; j <= i + 1; j++) {
-            accNext = j === 0 ? parts[j] : accNext + sep + parts[j];
+
+        ddBtn.addEventListener('click', (e) => e.stopPropagation());
+        ddBtn.addEventListener('hide.bs.dropdown', (ev) => {
+          if (focusInsideBreadcrumbFlyout()) ev.preventDefault();
+        });
+        ddBtn.addEventListener('hidden.bs.dropdown', () => hideBreadcrumbSubfolderFlyout());
+
+        ddBtn.addEventListener('show.bs.dropdown', () => {
+          menu.innerHTML =
+            '<li><span class="dropdown-item-text text-muted">' +
+            (window.tagBrowser.listChildFolders ? 'Loading…' : 'Not available') +
+            '</span></li>';
+          if (!window.tagBrowser.listChildFolders) return;
+          void (async () => {
+            const r = await window.tagBrowser.listChildFolders({ parentPath: parentForPeers });
+            menu.innerHTML = '';
+            if (!r || !r.ok) {
+              const li0 = document.createElement('li');
+              li0.innerHTML =
+                '<span class="dropdown-item-text text-danger small">' +
+                (r && r.error ? String(r.error) : 'Could not list folders') +
+                '</span>';
+              menu.appendChild(li0);
+              return;
+            }
+            const folders = r.folders || [];
+            if (!folders.length) {
+              const li0 = document.createElement('li');
+              li0.innerHTML = '<span class="dropdown-item-text text-muted">(no subfolders)</span>';
+              menu.appendChild(li0);
+              return;
+            }
+            appendBreadcrumbFolderListItems(menu, folders, ddBtn, 0, {
+              highlightPathNorm: targetChildNorm,
+              onMouseLeaveRow: scheduleHideBreadcrumbSubfolderFlyout,
+            });
+          })();
+        });
+
+        ddWrap.appendChild(ddBtn);
+        ddWrap.appendChild(menu);
+        bindBreadcrumbDropdownHover(ddWrap, ddBtn);
+        chevronWrap.appendChild(ddWrap);
+        el.appendChild(chevronWrap);
+      }
+
+      if (!maxNorm) {
+        prependDriveRootPicker(el, norm, sep);
+        let acc = '';
+        parts.forEach((part, i) => {
+          acc = i === 0 ? part : acc + sep + part;
+          if (isGoogleDriveShortcutTargetsSegment(part)) return;
+          const isGDriveShortcutId = i > 0 && isGoogleDriveShortcutTargetsSegment(parts[i - 1]);
+          const wrap = document.createElement('span');
+          wrap.className = 'd-inline-flex align-items-center flex-wrap';
+          const parsed = T.parseSegmentTags(part);
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className =
+            'btn btn-link btn-sm p-0 align-baseline breadcrumb-folder-seg' +
+            (i === parts.length - 1 ? ' breadcrumb-folder-seg-current' : '');
+          if (isGDriveShortcutId) {
+            btn.innerHTML = '<i class="fa-solid fa-link fa-xs" aria-hidden="true"></i>';
+          } else {
+            btn.textContent = parsed.pretty;
           }
-          const targetChildNorm = normalizeFolderPathForEverything(accNext).replace(/[/\\]+$/, '').toLowerCase();
-
-          const chevronWrap = document.createElement('span');
-          chevronWrap.className = 'd-inline-flex align-items-center text-muted user-select-none breadcrumb-scope-dd ps-1';
-
-          const ddWrap = document.createElement('div');
-          ddWrap.className = 'dropdown d-inline-block';
-          const ddBtn = document.createElement('button');
-          ddBtn.type = 'button';
-          ddBtn.className =
-            'btn btn-link btn-sm text-secondary py-0 px-2 align-baseline breadcrumb-dd-toggle tagfox-scope-chevron';
-          ddBtn.innerHTML = breadcrumbDropdownChevronHtml();
-          ddBtn.title = 'Other folders in this location';
-          ddBtn.setAttribute('aria-label', 'Other folders in this location');
-          ddBtn.setAttribute('data-bs-toggle', 'dropdown');
-          ddBtn.setAttribute('aria-expanded', 'false');
-          const menu = document.createElement('ul');
-          menu.className = 'dropdown-menu dropdown-menu-start py-1 small shadow';
-          menu.style.maxHeight = 'min(50vh, 280px)';
-          menu.style.overflow = 'auto';
-          menu.addEventListener('scroll', () => repositionBreadcrumbFlyoutChain());
-          menu.addEventListener('mouseenter', cancelBreadcrumbFlyoutHideTimer);
-          /* Flyout open: row button focusin via appendBreadcrumbFolderListItems (mouseenter focuses button). */
-          menu.addEventListener('keydown', (e) => {
-            if (e.key !== 'ArrowRight') return;
-            const t = e.target;
-            if (!t.classList || !t.classList.contains('dropdown-item') || !menu.contains(t)) return;
-            const li = t.closest('li');
-            const path = li && li.dataset.breadcrumbFlyoutPath;
-            if (!path) return;
-            e.preventDefault();
+          const folderForSearch = normalizeFolderPathForEverything(acc);
+          wrap.dataset.dropPath = folderForSearch;
+          btn.title = isGDriveShortcutId
+            ? 'Google Drive shortcut: ' + folderForSearch
+            : 'Current folder: ' + folderForSearch + ' (recursive under this folder)';
+          btn.addEventListener('click', async (e) => {
             e.stopPropagation();
-            cancelBreadcrumbFlyoutHideTimer();
-            void (async () => {
-              await openBreadcrumbSubfolderFlyoutForPath(path, li, ddBtn, 0);
-              const fly0 = breadcrumbSubfolderFlyoutChain[0];
-              const first = fly0 && fly0.querySelector('button.dropdown-item');
-              if (first) first.focus();
-            })();
+            await applySearchScopeAndRefresh(folderForSearch);
           });
-
-          ddBtn.addEventListener('click', (e) => e.stopPropagation());
-          ddBtn.addEventListener('hide.bs.dropdown', (ev) => {
-            if (focusInsideBreadcrumbFlyout()) ev.preventDefault();
-          });
-          ddBtn.addEventListener('hidden.bs.dropdown', () => hideBreadcrumbSubfolderFlyout());
-
-          ddBtn.addEventListener('show.bs.dropdown', () => {
-            menu.innerHTML =
-              '<li><span class="dropdown-item-text text-muted">' +
-              (window.tagBrowser.listChildFolders ? 'Loading…' : 'Not available') +
-              '</span></li>';
-            if (!window.tagBrowser.listChildFolders) return;
-            void (async () => {
-              const r = await window.tagBrowser.listChildFolders({ parentPath: parentForPeers });
-              menu.innerHTML = '';
-              if (!r || !r.ok) {
-                const li0 = document.createElement('li');
-                li0.innerHTML =
-                  '<span class="dropdown-item-text text-danger small">' +
-                  (r && r.error ? String(r.error) : 'Could not list folders') +
-                  '</span>';
-                menu.appendChild(li0);
-                return;
-              }
-              const folders = r.folders || [];
-              if (!folders.length) {
-                const li0 = document.createElement('li');
-                li0.innerHTML = '<span class="dropdown-item-text text-muted">(no subfolders)</span>';
-                menu.appendChild(li0);
-                return;
-              }
-              appendBreadcrumbFolderListItems(menu, folders, ddBtn, 0, {
-                highlightPathNorm: targetChildNorm,
-                onMouseLeaveRow: scheduleHideBreadcrumbSubfolderFlyout,
-              });
-            })();
-          });
-
-          ddWrap.appendChild(ddBtn);
-          ddWrap.appendChild(menu);
-          bindBreadcrumbDropdownHover(ddWrap, ddBtn);
-          chevronWrap.appendChild(ddWrap);
-          el.appendChild(chevronWrap);
+          wrap.appendChild(btn);
+          for (const tag of parsed.tags) {
+            const b = document.createElement('span');
+            b.className = 'badge ms-1';
+            b.style.backgroundColor = tagColorCss(tag);
+            b.style.color = '#212529';
+            b.textContent = tag;
+            wrap.appendChild(b);
+          }
+          el.appendChild(wrap);
+          if (i < parts.length - 1) appendSiblingChevron(i, folderForSearch, parts);
+        });
+      } else {
+        const maxNormFull = normalizeFolderPathForEverything(maxNorm).replace(/[/\\]+$/, '');
+        const maxParts = splitFolderPathSegments(maxNormFull);
+        const wrapR = document.createElement('span');
+        wrapR.className = 'd-inline-flex align-items-center flex-wrap';
+        const btnR = document.createElement('button');
+        btnR.type = 'button';
+        const onlyRoot = parts.length <= maxParts.length;
+        btnR.className =
+          'btn btn-link btn-sm p-0 align-baseline breadcrumb-folder-seg' +
+          (onlyRoot ? ' breadcrumb-folder-seg-current' : '');
+        btnR.textContent = segmentPretty(T.baseName(maxNormFull)) || T.baseName(maxNormFull);
+        btnR.title = 'Scope root: ' + maxNormFull;
+        btnR.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await applySearchScopeAndRefresh(maxNormFull);
+        });
+        wrapR.dataset.dropPath = maxNormFull;
+        wrapR.appendChild(btnR);
+        el.appendChild(wrapR);
+        if (!onlyRoot) {
+          appendSiblingChevron(maxParts.length - 1, maxNormFull, parts);
         }
-      });
-      // ▾ after current folder: immediate subfolders (same API as between-segment picker).
-      const scopeFolder = normalizeFolderPathForEverything(scopeRaw);
+        let acc = maxNormFull;
+        for (let i = maxParts.length; i < parts.length; i++) {
+          const part = parts[i];
+          acc = i === maxParts.length ? maxNormFull + sep + part : acc + sep + part;
+          if (isGoogleDriveShortcutTargetsSegment(part)) continue;
+          const isGDriveShortcutId = i > 0 && isGoogleDriveShortcutTargetsSegment(parts[i - 1]);
+          const wrap = document.createElement('span');
+          wrap.className = 'd-inline-flex align-items-center flex-wrap';
+          const parsed = T.parseSegmentTags(part);
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className =
+            'btn btn-link btn-sm p-0 align-baseline breadcrumb-folder-seg' +
+            (i === parts.length - 1 ? ' breadcrumb-folder-seg-current' : '');
+          if (isGDriveShortcutId) {
+            btn.innerHTML = '<i class="fa-solid fa-link fa-xs" aria-hidden="true"></i>';
+          } else {
+            btn.textContent = parsed.pretty;
+          }
+          const folderForSearch = normalizeFolderPathForEverything(acc);
+          wrap.dataset.dropPath = folderForSearch;
+          btn.title = isGDriveShortcutId
+            ? 'Google Drive shortcut: ' + folderForSearch
+            : 'Current folder: ' + folderForSearch + ' (recursive under this folder)';
+          btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            await applySearchScopeAndRefresh(folderForSearch);
+          });
+          wrap.appendChild(btn);
+          for (const tag of parsed.tags) {
+            const b = document.createElement('span');
+            b.className = 'badge ms-1';
+            b.style.backgroundColor = tagColorCss(tag);
+            b.style.color = '#212529';
+            b.textContent = tag;
+            wrap.appendChild(b);
+          }
+          el.appendChild(wrap);
+          if (i < parts.length - 1) appendSiblingChevron(i, folderForSearch, parts);
+        }
+      }
+
+      const scopeFolder = normalizeFolderPathForEverything(scopeRaw || maxNorm);
       const subWrap = document.createElement('span');
       subWrap.className = 'd-inline-flex align-items-center text-muted user-select-none breadcrumb-scope-dd ms-1';
       const subDd = document.createElement('div');
@@ -2820,7 +3082,8 @@
       subBtn.setAttribute('data-bs-toggle', 'dropdown');
       subBtn.setAttribute('aria-expanded', 'false');
       const subMenu = document.createElement('ul');
-      bindSubfolderDropdownWithFlyouts(subBtn, subMenu, subDd, scopeFolder, '', true);
+      const trailHl = breadcrumbHighlightChildPathNorm(scopeFolder);
+      bindSubfolderDropdownWithFlyouts(subBtn, subMenu, subDd, scopeFolder, trailHl || '', true);
       subDd.appendChild(subBtn);
       subDd.appendChild(subMenu);
       subWrap.appendChild(subDd);
@@ -3548,7 +3811,9 @@
       tagBand.innerHTML = '';
       for (const tag of parsedTitle.tags) appendTagPillWithRemove(tagBand, tag, propPath);
 
-      document.getElementById('propFullPath').textContent = propPath;
+      const propFullPathEl = document.getElementById('propFullPath');
+      propFullPathEl.textContent = collapseGDriveShortcutDisplay(propPath);
+      propFullPathEl.title = propPath;
       document.getElementById('propType').textContent = rowIsFolder(propRow) ? 'Folder' : 'File';
       document.getElementById('propSize').textContent = formatSize(propRow.size);
       document.getElementById('propModified').textContent = formatModified(
@@ -4131,16 +4396,6 @@
       return findRowByFullPath(selectedFullPath);
     }
 
-    /** Everything: quoted path prefix + query (recursive / in-tree search). */
-    function buildEverythingSearch(rootFolder, userQuery) {
-      const q = (userQuery || '').trim();
-      let root = (rootFolder || '').trim();
-      if (!root) return q;
-      root = root.replace(/[/\\]+$/, '') + '\\';
-      const quoted = '"' + root.replace(/"/g, '') + '"';
-      return q ? quoted + ' ' + q : quoted;
-    }
-
     /**
      * When Match path is off, wrap free-text in nopath:<…> so terms don’t match parent segments unless intended.
      * If Match path is on, the HTTP layer searches paths; Everything’s nopath: skips that when already matching path.
@@ -4154,16 +4409,41 @@
       return 'nopath:<' + raw + '>';
     }
 
-    /** Combine scope + user query for API (non-recursive uses parent: internally; query box stays clean). */
-    function composeScopedEverythingSearch(scopeRaw, userQuery, recursive) {
-      const scope = (scopeRaw || '').trim();
-      let q = (userQuery || '').trim();
-      if (!scope) return q;
-      q = filenameOnlyUserQueryForScopedSearch(q);
-      const scopeNorm = normalizeFolderPathForEverything(scope).replace(/[/\\]+$/, '');
-      if (recursive) return buildEverythingSearch(scopeNorm, q);
-      const parentTok = 'parent:"' + scopeNorm.replace(/"/g, '') + '"';
-      return q ? parentTok + ' ' + q : parentTok;
+    /** One normalized folder → Everything token: recursive quoted tree or non-recursive parent:. */
+    function folderScopeEverythingToken(normPath, recursive) {
+      const p = normalizeFolderPathForEverything(normPath).replace(/[/\\]+$/, '');
+      if (!p) return '';
+      if (recursive) {
+        const root = p + '\\';
+        return '"' + root.replace(/"/g, '') + '"';
+      }
+      return 'parent:"' + p.replace(/"/g, '') + '"';
+    }
+
+    /** OR-group for multiple roots; mirrors tag-bar `< a | b >` style. */
+    function combineFolderScopeGroup(normPaths, recursive) {
+      const norms = (normPaths || [])
+        .map((x) => normalizeFolderPathForEverything(String(x || '').trim()).replace(/[/\\]+$/, ''))
+        .filter(Boolean);
+      if (!norms.length) return '';
+      if (norms.length === 1) return folderScopeEverythingToken(norms[0], recursive);
+      const inner = norms.map((p) => folderScopeEverythingToken(p, recursive)).filter(Boolean).join(' | ');
+      return inner ? '< ' + inner + ' >' : '';
+    }
+
+    /**
+     * Settings ceilings (OR) + current-folder breadcrumb (AND) + user query for Everything HTTP.
+     * ceilingNorms: 0–1 folder from Settings scope max; breadcrumbRaw: #rootFolder.
+     */
+    function composeScopedEverythingSearch(ceilingNorms, breadcrumbRaw, userQuery, recursive) {
+      const ceil = combineFolderScopeGroup(Array.isArray(ceilingNorms) ? ceilingNorms : [], recursive);
+      const breadNorm = normalizeFolderPathForEverything(String(breadcrumbRaw || '').trim()).replace(/[/\\]+$/, '');
+      const slice = breadNorm ? combineFolderScopeGroup([breadNorm], recursive) : '';
+      const pathCombo = [ceil, slice].filter(Boolean).join(' ');
+      const qRaw = (userQuery || '').trim();
+      if (!pathCombo) return qRaw;
+      const q = filenameOnlyUserQueryForScopedSearch(qRaw);
+      return q ? pathCombo + ' ' + q : pathCombo;
     }
 
     /** pruneDeadRemembered: ghost cleanup on “Rescan all tags” only. */
@@ -4315,6 +4595,54 @@
     /** Google Drive for Desktop: real files live under this virtual segment — must not count as a “dot folder”. */
     function isGoogleDriveShortcutTargetsSegment(seg) {
       return String(seg || '').toLowerCase() === '.shortcut-targets-by-id';
+    }
+
+    /** Collapse .shortcut-targets-by-id\<ID> pair in a display path to … (keeps the real folder name that follows). */
+    function collapseGDriveShortcutDisplay(str) {
+      return String(str || '').replace(/([/\\])\.shortcut-targets-by-id[/\\][^/\\]+/gi, '$1\u2026');
+    }
+
+    /** Cache: GDrive shortcut ID full path → resolved child folder name (or null). Persisted in localStorage. */
+    const gdriveShortcutNameCache = new Map();
+    try {
+      const raw = localStorage.getItem(LS.gdriveShortcutNames);
+      console.log('[GDrive cache] hydrate from localStorage:', raw ? raw.slice(0, 200) : '(empty)');
+      if (raw) for (const [k, v] of Object.entries(JSON.parse(raw))) gdriveShortcutNameCache.set(k, v);
+    } catch (_) {}
+
+    function persistGDriveShortcutNameCache() {
+      try {
+        const obj = {};
+        for (const [k, v] of gdriveShortcutNameCache) if (typeof v === 'string') obj[k] = v;
+        const json = JSON.stringify(obj);
+        localStorage.setItem(LS.gdriveShortcutNames, json);
+        console.log('[GDrive cache] persisted', Object.keys(obj).length, 'entries');
+      } catch (e) { console.warn('[GDrive cache] persist failed:', e); }
+    }
+
+    /** True when a row's parent path ends with .shortcut-targets-by-id (i.e. row name is an opaque ID). */
+    function isGDriveShortcutIdRow(row) {
+      const segs = String(row.path || '').replace(/[/\\]+$/, '').split(/[/\\]/);
+      return segs.length > 0 && isGoogleDriveShortcutTargetsSegment(segs[segs.length - 1]);
+    }
+
+    /** Resolve a GDrive shortcut ID folder to its single child name; caches result. Returns name or null. */
+    async function resolveGDriveShortcutName(idFolderFullPath) {
+      const key = idFolderFullPath.replace(/[/\\]+$/, '').toLowerCase();
+      if (gdriveShortcutNameCache.has(key)) {
+        const v = gdriveShortcutNameCache.get(key);
+        if (typeof v === 'string' || v === null) return v;
+        return v;
+      }
+      if (!window.tagBrowser || !window.tagBrowser.listChildFolders) return null;
+      const p = window.tagBrowser.listChildFolders({ parentPath: idFolderFullPath }).then((r) => {
+        const name = r && r.ok && r.folders && r.folders.length === 1 ? r.folders[0].name : null;
+        gdriveShortcutNameCache.set(key, name);
+        persistGDriveShortcutNameCache();
+        return name;
+      });
+      gdriveShortcutNameCache.set(key, p);
+      return p;
     }
 
     /** dm: cutoff in local time (Everything datemodified syntax). */
@@ -5275,6 +5603,10 @@
       document.getElementById('baseUrl').value =
         localStorage.getItem(LS.baseUrl) || 'http://127.0.0.1';
       document.getElementById('rootFolder').value = localStorage.getItem(LS.rootFolder) || '';
+      loadSearchScopeMaxFromStorage();
+      renderSearchScopeMaxUi();
+      syncSearchScopeRootsTipVisibility();
+      clampRootFolderUnderSearchScopeMax();
       document.getElementById('maxResults').value =
         localStorage.getItem(LS.maxResults) || '200';
       document.getElementById('httpUser').value = localStorage.getItem(LS.httpUser) || '';
@@ -5318,6 +5650,13 @@
       document.getElementById('optTreeFolding').checked = localStorage.getItem(LS.treeFolding) !== '0';
       document.getElementById('optTreeGroupHL').checked = localStorage.getItem(LS.treeGroupHighlight) !== '0';
       document.getElementById('optSearchDebug').checked = localStorage.getItem(LS.searchDebug) === '1';
+      {
+        collapsedFolderPaths.clear();
+        try {
+          const arr = JSON.parse(localStorage.getItem(LS.collapsedFolders) || '[]');
+          if (Array.isArray(arr)) for (const p of arr) collapsedFolderPaths.add(p);
+        } catch (_) { /* ignore bad JSON */ }
+      }
       activeTagKeys = activeTagKeysFromStored(localStorage.getItem(LS.activeTagFilter));
       tagFilterCombineOr = localStorage.getItem(LS.tagFilterCombineOr) === '1';
       applyTagPrefsFromUserDataFile();
@@ -5364,7 +5703,9 @@
       localStorage.setItem(LS.treeGroupHighlight, document.getElementById('optTreeGroupHL').checked ? '1' : '0');
       localStorage.setItem(LS.searchDebug, document.getElementById('optSearchDebug').checked ? '1' : '0');
       localStorage.setItem(LS.tagFilterCombineOr, tagFilterCombineOr ? '1' : '0');
+      localStorage.setItem(LS.collapsedFolders, JSON.stringify([...collapsedFolderPaths]));
       persistActiveTagFilter();
+      persistSearchScopeMax();
     }
 
     function searchOptionsFromUI() {
@@ -5445,6 +5786,7 @@
       return {
         query: document.getElementById('query').value,
         rootFolder: document.getElementById('rootFolder').value,
+        searchScopeMax: getSearchScopeMaxFolderNorm(),
         activeTagKeys: [...activeTagKeys].sort(),
         tagFilterCombineOr: !!tagFilterCombineOr,
         flatView: isFlatView(),
@@ -5513,6 +5855,16 @@
       document.getElementById('query').value = s.query != null ? String(s.query) : '';
       syncQueryFilledChrome();
       document.getElementById('rootFolder').value = s.rootFolder != null ? String(s.rootFolder) : '';
+      if (Object.prototype.hasOwnProperty.call(s, 'searchScopeMax')) {
+        setSearchScopeMaxFolderFromString(s.searchScopeMax);
+        renderSearchScopeMaxUi();
+        syncSearchScopeRootsTipVisibility();
+      } else if (Array.isArray(s.searchScopeCeilings) && s.searchScopeCeilings.length) {
+        setSearchScopeMaxFolderFromString(s.searchScopeCeilings[0]);
+        renderSearchScopeMaxUi();
+        syncSearchScopeRootsTipVisibility();
+      }
+      clampRootFolderUnderSearchScopeMax();
       if (Array.isArray(s.activeTagKeys)) {
         activeTagKeys = new Set(s.activeTagKeys.map((x) => String(x).trim().toLowerCase()).filter(Boolean));
       } else if (s.activeTagKey != null && String(s.activeTagKey).trim()) {
@@ -5671,6 +6023,22 @@
       const title = document.createElement('span');
       title.className = 'name-badges-title text-truncate';
       title.textContent = parsed.pretty;
+      /* GDrive shortcut ID folder: show resolved child name (sync from cache, or async on first encounter). */
+      if (rowIsFolder(row) && isGDriveShortcutIdRow(row)) {
+        const cacheKey = fp.replace(/[/\\]+$/, '').toLowerCase();
+        const cached = gdriveShortcutNameCache.get(cacheKey);
+        console.log('[GDrive render]', { fp, cacheKey, cached: typeof cached === 'string' ? cached : '(miss)', cacheSize: gdriveShortcutNameCache.size });
+        if (typeof cached === 'string') {
+          title.textContent = '\u{1F517} ' + cached;
+        } else {
+          title.classList.add('text-muted');
+          void resolveGDriveShortcutName(fp).then((name) => {
+            if (!name) return;
+            title.textContent = '\u{1F517} ' + name;
+            title.classList.remove('text-muted');
+          });
+        }
+      }
       lead.appendChild(title);
       wrap.appendChild(lead);
       return wrap;
@@ -6176,8 +6544,9 @@
     }
 
     /**
-     * Path-sorted tree: cosmetic hide of nested rows under a collapsed folder (display only; new search resets).
+     * Path-sorted tree: cosmetic hide of nested rows under a collapsed folder.
      * Uses tr[data-tree-depth] and results-tree-collapsed on folder rows; toggles results-tree-collapse-hidden.
+     * Also adds/removes a "N hidden" badge on each collapsed folder row.
      */
     function refreshResultsTreeCollapseHidden() {
       const tbody = document.getElementById('tbody');
@@ -6185,18 +6554,43 @@
       const rows = Array.from(tbody.querySelectorAll('tr'));
       if (!rows.length || rows[0].dataset.treeDepth === undefined) return;
       let collapseDepth = null;
+      let collapsedFolderTr = null;
+      let hiddenCount = 0;
+      const badgeCounts = [];
       for (const tr of rows) {
         const d = Number(tr.dataset.treeDepth);
-        if (collapseDepth !== null && d <= collapseDepth) collapseDepth = null;
+        if (collapseDepth !== null && d <= collapseDepth) {
+          badgeCounts.push({ tr: collapsedFolderTr, count: hiddenCount });
+          collapseDepth = null;
+          collapsedFolderTr = null;
+          hiddenCount = 0;
+        }
         const hide = collapseDepth !== null && d > collapseDepth;
         tr.classList.toggle('results-tree-collapse-hidden', hide);
+        if (hide) hiddenCount++;
         if (
           !hide &&
           tr.classList.contains('results-folder-row') &&
           tr.classList.contains('results-tree-collapsed')
         ) {
           collapseDepth = d;
+          collapsedFolderTr = tr;
+          hiddenCount = 0;
         }
+      }
+      if (collapsedFolderTr) badgeCounts.push({ tr: collapsedFolderTr, count: hiddenCount });
+      // Update badges on all folder rows
+      for (const tr of tbody.querySelectorAll('tr.results-folder-row')) {
+        const existing = tr.querySelector('.tree-hidden-badge');
+        if (existing) existing.remove();
+      }
+      for (const { tr, count } of badgeCounts) {
+        if (count <= 0) continue;
+        const badge = document.createElement('span');
+        badge.className = 'badge bg-secondary ms-1 tree-hidden-badge';
+        badge.textContent = count + ' hidden';
+        const nameCell = tr.querySelector('td:nth-child(2)');
+        if (nameCell) nameCell.appendChild(badge);
       }
     }
 
@@ -6311,6 +6705,7 @@
       const showPathTreeGutter = isTreeViewOn() && sortColumn === 'path';
       const pathTreeDepths = rowsForDisplay.map((r) => pathTreeUiDepth(r, showPathFolderGrouping));
       const pathTreeGutters = showPathTreeGutter ? pathTreeGutterStringsForDepths(pathTreeDepths) : null;
+      const treeFoldUi = isTreeFoldUiActive();
       for (let rowIdx = 0; rowIdx < rowsForDisplay.length; rowIdx++) {
         const row = rowsForDisplay[rowIdx];
         const fp = fullPathForRow(row);
@@ -6358,23 +6753,30 @@
             const g = (pathTreeGutters && pathTreeGutters[rowIdx]) || '';
             const outer = document.createElement('div');
             outer.className = 'd-flex align-items-center min-w-0';
-            if (rowIsFolder(row) && isTreeFoldingOn()) {
+            if (rowIsFolder(row) && treeFoldUi) {
               const twisty = document.createElement('button');
               twisty.type = 'button';
               twisty.className =
                 'btn btn-outline-secondary btn-sm results-tree-twisty flex-shrink-0 p-0 d-inline-flex align-items-center justify-content-center';
               twisty.textContent = '\u2212';
-              twisty.title = 'Hide folder contents in this list (cosmetic; resets when you search again)';
+              twisty.title = 'Toggle folder contents visibility';
               twisty.setAttribute('aria-expanded', 'true');
               twisty.setAttribute('aria-label', 'Toggle showing contents under this folder');
               twisty.addEventListener('click', (e) => {
                 e.stopPropagation();
                 tr.classList.toggle('results-tree-collapsed');
                 const collapsed = tr.classList.contains('results-tree-collapsed');
+                if (collapsed) collapsedFolderPaths.add(fp); else collapsedFolderPaths.delete(fp);
                 twisty.textContent = collapsed ? '+' : '\u2212';
                 twisty.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
                 refreshResultsTreeCollapseHidden();
+                localStorage.setItem(LS.collapsedFolders, JSON.stringify([...collapsedFolderPaths]));
               });
+              if (collapsedFolderPaths.has(fp)) {
+                tr.classList.add('results-tree-collapsed');
+                twisty.textContent = '+';
+                twisty.setAttribute('aria-expanded', 'false');
+              }
               outer.appendChild(twisty);
             } else {
               const sp = document.createElement('span');
@@ -6401,7 +6803,8 @@
         tdPath.className = 'col-path text-muted small';
         const pathBox = document.createElement('div');
         pathBox.className = 'path-ellip-start';
-        fillPathCellBox(pathBox, pathColumnDisplayForRow(fp, rowIsFolder(row)));
+        fillPathCellBox(pathBox, collapseGDriveShortcutDisplay(pathColumnDisplayForRow(fp, rowIsFolder(row))));
+        tdPath.title = fp;
         tdPath.appendChild(pathBox);
 
         const tdSize = document.createElement('td');
@@ -6572,7 +6975,20 @@
       });
       applyResultsTablePathColumnVisibility();
       syncResultsSelectionHighlight();
-      if (isTreeFoldingOn()) refreshResultsTreeCollapseHidden();
+      if (treeFoldUi) {
+        refreshResultsTreeCollapseHidden();
+        if (rowsForDisplay.length) {
+          const liveFolders = new Set(
+            Array.from(tbody.querySelectorAll('tr.results-folder-row'))
+              .map(tr => tr.dataset.rowPath)
+          );
+          let pruned = false;
+          for (const p of collapsedFolderPaths) {
+            if (!liveFolders.has(p)) { collapsedFolderPaths.delete(p); pruned = true; }
+          }
+          if (pruned) localStorage.setItem(LS.collapsedFolders, JSON.stringify([...collapsedFolderPaths]));
+        }
+      }
       updateSelectAllCheckboxState();
       updateEmptyResultsPulseHints(rowsForDisplay.length);
       updateResultsLoadMoreUi();
@@ -6997,14 +7413,12 @@
       const btn = document.getElementById('btnLoadMoreResults');
       const hint = document.getElementById('resultsLoadMoreHint');
       if (!wrap || !btn) return;
-      /* Show strip if another raw page may exist — not only when lastRows non-empty (folders-only can drop a whole page). */
       const more = !!(
         resultsPagingCtx &&
         resultsPagingCtx.hasMore &&
         (lastRows.length || resultsPagingCtx.singleOffset > 0)
       );
       wrap.classList.toggle('d-none', !more);
-      /* Allow click while searchInFlight — handler shows hint; disabling looked like a dead button. */
       btn.disabled = resultsLoadMoreBusy;
       if (hint) {
         if (resultsLoadMoreBusy) hint.textContent = 'Loading…';
@@ -7145,13 +7559,16 @@
       const status = document.getElementById('status');
       saveSettings();
       const baseUrl = document.getElementById('baseUrl').value.trim() || 'http://127.0.0.1';
+      const ceilingNorms = getSearchScopeCeilingFoldersNorms();
       const rootFolder = document.getElementById('rootFolder').value.trim();
       const query = document.getElementById('query').value;
-      const hasScope = !!normalizeFolderPathForEverything(rootFolder);
+      const hasBread = !!normalizeFolderPathForEverything(rootFolder);
+      const hasCeil = ceilingNorms.length > 0;
+      const hasScope = hasBread || hasCeil;
       const showSub = isShowSubfolders();
       const hideF = isHideFiles();
       const recursive = showSub || !hasScope;
-      let searchText = composeScopedEverythingSearch(rootFolder, query, recursive);
+      let searchText = composeScopedEverythingSearch(ceilingNorms, rootFolder, query, recursive);
       searchText = appendActiveTagToEverythingQuery(searchText);
       if (hideF) searchText = (String(searchText).trim() + ' folder:').trim();
       if (!hideF) searchText = (String(searchText).trim() + ' sort-mix:').trim();
@@ -7162,8 +7579,8 @@
       const httpUser = document.getElementById('httpUser').value;
       const httpPassword = document.getElementById('httpPassword').value;
       const baseSearchOpts = everythingOptionsForRequest();
-      /* Scope: force Match path whenever scope is set so path tokens limit the index. */
-      const scopeNeedsPathSearch = !!normalizeFolderPathForEverything(rootFolder);
+      /* Scope: force Match path whenever path filters are present so tokens limit the index. */
+      const scopeNeedsPathSearch = hasCeil || !!normalizeFolderPathForEverything(rootFolder);
       const options = {
         ...baseSearchOpts,
         pathSearch: !!(baseSearchOpts.pathSearch || scopeNeedsPathSearch),
@@ -7746,6 +8163,13 @@
       let idx = navFocusIndexInFilteredRows(rows);
       if (idx < 0) idx = delta > 0 ? 0 : rows.length - 1;
       else idx = Math.max(0, Math.min(rows.length - 1, idx + delta));
+      // Skip collapse-hidden rows
+      const trs = document.querySelectorAll('#resultsTable tbody tr');
+      const step = delta > 0 ? 1 : -1;
+      while (idx >= 0 && idx < rows.length && trs[idx] && trs[idx].classList.contains('results-tree-collapse-hidden')) {
+        idx += step;
+      }
+      if (idx < 0 || idx >= rows.length) return;
       const row = rows[idx];
       setSelection(row, fullPathForRow(row));
       requestAnimationFrame(() => {
@@ -7796,6 +8220,71 @@
       });
     }
 
+    /** True when tbody row i is hidden by tree collapse (display:none). */
+    function isResultsTableRowCollapseHidden(idx) {
+      const trs = document.querySelectorAll('#resultsTable tbody tr');
+      const tr = trs[idx];
+      return !!(tr && tr.classList.contains('results-tree-collapse-hidden'));
+    }
+
+    /** Scroll a result row to the top of #resultsScroll (below sticky thead if present). */
+    function scrollResultsRowToTopOfList(tr) {
+      const wrap = document.getElementById('resultsScroll');
+      if (!wrap || !tr) return;
+      const thead = document.querySelector('#resultsTable thead');
+      const headH = thead ? thead.getBoundingClientRect().height : 0;
+      const w = wrap.getBoundingClientRect();
+      const r = tr.getBoundingClientRect();
+      wrap.scrollTop += r.top - w.top - headH;
+    }
+
+    /** Folder row index whose normalized path equals pathNorm (empty = not found). */
+    function indexOfFolderRowByPathNorm(rows, pathNorm) {
+      return rows.findIndex((r) => rowIsFolder(r) && pathNormKey(fullPathForRow(r)) === pathNorm);
+    }
+
+    /** Next/prev visible folder row sharing the same parent directory (siblings). dir: +1 / -1. */
+    function indexOfNextFolderSharingParent(rows, fromIdx, dir, parentNorm) {
+      const step = dir > 0 ? 1 : -1;
+      for (let i = fromIdx + step; i >= 0 && i < rows.length; i += step) {
+        if (isResultsTableRowCollapseHidden(i)) continue;
+        const r = rows[i];
+        if (!rowIsFolder(r)) continue;
+        if (pathNormKey(T.parentDir(fullPathForRow(r))) !== parentNorm) continue;
+        return i;
+      }
+      return -1;
+    }
+
+    /**
+     * j/k: next/prev sibling folder; at first/last sibling, walk up to the parent row and continue
+     * at that level (next/prev “uncle” folder). Repeats until a move is found or the tree root is hit.
+     */
+    function moveResultsSiblingFolder(dir) {
+      resultsShiftRangeAnchorIdx = null;
+      const rows = listRowsForUi();
+      if (!rows.length) return;
+      let cur = navFocusIndexInFilteredRows(rows);
+      if (cur < 0) return;
+      for (let depth = 0; depth < 64; depth++) {
+        const parentNorm = pathNormKey(T.parentDir(fullPathForRow(rows[cur])));
+        const next = indexOfNextFolderSharingParent(rows, cur, dir, parentNorm);
+        if (next >= 0) {
+          const row = rows[next];
+          setSelection(row, fullPathForRow(row));
+          requestAnimationFrame(() => {
+            const tr = document.querySelector('#resultsTable tbody tr.table-active');
+            if (tr) scrollResultsRowToTopOfList(tr);
+          });
+          return;
+        }
+        if (!parentNorm) return;
+        const pi = indexOfFolderRowByPathNorm(rows, parentNorm);
+        if (pi < 0) return;
+        cur = pi;
+      }
+    }
+
     /** Toggle between two radios in a pair + trigger the save/search cycle. */
     function toggleViewRadioPair(idA, idB) {
       const a = document.getElementById(idA);
@@ -7821,7 +8310,10 @@
       const parRaw = T.parentDir(norm);
       const par = normalizeFolderPathForEverything(parRaw);
       if (!par) return false;
-      return par.replace(/[/\\]+$/, '').toLowerCase() !== norm.replace(/[/\\]+$/, '').toLowerCase();
+      if (par.replace(/[/\\]+$/, '').toLowerCase() === norm.replace(/[/\\]+$/, '').toLowerCase()) return false;
+      const maxN = getSearchScopeMaxFolderNorm();
+      if (maxN && !pathIsUnderOrEqualFolder(par, maxN)) return false;
+      return true;
     }
 
     function syncStatusBarParentScopeButton() {
@@ -7847,7 +8339,7 @@
       const cap = Math.min(5000, Math.max(1, parseInt(String(maxResultsRaw).trim(), 10) || 200));
       const httpUser = document.getElementById('httpUser').value;
       const httpPassword = document.getElementById('httpPassword').value;
-      let searchText = composeScopedEverythingSearch(par, '', true).trim() + ' folder:';
+      let searchText = composeScopedEverythingSearch(getSearchScopeCeilingFoldersNorms(), par, '', true).trim() + ' folder:';
       const baseSearchOpts = everythingOptionsForRequest();
       const options = { ...baseSearchOpts, pathSearch: true, offset: 0 };
       const res = await window.tagBrowser.search({
@@ -8412,6 +8904,16 @@
         else moveResultsSelection(-1);
         return;
       }
+      if (e.key === 'j') {
+        e.preventDefault();
+        moveResultsSiblingFolder(1);
+        return;
+      }
+      if (e.key === 'k') {
+        e.preventDefault();
+        moveResultsSiblingFolder(-1);
+        return;
+      }
 
       /* → on a folder row: scope into that folder; ← : current folder up or into first subfolder on path (see keyboardArrowLeftChangeScopeFromResults) */
       if (e.key === 'ArrowRight') {
@@ -8430,7 +8932,7 @@
       }
 
       /* +/- toggle tree expand/collapse — multi-select: all top-level folder twisties; single: selected row */
-      if ((e.key === '+' || e.key === '-') && isTreeFoldingOn()) {
+      if ((e.key === '+' || e.key === '-') && isTreeFoldUiActive()) {
         e.preventDefault();
         if (checkedPathsMap.size > 1) {
           const tbody = document.getElementById('tbody');
@@ -8522,9 +9024,87 @@
       true
     );
 
+    /** Settings offcanvas: search scope limit buttons (delegation — reliable inside Bootstrap offcanvas). */
+    function wireSearchScopeSettingsUiOnce() {
+      const panel = document.getElementById('settingsPanel');
+      if (!panel || panel.dataset.tagfoxSearchScopeUi === '1') return;
+      panel.dataset.tagfoxSearchScopeUi = '1';
+      panel.addEventListener('click', (e) => {
+        const dismiss = e.target.closest('#btnDismissSearchScopeTip');
+        if (dismiss) {
+          e.preventDefault();
+          localStorage.setItem(LS.scopeRootsTipDismissed, '1');
+          syncSearchScopeRootsTipVisibility();
+          return;
+        }
+        const clearMax = e.target.closest('#btnSearchScopeClearMax');
+        if (clearMax) {
+          e.preventDefault();
+          clearSearchScopeMaxSetting();
+          return;
+        }
+        const addFolder = e.target.closest('#btnSearchScopeAddFolder');
+        const addProfile = e.target.closest('#btnSearchScopeAddProfile');
+        const addCurrent = e.target.closest('#btnSearchScopeAddCurrent');
+        if (!addFolder && !addProfile && !addCurrent) return;
+        e.preventDefault();
+        const st = document.getElementById('status');
+        void (async () => {
+          if (!window.tagBrowser) {
+            if (st) st.textContent = 'Electron bridge missing — run TagFox with npm start (not a raw browser tab).';
+            console.warn('[TagFox] window.tagBrowser missing');
+            return;
+          }
+          if (addFolder) {
+            if (typeof window.tagBrowser.pickScopeFolder !== 'function') {
+              if (st)
+                st.textContent =
+                  'Folder picker not available — fully quit TagFox and start again so preload.js is reloaded.';
+              console.warn('[TagFox] pickScopeFolder missing on tagBrowser');
+              return;
+            }
+            try {
+              const r = await window.tagBrowser.pickScopeFolder();
+              if (r && r.ok && r.path) await setSearchScopeMaxFromPicker(r.path);
+              else if (st) st.textContent = (r && r.error) || 'Folder picker cancelled.';
+            } catch (err) {
+              if (st) st.textContent = 'Folder picker failed: ' + (err && err.message ? err.message : String(err));
+              console.warn('[TagFox] pickScopeFolder', err);
+            }
+            return;
+          }
+          if (addProfile) {
+            if (typeof window.tagBrowser.userHomeDir !== 'function') {
+              if (st) st.textContent = 'Profile folder not available — restart TagFox.';
+              console.warn('[TagFox] userHomeDir missing on tagBrowser');
+              return;
+            }
+            try {
+              const r = await window.tagBrowser.userHomeDir();
+              if (r && r.ok && r.path) await setSearchScopeMaxFromPicker(r.path);
+              else if (st) st.textContent = (r && r.error) || 'Could not read profile folder.';
+            } catch (err) {
+              if (st) st.textContent = 'Profile folder failed: ' + (err && err.message ? err.message : String(err));
+              console.warn('[TagFox] userHomeDir', err);
+            }
+            return;
+          }
+          if (addCurrent) {
+            const p = currentScopeFolderPath() || getSearchScopeMaxFolderNorm();
+            if (!p) {
+              if (st) st.textContent = 'No folder — set the breadcrumb or scope first.';
+              return;
+            }
+            await setSearchScopeMaxFromPicker(p);
+          }
+        })();
+      });
+    }
+
     const treeViewDefaultsFreshProfile = localStorage.getItem(LS.sortBy) === null;
     loadSettings();
     void refreshDriveRootsPickerGate();
+    wireSearchScopeSettingsUiOnce();
     document.getElementById('autoRefreshSec')?.addEventListener('change', () => {
       saveSettings();
       syncAutoRefreshTimer();

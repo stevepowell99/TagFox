@@ -596,7 +596,7 @@ body.tagfox-props-split-drag #propsAside {
   user-select: none;
   letter-spacing: 0;
 }
-/* Path tree: +/- hides deeper rows only (client-side; re-render clears it). */
+/* Path tree: +/- hides deeper rows (persisted across searches/restarts). */
 .results-tree-twisty {
   width: 1.35rem;
   height: 1.35rem;
@@ -613,6 +613,12 @@ body.tagfox-props-split-drag #propsAside {
 }
 #resultsTable tbody tr.results-tree-collapse-hidden {
   display: none;
+}
+.tree-hidden-badge {
+  font-size: 0.7rem;
+  font-weight: 500;
+  vertical-align: middle;
+  opacity: 0.8;
 }
 /* Default cap for ad-hoc MD previews; RHS viewer blocks override with flex + max-height: none */
 .prop-md-preview { max-height: 220px; overflow: auto; }

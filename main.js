@@ -4,6 +4,7 @@ const {
   BrowserWindow,
   BrowserView,
   ipcMain,
+  dialog,
   shell,
   Menu,
   clipboard,
@@ -1374,8 +1375,40 @@ function createWindow() {
   });
 }
 
+/** Search scope Settings: folder picker + profile path — register after app ready (reliable with ipcMain.handle). */
+function registerSearchScopeFolderIpc() {
+  try {
+    ipcMain.removeHandler('pick-scope-folder');
+  } catch (_) {}
+  try {
+    ipcMain.removeHandler('user-home-dir');
+  } catch (_) {}
+  ipcMain.handle('pick-scope-folder', async (event) => {
+    try {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      const r = await dialog.showOpenDialog(win || undefined, {
+        properties: ['openDirectory', 'dontAddToRecent'],
+      });
+      if (r.canceled || !r.filePaths || !r.filePaths[0]) return { ok: false, path: '' };
+      return { ok: true, path: r.filePaths[0] };
+    } catch (e) {
+      return { ok: false, path: '', error: String(e && e.message ? e.message : e) };
+    }
+  });
+  ipcMain.handle('user-home-dir', () => {
+    try {
+      const p = os.homedir();
+      if (!p || !String(p).trim()) return { ok: false, path: '', error: 'No home directory.' };
+      return { ok: true, path: p };
+    } catch (e) {
+      return { ok: false, path: '', error: String(e && e.message ? e.message : e) };
+    }
+  });
+}
+
 app.whenReady().then(() => {
   installApplicationMenu();
+  registerSearchScopeFolderIpc();
   const gt = registerGlobalToggleShortcut(loadGlobalToggleAccelFromDisk());
   if (!gt.ok) console.warn('[TagFox] Global toggle shortcut:', gt.error);
   createWindow();

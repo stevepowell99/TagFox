@@ -56,6 +56,31 @@
       <p class="text-muted mb-3">
         Enable <strong>Everything</strong> HTTP (Tools → Options → HTTP Server). The query updates results live; renames trigger a refresh.
       </p>
+      <div id="searchScopeRootsTip" class="alert alert-info py-2 px-2 small mb-3 d-none" role="status">
+        <div class="d-flex align-items-start justify-content-between gap-2">
+          <span
+            ><strong>New setup:</strong> consider setting one optional <strong>search scope folder</strong> below (e.g. profile or project drive) so results stay under that tree. The breadcrumb starts there; you can narrow further.</span
+          >
+          <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0" id="btnDismissSearchScopeTip" aria-label="Dismiss this tip">
+            Dismiss
+          </button>
+        </div>
+      </div>
+      <div class="border rounded p-2 mb-3 bg-body-tertiary">
+        <label class="form-label small mb-1">Search scope folder (optional)</label>
+        <p class="text-muted small mb-2">
+          When set, Everything only returns paths under this folder — it is the <strong>top</strong> of the breadcrumb and the hard ceiling for navigation. Your <strong>current folder</strong> narrows further inside it (or leave current folder empty to search the whole tree under the scope). Clear for no ceiling (whole index, subject to the breadcrumb).
+        </p>
+        <div class="d-flex flex-wrap gap-1 mb-2">
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btnSearchScopeAddFolder">Set folder…</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSearchScopeAddProfile">Set profile folder</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSearchScopeAddCurrent" title="Uses the breadcrumb current folder (#rootFolder)">
+            Set current folder
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-danger" id="btnSearchScopeClearMax">Clear scope</button>
+        </div>
+        <div id="searchScopeMaxDisplay" class="small border rounded px-2 py-2 bg-body font-monospace text-break"></div>
+      </div>
       <div class="row g-3 align-items-start">
         <div class="col-12 col-md-8">
           <label class="form-label small mb-0" for="baseUrl">Everything base URL</label>

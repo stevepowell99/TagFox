@@ -31,6 +31,17 @@
   Keyboard nuance: Ctrl+/ (⌘+/ on Mac) focuses search; plain / when no dialog is open. Esc clears the query when it has text if no dialog or open dropdown needs Esc and focus is not in another text field (see Shortcuts table for fuller behaviour).
 
   Tab boundaries: see scripts/build-help.js — each pane is introduced by a single-line HTML comment whose body is help:tab plus JSON (id, label, exactly one "active":true, optional "format":"html" for raw HTML). Run npm run build:help after edits.
+
+  Collapsed-folder query exclusion (planned / Option A): Currently, collapsed tree folders are cosmetic — their children still count
+  against the results-per-page cap, so large collapsed subtrees eat the budget and force many "Load more" clicks. The fix: in
+  runSearch(), for each top-level path in collapsedFolderPaths, append !"C:\...\folder\" to the Everything search text. The trailing
+  backslash means "items under this folder", which excludes children but not the folder row itself — exactly what we need. Nested
+  collapsed folders only need the topmost ancestor excluded. "Load more" inherits the same searchText via resultsPagingCtx, so paging
+  automatically skips collapsed subtrees. Main complexity: unfolding a folder whose children were excluded requires a re-search (or
+  targeted sub-query) since the rows aren't in lastRows. Mitigation: on twisty expand, check if children exist in lastRows; if yes,
+  show them instantly (current cosmetic behaviour); if no, re-run runSearch(). The "N hidden" badge would change to a generic
+  "collapsed" indicator for server-excluded folders (exact count unknown without a separate query). See also: composeScopedEverythingSearch(),
+  folderScopeEverythingToken(), appendRecencyToEverythingQuery() for the query-building pipeline where the exclusion would slot in.
 -->
 
 <!-- help:tab {"id":"essentials","label":"🚀 Get started","active":true} -->
@@ -38,22 +49,23 @@
 Welcome to TagFox — a fast, keyboard-friendly file manager powered by instant search.
 
 1. **🔌 First, make sure Everything Search is running.** TagFox relies on [Voidtools Everything](https://www.voidtools.com/) for its speed. See **📦 Installation** for setup. If results are empty, Everything probably isn't running.
-2. **📂 Pick a folder to work in.** The breadcrumb bar shows your current folder — search, paste, and new files all happen inside it. Leave it empty to search your whole disk.
-3. **👁️ Switch views to suit the task.** Toggle between Flat/Tree, Subfolders on/off, and Files+Folders/Folders only with the buttons next to the search box (or keys `l`, `s`, `f`).
-4. **🏷️ Tag your files and folders for easy organisation.** Add tags like `draft`, `urgent`, or `2026` to any file or folder — then filter by tag to find exactly what you need. Tags are stored in the filename itself, so they travel with your files everywhere (Explorer, Google Drive, zip files). See **🏷️ Tags** for details.
-5. **⭐ Save favourite folders and searches.** Click 💾 to bookmark a folder or an entire search. Jump back with a click or `Ctrl`+`1`…`9`. See **⭐ Favourites**.
-6. **👀 Preview files without leaving TagFox.** The Viewer panel (right side) shows images, PDFs, Office docs, markdown, and more. For folders, it shows a folder readme doc you can edit in place. View and edit google files like gdocs, gslides without leaving TagFox.
-7. **❓ Press `F1` anytime** to reopen this help.
+2. **🧱 Optional scope (recommended on a new PC):** open **Settings** and set **one** optional **search scope folder** (e.g. **Set profile folder**, or **Set folder…**). Everything then only returns paths under that root. The breadcrumb’s **first** segment is that folder (you cannot navigate above it). Your **current folder** can narrow further inside it, or stay empty to search the whole tree under the scope. **Clear scope** removes the ceiling (whole index, subject to the breadcrumb).
+3. **📂 Pick a folder to work in.** The breadcrumb bar shows your scope root (if set) and current folder — search, paste, and new files use the current folder when it is set, otherwise the scope root. Clear the current folder (×) to widen to the whole scope tree; **Clear scope** in Settings removes the ceiling entirely.
+4. **👁️ Switch views to suit the task.** Toggle between Flat/Tree, Subfolders on/off, and Files+Folders/Folders only with the buttons next to the search box (or keys `l`, `s`, `f`).
+5. **🏷️ Tag your files and folders for easy organisation.** Add tags like `draft`, `urgent`, or `2026` to any file or folder — then filter by tag to find exactly what you need. Tags are stored in the filename itself, so they travel with your files everywhere (Explorer, Google Drive, zip files). See **🏷️ Tags** for details.
+6. **⭐ Save favourite folders and searches.** Click 💾 to bookmark a folder or an entire search. Jump back with a click or `Ctrl`+`1`…`9`. See **⭐ Favourites**.
+7. **👀 Preview files without leaving TagFox.** The Viewer panel (right side) shows images, PDFs, Office docs, markdown, and more. For folders, it shows a folder readme doc you can edit in place. View and edit google files like gdocs, gslides without leaving TagFox.
+8. **❓ Press `F1` anytime** to reopen this help.
 
 <!-- help:tab {"id":"motivation","label":"💡 Why TagFox?"} -->
 
 ### 🦊 What TagFox does differently
 
-TagFox combines **instant search** (powered by Everything) with a **folder tree view** — so you see results *in context*. You can navigate folders, tag files, preview documents, and manage simple project TODOs without ever opening File Explorer.
+TagFox combines **instant search** (powered by Everything) with a **folder tree view** — so you see results *in context*. You can navigate folders, tag files, preview documents, and manage simple project specifications and tasks without ever opening File Explorer.
 
 **Tags** are labels like `draft`, `urgent`, or `2026` that you attach to files and folders to organise your work. You can filter by tag to instantly find everything marked that way. TagFox stores tags in the filename itself (e.g. `Report[(draft,urgent)].docx`), so they travel with the file — no database, no hidden metadata. They work in Explorer, Google Drive, zip exports, everywhere.
 
-### 🤔 The problem TagFox solves
+### 🤔 The problems TagFox solves
 
 Searching the web feels instant. Searching your own hard drive? Painfully slow — unless you use an index tool like **Voidtools Everything**. But even Everything gives you a flat list of results without showing *where* things fit in your folder structure.
 
@@ -70,16 +82,17 @@ Meanwhile, tools like Google Drive train you to type a word and expect the right
 - 🏷️ **Filename tags** — add, remove and filter by `[(tag)]` labels. Tags scan your folder automatically; click them to filter results.
 - 📋 **Add TODO** — create a small markdown file tagged `[(TODO)]` in the current folder, right from the Viewer panel.
 - 📝 **Folder docs** — Viewer loads the first of `readme.md` → `readme.txt` → `claude.md` → `agents.md` → `about.md` → `about.txt` → `context.md` → `context.txt` → `index.md` → `index.txt` (details under **📁 Files & folders**).
-- 📦 **Shelf** — a visual staging area for files. Copy items onto the Shelf, navigate to another folder, paste them. No tabs or split panes needed.
+- 📦 **Shelf** — a visual staging area for files, like a kind of clipboard. Copy items onto the Shelf, navigate to another folder, paste them. No tabs or split panes needed.
 - 🔄 **Bulk rename** — check several files (or highlight one), press `Ctrl`+`H`, use wildcards (`*` / `?`) on the **last path segment only**; live preview shows the first 200 rows but **Rename** still applies to the whole batch captured when the dialog opened. **Match case** follows the search row toggle.
 - 📏 **Layout** — drag the splitter between results and the Viewer (width saved).
 - ☁️ **Mixed local + Google Docs** — local Office files preview inline; Google Workspace shortcuts (`.gdoc`, `.gsheet`, `.gslides`) open in a popup window. On Windows with Google Drive for Desktop, TagFox resolves the Doc URL from the shortcut file or from the `user.drive.id` virtual stream when the stub JSON cannot be read (including many `.shortcut-targets-by-id` paths). That path usually works for **streamed** (on-demand) files too, not only fully mirrored ones.
+- 🔗 **Google Drive shortcut folders** — Google Drive for Desktop stores shared-folder shortcuts under `.shortcut-targets-by-id\<long ID>`. TagFox auto-resolves the real folder name: the Name column shows 🔗 plus the actual name, and the breadcrumb and Path column collapse the ugly ID segments. Hover any collapsed path for the full raw path. The resolved names are cached across restarts.
 
 <!-- help:tab {"id":"search","label":"🔍 Search & views"} -->
 
 ### 📂 Current folder
 
-- The **breadcrumb** under the favourites row shows your **current folder**. Everything you search, create and paste goes here. Clear it (× button) to search your whole index. If the search box still has text when you change folder (double-click a folder row, breadcrumb, favourites, etc.), that filter stays on; the search row flashes briefly as a reminder.
+- The **breadcrumb** under the favourites row shows your **scope folder** (if set in Settings) as the first segment, then your **current folder** beneath it. Everything you search, create and paste uses the current folder when set; if only the scope is set, those actions use the scope root. Clear the current folder (×) to widen to the whole tree under the scope. **Settings → Search scope folder** sets or clears the hard ceiling. If the search box still has text when you change folder (double-click a folder row, breadcrumb, favourites, etc.), that filter stays on; the search row flashes briefly as a reminder.
 - `Ctrl`+`Backspace` (`⌘`+`Backspace` on Mac) clears the current folder from **any** focus when a folder is set — skipped while a dialog is open (and it overrides the usual “delete previous word” in text fields while a scope is active).
 - The ✏️ **pen button** lets you type a path directly. Press `Enter` to apply, `Esc` to cancel.
 - The 🕐 **clock button** (or `Ctrl`+`L`) lists **recent folders** only (paths you have used), not full search snapshots. Full search history is `Alt`+`←` / `→` (or the toolbar arrows).
@@ -109,7 +122,7 @@ Three icon-pair switches next to the search box — combine them freely:
 
 ### ⏪ Search history
 
-- Use `Alt`+`←` / `→` (or the arrow buttons top-left) to step back and forward through your recent searches. Each step restores the full search — query, folder, tags, toggles, and sort.
+- Use `Alt`+`←` / `→` (or the arrow buttons top-left) to step back and forward through your recent searches. Each step restores the full search — query, folder, Settings scope folder, tags, toggles, and sort.
 
 <!-- help:tab {"id":"files-folders","label":"📁 Files & folders"} -->
 
@@ -201,9 +214,11 @@ Getting TagFox up and running takes about five minutes:
 
 3. **Start TagFox:** in the TagFox folder, run `npm install` then `npm start`.
 
-4. **Configure the connection:** open **Settings** (top-left), set **Everything base URL** to match (e.g. `http://127.0.0.1:8080`). Optionally set a **starting current folder** so the breadcrumb opens in a chosen path (clear it to search the whole index). If you set HTTP auth in Everything, enter the same username/password here.
+4. **Configure the connection:** open **Settings** (top-left), set **Everything base URL** to match (e.g. `http://127.0.0.1:8080`). If you set HTTP auth in Everything, enter the same username/password here.
 
-5. **Start browsing!** Set a folder using the breadcrumb or path editor, type in the search box, and you should see results instantly.
+5. **Limit where search runs (strongly recommended):** in **Settings**, under **Search scope limits**, click **Add profile folder** and/or **Add folder…** for other trees (work drive, projects). Results stay under those paths; you can list several (Everything combines them with **OR**). Leave the list empty only if you intentionally want the whole indexed machine (still subject to the breadcrumb). Optionally set a **starting current folder** via the breadcrumb / path editor.
+
+6. **Start browsing!** Set or clear the **current folder** breadcrumb, type in the search box, and you should see results instantly.
 
 <!-- help:tab {"id":"shortcuts","label":"⌨️ Shortcuts","format":"html"} -->
 
@@ -226,6 +241,7 @@ Getting TagFox up and running takes about five minutes:
 <div class="table-responsive">
 <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
 <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Move through the results list</td></tr>
+<tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>Jump to next / previous <strong>sibling folder</strong> (same parent directory). At the last/first sibling, the next key press moves at the parent level (then grandparent, etc.). Scrolls the target row to the top of the results list.</td></tr>
 <tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>Jump to first / last row</td></tr>
 <tr><td><kbd>Enter</kbd></td><td>Open file or enter folder</td></tr>
 <tr><td><kbd>→</kbd></td><td>Scope into selected folder</td></tr>
