@@ -143,7 +143,7 @@ Three icon-pair switches next to the search box — combine them freely:
 ### 📄 Viewer panel
 
 - Select a file to see its details and preview on the right. Supports images, PDFs, Office files, markdown, text, audio, and video.
-- For folders, the Viewer shows a **folder doc** — the first match it finds (case-insensitive basename): `readme.md` → `readme.txt` → `claude.md` → `agents.md` → `about.md` → `about.txt` → `context.md` → `context.txt` → `index.md` → `index.txt`. You can edit and save there; if none exist, **Save** creates `readme.md`.
+- For folders, the Viewer shows a **folder doc** — the first match it finds (case-insensitive basename): `readme.md` → `readme.txt` → `claude.md` → `agents.md` → `about.md` → `about.txt` → `context.md` → `context.txt` → `index.md` → `index.txt`. **Edit** opens the editor (live preview); **Save** writes to disk, closes the editor, and refreshes the search. If none of those files exist yet, saving creates `readme.md`.
 - The row **⋯** menu gives you options to open, reveal in Explorer, copy the path, and more.
 - Press `Shift`+`Space` to expand the Viewer to near-fullscreen.
 - Google Workspace shortcuts (`.gdoc` / `.gsheet` / `.gslides`): **Open** uses an in-app window when TagFox can get the document URL (from the stub JSON, or on Windows from the Drive stream `filename:user.drive.id`). Streamed-only files are usually fine; if not, use Open again, context “Search Google Drive…”, or hydrate the file in Drive.

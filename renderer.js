@@ -441,6 +441,8 @@
     /** Index in filteredRows() for Shift+↑/↓ range checkbox select; cleared on plain ↑/↓. */
     let resultsShiftRangeAnchorIdx = null;
     let activeReadmePath = null;
+    /** True after a successful read (or save) of activeReadmePath — ENOENT on that path is normal before first save; detach must not clear the binding then. */
+    let readmeSaveTargetVerifiedOnDisk = false;
     /** After folder readme RHS is shown — same as `pathKeyLoose(folder)` so quick refresh does not hide readme / “Loading…”. */
     let lastReadmeFolderPathLoose = '';
     let activeMdPath = null;
@@ -2110,6 +2112,7 @@
       }
       for (let idx = 0; idx < paths.length; idx++) {
         const fp = paths[idx];
+        const parentNorm = normalizeFolderPathForEverything(fp);
         const row = document.createElement('span');
         row.className = 'd-inline-flex align-items-stretch tagfox-fav-chip-row';
         row.draggable = true;
@@ -2154,6 +2157,8 @@
             fp
         );
         go.addEventListener('click', () => void applySearchScopeAndRefresh(fp));
+        /* Same as breadcrumb: row/Shelf/file drops move or copy (Shift) into this folder. */
+        go.dataset.dropPath = parentNorm;
         const ddWrap = document.createElement('div');
         ddWrap.className = 'dropdown';
         const ddBtn = document.createElement('button');
@@ -2166,7 +2171,6 @@
         ddBtn.title = 'Browse subfolders (same nested flyouts as breadcrumb ▾)';
         ddBtn.innerHTML = '<span class="visually-hidden">Subfolders</span>' + breadcrumbDropdownChevronHtml();
         const menu = document.createElement('ul');
-        const parentNorm = normalizeFolderPathForEverything(fp);
         const hl = breadcrumbHighlightChildPathNorm(parentNorm);
         bindSubfolderDropdownWithFlyouts(ddBtn, menu, ddWrap, parentNorm, hl || '', true);
         grp.appendChild(go);
@@ -3798,6 +3802,7 @@
       document.getElementById('propsEmpty').classList.remove('d-none');
       document.getElementById('propsDetails').classList.add('d-none');
       activeReadmePath = null;
+      readmeSaveTargetVerifiedOnDisk = false;
       lastReadmeFolderPathLoose = '';
       activeMdPath = null;
       resetViewerDocEditorChrome();
@@ -3869,7 +3874,10 @@
         mdAutosaveTargetPath = null;
         activeMdPath = null;
       }
-      if (hitsOpenPath(activeReadmePath)) activeReadmePath = null;
+      if (hitsOpenPath(activeReadmePath)) {
+        activeReadmePath = null;
+        readmeSaveTargetVerifiedOnDisk = false;
+      }
     }
 
     /** After external delete (e.g. context menu): clear .md/.txt/readme targets if those files are gone (avoids flush recreating them). */
@@ -3884,7 +3892,10 @@
       }
       if (activeReadmePath) {
         const r = await window.tagBrowser.readTextFile({ fullPath: activeReadmePath });
-        if (!r.ok && r.code === 'ENOENT') activeReadmePath = null;
+        if (!r.ok && r.code === 'ENOENT' && readmeSaveTargetVerifiedOnDisk) {
+          activeReadmePath = null;
+          readmeSaveTargetVerifiedOnDisk = false;
+        }
       }
     }
 
@@ -4496,6 +4507,11 @@
         if (b) {
           b.textContent = 'Edit';
           b.setAttribute('aria-expanded', 'false');
+          b.title = which === 'readme' ? 'Edit folder doc' : 'Edit file';
+          if (which === 'readme') {
+            b.classList.remove('btn-primary');
+            b.classList.add('btn-outline-secondary');
+          }
         }
       }
     }
@@ -4514,8 +4530,15 @@
       if (!show && which === 'mdFile') void flushMdFileAutosave();
       wrap.classList.toggle('d-none', !show);
       if (btn) {
-        btn.textContent = show ? 'Done' : 'Edit';
+        btn.textContent = show ? (which === 'readme' ? 'Save' : 'Done') : 'Edit';
         btn.setAttribute('aria-expanded', show ? 'true' : 'false');
+        btn.classList.toggle('btn-primary', which === 'readme' && show);
+        btn.classList.toggle('btn-outline-secondary', !(which === 'readme' && show));
+        if (which === 'readme') {
+          btn.title = show ? 'Save folder doc to disk and close editor' : 'Edit folder doc';
+        } else {
+          btn.title = show ? 'Close editor (pending edits are saved automatically)' : 'Edit file';
+        }
       }
       if (!show) {
         prev.innerHTML = mdPreviewHtml(ed.value);
@@ -4531,11 +4554,38 @@
       }
     }
 
+    /** Folder doc: single control — Save writes to disk, closes editor, refreshes search. */
+    async function closeReadmeEditorWithSave() {
+      const status = document.getElementById('status');
+      if (!activeReadmePath) {
+        if (status) status.textContent = 'Folder doc not ready — select the folder again.';
+        setViewerDocEditorOpen('readme', false);
+        return;
+      }
+      const text = document.getElementById('readmeEditor').value;
+      const r = await window.tagBrowser.writeTextFile({ fullPath: activeReadmePath, text });
+      const label = segmentPretty(T.baseName(activeReadmePath));
+      if (!r.ok) {
+        if (status) status.textContent = r.error || 'Save failed';
+        return;
+      }
+      readmeSaveTargetVerifiedOnDisk = true;
+      if (status) status.textContent = label + ' saved.';
+      setViewerDocEditorOpen('readme', false);
+      folderChildCountCache.clear();
+      clearAndScheduleSearchRetries();
+      void runSearchNow('refresh');
+    }
+
     function toggleViewerDocEditor(which) {
       const wrapId = which === 'readme' ? 'readmeEditorWrap' : 'mdFileEditorWrap';
       const wrap = document.getElementById(wrapId);
       if (!wrap) return;
       const willOpen = wrap.classList.contains('d-none');
+      if (which === 'readme' && !willOpen) {
+        void closeReadmeEditorWithSave();
+        return;
+      }
       setViewerDocEditorOpen(which, willOpen);
     }
 
@@ -4555,6 +4605,7 @@
         syncReadmePreviewChrome({ pulse: false });
         if (titleEl) titleEl.textContent = 'Folder doc';
         activeReadmePath = null;
+        readmeSaveTargetVerifiedOnDisk = false;
       }
 
       const pick = await window.tagBrowser.resolveFolderViewerDoc({ folderPath });
@@ -4576,6 +4627,7 @@
 
       if (!pick.ok) {
         activeReadmePath = null;
+        readmeSaveTargetVerifiedOnDisk = false;
         if (titleEl) titleEl.textContent = 'Folder doc';
         ed.value = '/* read error: ' + (pick.error || '') + ' */';
         document.getElementById('readmePreview').innerHTML = mdPreviewHtml(ed.value);
@@ -4588,7 +4640,8 @@
       const docPath = pick.fullPath;
       if (!docPath) {
         activeReadmePath = readmeOnlyPath;
-        if (titleEl) titleEl.textContent = 'readme.md (folder)';
+        readmeSaveTargetVerifiedOnDisk = false;
+        if (titleEl) titleEl.textContent = 'readme.md — folder doc';
         ed.value = '';
         document.getElementById('readmePreview').innerHTML = mdPreviewHtml(ed.value);
         syncReadmePreviewChrome({ pulse: true });
@@ -4598,11 +4651,12 @@
       }
 
       activeReadmePath = docPath;
-      if (titleEl) titleEl.textContent = segmentPretty(T.baseName(docPath)) + ' (folder)';
+      if (titleEl) titleEl.textContent = segmentPretty(T.baseName(docPath)) + ' — folder doc';
 
       const r = await window.tagBrowser.readTextFile({ fullPath: docPath });
       if (!propsViewStill(folderPath)) return;
 
+      readmeSaveTargetVerifiedOnDisk = !!r.ok;
       if (r.ok) {
         ed.value = r.text;
       } else if (r.code === 'ENOENT') {
@@ -5361,42 +5415,59 @@
       });
     }
 
-    /** Scope breadcrumb segments: drop to move into that folder. */
-    function bindBreadcrumbBarDragDrop() {
-      const bar = document.getElementById('breadcrumbBar');
-      if (!bar || bar.dataset.dragDropBound === '1') return;
-      bar.dataset.dragDropBound = '1';
+    /** Breadcrumb + favourite folder pills: drop rows/Shelf/files to move (Shift = copy) into that folder. */
+    let folderPathDropTargetBarsBound = false;
+    function bindFolderPathDropTargetBarsOnce() {
+      if (folderPathDropTargetBarsBound) return;
+      folderPathDropTargetBarsBound = true;
 
-      function clearCrumbDragOver() {
-        bar.querySelectorAll('[data-drop-path].results-drag-over').forEach((n) => n.classList.remove('results-drag-over'));
+      const barIds = ['breadcrumbBar', 'favFoldersBar'];
+      for (const id of barIds) {
+        const bar = document.getElementById(id);
+        if (!bar || bar.dataset.folderPathDropBound === '1') continue;
+        bar.dataset.folderPathDropBound = '1';
+
+        function clearBarPathDragOver() {
+          bar.querySelectorAll('[data-drop-path].results-drag-over').forEach((n) => n.classList.remove('results-drag-over'));
+        }
+
+        const isFavFoldersBar = bar.id === 'favFoldersBar';
+
+        bar.addEventListener('dragover', (e) => {
+          if (isFavFoldersBar && favListDragKind === 'folder') {
+            clearBarPathDragOver();
+            return;
+          }
+          if (!dataTransferHasTagBrowserOrFiles(e.dataTransfer)) {
+            clearBarPathDragOver();
+            return;
+          }
+          const node = e.target.closest('[data-drop-path]');
+          if (!node || !bar.contains(node)) {
+            clearBarPathDragOver();
+            return;
+          }
+          e.preventDefault();
+          e.dataTransfer.dropEffect = e.shiftKey ? 'copy' : 'move';
+          clearBarPathDragOver();
+          node.classList.add('results-drag-over');
+        });
+
+        bar.addEventListener('drop', async (e) => {
+          if (isFavFoldersBar && favListDragKind === 'folder') {
+            clearBarPathDragOver();
+            return;
+          }
+          clearBarPathDragOver();
+          const node = e.target.closest('[data-drop-path]');
+          if (!node || !bar.contains(node)) return;
+          const paths = collectPathsForShelfDrop(e.dataTransfer);
+          if (!paths.length) return;
+          e.preventDefault();
+          e.stopPropagation();
+          await applyInternalPathsDrop(node.dataset.dropPath, paths, e.shiftKey ? 'copy' : 'move');
+        });
       }
-
-      bar.addEventListener('dragover', (e) => {
-        if (!dataTransferHasTagBrowserOrFiles(e.dataTransfer)) {
-          clearCrumbDragOver();
-          return;
-        }
-        const node = e.target.closest('[data-drop-path]');
-        if (!node || !bar.contains(node)) {
-          clearCrumbDragOver();
-          return;
-        }
-        e.preventDefault();
-        e.dataTransfer.dropEffect = e.shiftKey ? 'copy' : 'move';
-        clearCrumbDragOver();
-        node.classList.add('results-drag-over');
-      });
-
-      bar.addEventListener('drop', async (e) => {
-        clearCrumbDragOver();
-        const node = e.target.closest('[data-drop-path]');
-        if (!node || !bar.contains(node)) return;
-        const paths = collectPathsForShelfDrop(e.dataTransfer);
-        if (!paths.length) return;
-        e.preventDefault();
-        e.stopPropagation();
-        await applyInternalPathsDrop(node.dataset.dropPath, paths, e.shiftKey ? 'copy' : 'move');
-      });
     }
 
     /** Internal row drag + Explorer file drops onto Shelf: move by default, Shift+copy (same as row/breadcrumb drops). */
@@ -6321,6 +6392,44 @@
         console.debug(line);
       } catch (_) {}
     }
+
+    /** Search-debug only: DOM + Bootstrap overlay flags for “keyboard dead until alt-tab” / focus bugs. */
+    function searchDebugFocusSnapshot(reason, extra) {
+      if (!isSearchDebugOn()) return;
+      const ae = document.activeElement;
+      const summarizeEl = (el) => {
+        if (!el) return { tag: 'null' };
+        if (el === document.body) return { tag: 'BODY' };
+        const tag = (el.tagName || '').toUpperCase();
+        const o = { tag, id: el.id || '', typ: (el.type && String(el.type)) || '' };
+        const cn = el.className && typeof el.className === 'string' ? el.className : '';
+        if (cn) o.cls = cn.split(/\s+/).slice(0, 5).join(' ');
+        if (el.isContentEditable) o.ce = true;
+        return o;
+      };
+      const q = document.getElementById('query');
+      const payload = {
+        reason: String(reason || ''),
+        docHasFocus: document.hasFocus(),
+        vis: document.visibilityState,
+        ae: summarizeEl(ae),
+        query: q ? { focus: ae === q, dis: !!q.disabled, ro: !!q.readOnly } : { miss: true },
+        ui: {
+          modal: !!document.querySelector('.modal.show'),
+          offcanvas: !!document.querySelector('.offcanvas.show'),
+          dropdown: !!document.querySelector('.dropdown-menu.show'),
+          theater: !!document.getElementById('propsAside')?.classList.contains('props-theater'),
+          thBd: !document.getElementById('propsTheaterBackdrop')?.classList.contains('d-none'),
+        },
+      };
+      if (extra && typeof extra === 'object') {
+        for (const k of Object.keys(extra)) payload[k] = extra[k];
+      }
+      searchDebugLog('ui.focus', payload);
+    }
+
+    /** Limit pullWebContents lines when Search debug is on (query pointerdown would flood). */
+    let searchDebugPullWcLastMs = 0;
 
     /** Keep request options aligned with UI; direction fallback is handled explicitly in runSearch when needed. */
     function everythingOptionsForRequest() {
@@ -8923,15 +9032,6 @@
       if (status) status.textContent = r.ok ? 'Opened in app window.' : (r.error || 'Open failed');
     });
 
-    document.getElementById('btnSaveReadme').addEventListener('click', async () => {
-      const status = document.getElementById('status');
-      if (!activeReadmePath) return;
-      const text = document.getElementById('readmeEditor').value;
-      const r = await window.tagBrowser.writeTextFile({ fullPath: activeReadmePath, text });
-      const label = segmentPretty(T.baseName(activeReadmePath));
-      status.textContent = r.ok ? label + ' saved.' : (r.error || 'Save failed');
-    });
-
     window.tagBrowser.setPathsMutatedHandler(() => void refreshAfterDiskMutation());
     window.tagBrowser.setShellActionErrorHandler((msg) => {
       document.getElementById('status').textContent = String(msg || 'Action failed');
@@ -8952,7 +9052,16 @@
     /** Electron: webContents can stop receiving keys after button clicks until main focuses it again. */
     function pullWebContentsKeyboardFocus() {
       try {
-        if (window.tagBrowser && typeof window.tagBrowser.focusWebContents === 'function') window.tagBrowser.focusWebContents();
+        if (window.tagBrowser && typeof window.tagBrowser.focusWebContents === 'function') {
+          window.tagBrowser.focusWebContents();
+          if (isSearchDebugOn()) {
+            const t = Date.now();
+            if (t - searchDebugPullWcLastMs > 900) {
+              searchDebugPullWcLastMs = t;
+              searchDebugFocusSnapshot('pullWebContents');
+            }
+          }
+        }
       } catch (_) {}
     }
 
@@ -9002,6 +9111,16 @@
         return true;
       }
       return !!el.isContentEditable;
+    }
+
+    /** Folder readme / .md file viewer: Alt+←/→ must not run search-history (caret/word keys in the editor). */
+    function isInMarkdownEditSurface(el) {
+      if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+      if (el.id === 'readmeEditor' || el.id === 'mdFileEditor') return true;
+      const rw = document.getElementById('readmeEditorWrap');
+      if (rw && !rw.classList.contains('d-none') && rw.contains(el)) return true;
+      const mw = document.getElementById('mdFileEditorWrap');
+      return !!(mw && !mw.classList.contains('d-none') && mw.contains(el));
     }
 
     /** User highlighted text — let the browser handle Ctrl+C / Ctrl+X / Ctrl+Shift+C (don’t steal for Explorer paths). */
@@ -9729,6 +9848,7 @@
       }
       if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === 'ArrowLeft') {
         if (document.querySelector('.modal.show')) return;
+        if (isInMarkdownEditSurface(e.target) || isInMarkdownEditSurface(document.activeElement)) return;
         if (blockAppShortcutInTextField(e.target)) return;
         e.preventDefault();
         void goSearchHistory(-1);
@@ -9736,6 +9856,7 @@
       }
       if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === 'ArrowRight') {
         if (document.querySelector('.modal.show')) return;
+        if (isInMarkdownEditSurface(e.target) || isInMarkdownEditSurface(document.activeElement)) return;
         if (blockAppShortcutInTextField(e.target)) return;
         e.preventDefault();
         void goSearchHistory(1);
@@ -10004,9 +10125,9 @@
           tr.classList.remove('results-drag-over')
         );
         document.getElementById('resultsWrap')?.classList.remove('results-scope-drop-over');
-        document.querySelectorAll('#breadcrumbBar [data-drop-path].results-drag-over').forEach((n) =>
-          n.classList.remove('results-drag-over')
-        );
+        document
+          .querySelectorAll('#breadcrumbBar [data-drop-path].results-drag-over, #favFoldersBar [data-drop-path].results-drag-over')
+          .forEach((n) => n.classList.remove('results-drag-over'));
         document.getElementById('appShelf')?.classList.remove('shelf-aside-drag-over');
         /* Defer clearing native paths: sync clear on dragend ran before dragover/drop (capture listener) and blocked drops. */
         const pathsRef = tagBrowserActiveNativeDragPaths;
@@ -10258,7 +10379,6 @@
       });
     });
     installTagFoxTooltipGuardsOnce();
-    bindBreadcrumbBarDragDrop();
     bindShelfDrop();
     document.getElementById('btnEverythingHttpOpenSettings')?.addEventListener('click', () => {
       document.getElementById('btnToggleSettings')?.click();
@@ -10326,6 +10446,7 @@
     document.getElementById('btnPropsTheaterToggle').addEventListener('click', () => togglePropsTheaterMode());
     updateSortHeaders();
     bindFavouriteBarsDragReorderOnce();
+    bindFolderPathDropTargetBarsOnce();
     renderFavFoldersBar();
     renderFavSearchesBar();
     renderTagBar();
@@ -10333,4 +10454,14 @@
     scheduleSearch();
     void renderShelf().then(() => refreshTagFoxChromeTooltips(document.body));
     requestAnimationFrame(() => requestAnimationFrame(focusSearchBox));
-    window.addEventListener('focus', () => requestAnimationFrame(focusSearchBox));
+    window.addEventListener('blur', () => searchDebugFocusSnapshot('window.blur'));
+    document.addEventListener('visibilitychange', () =>
+      searchDebugFocusSnapshot('visibilitychange', { hidden: document.hidden })
+    );
+    window.addEventListener('focus', () => {
+      searchDebugFocusSnapshot('window.focus');
+      requestAnimationFrame(() => {
+        focusSearchBox();
+        requestAnimationFrame(() => searchDebugFocusSnapshot('window.focus.afterRestore'));
+      });
+    });
