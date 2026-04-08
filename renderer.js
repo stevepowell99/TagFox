@@ -270,22 +270,14 @@
     let resultsLoadMoreBusy = false;
     /** Offset paging: replay same query with higher Everything offset (null = no further pages for current search). */
     let resultsPagingCtx = null;
-    /** Smart view: probe-expand phase — next applySmart handles revert/success instead of normal rules. */
-    let smartViewProbePhase = false;
-    let smartProbePriorSubs = null;
-    let smartProbePriorContent = null;
+    /** Smart view event kind for the current search: identity|refresh|manual|smart-narrow|smart-probe|null. */
+    let smartEvent = null;
+    /** Before a Smart probe-widen: saved {subs, content} to revert if cap exceeded. */
+    let smartProbePrior = null;
     /** After Smart revert — blocks repeated expand probe until query/offset/hasMore state changes. */
-    let smartRevertFingerprint = null;
-    /** After probe revert — skip one applySmart so nested runSearch does not re-enter upgrade. */
-    let smartSkipUpgradeOnce = false;
-    /** Chained runSearchNow (Smart narrow / probe revert) must not reset subfolders+content to full. */
-    let suppressNextSearchForceFullMode = false;
-    /** After Smart force-broad at search start — skip one auto-narrow prefetch so full mode isn’t undone immediately. */
-    let skipSmartPrefetchNarrowOnce = false;
+    let smartRevertFP = null;
     /** Smart: last #rootFolder + scope max — detect navigation for probe-widen on plain browse. */
     let lastSmartBrowseScopeKey = null;
-    let smartBrowseScopeChangedThisRun = false;
-    let runSearchNestDepth = 0;
     let resultsScrollMoreTimer = null;
     let autoRefreshTimerId = null;
     /** Set only around timer-driven runSearch — avoid RHS viewer tear-down when results are just re-fetched. */
@@ -415,7 +407,7 @@
     function isTreeFoldingOn() { return !!document.getElementById('optTreeFolding')?.checked; }
     /** +/- twisties only when this result set is complete (no Load more pending). */
     function isTreeFoldUiActive() {
-      return isTreeFoldingOn() && !(resultsPagingCtx && resultsPagingCtx.hasMore);
+      return isTreeFoldingOn() && isShowSubfolders() && !(resultsPagingCtx && resultsPagingCtx.hasMore);
     }
     function isTreeGroupHLOn() { return !!document.getElementById('optTreeGroupHL')?.checked; }
 
@@ -426,6 +418,10 @@
     /** Tag modal targets (length 1 = single-name edit, &gt;1 = union add/remove on each). */
     let modalTargetPaths = [];
     let modalTags = [];
+    /** 'rename' = existing paths; 'newTodo' = Add TODO box only (no rename until create). */
+    let tagModalMode = 'rename';
+    /** Bracket tags for the next Add TODO .md (default TODO); edited via same #tagModal as renames. */
+    let newTodoMdTags = ['TODO'];
     /** Multi-select checkboxes: path key lowercase → canonical path */
     const checkedPathsMap = new Map();
     /** Persisted set of folder paths the user has collapsed in tree view. */
@@ -1507,11 +1503,11 @@
       pulseSearchBoxAfterScopeFolderChange();
     }
 
-    function scheduleSearch() {
+    function scheduleSearch(eventKind = 'identity') {
       if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
       searchDebounceTimer = setTimeout(() => {
         searchDebounceTimer = null;
-        void runSearch();
+        void runSearch(eventKind);
       }, 300);
     }
 
@@ -1550,18 +1546,18 @@
       if (searchInFlight) return;
       suppressViewerResyncForTimerSearch = true;
       try {
-        await runSearchNow();
+        await runSearchNow('refresh');
       } finally {
         suppressViewerResyncForTimerSearch = false;
       }
     }
 
-    async function runSearchNow() {
+    async function runSearchNow(eventKind = 'identity') {
       if (searchDebounceTimer) {
         clearTimeout(searchDebounceTimer);
         searchDebounceTimer = null;
       }
-      await runSearch();
+      await runSearch(eventKind);
     }
 
     /** Pending staggered Everything re-queries (index can lag behind disk). */
@@ -1573,7 +1569,7 @@
       for (const ms of [450, 1100, 2600]) {
         diskMutationRefreshTimeouts.push(
           setTimeout(() => {
-            void runSearchNow();
+            void runSearchNow('refresh');
           }, ms)
         );
       }
@@ -1585,7 +1581,26 @@
       await detachViewerEditorsIfOpenTargetsGone();
       void renderShelf();
       clearAndScheduleSearchRetries();
-      void runSearchNow();
+      void runSearchNow('refresh');
+    }
+
+    function tagModalIsNewTodoDraft() {
+      return tagModalMode === 'newTodo';
+    }
+
+    function syncTagModalHintsAndTitle() {
+      const renameEl = document.getElementById('tagModalHintRename');
+      const newTodoEl = document.getElementById('tagModalHintNewTodo');
+      const lbl = document.getElementById('tagModalLabel');
+      if (tagModalIsNewTodoDraft()) {
+        if (lbl) lbl.textContent = 'Tags for new TODO file';
+        renameEl?.classList.add('d-none');
+        newTodoEl?.classList.remove('d-none');
+      } else {
+        if (lbl) lbl.textContent = 'Edit tags (rename)';
+        renameEl?.classList.remove('d-none');
+        newTodoEl?.classList.add('d-none');
+      }
     }
 
     /** Re-fill tag-modal datalist + quick-add (≤12) from global known tags (not current search scope). */
@@ -1613,15 +1628,19 @@
       }
       quick.innerHTML = '';
       const quickMax = 12;
+      const onSingle = modalTargetPaths.length === 1 || tagModalIsNewTodoDraft();
       for (const text of labels.slice(0, quickMax)) {
         const btn = document.createElement('button');
         btn.type = 'button';
         const low = text.toLowerCase();
-        const onSingle = modalTargetPaths.length === 1;
         const already = onSingle && modalTags.some((t) => t.toLowerCase() === low);
         btn.className = already ? 'btn btn-sm btn-outline-secondary' : 'btn btn-sm btn-outline-primary';
         btn.textContent = text;
-        btn.title = already ? 'Already on this item' : 'Add tag ' + text;
+        btn.title = already
+          ? tagModalIsNewTodoDraft()
+            ? 'Already in this list'
+            : 'Already on this item'
+          : 'Add tag ' + text;
         btn.disabled = !!already;
         btn.addEventListener('click', () => void applyModalAddTag(text));
         quick.appendChild(btn);
@@ -1632,9 +1651,11 @@
     async function refreshAfterTagsSaved(pathRenames) {
       void renderShelf();
       clearAndScheduleSearchRetries();
-      await runSearchNow();
+      await runSearchNow('refresh');
       if (pathRenames && pathRenames.length) {
         patchResultRowsAfterRenames(pathRenames);
+        pruneLastRowsRenamedSources(pathRenames);
+        dedupeLastRowsByPathKey();
         sortLastRowsForDisplay(true);
         await syncSelectionAfterSearch();
         renderTagBar();
@@ -3348,7 +3369,7 @@
           return;
         }
         hint.textContent = String(fullPath || '');
-        const modal = bootstrap.Modal.getOrCreateInstance(modalEl, { focus: false });
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
         let settled = false;
         const cleanup = () => {
           btnApply.removeEventListener('click', onApply);
@@ -3379,6 +3400,7 @@
         modalEl.addEventListener(
           'shown.bs.modal',
           () => {
+            pullWebContentsKeyboardFocus();
             requestAnimationFrame(() => {
               input.focus();
               input.select();
@@ -3631,7 +3653,7 @@
         return;
       }
       const safe = sanitizeFileTitleSegment(raw);
-      const baseName = T.buildTaggedComponent(safe + '.md', ['TODO']);
+      const baseName = T.buildTaggedComponent(safe + '.md', newTodoMdTags);
       const fullPath = joinFolderAndFileName(folder, baseName);
       const probe = await window.tagBrowser.readTextFile({ fullPath });
       if (probe.ok) {
@@ -3646,7 +3668,7 @@
       }
       document.getElementById('newMdTitleInput').value = '';
       status.textContent = 'Created ' + baseName;
-      void runSearchNow();
+      void refreshAfterDiskMutation();
     }
 
     function clearPropsUI() {
@@ -5004,8 +5026,9 @@
       return null;
     }
 
+    /** Same as pathKeyLoose — one normal form so Everything rows (often `/`) match IPC/rename paths (`\\`). */
     function pathNormKey(fp) {
-      return String(fp || '').replace(/[/\\]+$/, '').toLowerCase();
+      return pathKeyLoose(fp);
     }
 
     /** Natural full-path sort key: separator replaced with \x00 so children always follow their parent (e.g. abc\file < abc2). */
@@ -5289,13 +5312,9 @@
     function syncShelfAsideWidth() {
       const aside = document.getElementById('appShelf');
       const rot = aside?.querySelector?.('.app-shelf-rot');
-      const chips = document.getElementById('shelfChips');
       if (!aside || !rot) return;
+      // Same geometry empty or with chips: pre-rot minWidth = column height so -90° strip fills the shelf; then aside width from AABB.
       rot.style.minWidth = '';
-      if (!chips || !chips.childElementCount) {
-        aside.style.width = '';
-        return;
-      }
       const parent = aside.closest('.results-with-shelf') || aside.parentElement;
       const h = parent ? parent.clientHeight : 0;
       if (h > 48) rot.style.minWidth = h + 'px';
@@ -5564,6 +5583,35 @@
           checkedPathsMap.set(pathNormKey(toRaw), toRaw);
         }
       }
+    }
+
+    /** Drop rows that still show a pre-rename path (stale index + slash mismatch); disk only has `to` after renamePath. */
+    function pruneLastRowsRenamedSources(pairs) {
+      if (!pairs || !pairs.length) return;
+      const drop = new Set();
+      for (const p of pairs) {
+        const k = pathNormKey(String(p.from || '').trim());
+        if (k) drop.add(k);
+      }
+      if (!drop.size) return;
+      lastRows = lastRows.filter((r) => !drop.has(pathNormKey(fullPathForRow(r))));
+    }
+
+    /** Collapse duplicate rows same logical path (index lag / mixed slashes). */
+    function dedupeLastRowsByPathKey() {
+      const seen = new Set();
+      const out = [];
+      for (const row of lastRows) {
+        const k = pathNormKey(fullPathForRow(row));
+        if (!k) {
+          out.push(row);
+          continue;
+        }
+        if (seen.has(k)) continue;
+        seen.add(k);
+        out.push(row);
+      }
+      lastRows = out;
     }
 
     /** Numeric modified time for client-side sort (same shapes as formatModified). */
@@ -6671,7 +6719,7 @@
           void (async () => {
             rescan.disabled = true;
             try {
-              await runSearchNow();
+              await runSearchNow('refresh');
               await runTagDiscoverySearch(true);
               refreshTagModalDatalist();
             } finally {
@@ -7083,7 +7131,7 @@
       statusParts.push(viewModeStatusSentence());
       status.textContent = statusParts.join('. ') + '.';
       const showPathFolderGrouping = shouldShowPathFolderGrouping();
-      const showPathTreeGutter = isTreeViewOn() && sortColumn === 'path';
+      const showPathTreeGutter = isTreeViewOn() && sortColumn === 'path' && isShowSubfolders();
       const pathTreeDepths = rowsForDisplay.map((r) => pathTreeUiDepth(r, showPathFolderGrouping));
       const pathTreeGutters = showPathTreeGutter ? pathTreeGutterStringsForDepths(pathTreeDepths) : null;
       const treeFoldUi = isTreeFoldUiActive();
@@ -7397,6 +7445,10 @@
     function updateTagModalPathLabel() {
       const el = document.getElementById('tagModalPath');
       if (!el) return;
+      if (tagModalIsNewTodoDraft()) {
+        el.textContent = 'New file from Add TODO (tags only; no path yet)';
+        return;
+      }
       if (modalTargetPaths.length > 1) el.textContent = modalTargetPaths.length + ' items selected';
       else if (modalTargetPaths.length === 1) el.textContent = modalTargetPaths[0];
       else el.textContent = '';
@@ -7419,6 +7471,12 @@
         x.addEventListener('click', async () => {
           if (tagRenameBusy) return;
           const removed = modalTags[idx];
+          if (tagModalIsNewTodoDraft()) {
+            modalTags.splice(idx, 1);
+            renderModalChips();
+            refreshTagModalDatalist();
+            return;
+          }
           if (modalTargetPaths.length > 1) {
             const ok = await bulkRemoveTag(removed);
             if (!ok) return;
@@ -7445,12 +7503,30 @@
     }
 
     function openTagModal(fp) {
+      tagModalMode = 'rename';
+      syncTagModalHintsAndTitle();
       modalTargetPaths = [fp];
       document.getElementById('tagModalBulkHint').classList.add('d-none');
       setTagApplyFeedback('');
       updateTagModalPathLabel();
       const base = T.baseName(fp);
       modalTags = [...T.parseSegmentTags(base).tags];
+      renderModalChips();
+      refreshTagModalDatalist();
+      if (!tagModalInst) {
+        tagModalInst = new bootstrap.Modal(document.getElementById('tagModal'), { focus: false });
+      }
+      tagModalInst.show();
+    }
+
+    function openTagModalNewTodoDraft() {
+      tagModalMode = 'newTodo';
+      syncTagModalHintsAndTitle();
+      modalTargetPaths = [];
+      document.getElementById('tagModalBulkHint').classList.add('d-none');
+      setTagApplyFeedback('');
+      modalTags = newTodoMdTags.slice();
+      updateTagModalPathLabel();
       renderModalChips();
       refreshTagModalDatalist();
       if (!tagModalInst) {
@@ -7469,6 +7545,8 @@
         uniq.push(p);
       }
       if (!uniq.length) return;
+      tagModalMode = 'rename';
+      syncTagModalHintsAndTitle();
       modalTargetPaths = uniq;
       document.getElementById('tagModalBulkHint').classList.remove('d-none');
       setTagApplyFeedback('');
@@ -7603,6 +7681,14 @@
       const raw = String(v || '').trim();
       if (!raw) return;
       const low = raw.toLowerCase();
+      if (tagModalIsNewTodoDraft()) {
+        if (modalTags.some((t) => t.toLowerCase() === low)) return;
+        modalTags.push(raw);
+        renderModalChips();
+        rememberTag(low, raw);
+        refreshTagModalDatalist();
+        return;
+      }
       if (modalTargetPaths.length > 1) {
         if (modalTags.some((t) => t.toLowerCase() === low)) return;
         await bulkAddTag(raw);
@@ -7895,12 +7981,10 @@
             hasMore,
           };
         }
-        if (runId === searchRunSeq && (await smartPrefetchNarrowIfNeededBeforePaint(runId))) return;
         await syncSelectionAfterSearch();
         renderTagBar();
         renderTable();
         updateResultsLoadMoreUi();
-        if (runId === searchRunSeq) await applySmartViewAfterSearchChain();
       } finally {
         resultsLoadMoreBusy = false;
         updateResultsLoadMoreUi();
@@ -7951,30 +8035,100 @@
     }
 
     /**
-     * Smart expand probe hit the cap: restore prior subs/content and re-fetch before paint (no flash of wide rows).
+     * Smart before-paint: if cap exceeded, either revert a probe or narrow the view, then re-search.
+     * Returns true if a re-search was triggered (caller should return without painting).
      */
-    async function smartProbeRevertIfExceededCapBeforePaint(runId) {
-      if (!isSmartView() || !smartViewProbePhase) return false;
-      if (!resultsPagingCtx || resultsPagingCtx.mode !== 'single' || !resultsPagingCtx.hasMore) return false;
+    async function smartBeforePaint(runId) {
+      if (!isSmartView()) return false;
       if (runId !== searchRunSeq) return false;
-      smartViewProbePhase = false;
-      const priorSubs = smartProbePriorSubs;
-      const priorContent = smartProbePriorContent;
-      smartProbePriorSubs = null;
-      smartProbePriorContent = null;
+      if (!resultsPagingCtx || resultsPagingCtx.mode !== 'single' || !resultsPagingCtx.hasMore) return false;
       const st = document.getElementById('status');
-      if (st) st.textContent = 'Smart view: full tree would exceed the cap — restored narrower scope.';
-      applyResultsViewRadiosToDom('smart', priorSubs, priorContent);
-      syncViewRadioActiveFromDom();
-      saveSettings();
-      smartSkipUpgradeOnce = true;
-      suppressNextSearchForceFullMode = true;
-      await runSearchNow();
-      smartRevertFingerprint = smartOutcomeFingerprint();
-      return true;
+
+      /* Probe exceeded cap: revert to prior toggles and re-search as smart-narrow. */
+      if (smartEvent === 'smart-probe' && smartProbePrior) {
+        if (st) st.textContent = 'Smart view: full tree would exceed the cap — restored narrower scope.';
+        applyResultsViewRadiosToDom('smart', smartProbePrior.subs, smartProbePrior.content);
+        syncViewRadioActiveFromDom();
+        saveSettings();
+        const prior = smartProbePrior;
+        smartProbePrior = null;
+        await runSearchNow('smart-narrow');
+        smartRevertFP = smartOutcomeFingerprint();
+        return true;
+      }
+
+      /* Identity search exceeded cap: try narrowing (subs off, then files-only). */
+      if (smartEvent === 'identity') {
+        const rootFolder = document.getElementById('rootFolder').value.trim();
+        if (isShowSubfolders()) {
+          const droppingSubsOk = !lastRows.length || smartScopeHasDirectChildHit(lastRows, rootFolder);
+          if (droppingSubsOk) {
+            applyResultsViewRadiosToDom('smart', false, resultsContentMode());
+            syncViewRadioActiveFromDom();
+            saveSettings();
+            if (st) st.textContent = 'Smart view: subfolders turned off — result set exceeded the cap.';
+            await runSearchNow('smart-narrow');
+            return true;
+          }
+        }
+        if (!isFilesOnly() && !isFoldersOnly()) {
+          applyResultsViewRadiosToDom('smart', isShowSubfolders(), 'files');
+          syncViewRadioActiveFromDom();
+          saveSettings();
+          if (st) st.textContent = 'Smart view: switched to Files only — still exceeding the cap.';
+          await runSearchNow('smart-narrow');
+          return true;
+        }
+      }
+
+      return false;
     }
 
-    /** True if some hit lies directly in the scope folder (so “this folder only” can still return rows). */
+    /**
+     * Smart after-paint: if all results fit and view is narrowed, probe-widen to full tree.
+     * If probe succeeded (smart-probe with !hasMore), show success status.
+     */
+    async function smartAfterPaint() {
+      if (!isSmartView()) { smartEvent = null; smartProbePrior = null; smartRevertFP = null; return; }
+      if (!resultsPagingCtx || resultsPagingCtx.mode !== 'single') return;
+
+      if (smartRevertFP && smartOutcomeFingerprint() !== smartRevertFP) smartRevertFP = null;
+
+      const st = document.getElementById('status');
+      const hasMore = !!resultsPagingCtx.hasMore;
+
+      /* Probe success: all results fit in full tree view. */
+      if (smartEvent === 'smart-probe' && !hasMore) {
+        smartProbePrior = null;
+        smartRevertFP = null;
+        if (st) st.textContent = 'Smart view: showing full tree (all results fit in this cap).';
+        return;
+      }
+
+      /* manual / smart-narrow / refresh: no further auto-adjustment. */
+      if (smartEvent === 'manual' || smartEvent === 'smart-narrow' || smartEvent === 'refresh') return;
+
+      /* Still exceeding cap after all narrowing: terminal message. */
+      if (hasMore) {
+        smartRevertFP = null;
+        if (isFilesOnly() && st)
+          st.textContent = 'Smart view: still more results than the cap (Load more or raise Max results).';
+        return;
+      }
+
+      /* All results fit but view is narrowed: probe-widen to full tree. */
+      if (!isShowSubfolders() || !isAllContent()) {
+        const scopeJustChanged = smartRevertFP == null;
+        if (!smartSearchShouldStartBroad() && !scopeJustChanged) return;
+        if (smartRevertFP && smartOutcomeFingerprint() === smartRevertFP) return;
+        smartProbePrior = { subs: isShowSubfolders(), content: resultsContentMode() };
+        applyResultsViewRadiosToDom('smart', true, 'all');
+        syncViewRadioActiveFromDom();
+        saveSettings();
+        await runSearchNow('smart-probe');
+      }
+    }
+
     function smartScopeHasDirectChildHit(rows, rootFolderRaw) {
       const scope = normalizeFolderPathForEverything(String(rootFolderRaw || '').trim());
       if (!scope) return true;
@@ -7988,134 +8142,27 @@
       return false;
     }
 
-    /**
-     * Smart + hasMore: refetch with narrower subs/content before painting — avoids flashing the wide table.
-     * Downgrade chain lives here + runSearch re-entry; probe widen uses smartProbeRevertIfExceededCapBeforePaint.
-     */
-    async function smartPrefetchNarrowIfNeededBeforePaint(runId) {
-      if (!isSmartView() || smartViewProbePhase) return false;
-      if (skipSmartPrefetchNarrowOnce) {
-        skipSmartPrefetchNarrowOnce = false;
-        return false;
-      }
-      /* User changed subs/content under Smart — don’t auto-narrow this fetch (see bindResultsViewRadiosChanged). */
-      if (smartSkipUpgradeOnce) return false;
-      /* Paging append: narrowing would full rerun search and drop manual Smart overrides mid-scroll. */
-      if (resultsLoadMoreBusy) return false;
-      if (!resultsPagingCtx || resultsPagingCtx.mode !== 'single' || !resultsPagingCtx.hasMore) return false;
-      if (runId !== searchRunSeq) return false;
-      const st = document.getElementById('status');
-      const rootFolder = document.getElementById('rootFolder').value.trim();
-      if (isShowSubfolders()) {
-        const droppingSubsOk = !lastRows.length || smartScopeHasDirectChildHit(lastRows, rootFolder);
-        if (droppingSubsOk) {
-          applyResultsViewRadiosToDom('smart', false, resultsContentMode());
-          syncViewRadioActiveFromDom();
-          saveSettings();
-          if (st) st.textContent = 'Smart view: subfolders turned off — result set exceeded the cap.';
-          suppressNextSearchForceFullMode = true;
-          await runSearchNow();
-          return true;
-        }
-        /* All cap hits live under subfolders — subs off would refetch empty; try files-only with subs on below. */
-      }
-      if (!isFilesOnly()) {
-        if (isFoldersOnly()) return false;
-        applyResultsViewRadiosToDom('smart', isShowSubfolders(), 'files');
-        syncViewRadioActiveFromDom();
-        saveSettings();
-        if (st) st.textContent = 'Smart view: switched to Files only — still exceeding the cap.';
-        suppressNextSearchForceFullMode = true;
-        await runSearchNow();
-        return true;
-      }
-      return false;
-    }
-
-    /** Smart view: probe-expand + revert when narrowed; terminal cap message. Narrowing runs in smartPrefetchNarrowIfNeededBeforePaint. */
-    async function applySmartViewAfterSearchChain() {
-      if (!isSmartView()) {
-        smartViewProbePhase = false;
-        smartRevertFingerprint = null;
-        return;
-      }
-      if (smartSkipUpgradeOnce) {
-        smartSkipUpgradeOnce = false;
-        return;
-      }
-      if (!resultsPagingCtx || resultsPagingCtx.mode !== 'single') return;
-
-      if (smartRevertFingerprint && smartOutcomeFingerprint() !== smartRevertFingerprint) {
-        smartRevertFingerprint = null;
-      }
-
-      const st = document.getElementById('status');
-
-      if (smartViewProbePhase) {
-        /* Probe failure (hasMore) is handled in runSearch before paint; only success reaches here after render. */
-        if (!resultsPagingCtx || resultsPagingCtx.hasMore) {
-          smartViewProbePhase = false;
-          smartProbePriorSubs = null;
-          smartProbePriorContent = null;
-          return;
-        }
-        smartViewProbePhase = false;
-        smartProbePriorSubs = null;
-        smartProbePriorContent = null;
-        if (st) st.textContent = 'Smart view: showing full tree (all results in this cap).';
-        smartRevertFingerprint = null;
-        return;
-      }
-
-      const hasMore = !!resultsPagingCtx.hasMore;
-
-      if (hasMore) {
-        smartRevertFingerprint = null;
-        if (isFilesOnly()) {
-          if (st) st.textContent = 'Smart view: still more results than the cap (Load more or raise Max results).';
-        }
-        return;
-      }
-
-      if (!isShowSubfolders() || !isAllContent()) {
-        /* Plain browse: keep narrowed toggles; after folder navigation, widen so small scopes show subfolders. */
-        if (!smartSearchShouldStartBroad() && !smartBrowseScopeChangedThisRun) return;
-        if (smartRevertFingerprint && smartOutcomeFingerprint() === smartRevertFingerprint) return;
-        smartProbePriorSubs = isShowSubfolders();
-        smartProbePriorContent = resultsContentMode();
-        smartViewProbePhase = true;
-        applyResultsViewRadiosToDom('smart', true, 'all');
-        syncViewRadioActiveFromDom();
-        saveSettings();
-        await runSearchNow();
-      }
-    }
-
-    async function runSearch() {
-      const isOuterRunSearch = runSearchNestDepth === 0;
-      runSearchNestDepth++;
+    async function runSearch(eventKind = 'identity') {
       searchInFlight = true;
       const runId = ++searchRunSeq;
       if (!isSmartView()) {
-        smartViewProbePhase = false;
-        smartRevertFingerprint = null;
+        smartEvent = null;
+        smartProbePrior = null;
+        smartRevertFP = null;
+      } else {
+        smartEvent = eventKind;
       }
       resultsPagingCtx = null;
       try {
       cancelPropsPreviewSchedule();
       {
-        const skipForceFull = suppressNextSearchForceFullMode;
-        if (suppressNextSearchForceFullMode) suppressNextSearchForceFullMode = false;
-        if (!skipForceFull) {
-          const q = (document.getElementById('query')?.value || '').trim();
-          /* Tree/Flat: broad only with query or tag filter. Smart: also recency/advanced so we don’t stay narrowed. */
-          const forceBroad =
-            (isSmartView() && smartSearchShouldStartBroad()) || (!isSmartView() && (q || activeTagKeys.size));
-          if (forceBroad) {
-            applyResultsViewRadiosToDom(resultsLayoutFromUi(), true, 'all');
-            syncViewRadioActiveFromDom();
-            if (isSmartView()) skipSmartPrefetchNarrowOnce = true;
-          }
+        const smart = isSmartView();
+        const broadForSmart = smart && eventKind === 'identity' && smartSearchShouldStartBroad();
+        const q = (document.getElementById('query')?.value || '').trim();
+        const broadForNonSmart = !smart && (q || activeTagKeys.size);
+        if (broadForSmart || broadForNonSmart) {
+          applyResultsViewRadiosToDom(resultsLayoutFromUi(), true, 'all');
+          syncViewRadioActiveFromDom();
         }
       }
       const status = document.getElementById('status');
@@ -8123,11 +8170,12 @@
       const baseUrl = document.getElementById('baseUrl').value.trim() || 'http://127.0.0.1';
       const ceilingNorms = getSearchScopeCeilingFoldersNorms();
       const rootFolder = document.getElementById('rootFolder').value.trim();
-      if (isOuterRunSearch && isSmartView()) {
+      /* Scope-change detection for Smart probe-widen on plain browse navigation. */
+      if (isSmartView() && eventKind === 'identity') {
         const sk = smartBrowseScopeKeyFromInputs(rootFolder);
-        smartBrowseScopeChangedThisRun =
-          lastSmartBrowseScopeKey != null && sk !== lastSmartBrowseScopeKey;
+        const scopeChanged = lastSmartBrowseScopeKey != null && sk !== lastSmartBrowseScopeKey;
         lastSmartBrowseScopeKey = sk;
+        if (scopeChanged) smartRevertFP = null;
       }
       const query = document.getElementById('query').value;
       const hasBread = !!normalizeFolderPathForEverything(rootFolder);
@@ -8236,17 +8284,14 @@
         searchText,
         seedOptions: stripOffsetFromOpts(res.optionsUsed),
       };
-      if (runId === searchRunSeq && (await smartProbeRevertIfExceededCapBeforePaint(runId))) return;
-      if (runId === searchRunSeq && (await smartPrefetchNarrowIfNeededBeforePaint(runId))) return;
+      if (runId === searchRunSeq && (await smartBeforePaint(runId))) return;
       status.textContent = lastRows.length ? lastRows.length + ' result(s)' : 'No results';
       await syncSelectionAfterSearch();
       renderTagBar();
       renderTable();
       pulseEmptyResultHintsAfterSearchOk();
-      if (runId === searchRunSeq) await applySmartViewAfterSearchChain();
+      if (runId === searchRunSeq) await smartAfterPaint();
       } finally {
-        runSearchNestDepth--;
-        if (isOuterRunSearch && isSmartView()) smartBrowseScopeChangedThisRun = false;
         if (runId === searchRunSeq) searchInFlight = false;
       }
     }
@@ -8341,6 +8386,7 @@
       status.textContent = 'Search saved.';
     });
 
+    document.getElementById('btnNewTodoMdTags').addEventListener('click', () => openTagModalNewTodoDraft());
     document.getElementById('btnCreateTodoMd').addEventListener('click', () => void createTodoMdInScope());
     document.getElementById('newMdTitleInput').addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
@@ -8442,16 +8488,12 @@
     }
     function bindResultsViewRadiosChanged(isNonLayoutToggle) {
       applyNaturalSortWhenTreeViewOn();
-      /* Let user adjust subs/content while Smart is on — only forgotten on next real search. */
-      if (isNonLayoutToggle && isSmartView()) {
-        suppressNextSearchForceFullMode = true;
-        smartSkipUpgradeOnce = true;
-        smartRevertFingerprint = null;
-      }
+      const kind = (isNonLayoutToggle && isSmartView()) ? 'manual' : 'identity';
+      if (kind === 'manual') smartRevertFP = null;
       saveSettings();
       updateSortHeaders();
       applyResultsTablePathColumnVisibility();
-      void runSearchNow();
+      void runSearchNow(kind);
       commitSearchHistoryNow();
     }
     function wireViewTrioClickCycle(ids, isNonLayout) {
@@ -8609,6 +8651,11 @@
     document.getElementById('tagModal').addEventListener('shown.bs.modal', () => {
       refreshTagModalDatalist();
       requestAnimationFrame(() => document.getElementById('tagModalInput')?.focus());
+    });
+    document.getElementById('tagModal').addEventListener('hidden.bs.modal', () => {
+      if (tagModalMode === 'newTodo') newTodoMdTags = modalTags.slice();
+      tagModalMode = 'rename';
+      syncTagModalHintsAndTitle();
     });
     document.getElementById('bulkRenameModal').addEventListener('shown.bs.modal', () => {
       requestAnimationFrame(() => {
@@ -9397,7 +9444,7 @@
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
         e.preventDefault();
-        void runSearchNow();
+        void runSearchNow('refresh');
         return;
       }
       if (modC && (e.key === 'f' || e.key === 'F')) {
@@ -9510,7 +9557,7 @@
       if (e.key === 'F5') {
         if (blockAppShortcutInTextField(e.target)) return;
         e.preventDefault();
-        void runSearchNow();
+        void runSearchNow('refresh');
         return;
       }
       if (e.key === 'F2') {
@@ -9635,6 +9682,17 @@
         return;
       }
 
+      /* x: Smart view; l still cycles Tree → Smart → Flat. */
+      if (e.key === 'x') {
+        e.preventDefault();
+        const t = document.getElementById('optRvSmart');
+        if (t && !t.checked) {
+          t.checked = true;
+          syncViewRadioActiveFromDom();
+          t.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        return;
+      }
       /* l / f / s: toggle View / Content / Subfolders radio pairs */
       if (e.key === 'l') {
         e.preventDefault();

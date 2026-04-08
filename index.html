@@ -195,7 +195,7 @@
           class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
           style="width: 2rem; height: 2rem"
           id="btnSaveFavouriteFolder"
-          title="Save current folder to favourites"
+          title="Save current folder to favourites — slots: Ctrl+Shift+1…9"
           aria-label="Save current folder to favourites"
         >
           <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
@@ -211,7 +211,7 @@
           class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
           style="width: 2rem; height: 2rem"
           id="btnSaveFavouriteSearch"
-          title="Save current search (query, current folder, tags, filters, Advanced, sort — same snapshot as search history)"
+          title="Save current search (query, current folder, tags, filters, Advanced, sort — same snapshot as search history) — slots: Ctrl+1…9"
           aria-label="Save current search to favourites"
         >
           <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
@@ -229,7 +229,7 @@
 
       <!-- Clear current folder (icon) + breadcrumb trail or path edit -->
       <div class="d-flex flex-wrap align-items-center gap-1 mb-2 scope-breadcrumb-row">
-        <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0 tagfox-toolbar-clear" style="width: 2rem; height: 2rem" id="btnClearScope" disabled title="Clear current folder (search whole index)" aria-label="Clear current folder">
+        <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0 tagfox-toolbar-clear" style="width: 2rem; height: 2rem" id="btnClearScope" disabled title="Clear current folder (search whole index) — Ctrl+Backspace" aria-label="Clear current folder">
           <i class="fa-solid fa-xmark" aria-hidden="true"></i>
         </button>
         <div
@@ -293,32 +293,32 @@
           <!-- Results layout: View (Tree | Smart | Flat) + Subfolders + Content. -->
           <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair tagfox-view-trio flex-shrink-0" role="group" aria-label="View mode">
             <input type="radio" class="btn-check" name="rvViewMode" id="optRvTree" value="tree" autocomplete="off" />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvTree" title="Tree view"
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvTree" title="Tree view — L cycles layout"
               ><i class="fa-solid fa-sitemap fa-fw" aria-hidden="true"></i></label>
             <input type="radio" class="btn-check" name="rvViewMode" id="optRvSmart" value="smart" autocomplete="off" checked />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvSmart" title="Smart view — auto-adjust subfolders/content to fit the result cap"
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvSmart" title="Smart view — auto-adjust subfolders/content to fit the result cap — X; L cycles layout"
               ><i class="fa-solid fa-wand-magic-sparkles fa-fw" aria-hidden="true"></i></label>
             <input type="radio" class="btn-check" name="rvViewMode" id="optRvFlat" value="flat" autocomplete="off" />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvFlat" title="Flat view"
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvFlat" title="Flat view — L cycles layout"
               ><i class="fa-solid fa-list fa-fw" aria-hidden="true"></i></label>
           </div>
           <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair flex-shrink-0" role="group" aria-label="Subfolders">
             <input type="radio" class="btn-check" name="rvSubfolders" id="optRvSubsOff" value="off" autocomplete="off" />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvSubsOff" title="This folder only"
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvSubsOff" title="This folder only — S toggles subfolders"
               ><i class="fa-solid fa-folder fa-fw" aria-hidden="true"></i></label>
             <input type="radio" class="btn-check" name="rvSubfolders" id="optRvSubsOn" value="on" autocomplete="off" checked />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvSubsOn" title="Include subfolders"
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvSubsOn" title="Include subfolders — S toggles subfolders"
               ><i class="fa-solid fa-folder-tree fa-fw" aria-hidden="true"></i></label>
           </div>
           <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair tagfox-content-trio flex-shrink-0" role="group" aria-label="Content filter">
             <input type="radio" class="btn-check" name="rvContent" id="optRvDirsOnly" value="dirs" autocomplete="off" />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvDirsOnly" title="Folders only"
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvDirsOnly" title="Folders only — F cycles files/folders"
               ><i class="fa-solid fa-folder fa-fw" aria-hidden="true"></i></label>
             <input type="radio" class="btn-check" name="rvContent" id="optRvAll" value="all" autocomplete="off" checked />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvAll" title="Files and folders"
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvAll" title="Files and folders — F cycles files/folders"
               ><i class="fa-solid fa-copy fa-fw" aria-hidden="true"></i></label>
             <input type="radio" class="btn-check" name="rvContent" id="optRvFilesOnly" value="files" autocomplete="off" />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvFilesOnly" title="Files only"
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvFilesOnly" title="Files only — F cycles files/folders"
               ><i class="fa-solid fa-file-lines fa-fw" aria-hidden="true"></i></label>
           </div>
           <div class="btn-group tagfox-segmented flex-shrink-0" role="group" aria-label="Recency">
@@ -340,13 +340,13 @@
 
       <div id="bulkBar" class="d-none mb-1 small d-flex flex-wrap align-items-center gap-1">
         <span id="bulkBarLabel" class="text-muted me-1"></span>
-        <button type="button" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0 row-clip-btn" style="width:2rem;height:2rem" id="btnBulkClip" title="Copy selected (Windows Explorer paste)" aria-label="Copy">
+        <button type="button" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0 row-clip-btn" style="width:2rem;height:2rem" id="btnBulkClip" title="Copy selected (Windows Explorer paste) — Ctrl+C" aria-label="Copy">
           <i class="fa-solid fa-clipboard" aria-hidden="true"></i>
         </button>
-        <button type="button" class="btn btn-sm btn-outline-danger" id="btnBulkTrash" title="Move checked or highlighted rows to the Recycle Bin (confirmation)">
+        <button type="button" class="btn btn-sm btn-outline-danger" id="btnBulkTrash" title="Move checked or highlighted rows to the Recycle Bin (confirmation) — Del">
           Delete
         </button>
-        <button type="button" class="btn btn-sm btn-outline-primary" id="btnBulkTags" title="Edit bracket-tag names for all checked rows (or the highlighted row if none checked)">
+        <button type="button" class="btn btn-sm btn-outline-primary" id="btnBulkTags" title="Edit bracket-tag names for all checked rows (or the highlighted row if none checked) — Ctrl+T or t">
           Tags
         </button>
         <button type="button" class="btn btn-sm btn-link py-0" id="btnBulkClearSel" title="Uncheck every row in the results list">
@@ -399,13 +399,13 @@
         <div id="statusBar" class="results-status-bar border-bottom bg-body-secondary px-2 py-1 d-flex align-items-center flex-shrink-0 small" role="status">
           <span id="status" class="text-muted min-w-0 flex-grow-1" aria-live="polite"></span>
           <div class="d-inline-flex align-items-center flex-shrink-0 tagfox-scope-nav-cluster ms-2" role="group" aria-label="Current folder navigation">
-            <button type="button" class="btn btn-sm btn-link text-secondary flex-shrink-0 p-0 d-inline-flex align-items-center justify-content-center text-decoration-none status-bar-scope-up tagfox-scope-nav-chevron" id="btnStatusScopeSiblingPrev" disabled title="Previous sibling folder (same sort as results table)" aria-label="Previous sibling folder">
+            <button type="button" class="btn btn-sm btn-link text-secondary flex-shrink-0 p-0 d-inline-flex align-items-center justify-content-center text-decoration-none status-bar-scope-up tagfox-scope-nav-chevron" id="btnStatusScopeSiblingPrev" disabled title="Previous sibling folder (same sort as results table) — K" aria-label="Previous sibling folder">
               <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
             </button>
             <button type="button" class="btn btn-sm btn-link text-secondary flex-shrink-0 p-0 d-inline-flex align-items-center justify-content-center text-decoration-none status-bar-scope-up tagfox-scope-nav-chevron" id="btnStatusScopeParent" disabled title="Parent folder (Ctrl+↑ or Backspace)" aria-label="Open parent folder">
               <i class="fa-solid fa-chevron-up" aria-hidden="true"></i>
             </button>
-            <button type="button" class="btn btn-sm btn-link text-secondary flex-shrink-0 p-0 d-inline-flex align-items-center justify-content-center text-decoration-none status-bar-scope-up tagfox-scope-nav-chevron" id="btnStatusScopeSiblingNext" disabled title="Next sibling folder (same sort as results table)" aria-label="Next sibling folder">
+            <button type="button" class="btn btn-sm btn-link text-secondary flex-shrink-0 p-0 d-inline-flex align-items-center justify-content-center text-decoration-none status-bar-scope-up tagfox-scope-nav-chevron" id="btnStatusScopeSiblingNext" disabled title="Next sibling folder (same sort as results table) — J" aria-label="Next sibling folder">
               <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
             </button>
           </div>
@@ -446,15 +446,15 @@
           <thead class="table-light">
             <tr>
               <!-- no position-relative: it overrides sticky (Bootstrap !important); sticky th still contains .th-resize -->
-              <th class="align-middle text-start results-th-cb" title="Select rows. Drag = in-app. Shelf "OS drag" or Alt+drag = Explorer files.">
+              <th class="align-middle text-start results-th-cb" title="Select rows — Space toggles row, Ctrl+A all. Drag = in-app. Shelf OS drag or Alt+drag = Explorer files.">
                 <input type="checkbox" class="form-check-input m-0 results-cb" id="chkSelectAllResults" autocomplete="off" aria-label="Select all in list" />
                 <!-- boundary N = resize between col N and N+1 (0 = chk|Name … 4 = Modified|Actions) -->
                 <span class="th-resize" data-resize-idx="0" title="Drag to resize"></span>
               </th>
-              <th class="sortable-th" data-sort="name" title="Sort by name"><span class="sort-label">Name</span><span class="th-resize" data-resize-idx="1"></span></th>
+              <th class="sortable-th" data-sort="name" title="Sort by name — n"><span class="sort-label">Name</span><span class="th-resize" data-resize-idx="1"></span></th>
               <th class="sortable-th" data-sort="path" title="Sort by path"><span class="sort-label">Path</span><span class="th-resize" data-resize-idx="2"></span></th>
-              <th class="sortable-th text-end" data-sort="size" title="Sort by size"><span class="sort-label">Size</span><span class="th-resize" data-resize-idx="3"></span></th>
-              <th class="sortable-th" data-sort="date_modified" title="Sort by modified"><span class="sort-label">Modified</span><span class="th-resize" data-resize-idx="4"></span></th>
+              <th class="sortable-th text-end" data-sort="size" title="Sort by size — z"><span class="sort-label">Size</span><span class="th-resize" data-resize-idx="3"></span></th>
+              <th class="sortable-th" data-sort="date_modified" title="Sort by modified — m"><span class="sort-label">Modified</span><span class="th-resize" data-resize-idx="4"></span></th>
               <th class="align-middle"></th>
             </tr>
           </thead>
@@ -500,6 +500,16 @@
           placeholder="Title"
           autocomplete="off"
         />
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
+          style="width: 2rem; height: 2rem"
+          id="btnNewTodoMdTags"
+          title="Tags applied to the new file name [(…)]"
+          aria-label="Edit tags for new TODO file"
+        >
+          <i class="fa-solid fa-tags" aria-hidden="true"></i>
+        </button>
         <button
           type="button"
           class="btn btn-sm btn-outline-primary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
@@ -666,7 +676,12 @@
           </div>
           <!-- Existing [(…)] tags + remembered (datalist). -->
           <datalist id="tagModalExistingTags"></datalist>
-          <p class="small text-muted mb-0">Tags live in the last <code>[( … )]</code> block of the segment name. <strong>Add</strong> or remove a chip renames on disk immediately.</p>
+          <p class="small text-muted mb-0" id="tagModalHintRename">
+            Tags live in the last <code>[( … )]</code> block of the segment name. <strong>Add</strong> or remove a chip renames on disk immediately.
+          </p>
+          <p class="small text-muted mb-0 d-none" id="tagModalHintNewTodo">
+            These <code>[( … )]</code> tags are used when you create a markdown file from Add TODO. Close to keep them for the next create; disk renames only happen on existing files in this dialog.
+          </p>
           <p id="tagModalFeedback" class="small mb-0 mt-2" aria-live="assertive"></p>
         </div>
         <div class="modal-footer py-2">

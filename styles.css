@@ -130,7 +130,8 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   flex-shrink: 0;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
 }
-.recency-blob--h1 { background-color: #991b1b; }
+/* Hottest = brightest red (was dark #991b1b, looked browner than the 1d tier). */
+.recency-blob--h1 { background-color: #ff2d2d; }
 .recency-blob--d1 { background-color: #dc2626; }
 .recency-blob--d7 { background-color: #ea580c; }
 .recency-blob--d30 { background-color: #ca8a04; }

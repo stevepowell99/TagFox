@@ -51,7 +51,7 @@ Welcome to TagFox — a fast, keyboard-friendly file manager powered by instant 
 1. **🔌 First, make sure Everything Search is running.** TagFox relies on [Voidtools Everything](https://www.voidtools.com/) for its speed. See **📦 Installation** for setup. If results are empty, Everything probably isn't running.
 2. **🧱 Optional scope (recommended on a new PC):** open **Settings** and set **one** optional **search scope folder** (e.g. **Set profile folder**, or **Set folder…**). Everything then only returns paths under that root. The breadcrumb’s **first** segment is that folder (you cannot navigate above it). Your **current folder** can narrow further inside it, or stay empty to search the whole tree under the scope. **Clear scope** removes the ceiling (whole index, subject to the breadcrumb).
 3. **📂 Pick a folder to work in.** The breadcrumb bar shows your scope root (if set) and current folder — search, paste, and new files use the current folder when it is set, otherwise the scope root. Clear the current folder (×) to widen to the whole scope tree; **Clear scope** in Settings removes the ceiling entirely.
-4. **👁️ Switch views to suit the task.** Toggle between Flat/Tree, Subfolders on/off, and Files+Folders/Folders only with the buttons next to the search box (or keys `l`, `s`, `f`).
+4. **👁️ Switch views to suit the task.** Toggle between Flat/Tree/Smart, Subfolders on/off, and Files+Folders/Folders only with the buttons next to the search box (or keys `x` for Smart, `l` to cycle layout, `s`, `f`).
 5. **🏷️ Tag your files and folders for easy organisation.** Add tags like `draft`, `urgent`, or `2026` to any file or folder — then filter by tag to find exactly what you need. Tags are stored in the filename itself, so they travel with your files everywhere (Explorer, Google Drive, zip files). See **🏷️ Tags** for details.
 6. **⭐ Save favourite folders and searches.** Click 💾 to bookmark a folder or an entire search. Jump back with a click or `Ctrl`+`1`…`9`. See **⭐ Favourites**.
 7. **👀 Preview files without leaving TagFox.** The Viewer panel (right side) shows images, PDFs, Office docs, markdown, and more. For folders, it shows a folder readme doc you can edit in place. View and edit google files like gdocs, gslides without leaving TagFox.
@@ -63,7 +63,7 @@ Welcome to TagFox — a fast, keyboard-friendly file manager powered by instant 
 
 TagFox combines **instant search** (powered by Everything) with a **folder tree view** — so you see results *in context*. You can navigate folders, tag files, preview documents, and manage simple project specifications and tasks without ever opening File Explorer.
 
-**Tags** are labels like `draft`, `urgent`, or `2026` that you attach to files and folders to organise your work. You can filter by tag to instantly find everything marked that way. TagFox stores tags in the filename itself (e.g. `Report[(draft,urgent)].docx`), so they travel with the file — no database, no hidden metadata. They work in Explorer, Google Drive, zip exports, everywhere.
+**Tags** are labels like `draft`, `urgent`, or `2026` that you attach to files and folders to organise your work. You can filter by tag to instantly find everything marked that way. macOS users will recognise this idea — Finder has built-in colour tags for files and folders. Windows has no native equivalent, so TagFox fills that gap. TagFox stores tags in the filename itself (e.g. `Report[(draft,urgent)].docx`), so they travel with the file — no database, no hidden metadata. They work in Explorer, Google Drive, zip exports, everywhere.
 
 ### 🤔 The problems TagFox solves
 
@@ -103,13 +103,14 @@ Meanwhile, tools like Google Drive train you to type a word and expect the right
 - Tip: `foo|bar` matches either word. `!foo` excludes files matching “foo”.
 - Next to the search row, **Both** / **Folders only** / **Files only** narrow what Everything returns (`folder:` / `file:` when narrowed). See [Everything searching](https://www.voidtools.com/support/everything/searching/).
 - The **Advanced** button opens extra options: match case, match path, whole word, diacritics, **Hide special**, **Hide ~**. **Hide special** removes rows whose path has a segment starting with `.` or `$`, or equals `desktop.ini` (`..` is ignored; `.shortcut-targets-by-id` is kept). **Hide ~** removes rows with any segment starting with `~` (e.g. profile junctions). Both are **table only**; Everything still fetches up to **Results per page** before filtering — if the list looks empty, raise that limit, use **Load more**, or narrow scope/query. When those rows are still shown (toggles off), **Hide special** matches fade more (lower opacity) than **~** matches.
-- **Tree** vs **Flat** (`l`): Tree hides the Path column and groups by folder; Tree mode keeps path sort A→Z. Size/Modified/Name sorts switch to Flat (status bar note).
+- **Tree** / **Smart** / **Flat** (`l` cycles; `x` → Smart): Tree hides the Path column and groups by folder; Tree mode keeps path sort A→Z. Size/Modified/Name sorts switch to Flat (status bar note).
 
 ### 👁️ View toggles
 
 Three icon-pair switches next to the search box — combine them freely:
 
-- <i class="fa-solid fa-list fa-fw"></i> / <i class="fa-solid fa-sitemap fa-fw"></i> **Flat / Tree** (`l`) — flat list with Path column, or tree layout grouped by folder.
+- <i class="fa-solid fa-wand-magic-sparkles fa-fw"></i> **Smart** (`x` jumps here; `l` cycles) — auto-adjusts subfolders and files/folders to fit the results cap.
+- <i class="fa-solid fa-list fa-fw"></i> / <i class="fa-solid fa-sitemap fa-fw"></i> **Flat / Tree** (`l` cycles all three layouts) — flat list with Path column, or tree layout grouped by folder.
 - <i class="fa-solid fa-folder-tree fa-fw"></i> / <i class="fa-solid fa-folder fa-fw"></i> **Subfolders on / off** (`s`) — include items from subdirectories, or show only this folder.
 - <i class="fa-solid fa-copy fa-fw"></i> / <i class="fa-solid fa-folder fa-fw"></i> **Files+folders / Folders only** (`f`) — show everything, or folders only.
 
@@ -231,7 +232,8 @@ Getting TagFox up and running takes about five minutes:
 <tr><td><kbd>Esc</kbd></td><td>Close expanded Viewer / flyouts; if no dialog or open menu needs it — clear query when it has text, or with focus in the search box and an empty query, clear current folder (whole index)</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>Backspace</kbd></td><td>Clear current folder (whole index) from any focus when a folder is set; skipped if a dialog is open (replaces the usual “delete word” shortcut in text fields while scope is active)</td></tr>
 <tr><td><kbd>F5</kbd> or <kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>Refresh results</td></tr>
-<tr><td><kbd>l</kbd></td><td>Switch Flat / Tree view</td></tr>
+<tr><td><kbd>x</kbd></td><td>Switch to <strong>Smart</strong> view</td></tr>
+<tr><td><kbd>l</kbd></td><td>Cycle Tree / Smart / Flat layout</td></tr>
 <tr><td><kbd>s</kbd></td><td>Switch Subfolders on / off</td></tr>
 <tr><td><kbd>f</kbd></td><td>Switch Files+folders / Folders only</td></tr>
 <tr><td><kbd>z</kbd> / <kbd>m</kbd> / <kbd>n</kbd></td><td>Sort by Size / Modified / Name (repeat toggles direction). In <strong>Tree</strong> view, those sorts or the same column headers switch to <strong>Flat</strong> first (status bar note); Tree alone keeps path A→Z.</td></tr>

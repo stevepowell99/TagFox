@@ -2937,10 +2937,31 @@ async function renameAttemptWithBusyRetry(from, to) {
   return { ok: false, err: lastErr };
 }
 
+/**
+ * Google Drive / OneDrive expose a filter driver where Node's fs.rename sometimes reports ok but the old
+ * leaf stays visible to Everything (duplicate rows). Prefer the same rename stack Explorer uses first.
+ */
+function preferShellRenameFirstForPath(absPathRaw) {
+  if (process.platform !== 'win32') return false;
+  const s = String(absPathRaw || '')
+    .replace(/\//g, '\\')
+    .toLowerCase();
+  if (!s) return false;
+  if (s.includes('my drive')) return true;
+  if (s.includes('googledrive')) return true;
+  if (s.includes('\\onedrive\\')) return true;
+  return false;
+}
+
 /** fs.rename with busy retries; Windows adds PowerShell + cmd + `\\?\` fallbacks for cloud / read-only / gdoc shortcuts. */
 async function renameWithBusyRetry(fromRaw, toRaw) {
   const fromN = normalizeRenameOperand(fromRaw);
   const toN = normalizeRenameOperand(toRaw);
+
+  if (preferShellRenameFirstForPath(fromN)) {
+    const psCloud = renameSameDirViaPowershell(fromN, toN);
+    if (!psCloud) return { ok: true };
+  }
 
   let r = await renameAttemptWithBusyRetry(fromN, toN);
   if (r.ok) return { ok: true };
