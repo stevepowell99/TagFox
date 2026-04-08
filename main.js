@@ -1259,8 +1259,11 @@ function attachPageZoomShortcuts(wc) {
 let mainWindowRef = null;
 /** Currently registered global shortcut string (Electron accelerator), or ''. */
 let globalToggleRegistered = '';
+/** Quick TODO floating panel (separate global shortcut). */
+let quickTodoHotkeyRegistered = '';
 
 const DEFAULT_GLOBAL_TOGGLE_ACCEL = 'Control+Space';
+const DEFAULT_QUICK_TODO_ACCEL = 'Alt+Shift+N';
 
 function globalTogglePrefsPath() {
   return path.join(app.getPath('userData'), 'tagBrowser-global-toggle.json');
@@ -1285,6 +1288,29 @@ function saveGlobalToggleAccelToDisk(acc) {
   fssync.writeFileSync(p, JSON.stringify({ accelerator: acc }), 'utf8');
 }
 
+function quickTodoHotkeyPrefsPath() {
+  return path.join(app.getPath('userData'), 'tagBrowser-quick-todo-hotkey.json');
+}
+
+function loadQuickTodoAccelFromDisk() {
+  try {
+    const p = quickTodoHotkeyPrefsPath();
+    if (!fssync.existsSync(p)) return DEFAULT_QUICK_TODO_ACCEL;
+    const j = JSON.parse(fssync.readFileSync(p, 'utf8'));
+    const a = j && typeof j.accelerator === 'string' ? j.accelerator.trim() : '';
+    return a || DEFAULT_QUICK_TODO_ACCEL;
+  } catch {
+    return DEFAULT_QUICK_TODO_ACCEL;
+  }
+}
+
+function saveQuickTodoAccelToDisk(acc) {
+  const p = quickTodoHotkeyPrefsPath();
+  const dir = path.dirname(p);
+  if (!fssync.existsSync(dir)) fssync.mkdirSync(dir, { recursive: true });
+  fssync.writeFileSync(p, JSON.stringify({ accelerator: acc }), 'utf8');
+}
+
 function toggleMainWindowFromGlobalShortcut() {
   const w =
     mainWindowRef && !mainWindowRef.isDestroyed()
@@ -1299,9 +1325,31 @@ function toggleMainWindowFromGlobalShortcut() {
   }
 }
 
+/** Bring main window forward and open the renderer Quick TODO strip (global shortcut). */
+function openQuickTodoFromGlobalShortcut() {
+  const w =
+    mainWindowRef && !mainWindowRef.isDestroyed()
+      ? mainWindowRef
+      : BrowserWindow.getAllWindows().find((x) => x && !x.isDestroyed());
+  if (!w || w.isDestroyed()) return;
+  if (w.isMinimized()) w.restore();
+  w.show();
+  w.focus();
+  try {
+    w.webContents.send('tagfox-open-quick-todo');
+  } catch (_) {}
+}
+
 /** Register OS-wide shortcut; rolls back to previous if the new one cannot register. */
 function registerGlobalToggleShortcut(accelRaw) {
   const accel = String(accelRaw || '').trim() || DEFAULT_GLOBAL_TOGGLE_ACCEL;
+  if (quickTodoHotkeyRegistered && accel === quickTodoHotkeyRegistered) {
+    return {
+      ok: false,
+      error: 'That shortcut is already used for Quick TODO.',
+      accelerator: globalToggleRegistered || loadGlobalToggleAccelFromDisk(),
+    };
+  }
   const prev = globalToggleRegistered;
   if (prev) {
     try {
@@ -1323,6 +1371,40 @@ function registerGlobalToggleShortcut(accelRaw) {
   }
   globalToggleRegistered = accel;
   saveGlobalToggleAccelToDisk(accel);
+  return { ok: true, accelerator: accel };
+}
+
+/** Second global shortcut: Quick TODO panel (independent from show/hide). */
+function registerQuickTodoShortcut(accelRaw) {
+  const accel = String(accelRaw || '').trim() || DEFAULT_QUICK_TODO_ACCEL;
+  if (globalToggleRegistered && accel === globalToggleRegistered) {
+    return {
+      ok: false,
+      error: 'That shortcut is already used for Toggle TagFox.',
+      accelerator: quickTodoHotkeyRegistered || loadQuickTodoAccelFromDisk(),
+    };
+  }
+  const prev = quickTodoHotkeyRegistered;
+  if (prev) {
+    try {
+      globalShortcut.unregister(prev);
+    } catch (_) {}
+    quickTodoHotkeyRegistered = '';
+  }
+  const ok = globalShortcut.register(accel, openQuickTodoFromGlobalShortcut);
+  if (!ok) {
+    if (prev) {
+      const back = globalShortcut.register(prev, openQuickTodoFromGlobalShortcut);
+      if (back) quickTodoHotkeyRegistered = prev;
+    }
+    return {
+      ok: false,
+      error: 'Could not register shortcut (invalid or already in use by another app).',
+      accelerator: prev || accel,
+    };
+  }
+  quickTodoHotkeyRegistered = accel;
+  saveQuickTodoAccelToDisk(accel);
   return { ok: true, accelerator: accel };
 }
 
@@ -1411,6 +1493,8 @@ app.whenReady().then(() => {
   registerSearchScopeFolderIpc();
   const gt = registerGlobalToggleShortcut(loadGlobalToggleAccelFromDisk());
   if (!gt.ok) console.warn('[TagFox] Global toggle shortcut:', gt.error);
+  const qt = registerQuickTodoShortcut(loadQuickTodoAccelFromDisk());
+  if (!qt.ok) console.warn('[TagFox] Quick TODO shortcut:', qt.error);
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -1432,6 +1516,12 @@ ipcMain.handle('global-toggle-get', () => ({
 }));
 
 ipcMain.handle('global-toggle-set', (_event, accel) => registerGlobalToggleShortcut(accel));
+
+ipcMain.handle('quick-todo-hotkey-get', () => ({
+  accelerator: quickTodoHotkeyRegistered || loadQuickTodoAccelFromDisk(),
+}));
+
+ipcMain.handle('quick-todo-hotkey-set', (_event, accel) => registerQuickTodoShortcut(accel));
 
 ipcMain.on('tag-prefs-read-sync', (event) => {
   try {
@@ -1500,8 +1590,7 @@ ipcMain.handle('show-in-folder', async (_event, fullPath) => {
   shell.showItemInFolder(fullPath);
 });
 
-/** ─── Google Drive “.gdoc / .gsheet / .gslides” shortcuts → child window (docs.google.com) ─── */
-let googleWorkspaceWin = null;
+/** ─── Google Drive “.gdoc / .gsheet / .gslides” shortcuts → child window(s) (docs.google.com); each open gets its own window ─── */
 
 /** Persist window frame in userData (Renderer localStorage is not TagFox’s for google.com). */
 function googleWorkspaceBoundsPrefsPath() {
@@ -2190,7 +2279,7 @@ function layoutGoogleWorkspaceBrowserViews(win) {
 }
 
 function syncGoogleWorkspaceToolbarFromContent(win) {
-  if (!win || win.isDestroyed() || win !== googleWorkspaceWin) return;
+  if (!win || win.isDestroyed()) return;
   const wc = win.gwsContentWc;
   const tb = win.gwsToolbarWc;
   if (!wc || !tb || wc.isDestroyed() || tb.isDestroyed()) return;
@@ -2215,7 +2304,7 @@ function registerGoogleWorkspaceToolbarIpcOnce() {
   googleWorkspaceToolbarIpcRegistered = true;
   ipcMain.on('gws-toolbar-go', (event, urlRaw) => {
     const w = BrowserWindow.fromWebContents(event.sender);
-    if (!w || w.isDestroyed() || w !== googleWorkspaceWin) return;
+    if (!w || w.isDestroyed() || !w.gwsContentWc || w.gwsContentWc.isDestroyed()) return;
     const wc = w.gwsContentWc;
     if (!wc || wc.isDestroyed()) return;
     const u = String(urlRaw || '').trim();
@@ -2224,21 +2313,21 @@ function registerGoogleWorkspaceToolbarIpcOnce() {
   });
   ipcMain.on('gws-toolbar-back', (event) => {
     const w = BrowserWindow.fromWebContents(event.sender);
-    if (!w || w.isDestroyed() || w !== googleWorkspaceWin) return;
+    if (!w || w.isDestroyed() || !w.gwsContentWc || w.gwsContentWc.isDestroyed()) return;
     const wc = w.gwsContentWc;
     if (!wc || wc.isDestroyed()) return;
     if (wc.canGoBack()) wc.goBack();
   });
   ipcMain.on('gws-toolbar-forward', (event) => {
     const w = BrowserWindow.fromWebContents(event.sender);
-    if (!w || w.isDestroyed() || w !== googleWorkspaceWin) return;
+    if (!w || w.isDestroyed() || !w.gwsContentWc || w.gwsContentWc.isDestroyed()) return;
     const wc = w.gwsContentWc;
     if (!wc || wc.isDestroyed()) return;
     if (wc.canGoForward()) wc.goForward();
   });
   ipcMain.on('gws-toolbar-reload', (event) => {
     const w = BrowserWindow.fromWebContents(event.sender);
-    if (!w || w.isDestroyed() || w !== googleWorkspaceWin) return;
+    if (!w || w.isDestroyed() || !w.gwsContentWc || w.gwsContentWc.isDestroyed()) return;
     const wc = w.gwsContentWc;
     if (!wc || wc.isDestroyed()) return;
     wc.reload();
@@ -2291,19 +2380,13 @@ function openGoogleWorkspaceEditorWindow(parentWin, targetUrl) {
   registerGoogleWorkspaceToolbarIpcOnce();
   const url = String(targetUrl || '').trim();
   if (!isAllowedGoogleWorkspaceUrl(url)) return { ok: false, error: 'Not a Google Docs/Drive URL.' };
-  if (googleWorkspaceWin && !googleWorkspaceWin.isDestroyed()) {
-    const wc = googleWorkspaceWin.gwsContentWc;
-    if (wc && !wc.isDestroyed()) void wc.loadURL(url);
-    googleWorkspaceWin.focus();
-    return { ok: true };
-  }
   const saved = loadGoogleWorkspaceBoundsFromDisk();
   const fallback = defaultGoogleWorkspaceWindowBounds();
   const use =
     saved && isGoogleWorkspaceBoundsUsable({ x: saved.x, y: saved.y, width: saved.width, height: saved.height })
       ? saved
       : fallback;
-  googleWorkspaceWin = new BrowserWindow({
+  const win = new BrowserWindow({
     parent: parentWin || undefined,
     x: use.x,
     y: use.y,
@@ -2316,12 +2399,9 @@ function openGoogleWorkspaceEditorWindow(parentWin, targetUrl) {
       nodeIntegration: false,
     },
   });
-  attachGoogleWorkspaceWindowBoundsPersistence(googleWorkspaceWin);
-  googleWorkspaceWin.setMenuBarVisibility(false);
-  googleWorkspaceWin.on('closed', () => {
-    googleWorkspaceWin = null;
-  });
-  mountGoogleWorkspaceBrowserViews(googleWorkspaceWin, url, use);
+  attachGoogleWorkspaceWindowBoundsPersistence(win);
+  win.setMenuBarVisibility(false);
+  mountGoogleWorkspaceBrowserViews(win, url, use);
   return { ok: true };
 }
 
@@ -2739,8 +2819,9 @@ ipcMain.handle('list-child-folders', async (_event, { parentPath }) => {
     if (!d.isDirectory()) continue;
     const name = d.name;
     if (name === '.' || name === '..') continue;
-    /* Breadcrumb flyouts: hide dotfolders (.git, etc.); allow Google Drive’s `.shortcut-targets-by-id`. */
-    if (name.startsWith('.') && name.toLowerCase() !== '.shortcut-targets-by-id') continue;
+    /* Breadcrumb flyouts: hide dotfolders (.git, etc.); allow Drive shortcut-id folders (both naming variants). */
+    const nlow = name.toLowerCase();
+    if (name.startsWith('.') && nlow !== '.shortcut-targets-by-id' && nlow !== '.shortcuts-by-id') continue;
     folders.push({ name, fullPath: path.join(p, name) });
   }
   folders.sort((a, b) => compareChildFolderDisplayName(a.name, b.name));

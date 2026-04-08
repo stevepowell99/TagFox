@@ -959,9 +959,13 @@ body.tagfox-props-split-drag #propsAside {
   Stacking (low → high): sticky thead ~1020; .tagfox-search-toolbar-row 1040; .tag-toolbar-row 1045;
   .scope-breadcrumb-row 1085 (must beat tag/search rows when menus overlap);
   .tagfox-fav-toolbar-row 1090 (physically above breadcrumb — dropdowns must cover breadcrumb strip);
+  #quickTodoPop 1098 (global Quick TODO strip — above toolbars, below deepest flyout 1099);
   body ul.breadcrumb-folder-flyout 1092–1099 (nested chain; below .modal-backdrop 1100);
   .modal-backdrop 1100; .modal 1110; #propsTheater* 1990+.
 */
+#quickTodoPop {
+  z-index: 1098;
+}
 .tagfox-fav-toolbar-row {
   position: relative;
   z-index: 1090;

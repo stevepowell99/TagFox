@@ -48,6 +48,7 @@
       resultsLayout: 'tagBrowserResultsLayout',
       resultsContent: 'tagBrowserResultsContent',
       gdriveShortcutNames: 'tagBrowserGDriveShortcutNames',
+      quickTodoFolder: 'tagBrowserQuickTodoFolder',
     };
 
     /** One-time copy when upgrading from the old app name (everythang* keys). */
@@ -1041,6 +1042,11 @@
       return s;
     }
 
+    /** After normalizeFolderPathForEverything: true for drive root only (e.g. C:\). */
+    function isWindowsDriveRootNorm(norm) {
+      return /^[a-zA-Z]:\\$/i.test(normalizeFolderPathForEverything(norm));
+    }
+
     /** Block obvious bad paths before IPC (OS-specific wildcards only when path looks Windows-style). */
     function scopePathClientSyntaxError(rawTrimmed) {
       const s = String(rawTrimmed || '').trim();
@@ -1152,6 +1158,51 @@
       box.className =
         'small border rounded px-2 py-2 bg-body font-monospace text-break' + (n ? '' : ' text-muted');
       box.textContent = n || 'No scope folder — entire index (subject to current folder).';
+    }
+
+    /** Settings: persisted folder for global Quick TODO shortcut. */
+    function renderQuickTodoFolderUi() {
+      const box = document.getElementById('quickTodoFolderDisplay');
+      const hid = document.getElementById('quickTodoFolder');
+      if (!box || !hid) return;
+      const n = normalizeFolderPathForEverything(String(hid.value || '').trim());
+      hid.value = n;
+      box.className =
+        'small border rounded px-2 py-2 bg-body font-monospace text-break' + (n ? '' : ' text-muted');
+      box.textContent = n || 'No folder — set one above (or the shortcut will show an error).';
+    }
+
+    /** Settings: validate + persist Quick TODO destination folder (same checks as search scope max). */
+    async function setQuickTodoFolderFromPicker(rawPath) {
+      const norm0 = normalizeSearchScopeMaxPath(rawPath);
+      if (!norm0) return;
+      const syn = scopePathClientSyntaxError(norm0);
+      if (syn) {
+        const st = document.getElementById('status');
+        if (st) st.textContent = syn;
+        return;
+      }
+      if (window.tagBrowser && typeof window.tagBrowser.listChildFolders === 'function') {
+        const r = await window.tagBrowser.listChildFolders({ parentPath: norm0 });
+        if (!r || !r.ok) {
+          const st = document.getElementById('status');
+          if (st)
+            st.textContent =
+              'Invalid folder: ' + (r && r.error ? String(r.error) : 'Not a folder or not reachable.');
+          return;
+        }
+      }
+      const hid = document.getElementById('quickTodoFolder');
+      if (hid) hid.value = norm0;
+      renderQuickTodoFolderUi();
+      saveSettings();
+    }
+
+    function clearQuickTodoFolderSetting() {
+      const hid = document.getElementById('quickTodoFolder');
+      if (hid) hid.value = '';
+      renderQuickTodoFolderUi();
+      saveSettings();
     }
 
     /** Validate path via IPC; replace scope max; clamp breadcrumb + search. */
@@ -2445,7 +2496,9 @@
       }
       const norm = normalizeFolderPathForEverything(scopeRaw || max).replace(/[/\\]+$/, '');
       const seg = T.baseName(norm);
-      const pretty = (segmentPretty(seg) || seg || 'folder').trim();
+      let pretty = (segmentPretty(seg) || seg || 'folder').trim();
+      const gdPretty = prettyGDriveShortcutIdFolderBasename(norm, updateQueryPlaceholder);
+      if (gdPretty) pretty = gdPretty;
       q.placeholder = 'Search inside ' + pretty;
     }
 
@@ -3640,17 +3693,18 @@
       }
     }
 
-    async function createTodoMdInScope() {
+    /** Shared: new TODO .md under folderNorm using newTodoMdTags + optional empty-folder message. */
+    async function createTodoMdAt(folderNorm, titleRaw, opts) {
       const status = document.getElementById('status');
-      const folder = currentScopeFolderPath();
+      const folder = normalizeFolderPathForEverything(String(folderNorm || '').trim());
       if (!folder) {
-        status.textContent = 'Set the current folder (Settings or breadcrumb) first.';
-        return;
+        status.textContent = (opts && opts.errNoFolder) || 'Set the current folder (Settings or breadcrumb) first.';
+        return false;
       }
-      const raw = document.getElementById('newMdTitleInput').value.trim();
+      const raw = String(titleRaw || '').trim();
       if (!raw) {
         status.textContent = 'Type a title.';
-        return;
+        return false;
       }
       const safe = sanitizeFileTitleSegment(raw);
       const baseName = T.buildTaggedComponent(safe + '.md', newTodoMdTags);
@@ -3658,17 +3712,57 @@
       const probe = await window.tagBrowser.readTextFile({ fullPath });
       if (probe.ok) {
         status.textContent = 'File already exists: ' + baseName;
-        return;
+        return false;
       }
       const body = '# ' + safe + '\n\n';
       const r = await window.tagBrowser.writeTextFile({ fullPath, text: body });
       if (!r.ok) {
         status.textContent = r.error || 'Could not create file';
-        return;
+        return false;
       }
-      document.getElementById('newMdTitleInput').value = '';
       status.textContent = 'Created ' + baseName;
       void refreshAfterDiskMutation();
+      return true;
+    }
+
+    async function createTodoMdInScope() {
+      const folder = currentScopeFolderPath();
+      const raw = document.getElementById('newMdTitleInput').value.trim();
+      const ok = await createTodoMdAt(folder, raw, {});
+      if (ok) document.getElementById('newMdTitleInput').value = '';
+    }
+
+    function hideQuickTodoPop() {
+      const el = document.getElementById('quickTodoPop');
+      if (el) el.classList.add('d-none');
+    }
+
+    function showQuickTodoPop() {
+      const el = document.getElementById('quickTodoPop');
+      if (!el) return;
+      el.classList.remove('d-none');
+      pullWebContentsKeyboardFocus();
+      requestAnimationFrame(() => {
+        const inp = document.getElementById('quickTodoTitleInput');
+        if (inp) {
+          inp.focus();
+          inp.select();
+        }
+      });
+    }
+
+    async function createQuickTodoFromPop() {
+      const hid = document.getElementById('quickTodoFolder');
+      const folder = hid ? hid.value.trim() : '';
+      const ti = document.getElementById('quickTodoTitleInput');
+      const raw = ti ? ti.value : '';
+      const ok = await createTodoMdAt(folder, raw, {
+        errNoFolder: 'Set Quick TODO folder in Settings first.',
+      });
+      if (ok) {
+        if (ti) ti.value = '';
+        hideQuickTodoPop();
+      }
     }
 
     function clearPropsUI() {
@@ -3940,7 +4034,14 @@
 
       const base = T.baseName(propPath);
       const parsedTitle = T.parseSegmentTags(base);
-      document.getElementById('propDisplayName').textContent = parsedTitle.pretty;
+      let displayName = parsedTitle.pretty;
+      if (rowIsFolder(propRow)) {
+        const gdPretty = prettyGDriveShortcutIdFolderBasename(propPath, () => {
+          if (propsViewStill(propPath)) refreshPropsPanelQuick();
+        });
+        if (gdPretty) displayName = gdPretty;
+      }
+      document.getElementById('propDisplayName').textContent = displayName;
       const tagBand = document.getElementById('propTitleTags');
       tagBand.innerHTML = '';
       for (const tag of parsedTitle.tags) appendTagPillWithRemove(tagBand, tag, propPath);
@@ -4850,12 +4951,15 @@
 
     /** Google Drive for Desktop: real files live under this virtual segment — must not count as a “dot folder”. */
     function isGoogleDriveShortcutTargetsSegment(seg) {
-      return String(seg || '').toLowerCase() === '.shortcut-targets-by-id';
+      const s = String(seg || '').toLowerCase();
+      return s === '.shortcut-targets-by-id' || s === '.shortcuts-by-id';
     }
 
-    /** Collapse .shortcut-targets-by-id\<ID> pair in a display path to … (keeps the real folder name that follows). */
+    /** Collapse .shortcut*-by-id\<ID> pair in a display path to … (keeps the real folder name that follows). */
     function collapseGDriveShortcutDisplay(str) {
-      return String(str || '').replace(/([/\\])\.shortcut-targets-by-id[/\\][^/\\]+/gi, '$1\u2026');
+      return String(str || '')
+        .replace(/([/\\])\.shortcut-targets-by-id[/\\][^/\\]+/gi, '$1\u2026')
+        .replace(/([/\\])\.shortcuts-by-id[/\\][^/\\]+/gi, '$1\u2026');
     }
 
     /** Cache: GDrive shortcut ID full path → resolved child folder name (or null). Persisted in localStorage. */
@@ -4876,7 +4980,7 @@
       } catch (e) { console.warn('[GDrive cache] persist failed:', e); }
     }
 
-    /** True when a row's parent path ends with .shortcut-targets-by-id (i.e. row name is an opaque ID). */
+    /** True when a row's parent path ends with Drive’s shortcut-id segment (i.e. row name is an opaque ID). */
     function isGDriveShortcutIdRow(row) {
       const segs = String(row.path || '').replace(/[/\\]+$/, '').split(/[/\\]/);
       return segs.length > 0 && isGoogleDriveShortcutTargetsSegment(segs[segs.length - 1]);
@@ -4899,6 +5003,25 @@
       });
       gdriveShortcutNameCache.set(key, p);
       return p;
+    }
+
+    /**
+     * Folder path whose parent segment is Drive shortcut-by-id: basename is opaque ID; real name is the single child.
+     * Returns pretty title from cache, or null while loading (async resolve + onRefresh).
+     */
+    function prettyGDriveShortcutIdFolderBasename(fullPath, onRefresh) {
+      const norm = String(fullPath || '').replace(/[/\\]+$/, '');
+      const segs = norm.split(/[/\\]/).filter(Boolean);
+      if (segs.length < 2 || !isGoogleDriveShortcutTargetsSegment(segs[segs.length - 2])) return null;
+      const key = norm.toLowerCase();
+      if (gdriveShortcutNameCache.has(key)) {
+        const v = gdriveShortcutNameCache.get(key);
+        if (typeof v === 'string' && v) return segmentPretty(v) || v;
+        if (v && typeof v.then === 'function') void v.then(() => onRefresh && onRefresh());
+        return null;
+      }
+      void resolveGDriveShortcutName(norm).then(() => onRefresh && onRefresh());
+      return null;
     }
 
     /** dm: cutoff in local time (Everything datemodified syntax). */
@@ -5899,6 +6022,7 @@
 
     /** Settings → global shortcut capture: require modifiers (Electron globalShortcut). */
     let globalToggleRecording = false;
+    let quickTodoHotkeyRecording = false;
 
     /** Map a keydown on the hotkey field to an Electron accelerator string, or null if incomplete / invalid. */
     function acceleratorFromKeydown(ev) {
@@ -5953,8 +6077,18 @@
       } catch (_) {}
     }
 
+    async function refreshQuickTodoHotkeyFromMain() {
+      const inp = document.getElementById('quickTodoHotkeyDisplay');
+      if (!inp || !window.tagBrowser || typeof window.tagBrowser.quickTodoHotkeyGet !== 'function') return;
+      try {
+        const r = await window.tagBrowser.quickTodoHotkeyGet();
+        if (r && r.accelerator) inp.value = r.accelerator;
+      } catch (_) {}
+    }
+
     function setGlobalToggleRecording(on) {
       globalToggleRecording = !!on;
+      if (on) setQuickTodoHotkeyRecording(false);
       const inp = document.getElementById('globalToggleHotkeyDisplay');
       const btn = document.getElementById('btnRecordGlobalToggleHotkey');
       if (btn) {
@@ -5972,6 +6106,26 @@
       if (!on) void refreshGlobalToggleHotkeyFromMain();
     }
 
+    function setQuickTodoHotkeyRecording(on) {
+      quickTodoHotkeyRecording = !!on;
+      if (on) setGlobalToggleRecording(false);
+      const inp = document.getElementById('quickTodoHotkeyDisplay');
+      const btn = document.getElementById('btnRecordQuickTodoHotkey');
+      if (btn) {
+        btn.textContent = on ? 'Cancel' : 'Record…';
+        btn.classList.toggle('btn-danger', on);
+        btn.classList.toggle('btn-outline-secondary', !on);
+      }
+      if (inp) {
+        if (on) {
+          inp.value = 'Press a key combination…';
+          inp.classList.add('border-primary');
+          requestAnimationFrame(() => inp.focus());
+        } else inp.classList.remove('border-primary');
+      }
+      if (!on) void refreshQuickTodoHotkeyFromMain();
+    }
+
     function loadSettings() {
       migrateLocalStorageFromLegacy();
       loadTagStore();
@@ -5979,6 +6133,10 @@
       document.getElementById('baseUrl').value =
         localStorage.getItem(LS.baseUrl) || 'http://127.0.0.1';
       document.getElementById('rootFolder').value = localStorage.getItem(LS.rootFolder) || '';
+      {
+        const qf = document.getElementById('quickTodoFolder');
+        if (qf) qf.value = localStorage.getItem(LS.quickTodoFolder) || '';
+      }
       loadSearchScopeMaxFromStorage();
       renderSearchScopeMaxUi();
       syncSearchScopeRootsTipVisibility();
@@ -6055,11 +6213,17 @@
       syncAutoRefreshTimer();
       searchDebugRender();
       void refreshGlobalToggleHotkeyFromMain();
+      void refreshQuickTodoHotkeyFromMain();
+      renderQuickTodoFolderUi();
     }
 
     function saveSettings() {
       localStorage.setItem(LS.baseUrl, document.getElementById('baseUrl').value.trim());
       localStorage.setItem(LS.rootFolder, document.getElementById('rootFolder').value.trim());
+      {
+        const qf = document.getElementById('quickTodoFolder');
+        if (qf) localStorage.setItem(LS.quickTodoFolder, qf.value.trim());
+      }
       localStorage.setItem(LS.maxResults, document.getElementById('maxResults').value.trim());
       {
         const sel = document.getElementById('autoRefreshSec');
@@ -8582,6 +8746,37 @@
       if (globalToggleRecording) setGlobalToggleRecording(false);
       else setGlobalToggleRecording(true);
     });
+    document.getElementById('quickTodoHotkeyDisplay')?.addEventListener('keydown', (ev) => {
+      if (!quickTodoHotkeyRecording) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (ev.key === 'Escape') {
+        setQuickTodoHotkeyRecording(false);
+        return;
+      }
+      const acc = acceleratorFromKeydown(ev);
+      if (!acc) return;
+      void (async () => {
+        if (!window.tagBrowser || typeof window.tagBrowser.quickTodoHotkeySet !== 'function') return;
+        const r = await window.tagBrowser.quickTodoHotkeySet(acc);
+        const st = document.getElementById('status');
+        const hint = document.getElementById('quickTodoHotkeyHelp');
+        if (r && r.ok) {
+          if (st) st.textContent = 'Quick TODO shortcut: ' + r.accelerator;
+          if (hint)
+            hint.textContent =
+              'Saved ' + r.accelerator + '. Recording needs at least one modifier. Works only while TagFox is running.';
+        } else {
+          if (st) st.textContent = (r && r.error) || 'Could not set Quick TODO shortcut.';
+          if (hint) hint.textContent = (r && r.error) || 'Registration failed — shortcut unchanged.';
+        }
+        setQuickTodoHotkeyRecording(false);
+      })();
+    });
+    document.getElementById('btnRecordQuickTodoHotkey')?.addEventListener('click', () => {
+      if (quickTodoHotkeyRecording) setQuickTodoHotkeyRecording(false);
+      else setQuickTodoHotkeyRecording(true);
+    });
     document.getElementById('optSearchDebug').addEventListener('change', () => {
       saveSettings();
       if (isSearchDebugOn()) searchDebugLog('debug.enabled', { on: true });
@@ -8740,6 +8935,18 @@
     window.tagBrowser.setPathsMutatedHandler(() => void refreshAfterDiskMutation());
     window.tagBrowser.setShellActionErrorHandler((msg) => {
       document.getElementById('status').textContent = String(msg || 'Action failed');
+    });
+    if (typeof window.tagBrowser.setQuickTodoOpenHandler === 'function') {
+      window.tagBrowser.setQuickTodoOpenHandler(() => showQuickTodoPop());
+    }
+    document.getElementById('btnQuickTodoPopClose')?.addEventListener('click', () => hideQuickTodoPop());
+    document.getElementById('btnQuickTodoPopSave')?.addEventListener('click', () => void createQuickTodoFromPop());
+    document.getElementById('btnQuickTodoPopTags')?.addEventListener('click', () => openTagModalNewTodoDraft());
+    document.getElementById('quickTodoTitleInput')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        void createQuickTodoFromPop();
+      }
     });
 
     /** Electron: webContents can stop receiving keys after button clicks until main focuses it again. */
@@ -9032,6 +9239,7 @@
       const raw = document.getElementById('rootFolder').value.trim();
       if (!raw) return false;
       const norm = normalizeFolderPathForEverything(raw);
+      if (isWindowsDriveRootNorm(norm)) return true;
       const parRaw = T.parentDir(norm);
       const par = normalizeFolderPathForEverything(parRaw);
       if (!par) return false;
@@ -9128,6 +9336,17 @@
         return;
       }
       const norm = normalizeFolderPathForEverything(raw);
+      // Alt+↑ on C:\: clear current folder so the query is not limited to that drive (Settings scope ceiling unchanged).
+      if (isWindowsDriveRootNorm(norm)) {
+        leaveScopePathEditChrome();
+        document.getElementById('rootFolder').value = '';
+        saveSettings();
+        renderScopeBreadcrumb();
+        await runSearchNow();
+        commitSearchHistoryNow();
+        pulseSearchBoxAfterScopeFolderChange();
+        return;
+      }
       const parRaw = T.parentDir(norm);
       const par = normalizeFolderPathForEverything(parRaw);
       if (!par || par.replace(/[/\\]+$/, '').toLowerCase() === norm.replace(/[/\\]+$/, '').toLowerCase()) {
@@ -9325,6 +9544,20 @@
         e.preventDefault();
         setPropsTheaterMode(false);
         return;
+      }
+
+      {
+        const pop = document.getElementById('quickTodoPop');
+        if (
+          e.key === 'Escape' &&
+          pop &&
+          !pop.classList.contains('d-none') &&
+          !document.querySelector('.modal.show')
+        ) {
+          e.preventDefault();
+          hideQuickTodoPop();
+          return;
+        }
       }
 
       if (e.key === 'Escape' && !document.querySelector('.modal.show') && breadcrumbSubfolderFlyoutsAreOpen()) {
@@ -9861,10 +10094,60 @@
       });
     }
 
+    let quickTodoSettingsUiWired = false;
+    /** Quick TODO folder: pick / use current / clear (Settings offcanvas). */
+    function wireQuickTodoSettingsUiOnce() {
+      if (quickTodoSettingsUiWired) return;
+      const panel = document.getElementById('settingsPanel');
+      if (!panel) return;
+      quickTodoSettingsUiWired = true;
+      panel.addEventListener('click', (e) => {
+        const pick = e.target.closest('#btnQuickTodoPickFolder');
+        const setCur = e.target.closest('#btnQuickTodoSetCurrent');
+        const clearF = e.target.closest('#btnQuickTodoClearFolder');
+        if (!pick && !setCur && !clearF) return;
+        e.preventDefault();
+        const st = document.getElementById('status');
+        void (async () => {
+          if (!window.tagBrowser) {
+            if (st) st.textContent = 'Electron bridge missing — run TagFox with npm start.';
+            return;
+          }
+          if (clearF) {
+            clearQuickTodoFolderSetting();
+            return;
+          }
+          if (pick) {
+            if (typeof window.tagBrowser.pickScopeFolder !== 'function') {
+              if (st) st.textContent = 'Folder picker not available — restart TagFox.';
+              return;
+            }
+            try {
+              const r = await window.tagBrowser.pickScopeFolder();
+              if (r && r.ok && r.path) await setQuickTodoFolderFromPicker(r.path);
+              else if (st) st.textContent = (r && r.error) || 'Folder picker cancelled.';
+            } catch (err) {
+              if (st) st.textContent = 'Folder picker failed: ' + (err && err.message ? err.message : String(err));
+            }
+            return;
+          }
+          if (setCur) {
+            const p = currentScopeFolderPath() || getSearchScopeMaxFolderNorm();
+            if (!p) {
+              if (st) st.textContent = 'No folder — set the breadcrumb or scope first.';
+              return;
+            }
+            await setQuickTodoFolderFromPicker(p);
+          }
+        })();
+      });
+    }
+
     const treeViewDefaultsFreshProfile = localStorage.getItem(LS.sortBy) === null;
     loadSettings();
     void refreshDriveRootsPickerGate();
     wireSearchScopeSettingsUiOnce();
+    wireQuickTodoSettingsUiOnce();
     document.getElementById('autoRefreshSec')?.addEventListener('change', () => {
       saveSettings();
       syncAutoRefreshTimer();
@@ -9929,6 +10212,7 @@
       if (t.closest('#mdFileEditor') || t.closest('#propsAside textarea')) return;
       if (t.closest('#query, label[for="query"]')) return;
       if (t.closest('#newMdTitleInput')) return;
+      if (t.closest('#quickTodoPop') || t.closest('#quickTodoTitleInput')) return;
       if (t.closest('#settingsPanel input, #settingsPanel textarea, #settingsPanel select')) return;
       if (!t.closest('button, [role="button"], input.btn-check, a.btn, label.btn')) return;
       scheduleRestoreFocusAfterControlClick();

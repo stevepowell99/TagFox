@@ -3,11 +3,15 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 let onPathsMutated = null;
 let onShellActionError = null;
+let onQuickTodoOpen = null;
 ipcRenderer.on('paths-mutated', () => {
   if (onPathsMutated) onPathsMutated();
 });
 ipcRenderer.on('shell-action-error', (_e, msg) => {
   if (onShellActionError) onShellActionError(msg);
+});
+ipcRenderer.on('tagfox-open-quick-todo', () => {
+  if (onQuickTodoOpen) onQuickTodoOpen();
 });
 
 contextBridge.exposeInMainWorld('tagBrowser', {
@@ -51,6 +55,11 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   /** OS-wide show/hide shortcut (Electron globalShortcut). */
   globalToggleGet: () => ipcRenderer.invoke('global-toggle-get'),
   globalToggleSet: (accelerator) => ipcRenderer.invoke('global-toggle-set', accelerator),
+  quickTodoHotkeyGet: () => ipcRenderer.invoke('quick-todo-hotkey-get'),
+  quickTodoHotkeySet: (accelerator) => ipcRenderer.invoke('quick-todo-hotkey-set', accelerator),
+  setQuickTodoOpenHandler: (fn) => {
+    onQuickTodoOpen = typeof fn === 'function' ? fn : null;
+  },
   pickScopeFolder: () => ipcRenderer.invoke('pick-scope-folder'),
   userHomeDir: () => ipcRenderer.invoke('user-home-dir'),
 });
