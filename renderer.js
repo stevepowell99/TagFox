@@ -254,6 +254,17 @@
       dt.setData(TAG_BROWSER_PATHS_DRAG_TYPE, JSON.stringify(arr));
       dt.effectAllowed = 'copyMove';
     }
+
+    /** While dragging result rows (HTML5 paths): dimly outline breadcrumb/fav/Shelf/other rows. */
+    function setInternalPathDragDropTargetHints(on) {
+      document.body.classList.toggle('tagfox-internal-path-drag', !!on);
+    }
+
+    /** Drop hints + source row marker — dragend, and renderTable (tbody wipe can skip dragend; body class would stick). */
+    function clearInternalPathDragDropTargetHints() {
+      document.querySelectorAll('.tagfox-results-row--drag-source').forEach((n) => n.classList.remove('tagfox-results-row--drag-source'));
+      document.body.classList.remove('tagfox-internal-path-drag');
+    }
     /** Last tag scan: Everything r=1 + `\\[\\(` so we only index `[(…)]` blocks, not every `[`. */
     let tagDiscoveryRows = [];
     /** Last non-empty scan — keeps tag pills when a later scan fails, returns empty, or races navigation. */
@@ -277,6 +288,10 @@
     let smartProbePrior = null;
     /** After Smart revert — blocks repeated expand probe until query/offset/hasMore state changes. */
     let smartRevertFP = null;
+    /** Smart narrow/before-paint message flushed after runSearch + smartAfterPaint (row line must stay). */
+    let pendingSmartStatusNote = null;
+    /** Set in smartAfterPaint when results page is full (more in Everything); merged with pending chip in runSearch tail. */
+    let smartCapStressBigFolderAfterPaint = false;
     /** Smart: last #rootFolder + scope max — detect navigation for probe-widen on plain browse. */
     let lastSmartBrowseScopeKey = null;
     let resultsScrollMoreTimer = null;
@@ -307,7 +322,7 @@
 
     const SORT_LABELS = { name: 'Name', path: 'Path', size: 'Size', date_modified: 'Modified' };
 
-    /* View: Tree | Smart | Flat; Subfolders; Content: folders | all | files. */
+    /* View: Smart | Tree | Flat; Subfolders (on first); Content: all | folders | files. */
     function isFlatView() { return !!document.getElementById('optRvFlat')?.checked; }
     function isSmartView() { return !!document.getElementById('optRvSmart')?.checked; }
     function isShowSubfolders() { return !!document.getElementById('optRvSubsOn')?.checked; }
@@ -352,6 +367,16 @@
       if (activeTagKeys.size) return true;
       if (recencyFilterMode() !== 'all') return true;
       return false;
+    }
+
+    /** Cap-only “Big folder!” is for empty-browse stress; full Smart + real search expects paged hits. */
+    function shouldSuppressCapOnlyBigFolderChip() {
+      return (
+        isSmartView() &&
+        isShowSubfolders() &&
+        isAllContent() &&
+        smartSearchShouldStartBroad()
+      );
     }
 
     /** Stable key for “same browse scope” (folder + settings ceiling). */
@@ -465,8 +490,7 @@
       const ed = document.getElementById('mdFileEditor');
       const text = ed.value;
       const r = await window.tagBrowser.writeTextFile({ fullPath: p, text });
-      const status = document.getElementById('status');
-      status.textContent = r.ok ? 'Saved.' : (r.error || 'Save failed');
+      setStatusMain(r.ok ? 'Saved.' : (r.error || 'Save failed'));
     }
 
     function scheduleMdFileAutosave() {
@@ -546,10 +570,10 @@
 
     /** .lnk target: set scope to that folder, or to parent folder and select the file (Everything list). */
     async function navigateTagFoxToShortcutTarget(targetPathRaw, isDirectory) {
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       let t = String(targetPathRaw || '').trim();
       if (!t) {
-        if (status) status.textContent = 'Shortcut target is empty.';
+        if (status) setStatusMain('Shortcut target is empty.');
         return;
       }
       t = t.replace(/\//g, '\\');
@@ -562,7 +586,7 @@
       }
       const parent = normalizeFolderPathForEverything(T.parentDir(t));
       if (!parent) {
-        if (status) status.textContent = 'Could not resolve parent folder for shortcut target.';
+        if (status) setStatusMain('Could not resolve parent folder for shortcut target.');
         return;
       }
       selectedRow = null;
@@ -572,17 +596,17 @@
 
     /** Resolve .lnk in main; navigate inside TagFox, else shell-open the shortcut. */
     async function followShellShortcutInTagFox(lnkFullPath) {
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       if (!window.tagBrowser.resolveShellShortcut) {
         const err = await window.tagBrowser.openPath(lnkFullPath);
-        if (err && status) status.textContent = 'Open failed: ' + err;
+        if (err && status) setStatusMain('Open failed: ' + err);
         return;
       }
       const r = await window.tagBrowser.resolveShellShortcut({ fullPath: lnkFullPath });
       if (!r || !r.ok) {
-        if (status) status.textContent = (r && r.error) || 'Could not read shortcut.';
+        if (status) setStatusMain((r && r.error) || 'Could not read shortcut.');
         const err = await window.tagBrowser.openPath(lnkFullPath);
-        if (err && status) status.textContent = 'Open failed: ' + err;
+        if (err && status) setStatusMain('Open failed: ' + err);
         return;
       }
       await navigateTagFoxToShortcutTarget(r.targetPath, r.isDirectory);
@@ -590,7 +614,7 @@
 
     /** File row: shell open, or Workspace child window for .gdoc / .gsheet / .gslides (same as Viewer button). */
     async function openFileDefaultOrGoogleWorkspace(fp) {
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       const base = T.baseName(fp);
       const dot = base.lastIndexOf('.');
       const ext = dot >= 0 ? base.slice(dot + 1).toLowerCase() : '';
@@ -602,22 +626,22 @@
         const rGw = await window.tagBrowser.googleWorkspaceShortcutUrl({ fullPath: fp });
         if (!rGw.ok) {
           if (rGw.code === 'ENOENT') {
-            if (status) status.textContent = 'File not found.';
+            if (status) setStatusMain('File not found.');
             return;
           }
           const shellErr = await window.tagBrowser.openPath(fp);
           if (status) {
-            if (shellErr) status.textContent = 'Could not open file.';
-            else status.textContent = '';
+            if (shellErr) setStatusMain('Could not open file.');
+            else setStatusMain('');
           }
           return;
         }
         const r = await window.tagBrowser.openGoogleWorkspaceWindow({ url: rGw.url });
-        if (status && !r.ok) status.textContent = r.error || 'Open failed';
+        if (status && !r.ok) setStatusMain(r.error || 'Open failed');
         return;
       }
       const err = await window.tagBrowser.openPath(fp);
-      if (err && status) status.textContent = 'Open failed: ' + err;
+      if (err && status) setStatusMain('Open failed: ' + err);
     }
 
     /** Extensions shown as read-only text in the props panel (not .md / .txt — those use the editor). */
@@ -792,6 +816,202 @@
           ' slides).</p>';
       }
       return out;
+    }
+
+    /** ODF package = zip; Writer body is office:body with text:p / text:h (rough text-only preview). */
+    async function odtArrayBufferToPreviewHtml(arrayBuffer) {
+      if (typeof JSZip === 'undefined' || !JSZip.loadAsync) {
+        return '<p class="text-danger small">JSZip failed to load.</p>';
+      }
+      const zip = await JSZip.loadAsync(arrayBuffer);
+      const f = zip.file('content.xml');
+      if (!f) return '<p class="text-danger small">Invalid ODT (no content.xml).</p>';
+      const xml = await f.async('string');
+      const doc = new DOMParser().parseFromString(xml, 'application/xml');
+      if (doc.querySelector('parsererror')) return '<p class="text-danger small">Could not parse content.xml.</p>';
+      const OFFICE_NS = 'urn:oasis:names:tc:opendocument:xmlns:office:1.0';
+      const TEXT_NS = 'urn:oasis:names:tc:opendocument:xmlns:text:1.0';
+      const body = doc.getElementsByTagNameNS(OFFICE_NS, 'body')[0];
+      if (!body) return '<p class="text-muted mb-0">No document body.</p>';
+      const blocks = [];
+      function visit(el) {
+        if (el.namespaceURI === TEXT_NS && (el.localName === 'p' || el.localName === 'h')) {
+          const t = el.textContent.replace(/\s+/g, ' ').trim();
+          if (t) {
+            blocks.push(
+              el.localName === 'h'
+                ? '<div class="fw-semibold mb-1">' + escapeHtmlForPreview(t) + '</div>'
+                : '<p class="mb-1">' + escapeHtmlForPreview(t) + '</p>'
+            );
+          }
+          return;
+        }
+        for (const c of el.children) visit(c);
+      }
+      visit(body);
+      if (!blocks.length) {
+        return '<p class="small text-muted mb-0">No paragraph text found. Use <strong>Open</strong> for full view.</p>';
+      }
+      const intro = '<p class="small text-muted mb-2">Simple text preview (no images or layout).</p>';
+      return truncateRichPreviewHtml(intro + blocks.join(''), TEXT_PREVIEW_MAX_CHARS);
+    }
+
+    /** One ODS table row → string cells (direct children only; repeated cols + covered cells). */
+    function odsRowToCells(rowEl, TABLE_NS, TEXT_NS, colCap) {
+      const out = [];
+      function cellText(cellEl) {
+        const ps = cellEl.getElementsByTagNameNS(TEXT_NS, 'p');
+        const parts = [];
+        for (let i = 0; i < ps.length; i++) {
+          const t = ps[i].textContent.replace(/\s+/g, ' ').trim();
+          if (t) parts.push(t);
+        }
+        return parts.join(' ');
+      }
+      for (const ch of rowEl.children) {
+        if (out.length >= colCap) break;
+        if (ch.namespaceURI !== TABLE_NS) continue;
+        if (ch.localName === 'covered-table-cell') {
+          let ncr = parseInt(ch.getAttribute('table:number-columns-repeated') || '1', 10);
+          if (!Number.isFinite(ncr) || ncr < 1) ncr = 1;
+          const rep = Math.min(ncr, colCap - out.length);
+          for (let i = 0; i < rep; i++) out.push('');
+          continue;
+        }
+        if (ch.localName !== 'table-cell') continue;
+        let ncr = parseInt(ch.getAttribute('table:number-columns-repeated') || '1', 10);
+        if (!Number.isFinite(ncr) || ncr < 1) ncr = 1;
+        const txt = cellText(ch);
+        const rep = Math.min(ncr, colCap - out.length);
+        for (let i = 0; i < rep; i++) out.push(txt);
+      }
+      return out;
+    }
+
+    /** First sheet in content.xml → row matrix for table preview (caps match Excel preview). */
+    function odsContentXmlToRows(doc, rowCap, colCap) {
+      const OFFICE_NS = 'urn:oasis:names:tc:opendocument:xmlns:office:1.0';
+      const TABLE_NS = 'urn:oasis:names:tc:opendocument:xmlns:table:1.0';
+      const TEXT_NS = 'urn:oasis:names:tc:opendocument:xmlns:text:1.0';
+      const spreadsheet = doc.getElementsByTagNameNS(OFFICE_NS, 'spreadsheet')[0];
+      if (!spreadsheet) return { rows: [], moreRows: false, tableCount: 0, errorMsg: 'No spreadsheet body found.' };
+      const tables = spreadsheet.getElementsByTagNameNS(TABLE_NS, 'table');
+      if (!tables.length) return { rows: [], moreRows: false, tableCount: 0, errorMsg: 'No tables found.' };
+      const tableCount = tables.length;
+      const firstTable = tables[0];
+      const rowEls = [];
+      for (const ch of firstTable.children) {
+        if (ch.namespaceURI === TABLE_NS && ch.localName === 'table-row') rowEls.push(ch);
+      }
+      const rows = [];
+      let moreRows = false;
+      outer: for (let ri = 0; ri < rowEls.length; ri++) {
+        const rowEl = rowEls[ri];
+        let nrr = parseInt(rowEl.getAttribute('table:number-rows-repeated') || '1', 10);
+        if (!Number.isFinite(nrr) || nrr < 1) nrr = 1;
+        for (let rpt = 0; rpt < nrr; rpt++) {
+          if (rows.length >= rowCap) {
+            moreRows = !(ri === rowEls.length - 1 && rpt === nrr - 1);
+            break outer;
+          }
+          rows.push(odsRowToCells(rowEl, TABLE_NS, TEXT_NS, colCap));
+        }
+      }
+      return { rows, moreRows, tableCount, errorMsg: '' };
+    }
+
+    /** Calc ODS: zip + ODF table XML (first sheet; cell text only — not formulas/format). */
+    async function odsArrayBufferToPreviewHtml(arrayBuffer) {
+      if (typeof JSZip === 'undefined' || !JSZip.loadAsync) {
+        return '<p class="text-danger small">JSZip failed to load.</p>';
+      }
+      const zip = await JSZip.loadAsync(arrayBuffer);
+      const f = zip.file('content.xml');
+      if (!f) return '<p class="text-danger small">Invalid ODS (no content.xml).</p>';
+      const xml = await f.async('string');
+      const doc = new DOMParser().parseFromString(xml, 'application/xml');
+      if (doc.querySelector('parsererror')) return '<p class="text-danger small">Could not parse content.xml.</p>';
+      const colCap = 64;
+      const parsed = odsContentXmlToRows(doc, EXCEL_PREVIEW_MAX_ROWS, colCap);
+      if (parsed.errorMsg) return '<p class="text-muted mb-0">' + escapeHtmlForPreview(parsed.errorMsg) + '</p>';
+      let html = '<p class="small text-muted mb-2">First sheet only — cell text preview (not full layout).</p>';
+      html += csvPreviewTableHtml(parsed.rows, EXCEL_PREVIEW_MAX_ROWS);
+      if (parsed.moreRows) {
+        html +=
+          '<p class="text-muted small mb-0 mt-2">More rows in this sheet — use <strong>Open</strong> for the full grid.</p>';
+      }
+      if (parsed.tableCount > 1) {
+        html +=
+          '<p class="text-muted small mb-0 mt-2">Preview shows sheet 1 of ' + parsed.tableCount + '.</p>';
+      }
+      return html;
+    }
+
+    /** Impress ODP: content.xml draw:page order — text from text:p / text:h only (like PPTX). */
+    async function odpArrayBufferToPreviewHtml(arrayBuffer) {
+      if (typeof JSZip === 'undefined' || !JSZip.loadAsync) {
+        return '<p class="text-danger small">JSZip failed to load.</p>';
+      }
+      const zip = await JSZip.loadAsync(arrayBuffer);
+      const f = zip.file('content.xml');
+      if (!f) return '<p class="text-danger small">Invalid ODP (no content.xml).</p>';
+      const xml = await f.async('string');
+      const doc = new DOMParser().parseFromString(xml, 'application/xml');
+      if (doc.querySelector('parsererror')) return '<p class="text-danger small">Could not parse content.xml.</p>';
+      const OFFICE_NS = 'urn:oasis:names:tc:opendocument:xmlns:office:1.0';
+      const DRAW_NS = 'urn:oasis:names:tc:opendocument:xmlns:drawing:1.0';
+      const TEXT_NS = 'urn:oasis:names:tc:opendocument:xmlns:text:1.0';
+      const pres = doc.getElementsByTagNameNS(OFFICE_NS, 'presentation')[0];
+      if (!pres) return '<p class="text-muted mb-0">No presentation body.</p>';
+      const pageEls = [];
+      for (const ch of pres.children) {
+        if (ch.namespaceURI === DRAW_NS && ch.localName === 'page') pageEls.push(ch);
+      }
+      if (!pageEls.length) {
+        return '<p class="small text-muted mb-0">No slides found. Use <strong>Open</strong> for full view.</p>';
+      }
+      const slideCap = PPTX_PREVIEW_MAX_SLIDES;
+      const totalSlides = pageEls.length;
+      const pagesToRead = slideCap > 0 && totalSlides > slideCap ? pageEls.slice(0, slideCap) : pageEls;
+      const sections = [];
+      for (let i = 0; i < pagesToRead.length; i++) {
+        const pageEl = pagesToRead[i];
+        const chunks = [];
+        function visit(el) {
+          if (el.namespaceURI === TEXT_NS && (el.localName === 'p' || el.localName === 'h')) {
+            const t = el.textContent.replace(/\s+/g, ' ').trim();
+            if (t) chunks.push(t);
+            return;
+          }
+          for (const c of el.children) visit(c);
+        }
+        visit(pageEl);
+        const text = chunks.join(' ').replace(/\s+/g, ' ').trim();
+        if (text) {
+          sections.push(
+            '<div class="mb-3 pptx-slide-block"><div class="fw-semibold text-muted small mb-1">Slide ' +
+              (i + 1) +
+              '</div><p class="mb-0">' +
+              escapeHtmlForPreview(text) +
+              '</p></div>'
+          );
+        }
+      }
+      if (!sections.length) {
+        return (
+          '<p class="small text-muted mb-0">No slide text found (empty or image-heavy). Use <strong>Open</strong> for full view.</p>'
+        );
+      }
+      let out = '<p class="small text-muted mb-2">Text per slide only — not a visual preview.</p>' + sections.join('');
+      if (slideCap > 0 && totalSlides > slideCap) {
+        out +=
+          '<p class="text-muted small mb-0 mt-2">Preview: first ' +
+          slideCap +
+          ' slides only (' +
+          totalSlides +
+          ' slides).</p>';
+      }
+      return truncateRichPreviewHtml(out, TEXT_PREVIEW_MAX_CHARS);
     }
 
     /** Pretty-print .json when valid; otherwise raw (injected with textContent, not innerHTML). */
@@ -991,19 +1211,19 @@
       const toN = toPath.replace(/[/\\]+$/, '').toLowerCase();
       if (fromN === toN) return;
       tagRenameBusy = true;
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       try {
         const rootPrefix = T.normalizeRootPrefix(document.getElementById('rootFolder').value);
         const res = await window.tagBrowser.renamePath({ fromPath: fp, toPath, rootPrefix });
         if (!res || !res.ok) {
-          status.textContent = (res && res.error) || 'Rename failed';
+          setStatusMain((res && res.error) || 'Rename failed');
           return;
         }
         if (selectedFullPath && selectedFullPath.replace(/[/\\]+$/, '').toLowerCase() === fromN) {
           selectedFullPath = toPath;
           renderScopeBreadcrumb();
         }
-        status.textContent = 'Removed tag.';
+        setStatusMain('Removed tag.');
         await refreshAfterTagsSaved([{ from: fp, to: toPath }]);
       } finally {
         tagRenameBusy = false;
@@ -1180,17 +1400,15 @@
       if (!norm0) return;
       const syn = scopePathClientSyntaxError(norm0);
       if (syn) {
-        const st = document.getElementById('status');
-        if (st) st.textContent = syn;
+        setStatusMain(syn);
         return;
       }
       if (window.tagBrowser && typeof window.tagBrowser.listChildFolders === 'function') {
         const r = await window.tagBrowser.listChildFolders({ parentPath: norm0 });
         if (!r || !r.ok) {
-          const st = document.getElementById('status');
-          if (st)
-            st.textContent =
-              'Invalid folder: ' + (r && r.error ? String(r.error) : 'Not a folder or not reachable.');
+          setStatusMain(
+            'Invalid folder: ' + (r && r.error ? String(r.error) : 'Not a folder or not reachable.')
+          );
           return;
         }
       }
@@ -1213,17 +1431,15 @@
       if (!norm0) return;
       const syn = scopePathClientSyntaxError(norm0);
       if (syn) {
-        const st = document.getElementById('status');
-        if (st) st.textContent = syn;
+        setStatusMain(syn);
         return;
       }
       if (window.tagBrowser && typeof window.tagBrowser.listChildFolders === 'function') {
         const r = await window.tagBrowser.listChildFolders({ parentPath: norm0 });
         if (!r || !r.ok) {
-          const st = document.getElementById('status');
-          if (st)
-            st.textContent =
-              'Invalid folder: ' + (r && r.error ? String(r.error) : 'Not a folder or not reachable.');
+          setStatusMain(
+            'Invalid folder: ' + (r && r.error ? String(r.error) : 'Not a folder or not reachable.')
+          );
           return;
         }
       }
@@ -1293,6 +1509,12 @@
         btn.setAttribute('aria-label', 'Save current folder path');
         btn.innerHTML = '<i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>';
       }
+      /* Scope strip is hidden in pen mode; park folder actions after shell like static HTML. */
+      const scopeRowActs = document.getElementById('tagfoxScopeBarRowActions');
+      const scopeBreadcrumbRow = document.querySelector('.scope-breadcrumb-row');
+      if (scopeRowActs && scopeBreadcrumbRow && shell) {
+        scopeBreadcrumbRow.insertBefore(scopeRowActs, shell.nextSibling);
+      }
       const inp = document.getElementById('scopePathEdit');
       if (inp) {
         inp.value = document.getElementById('rootFolder').value;
@@ -1310,7 +1532,7 @@
 
     async function commitScopePathEditMode() {
       const raw = document.getElementById('scopePathEdit').value.trim();
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       if (!raw) {
         leaveScopePathEditChrome();
         clearSearchScope();
@@ -1318,7 +1540,7 @@
       }
       const synErr = scopePathClientSyntaxError(raw);
       if (synErr) {
-        if (status) status.textContent = synErr;
+        if (status) setStatusMain(synErr);
         scopePathEditCommitError = false;
         syncScopePathEditValidationVisual();
         return;
@@ -1328,8 +1550,9 @@
         const r = await window.tagBrowser.listChildFolders({ parentPath: norm });
         if (!r || !r.ok) {
           if (status) {
-            status.textContent =
-              'Invalid folder path: ' + (r && r.error ? String(r.error) : 'Not a folder or not reachable.');
+            setStatusMain(
+              'Invalid folder path: ' + (r && r.error ? String(r.error) : 'Not a folder or not reachable.')
+            );
           }
           scopePathEditCommitError = true;
           syncScopePathEditValidationVisual();
@@ -1353,7 +1576,7 @@
     /** Empty #query and refresh — same as the search-row ✕ (not current folder / scope). */
     function clearSearchQuery() {
       document.getElementById('query').value = '';
-      syncQueryFilledChrome();
+      syncQueryGhostUi();
       scheduleSearch();
       commitSearchHistoryNow();
     }
@@ -1605,12 +1828,12 @@
       }
     }
 
-    async function runSearchNow(eventKind = 'identity') {
+    async function runSearchNow(eventKind = 'identity', opts) {
       if (searchDebounceTimer) {
         clearTimeout(searchDebounceTimer);
         searchDebounceTimer = null;
       }
-      await runSearch(eventKind);
+      await runSearch(eventKind, opts);
     }
 
     /** Pending staggered Everything re-queries (index can lag behind disk). */
@@ -1748,7 +1971,7 @@
           await runSearchNow();
         } finally {
           if (statusNoteAfterSearch) {
-            const st = document.getElementById('status');
+            const st = document.getElementById('statusMain');
             if (st) {
               const cur = String(st.textContent || '').trim();
               st.textContent = cur ? cur + ' — ' + statusNoteAfterSearch : statusNoteAfterSearch;
@@ -1771,6 +1994,128 @@
         () => bar.classList.remove('status-bar--pulse-hint'),
         { once: true }
       );
+    }
+
+    /** Smart automation line (purple chip); kind warn = big-folder / cap stress. */
+    function clearStatusSmartNote() {
+      const el = document.getElementById('statusSmartNote');
+      if (!el) return;
+      el.textContent = '';
+      el.classList.add('d-none');
+      el.classList.remove('tagfox-status-smart-note--warn');
+    }
+    /** Cap-stress chip from smartAfterPaint; clear when paging shows no further pages (load-more doesn’t rerun smartAfterPaint). */
+    function clearBigFolderCapSmartNoteIfStale() {
+      if (!isSmartView() || !resultsPagingCtx || resultsPagingCtx.hasMore) return;
+      const chip = document.getElementById('statusSmartNote');
+      if (chip && !chip.classList.contains('d-none') && /Big folder!/.test(String(chip.textContent || '')))
+        clearStatusSmartNote();
+    }
+
+    function setStatusSmartNote(text, kind) {
+      const el = document.getElementById('statusSmartNote');
+      if (!el) return;
+      if (!text) {
+        clearStatusSmartNote();
+        return;
+      }
+      el.textContent = text;
+      el.classList.remove('d-none');
+      el.classList.toggle('tagfox-status-smart-note--warn', kind === 'warn');
+      /* Chip already says Smart/layout context — remove trailing “Smart view, …” from main line. */
+      stripViewModeSentenceFromStatusMain();
+    }
+
+    /** Drop last " · Flat|Tree|Smart view…" segment from #statusMain (smart chip is the sole layout hint). */
+    function stripViewModeSentenceFromStatusMain() {
+      const main = document.getElementById('statusMain');
+      if (!main) return;
+      const vx = main.querySelector('.tagfox-status-view-suffix');
+      if (vx) {
+        vx.remove();
+        return;
+      }
+      const t = String(main.textContent || '');
+      const idx = t.lastIndexOf(' · ');
+      if (idx < 0) return;
+      const tail = t.slice(idx + 3);
+      if (/^(Flat|Tree|Smart) view/.test(tail)) main.textContent = t.slice(0, idx);
+    }
+
+    /** Main status line; clears Smart chip so transient messages don’t stack. */
+    function setStatusMain(text) {
+      const el = document.getElementById('statusMain');
+      if (el) el.textContent = text == null ? '' : String(text);
+      clearStatusSmartNote();
+    }
+
+    /** Escape plain text for safe HTML inside #statusMain segments. */
+    function escStatusHtmlForStatus(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+    /** First #statusMain segment: hits wording; HTML when client filters hide rows (“(N hidden)” pill). */
+    function formatRowCountLeadingSegmentForStatus(vis, raw, opts) {
+      const advancedHidden = !!(opts && opts.advancedHidden);
+      const rawHitsText = raw === 1 ? '1 hit' : raw + ' hits';
+      if (raw === 0 && vis === 0) return { text: '0 hits' };
+      /* Path grouping can add display-only rows — status shows hit count only, not row count. */
+      if (vis > raw) {
+        return { text: rawHitsText };
+      }
+      if (vis < raw) {
+        const n = raw - vis;
+        const hiddenLabel = n === 1 ? '1 hidden' : n + ' hidden';
+        const hintCls =
+          'tagfox-status-hidden-hint' + (advancedHidden ? ' tagfox-status-hidden-hint--advanced' : '');
+        return {
+          html: rawHitsText + ' <span class="' + hintCls + '">(' + hiddenLabel + ')</span>',
+        };
+      }
+      return { text: rawHitsText };
+    }
+    /** @param {boolean} [forAdvancedPathHides] match Advanced launcher green when true */
+    function statusFilterHintHtmlForStatus(plain, forAdvancedPathHides) {
+      const hintCls =
+        'tagfox-status-hidden-hint' + (forAdvancedPathHides ? ' tagfox-status-hidden-hint--advanced' : '');
+      return '<span class="' + hintCls + '">' + escStatusHtmlForStatus(plain) + '</span>';
+    }
+    /** Plain text for status bar: “Filters on: tags / recency / both” (empty = neither). */
+    function tagRecencyStatusFilterHintPlain(activeKeys, recencyMode) {
+      const hasTags = activeKeys && activeKeys.size > 0;
+      const hasRec = recencyMode && recencyMode !== 'all';
+      if (!hasTags && !hasRec) return '';
+      if (hasTags && hasRec) return 'Filters on: tags and recency';
+      if (hasTags) return 'Filters on: tags';
+      return 'Filters on: recency';
+    }
+    /**
+     * Single place that builds the persistent results-table status HTML (hits, filter pills, view suffix).
+     * Separation is only via join(' · ') — never put “ · ” inside a segment.
+     */
+    function formatResultsStatusMainHtml(opts) {
+      const {
+        visN,
+        rawN,
+        tagRecencyHintPlain,
+        showHideSpecialHint,
+        showHideTildeHint,
+        omitViewSuffix,
+        viewModeSentence,
+      } = opts;
+      const advancedPathHides = !!(showHideSpecialHint || showHideTildeHint);
+      const rowLead = formatRowCountLeadingSegmentForStatus(visN, rawN, { advancedHidden: advancedPathHides });
+      const segments = [];
+      if (rowLead.html != null) segments.push(rowLead.html);
+      else segments.push(escStatusHtmlForStatus(rowLead.text));
+      if (tagRecencyHintPlain) segments.push(statusFilterHintHtmlForStatus(tagRecencyHintPlain, false));
+      if (showHideSpecialHint) segments.push(statusFilterHintHtmlForStatus('Hiding special files/folders', true));
+      if (showHideTildeHint) segments.push(statusFilterHintHtmlForStatus('Hiding paths with ~ segment', true));
+      if (!omitViewSuffix && viewModeSentence)
+        segments.push('<span class="tagfox-status-view-suffix">' + escStatusHtmlForStatus(viewModeSentence) + '</span>');
+      return segments.join(' · ');
     }
 
     /** Tree + Size/Modified/Name (z/m/n or those headers): Flat on so sort sticks. */
@@ -1987,14 +2332,52 @@
       return rel || '—';
     }
 
+    /** Optional substring highlight (#query trim); case-insensitive, all non-overlapping matches. */
+    function appendHighlightedTextInto(el, text, needleLower, needleLen) {
+      const t = String(text ?? '');
+      el.replaceChildren();
+      if (!needleLower || needleLen < 1 || !t) {
+        el.textContent = t;
+        return;
+      }
+      const lower = t.toLowerCase();
+      let start = 0;
+      let idx = lower.indexOf(needleLower, start);
+      if (idx < 0) {
+        el.textContent = t;
+        return;
+      }
+      while (idx >= 0) {
+        if (idx > start) el.appendChild(document.createTextNode(t.slice(start, idx)));
+        const mk = document.createElement('mark');
+        mk.className = 'tagfox-query-hit';
+        mk.textContent = t.slice(idx, idx + needleLen);
+        el.appendChild(mk);
+        start = idx + needleLen;
+        idx = lower.indexOf(needleLower, start);
+      }
+      if (start < t.length) el.appendChild(document.createTextNode(t.slice(start)));
+    }
+
     /** Fill path cell: muted prefix + stronger final segment (ellipsis still via .path-ellip-start). */
-    function fillPathCellBox(pathBox, displayStr) {
+    function fillPathCellBox(pathBox, displayStr, queryHit) {
       pathBox.replaceChildren();
       const bdi = document.createElement('bdi');
       bdi.dir = 'ltr';
       const s = String(displayStr ?? '');
+      const hit = queryHit && queryHit.low && queryHit.len > 0 ? queryHit : null;
+      const fillSpan = (span, part) => {
+        if (!part) {
+          span.textContent = '';
+          return;
+        }
+        if (hit) appendHighlightedTextInto(span, part, hit.low, hit.len);
+        else span.textContent = part;
+      };
       if (!s || s === '—') {
-        bdi.textContent = s || '—';
+        const show = s || '—';
+        if (hit) appendHighlightedTextInto(bdi, show, hit.low, hit.len);
+        else bdi.textContent = show;
         pathBox.appendChild(bdi);
         return;
       }
@@ -2002,14 +2385,14 @@
       if (i < 0) {
         const tail = document.createElement('span');
         tail.className = 'path-col-tail';
-        tail.textContent = s;
+        fillSpan(tail, s);
         bdi.appendChild(tail);
       } else {
         const head = document.createElement('span');
-        head.textContent = s.slice(0, i + 1);
+        fillSpan(head, s.slice(0, i + 1));
         const tail = document.createElement('span');
         tail.className = 'path-col-tail';
-        tail.textContent = s.slice(i + 1);
+        fillSpan(tail, s.slice(i + 1));
         bdi.appendChild(head);
         bdi.appendChild(tail);
       }
@@ -2117,7 +2500,7 @@
         row.className = 'd-inline-flex align-items-stretch tagfox-fav-chip-row';
         row.draggable = true;
         row.dataset.favIdx = String(idx);
-        row.title = 'Drag to reorder. ' + (idx < 9 ? 'Ctrl+Shift+' + (idx + 1) + ' opens this folder.' : '');
+        /* Drag hint lives on .fav-folder-chip-go only — a row-level title/tooltip would cover ✕ / ▾ and steal hover. */
         const grp = document.createElement('div');
         grp.className = 'btn-group btn-group-sm fav-folder-chip-group';
         const go = document.createElement('button');
@@ -2137,6 +2520,32 @@
         nm.textContent = pretty;
         lead.appendChild(nm);
         go.appendChild(lead);
+        /* × inside LHS (after name); span+role=button — cannot nest <button> in .fav-folder-chip-go. */
+        const rm = document.createElement('span');
+        rm.className = 'fav-folder-chip-remove';
+        rm.setAttribute('role', 'button');
+        rm.tabIndex = 0;
+        rm.setAttribute('data-fav-no-drag', '1');
+        rm.setAttribute('aria-label', 'Remove favourite');
+        rm.title = 'Remove favourite';
+        rm.innerHTML = '<i class="fa-solid fa-xmark fa-sm" aria-hidden="true"></i>';
+        const removeThisFav = () => {
+          const next = loadFavouriteFolders().filter((p) => p.toLowerCase() !== fp.toLowerCase());
+          saveFavouriteFolders(next);
+          renderFavFoldersBar();
+        };
+        rm.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          removeThisFav();
+        });
+        rm.addEventListener('keydown', (e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          e.preventDefault();
+          e.stopPropagation();
+          removeThisFav();
+        });
+        go.appendChild(rm);
         for (const tag of parsed.tags) {
           const b = document.createElement('span');
           b.className = 'badge';
@@ -2146,8 +2555,9 @@
           go.appendChild(b);
         }
         const slot = idx + 1;
-        const shortcut = idx < 9 ? ' Shortcut: Ctrl+Shift+' + slot + ' (⌘+Shift+' + slot + ' on Mac).' : '';
-        go.title = fp + ' — click to set as current folder.' + shortcut;
+        // Short hover text; aria-label still has path + keyboard slot.
+        go.title =
+          'Drag to reorder.' + (idx < 9 ? ' Shortcut: Ctrl+Shift+' + slot + '.' : '');
         go.setAttribute(
           'aria-label',
           'Open favourite folder ' +
@@ -2168,7 +2578,7 @@
         ddBtn.setAttribute('data-fav-no-drag', '1');
         ddBtn.setAttribute('aria-expanded', 'false');
         ddBtn.setAttribute('aria-label', 'Subfolders of this favourite');
-        ddBtn.title = 'Browse subfolders (same nested flyouts as breadcrumb ▾)';
+        /* No tooltip on ▾ — screen reader uses aria-label; avoids clutter next to folder/go tooltips. */
         ddBtn.innerHTML = '<span class="visually-hidden">Subfolders</span>' + breadcrumbDropdownChevronHtml();
         const menu = document.createElement('ul');
         const hl = breadcrumbHighlightChildPathNorm(parentNorm);
@@ -2177,21 +2587,7 @@
         ddWrap.appendChild(ddBtn);
         ddWrap.appendChild(menu);
         grp.appendChild(ddWrap);
-        const rm = document.createElement('button');
-        rm.type = 'button';
-        rm.className = 'btn btn-outline-secondary btn-sm px-1 ms-1 d-inline-flex align-items-center justify-content-center';
-        rm.setAttribute('aria-label', 'Remove');
-        rm.setAttribute('data-fav-no-drag', '1');
-        rm.innerHTML = '<i class="fa-solid fa-xmark fa-sm" aria-hidden="true"></i>';
-        rm.title = 'Remove from favourites';
-        rm.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const next = loadFavouriteFolders().filter((p) => p.toLowerCase() !== fp.toLowerCase());
-          saveFavouriteFolders(next);
-          renderFavFoldersBar();
-        });
         row.appendChild(grp);
-        row.appendChild(rm);
         el.appendChild(row);
       }
       refreshTagFoxChromeTooltips(el);
@@ -2357,8 +2753,8 @@
             renderFavSearchesBar();
           }
           clearAllFavBarDropGaps();
-          const st = document.getElementById('status');
-          if (st) st.textContent = kind === 'folder' ? 'Favourite folders reordered.' : 'Saved searches reordered.';
+          const st = document.getElementById('statusMain');
+          if (st) setStatusMain(kind === 'folder' ? 'Favourite folders reordered.' : 'Saved searches reordered.');
         });
       }
 
@@ -2448,41 +2844,55 @@
         row.className = 'd-inline-flex align-items-stretch tagfox-fav-chip-row';
         row.draggable = true;
         row.dataset.favIdx = String(idx);
-        row.title = 'Drag to reorder. ' + (idx < 9 ? 'Ctrl+' + (idx + 1) + ' restores this search.' : '');
+        /* Same as folder chips: no row-level tooltip (would overlap ✕). Drag line prepended onto go below. */
         const grp = document.createElement('div');
         grp.className = 'btn-group btn-group-sm fav-search-chip-group';
         const n = idx + 1;
         const go = document.createElement('button');
         go.type = 'button';
-        go.className = 'btn btn-sm fav-search-chip-go d-inline-flex align-items-center';
-        go.textContent = String(n);
-        const a11y =
-          'Restore saved search ' +
-          n +
-          (idx < 9 ? ' (keyboard Ctrl+' + n + ')' : '') +
-          '. Hover for query, current folder, and filters.';
-        go.setAttribute('aria-label', a11y);
-        go.title = favouriteSearchTooltip(s, idx);
-        go.addEventListener('click', () => void applyFavouriteSearchState(s));
-        grp.appendChild(go);
-        const rm = document.createElement('button');
-        rm.type = 'button';
-        rm.className = 'btn btn-outline-secondary btn-sm px-1 ms-1 d-inline-flex align-items-center justify-content-center';
-        rm.setAttribute('aria-label', 'Remove');
+        go.className = 'btn btn-sm fav-search-chip-go d-inline-flex align-items-center gap-1';
+        const slotNum = document.createElement('span');
+        slotNum.textContent = String(n);
+        go.appendChild(slotNum);
+        /* × inside pill (after slot #); span + role=button — cannot nest <button> in .fav-search-chip-go. */
+        const rm = document.createElement('span');
+        rm.className = 'fav-search-chip-remove';
+        rm.setAttribute('role', 'button');
+        rm.tabIndex = 0;
         rm.setAttribute('data-fav-no-drag', '1');
-        rm.innerHTML = '<i class="fa-solid fa-xmark fa-sm" aria-hidden="true"></i>';
+        rm.setAttribute('aria-label', 'Remove saved search');
         rm.title = 'Remove saved search';
-        rm.addEventListener('click', (e) => {
-          e.stopPropagation();
+        rm.innerHTML = '<i class="fa-solid fa-xmark fa-sm" aria-hidden="true"></i>';
+        const removeThisSearch = () => {
           const next = loadFavouriteSearches();
           if (idx >= 0 && idx < next.length) {
             next.splice(idx, 1);
             saveFavouriteSearches(next);
           }
           renderFavSearchesBar();
+        };
+        rm.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          removeThisSearch();
         });
+        rm.addEventListener('keydown', (e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          e.preventDefault();
+          e.stopPropagation();
+          removeThisSearch();
+        });
+        go.appendChild(rm);
+        const a11y =
+          'Restore saved search ' +
+          n +
+          (idx < 9 ? ' (keyboard Ctrl+' + n + ')' : '') +
+          '. Hover for query, current folder, and filters.';
+        go.setAttribute('aria-label', a11y);
+        go.title = 'Drag to reorder.\n\n' + favouriteSearchTooltip(s, idx);
+        go.addEventListener('click', () => void applyFavouriteSearchState(s));
+        grp.appendChild(go);
         row.appendChild(grp);
-        row.appendChild(rm);
         el.appendChild(row);
       });
       refreshTagFoxChromeTooltips(el);
@@ -2491,19 +2901,42 @@
     /** Search box hint: last segment of scope (pretty title), or entire-index wording when scope empty. */
     function updateQueryPlaceholder() {
       const q = document.getElementById('query');
+      const ghost = document.getElementById('queryGhostHint');
       if (!q) return;
       const max = getSearchScopeMaxFolderNorm();
       const scopeRaw = document.getElementById('rootFolder').value.trim();
+      q.placeholder = '';
       if (!scopeRaw && !max) {
-        q.placeholder = 'Search inside (entire index)';
-        return;
+        q.setAttribute('aria-label', 'Search inside entire index');
+        if (ghost) {
+          ghost.innerHTML =
+            '<span class="text-muted">Search inside</span><span class="tagfox-query-ghost-folder">(entire index)</span>';
+        }
+      } else {
+        const norm = normalizeFolderPathForEverything(scopeRaw || max).replace(/[/\\]+$/, '');
+        const seg = T.baseName(norm);
+        let pretty = (segmentPretty(seg) || seg || 'folder').trim();
+        const gdPretty = prettyGDriveShortcutIdFolderBasename(norm, updateQueryPlaceholder);
+        if (gdPretty) pretty = gdPretty;
+        q.setAttribute('aria-label', 'Search inside ' + pretty);
+        if (ghost) {
+          ghost.innerHTML =
+            '<span class="text-muted">Search inside</span><span class="tagfox-query-ghost-folder">' +
+            escapeHtmlForPreview(pretty) +
+            '</span>';
+        }
       }
-      const norm = normalizeFolderPathForEverything(scopeRaw || max).replace(/[/\\]+$/, '');
-      const seg = T.baseName(norm);
-      let pretty = (segmentPretty(seg) || seg || 'folder').trim();
-      const gdPretty = prettyGDriveShortcutIdFolderBasename(norm, updateQueryPlaceholder);
-      if (gdPretty) pretty = gdPretty;
-      q.placeholder = 'Search inside ' + pretty;
+      syncQueryGhostUi();
+    }
+
+    /** Show layered hint only when #query is empty (placeholder text cannot mix styles). */
+    function syncQueryGhostUi() {
+      const q = document.getElementById('query');
+      const ghost = document.getElementById('queryGhostHint');
+      if (!q) return;
+      const empty = !String(q.value || '').trim();
+      q.classList.toggle('tagfox-query-empty', empty);
+      ghost?.classList.toggle('d-none', !empty);
     }
 
     /** Breadcrumb bar only depends on scope folder — not on which result row is selected. */
@@ -3017,6 +3450,10 @@
       const el = document.getElementById('breadcrumbBar');
       const shell = document.getElementById('breadcrumbShell');
       const editWrap = document.getElementById('scopePathEditWrap');
+      const scopeBreadcrumbRow = document.querySelector('.scope-breadcrumb-row');
+      const scopeRowActs = document.getElementById('tagfoxScopeBarRowActions');
+      /* Detach before innerHTML — buttons live here after first render; clearing would destroy them. */
+      if (scopeRowActs) scopeRowActs.remove();
       el.innerHTML = '';
       const maxNorm = getSearchScopeMaxFolderNorm();
       const scopeRaw = document.getElementById('rootFolder').value.trim();
@@ -3024,12 +3461,15 @@
       if (!maxNorm && !scopeRaw) {
         el.classList.add('d-none');
         el.classList.remove('d-flex', 'align-items-center', 'flex-wrap', 'gap-0');
+        /* Keep shell visible so path-edit + history (inside .tagfox-breadcrumb-shell-actions) stay usable. */
         if (shell) {
-          shell.classList.remove('d-flex');
-          shell.classList.add('d-none');
+          shell.classList.remove('d-none');
+          shell.classList.add('d-flex');
         }
         if (editWrap) editWrap.classList.add('d-none');
         if (btnClear) btnClear.disabled = true;
+        /* Empty scope: park row actions after shell (same as static HTML; breadcrumb strip stays hidden). */
+        if (scopeBreadcrumbRow && scopeRowActs) scopeBreadcrumbRow.appendChild(scopeRowActs);
         syncStatusBarParentScopeButton();
         renderedScopeBreadcrumbKey = currentScopeBreadcrumbKey();
         return;
@@ -3060,8 +3500,10 @@
 
       const sep = norm.includes('/') ? '/' : '\\';
       const parts = norm.split(/[/\\]/).filter((p) => p !== '');
+      /* Last path segment + trailing ▾ “subfolders” share one split pill (.tagfox-breadcrumb-folder-chip). */
+      let lastPathWrap = null;
 
-      function appendSiblingChevron(iSeg, parentForPeers, partsArr) {
+      function appendSiblingChevron(parentEl, iSeg, parentForPeers, partsArr) {
         let accNext = '';
         for (let j = 0; j <= iSeg + 1; j++) {
           accNext = j === 0 ? partsArr[j] : accNext + sep + partsArr[j];
@@ -3069,10 +3511,10 @@
         const targetChildNorm = normalizeFolderPathForEverything(accNext).replace(/[/\\]+$/, '').toLowerCase();
 
         const chevronWrap = document.createElement('span');
-        chevronWrap.className = 'd-inline-flex align-items-center text-muted user-select-none breadcrumb-scope-dd ps-1';
+        chevronWrap.className = 'd-inline-flex align-items-center text-muted user-select-none breadcrumb-scope-dd';
 
         const ddWrap = document.createElement('div');
-        ddWrap.className = 'dropdown d-inline-block';
+        ddWrap.className = 'dropdown';
         const ddBtn = document.createElement('button');
         ddBtn.type = 'button';
         ddBtn.className =
@@ -3148,7 +3590,7 @@
         ddWrap.appendChild(menu);
         bindBreadcrumbDropdownHover(ddWrap, ddBtn);
         chevronWrap.appendChild(ddWrap);
-        el.appendChild(chevronWrap);
+        parentEl.appendChild(chevronWrap);
       }
 
       if (!maxNorm) {
@@ -3168,6 +3610,12 @@
             (i === parts.length - 1 ? ' breadcrumb-folder-seg-current' : '');
           if (isGDriveShortcutId) {
             btn.innerHTML = '<i class="fa-solid fa-link fa-xs" aria-hidden="true"></i>';
+          } else if (i === parts.length - 1) {
+            btn.classList.add('d-inline-flex', 'align-items-center', 'gap-1');
+            btn.appendChild(folderIconEl());
+            const lab = document.createElement('span');
+            lab.textContent = parsed.pretty;
+            btn.appendChild(lab);
           } else {
             btn.textContent = parsed.pretty;
           }
@@ -3189,8 +3637,15 @@
             b.textContent = tag;
             wrap.appendChild(b);
           }
-          el.appendChild(wrap);
-          if (i < parts.length - 1) appendSiblingChevron(i, folderForSearch, parts);
+          if (i < parts.length - 1) {
+            const chip = document.createElement('span');
+            chip.className = 'tagfox-breadcrumb-folder-chip d-inline-flex align-items-stretch';
+            chip.appendChild(wrap);
+            appendSiblingChevron(chip, i, folderForSearch, parts);
+            el.appendChild(chip);
+          } else {
+            lastPathWrap = wrap;
+          }
         });
       } else {
         const maxNormFull = normalizeFolderPathForEverything(maxNorm).replace(/[/\\]+$/, '');
@@ -3203,7 +3658,16 @@
         btnR.className =
           'btn btn-link btn-sm p-0 align-baseline breadcrumb-folder-seg' +
           (onlyRoot ? ' breadcrumb-folder-seg-current' : '');
-        btnR.textContent = segmentPretty(T.baseName(maxNormFull)) || T.baseName(maxNormFull);
+        if (onlyRoot) {
+          /* Scope root is the current folder: match folder row lead (icon + label). */
+          btnR.classList.add('d-inline-flex', 'align-items-center', 'gap-1');
+          btnR.appendChild(folderIconEl());
+          const labR = document.createElement('span');
+          labR.textContent = segmentPretty(T.baseName(maxNormFull)) || T.baseName(maxNormFull);
+          btnR.appendChild(labR);
+        } else {
+          btnR.textContent = segmentPretty(T.baseName(maxNormFull)) || T.baseName(maxNormFull);
+        }
         btnR.title = 'Scope root: ' + maxNormFull;
         btnR.addEventListener('click', async (e) => {
           e.stopPropagation();
@@ -3211,9 +3675,14 @@
         });
         wrapR.dataset.dropPath = maxNormFull;
         wrapR.appendChild(btnR);
-        el.appendChild(wrapR);
         if (!onlyRoot) {
-          appendSiblingChevron(maxParts.length - 1, maxNormFull, parts);
+          const chipR = document.createElement('span');
+          chipR.className = 'tagfox-breadcrumb-folder-chip d-inline-flex align-items-stretch';
+          chipR.appendChild(wrapR);
+          appendSiblingChevron(chipR, maxParts.length - 1, maxNormFull, parts);
+          el.appendChild(chipR);
+        } else {
+          lastPathWrap = wrapR;
         }
         let acc = maxNormFull;
         for (let i = maxParts.length; i < parts.length; i++) {
@@ -3231,6 +3700,12 @@
             (i === parts.length - 1 ? ' breadcrumb-folder-seg-current' : '');
           if (isGDriveShortcutId) {
             btn.innerHTML = '<i class="fa-solid fa-link fa-xs" aria-hidden="true"></i>';
+          } else if (i === parts.length - 1) {
+            btn.classList.add('d-inline-flex', 'align-items-center', 'gap-1');
+            btn.appendChild(folderIconEl());
+            const lab = document.createElement('span');
+            lab.textContent = parsed.pretty;
+            btn.appendChild(lab);
           } else {
             btn.textContent = parsed.pretty;
           }
@@ -3252,16 +3727,23 @@
             b.textContent = tag;
             wrap.appendChild(b);
           }
-          el.appendChild(wrap);
-          if (i < parts.length - 1) appendSiblingChevron(i, folderForSearch, parts);
+          if (i < parts.length - 1) {
+            const chip = document.createElement('span');
+            chip.className = 'tagfox-breadcrumb-folder-chip d-inline-flex align-items-stretch';
+            chip.appendChild(wrap);
+            appendSiblingChevron(chip, i, folderForSearch, parts);
+            el.appendChild(chip);
+          } else {
+            lastPathWrap = wrap;
+          }
         }
       }
 
       const scopeFolder = normalizeFolderPathForEverything(scopeRaw || maxNorm);
       const subWrap = document.createElement('span');
-      subWrap.className = 'd-inline-flex align-items-center text-muted user-select-none breadcrumb-scope-dd ms-1';
+      subWrap.className = 'd-inline-flex align-items-center text-muted user-select-none breadcrumb-scope-dd';
       const subDd = document.createElement('div');
-      subDd.className = 'dropdown d-inline-block';
+      subDd.className = 'dropdown';
       const subBtn = document.createElement('button');
       subBtn.type = 'button';
       subBtn.className =
@@ -3277,7 +3759,17 @@
       subDd.appendChild(subBtn);
       subDd.appendChild(subMenu);
       subWrap.appendChild(subDd);
-      el.appendChild(subWrap);
+      if (lastPathWrap) {
+        const lastChip = document.createElement('span');
+        lastChip.className = 'tagfox-breadcrumb-folder-chip d-inline-flex align-items-stretch';
+        lastChip.appendChild(lastPathWrap);
+        lastChip.appendChild(subWrap); /* insertBefore needs subWrap already a child of lastChip */
+        if (scopeRowActs) lastChip.insertBefore(scopeRowActs, subWrap);
+        el.appendChild(lastChip);
+      } else {
+        el.appendChild(subWrap);
+        if (scopeRowActs) el.insertBefore(scopeRowActs, subWrap);
+      }
       syncStatusBarParentScopeButton();
       renderedScopeBreadcrumbKey = currentScopeBreadcrumbKey();
       refreshTagFoxChromeTooltips(document.getElementById('breadcrumbBar'));
@@ -3471,10 +3963,10 @@
 
     /** Rename selected row (optional path for ⋯ menu). Same folder only; respects rootPrefix in main. */
     async function renameItemInteractive(fpOpt) {
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       const fp = String(fpOpt || selectedFullPath || '').trim();
       if (!fp) {
-        status.textContent = 'Select a row to rename.';
+        setStatusMain('Select a row to rename.');
         return;
       }
       if (renameItemBusy || tagRenameBusy) return;
@@ -3496,7 +3988,7 @@
         if (mdWas) await flushMdFileAutosave();
         const res = await window.tagBrowser.renamePath({ fromPath: fp, toPath, rootPrefix });
         if (!res || !res.ok) {
-          status.textContent = (res && res.error) || 'Rename failed';
+          setStatusMain((res && res.error) || 'Rename failed');
           return;
         }
         if (selectedFullPath && selectedFullPath.replace(/[/\\]+$/, '').toLowerCase() === fromN) {
@@ -3504,7 +3996,7 @@
           renderScopeBreadcrumbIfScopeChanged();
         }
         if (mdWas) mdAutosaveTargetPath = toPath;
-        status.textContent = 'Renamed.';
+        setStatusMain('Renamed.');
         void refreshAfterDiskMutation();
         refreshTagModalDatalist();
       } finally {
@@ -3577,14 +4069,14 @@
 
     function openBulkRenameModal() {
       const paths = pathsForBulkRename();
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       const hint = document.getElementById('bulkRenameTargetHint');
       const fb = document.getElementById('bulkRenameFeedback');
       const findEl = document.getElementById('bulkRenameFind');
       const replEl = document.getElementById('bulkRenameReplace');
       if (!hint || !document.getElementById('bulkRenameModal')) return;
       if (!paths.length) {
-        if (status) status.textContent = 'Check rows or highlight one row to rename.';
+        if (status) setStatusMain('Check rows or highlight one row to rename.');
         return;
       }
       bulkRenameTargetPaths = paths.slice();
@@ -3655,9 +4147,9 @@
           }
           if (mdHere) mdAutosaveTargetPath = toPath;
         }
-        const st = document.getElementById('status');
+        const st = document.getElementById('statusMain');
         if (pathPairs.length) {
-          if (st) st.textContent = 'Renamed ' + pathPairs.length + ' item(s).';
+          if (st) setStatusMain('Renamed ' + pathPairs.length + ' item(s).');
           if (bulkRenameModalInst) bulkRenameModalInst.hide();
           await refreshAfterTagsSaved(pathPairs);
         } else {
@@ -3673,41 +4165,41 @@
      * otherwise use the current scope folder from Settings.
      */
     async function createNewFolderInScopeInteractive(parentOverride) {
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       const parent =
         parentOverride != null && String(parentOverride).trim()
           ? normalizeFolderPathForEverything(String(parentOverride).trim())
           : currentScopeFolderPath();
       if (!parent) {
-        status.textContent = 'Set the current folder (Settings or breadcrumb) first.';
+        setStatusMain('Set the current folder (Settings or breadcrumb) first.');
         return;
       }
       const raw = await promptNewFolderNameModal();
       if (raw === null) return;
       if (!window.tagBrowser.createEmptyFolder) {
-        status.textContent = 'Create folder is not available.';
+        setStatusMain('Create folder is not available.');
         return;
       }
       const rootPrefix = T.normalizeRootPrefix(document.getElementById('rootFolder').value);
       const r = await window.tagBrowser.createEmptyFolder({ parentFolder: parent, nameSegment: raw, rootPrefix });
-      if (!r || !r.ok) status.textContent = (r && r.error) || 'Could not create folder';
+      if (!r || !r.ok) setStatusMain((r && r.error) || 'Could not create folder');
       else {
-        status.textContent = 'Created folder: ' + T.baseName(String(r.path || ''));
+        setStatusMain('Created folder: ' + T.baseName(String(r.path || '')));
         void refreshAfterDiskMutation();
       }
     }
 
     /** Shared: new TODO .md under folderNorm using newTodoMdTags + optional empty-folder message. */
     async function createTodoMdAt(folderNorm, titleRaw, opts) {
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       const folder = normalizeFolderPathForEverything(String(folderNorm || '').trim());
       if (!folder) {
-        status.textContent = (opts && opts.errNoFolder) || 'Set the current folder (Settings or breadcrumb) first.';
+        setStatusMain((opts && opts.errNoFolder) || 'Set the current folder (Settings or breadcrumb) first.');
         return false;
       }
       const raw = String(titleRaw || '').trim();
       if (!raw) {
-        status.textContent = 'Type a title.';
+        setStatusMain('Type a title.');
         return false;
       }
       const safe = sanitizeFileTitleSegment(raw);
@@ -3715,16 +4207,16 @@
       const fullPath = joinFolderAndFileName(folder, baseName);
       const probe = await window.tagBrowser.readTextFile({ fullPath });
       if (probe.ok) {
-        status.textContent = 'File already exists: ' + baseName;
+        setStatusMain('File already exists: ' + baseName);
         return false;
       }
       const body = '# ' + safe + '\n\n';
       const r = await window.tagBrowser.writeTextFile({ fullPath, text: body });
       if (!r.ok) {
-        status.textContent = r.error || 'Could not create file';
+        setStatusMain(r.error || 'Could not create file');
         return false;
       }
-      status.textContent = 'Created ' + baseName;
+      setStatusMain('Created ' + baseName);
       void refreshAfterDiskMutation();
       return true;
     }
@@ -4290,8 +4782,8 @@
         const docLabel = ext === 'docx' ? 'Word (DOCX)' : ext === 'odt' ? 'Writer (ODT)' : 'Word (DOC)';
         document.getElementById('officeTitle').textContent = docLabel;
         const prev = document.getElementById('officePreview');
-        if (ext === 'doc' || ext === 'odt') {
-          prev.innerHTML = '<p class="text-muted mb-0">Preview not supported for .' + ext + ' — use Open.</p>';
+        if (ext === 'doc') {
+          prev.innerHTML = '<p class="text-muted mb-0">Preview not supported for .doc — use Open.</p>';
           return;
         }
         const r = await window.tagBrowser.readFileBuffer({ fullPath: targetFp });
@@ -4303,6 +4795,17 @@
           return;
         }
         const ab = base64ToArrayBuffer(r.base64);
+        if (ext === 'odt') {
+          try {
+            const html = await odtArrayBufferToPreviewHtml(ab);
+            if (!propsViewStill(targetFp)) return;
+            prev.innerHTML = html;
+          } catch (e) {
+            if (!propsViewStill(targetFp)) return;
+            prev.innerHTML = '<p class="text-danger small">' + escapeHtmlForPreview(String(e.message || e)) + '</p>';
+          }
+          return;
+        }
         if (typeof mammoth === 'undefined' || !mammoth.convertToHtml) {
           prev.innerHTML = '<p class="text-danger small">Document preview library failed to load.</p>';
           return;
@@ -4334,6 +4837,17 @@
           propPh.classList.remove('d-none');
           propPh.textContent = String(r.error || 'Could not load.');
           officeBlock.classList.add('d-none');
+          return;
+        }
+        if (ext === 'ods') {
+          try {
+            const html = await odsArrayBufferToPreviewHtml(base64ToArrayBuffer(r.base64));
+            if (!propsViewStill(targetFp)) return;
+            prev.innerHTML = html;
+          } catch (e) {
+            if (!propsViewStill(targetFp)) return;
+            prev.innerHTML = '<p class="text-danger small">' + escapeHtmlForPreview(String(e.message || e)) + '</p>';
+          }
           return;
         }
         if (typeof XLSX === 'undefined' || !XLSX.read) {
@@ -4401,14 +4915,41 @@
         return;
       }
 
-      if (ext === 'ppt' || ext === 'odp') {
+      if (ext === 'ppt') {
         activeReadmePath = null;
         activeMdPath = null;
         mdAutosaveTargetPath = null;
         officeBlock.classList.remove('d-none');
-        document.getElementById('officeTitle').textContent = ext === 'odp' ? 'Impress (ODP)' : 'PowerPoint';
+        document.getElementById('officeTitle').textContent = 'PowerPoint';
         document.getElementById('officePreview').innerHTML =
-          '<p class="text-muted mb-0">Preview not supported for .' + ext + ' — use <strong>Open</strong>.</p>';
+          '<p class="text-muted mb-0">Preview not supported for .ppt — use <strong>Open</strong>.</p>';
+        return;
+      }
+
+      if (ext === 'odp' && window.tagBrowser.readFileBuffer) {
+        activeReadmePath = null;
+        activeMdPath = null;
+        mdAutosaveTargetPath = null;
+        officeBlock.classList.remove('d-none');
+        document.getElementById('officeTitle').textContent = 'Impress (ODP)';
+        const prev = document.getElementById('officePreview');
+        prev.innerHTML = '<p class="text-muted small mb-0">Loading…</p>';
+        const r = await window.tagBrowser.readFileBuffer({ fullPath: targetFp });
+        if (!propsViewStill(targetFp)) return;
+        if (!r.ok) {
+          propPh.classList.remove('d-none');
+          propPh.textContent = String(r.error || 'Could not load.');
+          officeBlock.classList.add('d-none');
+          return;
+        }
+        try {
+          const html = await odpArrayBufferToPreviewHtml(base64ToArrayBuffer(r.base64));
+          if (!propsViewStill(targetFp)) return;
+          prev.innerHTML = html;
+        } catch (e) {
+          if (!propsViewStill(targetFp)) return;
+          prev.innerHTML = '<p class="text-danger small">' + escapeHtmlForPreview(String(e.message || e)) + '</p>';
+        }
         return;
       }
 
@@ -4556,9 +5097,9 @@
 
     /** Folder doc: single control — Save writes to disk, closes editor, refreshes search. */
     async function closeReadmeEditorWithSave() {
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       if (!activeReadmePath) {
-        if (status) status.textContent = 'Folder doc not ready — select the folder again.';
+        if (status) setStatusMain('Folder doc not ready — select the folder again.');
         setViewerDocEditorOpen('readme', false);
         return;
       }
@@ -4566,11 +5107,11 @@
       const r = await window.tagBrowser.writeTextFile({ fullPath: activeReadmePath, text });
       const label = segmentPretty(T.baseName(activeReadmePath));
       if (!r.ok) {
-        if (status) status.textContent = r.error || 'Save failed';
+        if (status) setStatusMain(r.error || 'Save failed');
         return;
       }
       readmeSaveTargetVerifiedOnDisk = true;
-      if (status) status.textContent = label + ' saved.';
+      if (status) setStatusMain(label + ' saved.');
       setViewerDocEditorOpen('readme', false);
       folderChildCountCache.clear();
       clearAndScheduleSearchRetries();
@@ -4859,7 +5400,7 @@
 
     /** pruneDeadRemembered: ghost cleanup on “Rescan all tags” only. */
     async function runTagDiscoverySearchInner(pruneDeadRemembered) {
-      const statusEl = document.getElementById('status');
+      const statusEl = document.getElementById('statusMain');
       const baseUrl = document.getElementById('baseUrl').value.trim() || 'http://127.0.0.1';
       const mr = Math.max(1, parseInt(document.getElementById('maxResults').value, 10) || 200);
       const countCap = Math.min(50000, Math.max(5000, mr));
@@ -4900,7 +5441,7 @@
         resKeys: res && typeof res === 'object' ? Object.keys(res).slice(0, 14) : [],
       });
       if (!res.ok) {
-        if (statusEl) statusEl.textContent = 'Tag scan failed: ' + (res.error || 'unknown error');
+        if (statusEl) setStatusMain('Tag scan failed: ' + (res.error || 'unknown error'));
         renderTagBar();
         return;
       }
@@ -4956,7 +5497,7 @@
           const n = rawRows.length;
           const extra =
             storeChanged || knownChanged || fullScanActiveChanged ? ' Dropped tags not in this scan.' : '';
-          statusEl.textContent = 'Tag scan: ' + n + ' path(s) with [(…)] tag block (full index).' + extra;
+          setStatusMain('Tag scan: ' + n + ' path(s) with [(…)] tag block (full index).' + extra);
         }
       }
       renderTagBar();
@@ -5313,7 +5854,7 @@
     /** Internal drop: move (default) or copy with Shift — into dest folder. */
     async function applyInternalPathsDrop(destFolderRaw, paths, mode) {
       const destFolder = normalizeFolderPathForEverything(destFolderRaw);
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       const rootPrefix = T.normalizeRootPrefix(document.getElementById('rootFolder').value);
       const destKey = pathNormKey(destFolder);
       const filtered = paths.filter((p) => pathNormKey(p) !== destKey);
@@ -5321,7 +5862,7 @@
 
       if (mode === 'copy') {
         if (!window.tagBrowser.copyPathsIntoFolder) {
-          status.textContent = 'Copy into folder is not available.';
+          setStatusMain('Copy into folder is not available.');
           return;
         }
         const r = await scopeCopyOrMoveWithConflictPrompt('copy', {
@@ -5329,7 +5870,7 @@
           destFolder,
           rootPrefix,
         });
-        status.textContent = r.ok ? 'Copied into folder.' : (r.error || 'Copy failed');
+        setStatusMain(r.ok ? 'Copied into folder.' : (r.error || 'Copy failed'));
         if (r.ok) {
           await renderShelf(); // Shelf chips must match disk after drop (drop event may end before this await).
           void refreshAfterDiskMutation();
@@ -5338,7 +5879,7 @@
       }
 
       if (!window.tagBrowser.movePathsIntoFolder) {
-        status.textContent = 'Move not available.';
+        setStatusMain('Move not available.');
         return;
       }
       const r = await scopeCopyOrMoveWithConflictPrompt('move', {
@@ -5346,7 +5887,7 @@
         destFolder,
         rootPrefix,
       });
-      status.textContent = r.ok ? 'Moved into folder.' : (r.error || 'Move failed');
+      setStatusMain(r.ok ? 'Moved into folder.' : (r.error || 'Move failed'));
       if (r.ok) {
         await renderShelf();
         void refreshAfterDiskMutation();
@@ -5408,7 +5949,7 @@
         }
         const scopeDest = currentScopeFolderPath();
         if (!scopeDest) {
-          document.getElementById('status').textContent = 'Set the current folder (breadcrumb or path editor) to drop into the list.';
+          setStatusMain('Set the current folder (breadcrumb or path editor) to drop into the list.');
           return;
         }
         await applyInternalPathsDrop(scopeDest, paths, e.shiftKey ? 'copy' : 'move');
@@ -5434,7 +5975,12 @@
         const isFavFoldersBar = bar.id === 'favFoldersBar';
 
         bar.addEventListener('dragover', (e) => {
-          if (isFavFoldersBar && favListDragKind === 'folder') {
+          /* Reorder-only drag has no x-tagbrowser-paths / files — don't let a stuck favListDragKind block row→folder drops. */
+          if (
+            isFavFoldersBar &&
+            favListDragKind === 'folder' &&
+            !dataTransferHasTagBrowserOrFiles(e.dataTransfer)
+          ) {
             clearBarPathDragOver();
             return;
           }
@@ -5454,7 +6000,11 @@
         });
 
         bar.addEventListener('drop', async (e) => {
-          if (isFavFoldersBar && favListDragKind === 'folder') {
+          if (
+            isFavFoldersBar &&
+            favListDragKind === 'folder' &&
+            !dataTransferHasTagBrowserOrFiles(e.dataTransfer)
+          ) {
             clearBarPathDragOver();
             return;
           }
@@ -5507,11 +6057,12 @@
       const aside = document.getElementById('appShelf');
       const rot = aside?.querySelector?.('.app-shelf-rot');
       if (!aside || !rot) return;
-      // Same geometry empty or with chips: pre-rot minWidth = column height so -90° strip fills the shelf; then aside width from AABB.
+      // Same geometry empty or with chips: pre-rot minWidth ≈ column height so -90° strip spans the shelf; shrink slightly so ends (hand / drop zone) don’t sit flush on aside top/bottom.
       rot.style.minWidth = '';
       const parent = aside.closest('.results-with-shelf') || aside.parentElement;
       const h = parent ? parent.clientHeight : 0;
-      if (h > 48) rot.style.minWidth = h + 'px';
+      const shelfStripEndInsetPx = 6;
+      if (h > 48) rot.style.minWidth = Math.max(48, h - shelfStripEndInsetPx * 2) + 'px';
       const br = rot.getBoundingClientRect();
       aside.style.width = Math.max(48, Math.ceil(br.width)) + 'px';
     }
@@ -5625,14 +6176,13 @@
           void (async () => {
             const st = await window.tagBrowser.shelfState();
             if (!st.ok) {
-              document.getElementById('status').textContent = st.error || 'Shelf unavailable';
+              setStatusMain(st.error || 'Shelf unavailable');
               return;
             }
             const destKey = pathNormKey(st.path);
             const filtered = paths.filter((p) => pathNormKey(p) !== destKey);
             if (!filtered.length) return;
 
-            const status = document.getElementById('status');
             let r;
             if (copy) {
               r = await scopeCopyOrMoveWithConflictPrompt('copy', {
@@ -5642,7 +6192,7 @@
               });
             } else {
               if (!window.tagBrowser.movePathsIntoFolder) {
-                status.textContent = 'Move not available.';
+                setStatusMain('Move not available.');
                 return;
               }
               r = await scopeCopyOrMoveWithConflictPrompt('move', {
@@ -5651,11 +6201,13 @@
                 rootPrefix: '',
               });
             }
-            status.textContent = r.ok
-              ? copy
-                ? 'Copied to Shelf.'
-                : 'Moved to Shelf.'
-              : r.error || (copy ? 'Shelf copy failed' : 'Shelf move failed');
+            setStatusMain(
+              r.ok
+                ? copy
+                  ? 'Copied to Shelf.'
+                  : 'Moved to Shelf.'
+                : r.error || (copy ? 'Shelf copy failed' : 'Shelf move failed')
+            );
             if (r.ok) void refreshAfterDiskMutation();
           })();
         }, 40);
@@ -6512,7 +7064,7 @@
 
     function applySearchState(s) {
       document.getElementById('query').value = s.query != null ? String(s.query) : '';
-      syncQueryFilledChrome();
+      syncQueryGhostUi();
       document.getElementById('rootFolder').value = s.rootFolder != null ? String(s.rootFolder) : '';
       if (Object.prototype.hasOwnProperty.call(s, 'searchScopeMax')) {
         setSearchScopeMaxFolderFromString(s.searchScopeMax);
@@ -6686,10 +7238,11 @@
       return holder;
     }
 
-    function renderNameCell(row, preParsed) {
+    function renderNameCell(row, preParsed, queryHit) {
       const fp = fullPathForRow(row);
       const base = T.baseName(fp);
       const parsed = preParsed || T.parseSegmentTags(base);
+      const hit = queryHit && queryHit.low && queryHit.len > 0 ? queryHit : null;
       const wrap = document.createElement('div');
       wrap.className = 'name-badges d-flex flex-nowrap align-items-center gap-1 min-w-0';
       const lead = document.createElement('span');
@@ -6699,19 +7252,23 @@
       for (const tag of parsed.tags) appendTagPillWithRemove(lead, tag, fp);
       const title = document.createElement('span');
       title.className = 'name-badges-title text-truncate';
-      title.textContent = parsed.pretty;
+      function setTitleText(str) {
+        if (hit) appendHighlightedTextInto(title, str, hit.low, hit.len);
+        else title.textContent = str;
+      }
+      setTitleText(parsed.pretty);
       /* GDrive shortcut ID folder: show resolved child name (sync from cache, or async on first encounter). */
       if (rowIsFolder(row) && isGDriveShortcutIdRow(row)) {
         const cacheKey = fp.replace(/[/\\]+$/, '').toLowerCase();
         const cached = gdriveShortcutNameCache.get(cacheKey);
         console.log('[GDrive render]', { fp, cacheKey, cached: typeof cached === 'string' ? cached : '(miss)', cacheSize: gdriveShortcutNameCache.size });
         if (typeof cached === 'string') {
-          title.textContent = '\u{1F517} ' + cached;
+          setTitleText('\u{1F517} ' + cached);
         } else {
           title.classList.add('text-muted');
           void resolveGDriveShortcutName(fp).then((name) => {
             if (!name) return;
-            title.textContent = '\u{1F517} ' + name;
+            setTitleText('\u{1F517} ' + name);
             title.classList.remove('text-muted');
           });
         }
@@ -6728,7 +7285,8 @@
       return wrap;
     }
 
-    function filteredRows() {
+    /** Same pipeline as filteredRows but before Hide special / Hide ~ (for status hints). */
+    function filteredRowsBeforeAdvancedPathHides() {
       let rows = lastRows.slice();
       if (activeTagKeys.size) {
         if (tagFilterCombineOr && activeTagKeys.size > 1) {
@@ -6757,10 +7315,14 @@
             return ms != null && ms >= cut;
           });
         } else if (treeRecencyDropRealFolderHits()) {
-          /* dm: already applied server-side — still strip folder rows so only file recency drives the tree. */
           rows = rows.filter((r) => !rowIsFolder(r));
         }
       }
+      return rows;
+    }
+
+    function filteredRows() {
+      let rows = filteredRowsBeforeAdvancedPathHides();
       if (isHideSpecialPaths()) {
         rows = rows.filter((r) => !pathUnderHideSpecialSegments(fullPathForRow(r)));
       }
@@ -6782,25 +7344,18 @@
       );
     }
 
-    /** Toggle warning color on the Advanced button when any switch is ON. */
+    /** Toggle outline highlight on Advanced when any switch is ON (green via styles.css). */
     function syncAdvancedBtnWarning() {
       const btn = document.getElementById('btnToggleSearchOptsAdvanced');
       if (!btn) return;
       const on = anyAdvancedSwitchOn();
       btn.classList.toggle('btn-outline-secondary', !on);
-      btn.classList.toggle('btn-outline-warning', on);
+      btn.classList.toggle('btn-outline-primary', on);
     }
 
-    /** Pale indigo fill on #query when it has text (empty = default chrome). */
-    function syncQueryFilledChrome() {
-      const q = document.getElementById('query');
-      if (!q) return;
-      q.classList.toggle('tagfox-query-filled', !!String(q.value || '').trim());
-    }
-
-    /** Recency segmented control (search bar); target for zero-row pulse when a bucket other than All is active. */
+    /** Recency segmented control (tag toolbar, RHS); target for zero-row pulse when a bucket other than All is active. */
     function recencyFilterGroupEl() {
-      return document.querySelector('.tagfox-search-toolbar-row [aria-label="Recency"]');
+      return document.querySelector('.tagfox-search-opts-rhs [aria-label="Recency"]');
     }
 
     /** View toggle labels for zero-row pulse hint. */
@@ -7045,6 +7600,7 @@
       function appendTagFilterCombineToggle(barEl) {
         const g = document.createElement('div');
         g.className = 'btn-group btn-group-sm';
+        if (!activeTagKeys.size) g.classList.add('tag-combine-toggle-idle');
         g.setAttribute('role', 'group');
         g.title =
           'Combine multiple tag filters: match ALL (AND) or ANY (OR). Used in the Everything query and in the result table filter.';
@@ -7204,11 +7760,12 @@
       document.addEventListener('dragstart', () => tagfoxHideAllBootstrapTooltips(null, true), true);
     }
 
-    /** Bootstrap tooltips for UI chrome; skips results grid and non-tooltip Bootstrap widgets. */
-    function refreshTagFoxChromeTooltips(root) {
+    /** Bootstrap tooltips for UI chrome; skips results grid unless opts.allowInResultsTable. */
+    function refreshTagFoxChromeTooltips(root, opts) {
       if (!root || !window.bootstrap || !bootstrap.Tooltip) return;
+      const allowInResults = !!(opts && opts.allowInResultsTable);
       root.querySelectorAll('[title], [data-bs-title]').forEach((el) => {
-        if (el.closest('#resultsTable')) return;
+        if (!allowInResults && el.closest('#resultsTable')) return;
         const dbt = el.getAttribute('data-bs-toggle');
         if (dbt && dbt !== 'tooltip') return;
         const t = normalizeTooltipTitleAttr(el);
@@ -7362,11 +7919,13 @@
 
     function renderTable() {
       const tbody = document.getElementById('tbody');
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
+      /* Do not clear #statusSmartNote here — e.g. “Big folder!” must survive checkbox/selection redraws. Cleared by setStatusMain, smartAfterPaint, or empty chip. */
       tbody.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {
         const tip = bootstrap.Tooltip.getInstance(el);
         if (tip) tip.dispose();
       });
+      clearInternalPathDragDropTargetHints();
       tbody.innerHTML = '';
       pruneCheckedPaths();
       const rows = filteredRows();
@@ -7381,6 +7940,8 @@
         rcc = resultsContentMode();
       /** One readable sentence for layout + subfolders + content (status bar). */
       function viewModeStatusSentence() {
+        /* Default Smart (subs on, all content): redundant with toolbar — omit suffix. */
+        if (smart && sub && rcc === 'all') return '';
         const layout = flat ? 'Flat view' : smart ? 'Smart view' : 'Tree view';
         let s = layout;
         if (sub) s += ' with subfolders';
@@ -7390,24 +7951,35 @@
         if (!sub && !scopePath) s += ' (set a current folder in Settings for a clearer listing)';
         return s;
       }
-      const statusParts = [];
-      if (!visN) statusParts.push('No rows');
-      else if (visN === rawN) statusParts.push(String(visN) + ' row(s)');
-      else if (visN < rawN)
-        statusParts.push(String(visN) + ' of ' + String(rawN) + ' row(s) visible');
-      else
-        statusParts.push(String(visN) + ' row(s) · ' + String(rawN) + ' search result(s)');
-      if (activeTagKeys.size || recencyFilterMode() !== 'all')
-        statusParts.push('Some results are hidden by tag or recency filters');
-      if (isHideSpecialPaths()) statusParts.push('Hiding special files/folders');
-      if (isHideTildePaths()) statusParts.push('Hiding paths that contain a ~ segment');
-      statusParts.push(viewModeStatusSentence());
-      status.textContent = statusParts.join('. ') + '.';
+      const someRowsHidden = visN < rawN;
+      const beforePathHides = filteredRowsBeforeAdvancedPathHides();
+      const hideSpecialDrops = isHideSpecialPaths()
+        ? beforePathHides.filter((r) => pathUnderHideSpecialSegments(fullPathForRow(r))).length
+        : 0;
+      const hideTildeDrops = isHideTildePaths()
+        ? beforePathHides.filter((r) => pathUnderTildeSegment(fullPathForRow(r))).length
+        : 0;
+      if (status) {
+        status.innerHTML = formatResultsStatusMainHtml({
+          visN,
+          rawN,
+          tagRecencyHintPlain: !someRowsHidden
+            ? tagRecencyStatusFilterHintPlain(activeTagKeys, recencyFilterMode())
+            : '',
+          showHideSpecialHint: hideSpecialDrops > 0,
+          showHideTildeHint: hideTildeDrops > 0,
+          omitViewSuffix: !!pendingSmartStatusNote,
+          viewModeSentence: viewModeStatusSentence(),
+        });
+      }
       const showPathFolderGrouping = shouldShowPathFolderGrouping();
       const showPathTreeGutter = isTreeViewOn() && sortColumn === 'path' && isShowSubfolders();
       const pathTreeDepths = rowsForDisplay.map((r) => pathTreeUiDepth(r, showPathFolderGrouping));
       const pathTreeGutters = showPathTreeGutter ? pathTreeGutterStringsForDepths(pathTreeDepths) : null;
       const treeFoldUi = isTreeFoldUiActive();
+      /* Highlight #query substring in name/path cells (case-insensitive); cheap vs full row build. */
+      const qTrim = (document.getElementById('query')?.value || '').trim();
+      const queryHit = qTrim ? { low: qTrim.toLowerCase(), len: qTrim.length } : null;
       for (let rowIdx = 0; rowIdx < rowsForDisplay.length; rowIdx++) {
         const row = rowsForDisplay[rowIdx];
         const fp = fullPathForRow(row);
@@ -7455,7 +8027,7 @@
         const tdName = document.createElement('td');
         tdName.className = 'min-w-0';
         {
-          const nameInner = renderNameCell(row, parsedName);
+          const nameInner = renderNameCell(row, parsedName, queryHit);
           if (showPathTreeGutter) {
             const g = (pathTreeGutters && pathTreeGutters[rowIdx]) || '';
             const outer = document.createElement('div');
@@ -7511,7 +8083,11 @@
         tdPath.className = 'col-path text-muted small';
         const pathBox = document.createElement('div');
         pathBox.className = 'path-ellip-start';
-        fillPathCellBox(pathBox, collapseGDriveShortcutDisplay(pathColumnDisplayForRow(fp, rowIsFolder(row))));
+        fillPathCellBox(
+          pathBox,
+          collapseGDriveShortcutDisplay(pathColumnDisplayForRow(fp, rowIsFolder(row))),
+          queryHit
+        );
         tdPath.title = fp;
         tdPath.appendChild(pathBox);
 
@@ -7525,17 +8101,18 @@
         tdDate.textContent = formatModified(row.date_modified ?? row.date_modified_unix);
 
         const tdAct = document.createElement('td');
-        tdAct.className = 'text-nowrap';
+        /* Toolbar: flex on inner div only — flex on <td> drew white row seams under the icon strip. */
+        tdAct.className = 'text-nowrap results-td-actions';
+        const tdActInner = document.createElement('div');
+        tdActInner.className = 'results-td-actions-inner';
         const parentForScope = normalizeFolderPathForEverything(T.parentDir(fp));
         const btnScopeParent = document.createElement('button');
         btnScopeParent.type = 'button';
         btnScopeParent.className =
-          'btn btn-outline-secondary btn-sm me-1 d-inline-flex align-items-center justify-content-center p-0';
-        btnScopeParent.style.width = '1.5rem';
-        btnScopeParent.style.height = '1.5rem';
-        btnScopeParent.title = 'Set current folder to parent';
-        btnScopeParent.setAttribute('aria-label', 'Set current folder to parent');
-        btnScopeParent.innerHTML = '<i class="fa-solid fa-chevron-up fa-fw" aria-hidden="true"></i>';
+          'btn btn-sm btn-outline-secondary tagfox-scope-bar-icon-btn d-inline-flex align-items-center justify-content-center';
+        btnScopeParent.title = 'Parent folder (Ctrl+↑ or Backspace)';
+        btnScopeParent.setAttribute('aria-label', 'Open parent folder');
+        btnScopeParent.innerHTML = '<i class="fa-solid fa-chevron-up" aria-hidden="true"></i>';
         btnScopeParent.disabled = !parentForScope;
         btnScopeParent.addEventListener('click', async (e) => {
           e.stopPropagation();
@@ -7545,14 +8122,12 @@
         const btnOpen = document.createElement('button');
         btnOpen.type = 'button';
         btnOpen.className =
-          'btn btn-outline-secondary btn-sm me-1 d-inline-flex align-items-center justify-content-center p-0';
-        btnOpen.style.width = '1.5rem';
-        btnOpen.style.height = '1.5rem';
+          'btn btn-sm btn-outline-secondary tagfox-scope-bar-icon-btn d-inline-flex align-items-center justify-content-center';
         /* Files: shell open; folders: Explorer — box-arrow-up-right (same family as toolbar “open”). */
         const openTitle = rowIsFolder(row) ? 'Show in File Explorer' : 'Open with default app';
         btnOpen.title = openTitle;
         btnOpen.setAttribute('aria-label', openTitle);
-        btnOpen.innerHTML = '<i class="fa-solid fa-up-right-from-square fa-fw" aria-hidden="true"></i>';
+        btnOpen.innerHTML = '<i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i>';
         btnOpen.addEventListener('click', async (e) => {
           e.stopPropagation();
           if (rowIsFolder(row)) {
@@ -7564,27 +8139,22 @@
         const btnClip = document.createElement('button');
         btnClip.type = 'button';
         btnClip.className =
-          'btn btn-outline-secondary btn-sm me-1 row-clip-btn d-inline-flex align-items-center justify-content-center p-0';
-        btnClip.style.width = '1.5rem';
-        btnClip.style.height = '1.5rem';
+          'btn btn-sm btn-outline-secondary tagfox-scope-bar-icon-btn row-clip-btn d-inline-flex align-items-center justify-content-center';
         btnClip.title = 'Copy (Windows Explorer paste)';
         btnClip.setAttribute('aria-label', 'Copy');
-        btnClip.innerHTML = '<i class="fa-solid fa-clipboard fa-fw" aria-hidden="true"></i>';
+        btnClip.innerHTML = '<i class="fa-solid fa-clipboard" aria-hidden="true"></i>';
         btnClip.addEventListener('click', async (e) => {
           e.stopPropagation();
           const r = await window.tagBrowser.copyExplorerPaste([fp]);
-          if (!r || !r.ok) status.textContent = (r && r.error) || 'Copy for Explorer failed';
+          if (!r || !r.ok) setStatusMain((r && r.error) || 'Copy for Explorer failed');
         });
         const btnMore = document.createElement('button');
         btnMore.type = 'button';
         btnMore.className =
-          'btn btn-outline-secondary btn-sm me-1 d-inline-flex align-items-center justify-content-center p-0';
-        btnMore.style.width = '1.5rem';
-        btnMore.style.height = '1.5rem';
-        btnMore.title =
-          'More — full actions menu (or right-click the row). Copy/cut, paths, open, shortcut, Properties, …';
+          'btn btn-sm btn-outline-secondary tagfox-scope-bar-icon-btn d-inline-flex align-items-center justify-content-center';
+        btnMore.title = 'More — full actions menu (same as row ⋯)';
         btnMore.setAttribute('aria-label', 'More actions');
-        btnMore.innerHTML = '<i class="fa-solid fa-ellipsis fa-fw" aria-hidden="true"></i>';
+        btnMore.innerHTML = '<i class="fa-solid fa-ellipsis" aria-hidden="true"></i>';
         btnMore.addEventListener('click', async (e) => {
           e.stopPropagation();
           const r = btnMore.getBoundingClientRect();
@@ -7593,23 +8163,24 @@
         const btnTags = document.createElement('button');
         btnTags.type = 'button';
         btnTags.className =
-          'btn btn-outline-primary btn-sm me-1 d-inline-flex align-items-center justify-content-center p-0';
-        btnTags.style.width = '1.5rem';
-        btnTags.style.height = '1.5rem';
-        btnTags.title = 'Edit [(…)] tags in the name';
+          'btn btn-sm btn-outline-primary tagfox-scope-bar-icon-btn d-inline-flex align-items-center justify-content-center';
+        btnTags.title = rowIsFolder(row)
+          ? 'Edit [(…)] tags in the folder name'
+          : 'Edit [(…)] tags in the file name';
         btnTags.setAttribute('aria-label', 'Edit tags');
         /* Same tag icon as tag toolbar lead (#tagBar row in index.html). */
-        btnTags.innerHTML = '<i class="fa-solid fa-tags fa-fw" aria-hidden="true"></i>';
+        btnTags.innerHTML = '<i class="fa-solid fa-tags" aria-hidden="true"></i>';
         btnTags.addEventListener('click', (e) => {
           e.stopPropagation();
           openTagModal(fp);
         });
 
-        tdAct.appendChild(btnOpen);
-        tdAct.appendChild(btnScopeParent);
-        tdAct.appendChild(btnClip);
-        tdAct.appendChild(btnTags);
-        tdAct.appendChild(btnMore);
+        tdActInner.appendChild(btnOpen);
+        tdActInner.appendChild(btnScopeParent);
+        tdActInner.appendChild(btnClip);
+        tdActInner.appendChild(btnTags);
+        tdActInner.appendChild(btnMore);
+        tdAct.appendChild(tdActInner);
 
         const sizeStr = formatSize(row.size);
         const dateStr = formatModified(row.date_modified ?? row.date_modified_unix);
@@ -7617,10 +8188,8 @@
         bindCellTooltip(tdPath, fp);
         bindCellTooltip(tdSize, sizeStr);
         bindCellTooltip(tdDate, dateStr);
-        bindCellTooltip(
-          tdAct,
-          'Open — file: default app; folder: show in Explorer\nParent folder — set current folder to containing folder\nCopy — Windows Explorer paste\nTags — tag editor\n⋯ or right-click row — full menu (copy/cut, paths, shortcut, Properties, …)'
-        );
+        /* Per-button JS tooltips (same class as breadcrumb chrome), not one mega-tooltip on the cell. */
+        refreshTagFoxChromeTooltips(tdActInner, { allowInResultsTable: true });
 
         tr.appendChild(tdCb);
         tr.appendChild(tdName);
@@ -7655,6 +8224,8 @@
           }
           if (tagBrowserNextOsFileDrag) tagBrowserNextOsFileDrag = false;
           setDataTransferTagBrowserHtml5Paths(e.dataTransfer, paths);
+          tr.classList.add('tagfox-results-row--drag-source');
+          setInternalPathDragDropTargetHints(true);
         });
         tr.addEventListener('contextmenu', (e) => {
           e.preventDefault();
@@ -7664,6 +8235,37 @@
           if (e.target.closest('button')) return;
           if (e.target.closest('input[type="checkbox"]')) return;
           // Folders: select only (rename, bulk, props) — do not change scope; Enter still scopes/opens like before.
+          const rows = listRowsForUi();
+          if (e.shiftKey) {
+            e.preventDefault();
+            let anchorIdx = navFocusIndexInFilteredRows(rows);
+            const clickedIdx = rows.findIndex((r) => fullPathForRow(r) === fp);
+            if (clickedIdx < 0) return;
+            if (anchorIdx < 0) anchorIdx = clickedIdx;
+            const lo = Math.min(anchorIdx, clickedIdx);
+            const hi = Math.max(anchorIdx, clickedIdx);
+            for (let i = 0; i < rows.length; i++) {
+              toggleCheckPath(fullPathForRow(rows[i]), i >= lo && i <= hi);
+            }
+            resultsShiftRangeAnchorIdx = anchorIdx;
+            updateSelectAllCheckboxState();
+            syncResultsRowCheckboxStates();
+            setSelection(row, fp);
+            return;
+          }
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            const prevSel = selectedFullPath;
+            if (!isCheckedPath(fp) && prevSel && prevSel !== fp && !isCheckedPath(prevSel)) {
+              toggleCheckPath(prevSel, true);
+            }
+            toggleCheckPath(fp, !isCheckedPath(fp));
+            resultsShiftRangeAnchorIdx = null;
+            updateSelectAllCheckboxState();
+            syncResultsRowCheckboxStates();
+            setSelection(row, fp);
+            return;
+          }
           resultsShiftRangeAnchorIdx = null;
           setSelection(row, fp);
         });
@@ -7770,9 +8372,8 @@
 
     function setTagApplyFeedback(msg) {
       const el = document.getElementById('tagModalFeedback');
-      const status = document.getElementById('status');
       if (el) el.textContent = msg || '';
-      if (status) status.textContent = msg || '';
+      setStatusMain(msg || '');
     }
 
     function openTagModal(fp) {
@@ -8212,7 +8813,7 @@
       }
       const ctx = resultsPagingCtx;
       const runId = searchRunSeq;
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       resultsLoadMoreBusy = true;
       updateResultsLoadMoreUi();
       try {
@@ -8230,10 +8831,11 @@
         if (runId !== searchRunSeq) return;
         if (!res || !res.ok) {
           resultsPagingCtx = { ...ctx, hasMore: false };
-          if (status) status.textContent = (res && res.error) || 'Load more failed';
+          if (status) setStatusMain((res && res.error) || 'Load more failed');
           maybeShowEverythingHttpHelpBanner(res && res.error);
           renderTable();
           updateResultsLoadMoreUi();
+          clearBigFolderCapSmartNoteIfStale();
           return;
         }
         hideEverythingHttpHelpBanner();
@@ -8258,6 +8860,7 @@
         renderTagBar();
         renderTable();
         updateResultsLoadMoreUi();
+        clearBigFolderCapSmartNoteIfStale();
       } finally {
         resultsLoadMoreBusy = false;
         updateResultsLoadMoreUi();
@@ -8307,6 +8910,31 @@
       wrap.classList.remove('d-none');
     }
 
+    /** Smart auto-narrow chip: one short line from toggles (no jargon). */
+    function smartNarrowChipForToggles(subsOn, content) {
+      const bits = [];
+      if (!subsOn) bits.push('Smart View is hiding subfolders');
+      if (content === 'folders') bits.push('Smart View is hiding files');
+      if (content === 'files') bits.push('Smart View is hiding folders');
+      if (!bits.length) return 'Smart View is using a smaller view.';
+      return bits.join('; ') + '.';
+    }
+    /** Text after “Big folder! ” when cap stress is merged with the auto-narrow note (see smartNarrowChipForToggles). */
+    function bigFolderSmartChipNarrowSuffix(narrowNoteText) {
+      const t = String(narrowNoteText || '').trim();
+      const lower = t.toLowerCase();
+      const hasSub = /smart view is hiding subfolders/.test(lower);
+      const hasNotFiles = /smart view is hiding files/.test(lower);
+      const hasNotFolders = /smart view is hiding folders/.test(lower);
+      if (hasSub && hasNotFiles) return 'Smart View is hiding subfolders and files.';
+      if (hasSub && hasNotFolders) return 'Smart View is hiding subfolders and folders.';
+      if (hasSub) return 'Smart View is hiding subfolders.';
+      if (hasNotFiles) return 'Smart View is hiding files.';
+      if (hasNotFolders) return 'Smart View is hiding folders.';
+      if (t) return t.replace(/\.\s*$/, '') + '.';
+      return '';
+    }
+
     /**
      * Smart before-paint: if cap exceeded, either revert a probe or narrow the view, then re-search.
      * Returns true if a re-search was triggered (caller should return without painting).
@@ -8315,23 +8943,26 @@
       if (!isSmartView()) return false;
       if (runId !== searchRunSeq) return false;
       if (!resultsPagingCtx || resultsPagingCtx.mode !== 'single' || !resultsPagingCtx.hasMore) return false;
-      const st = document.getElementById('status');
 
       /* Probe exceeded cap: revert to prior toggles and re-search as smart-narrow. */
       if (smartEvent === 'smart-probe' && smartProbePrior) {
-        if (st) st.textContent = 'Smart view: full tree would exceed the cap — restored narrower scope.';
-        applyResultsViewRadiosToDom('smart', smartProbePrior.subs, smartProbePrior.content);
+        const prior = smartProbePrior;
+        pendingSmartStatusNote = {
+          text: smartNarrowChipForToggles(prior.subs, prior.content),
+          kind: 'warn',
+        };
+        applyResultsViewRadiosToDom('smart', prior.subs, prior.content);
         syncViewRadioActiveFromDom();
         saveSettings();
-        const prior = smartProbePrior;
         smartProbePrior = null;
-        await runSearchNow('smart-narrow');
+        await runSearchNow('smart-narrow', { keepPendingSmartNote: true });
         smartRevertFP = smartOutcomeFingerprint();
         return true;
       }
 
-      /* Identity search exceeded cap: try narrowing (subs off, then files-only). */
-      if (smartEvent === 'identity') {
+      /* Identity search exceeded cap: try narrowing (subs off, then folders-only).
+       * Typed query: never auto-narrow — cap may truncate; user keeps subs + Both. */
+      if (smartEvent === 'identity' && !(document.getElementById('query')?.value || '').trim()) {
         const rootFolder = document.getElementById('rootFolder').value.trim();
         if (isShowSubfolders()) {
           const droppingSubsOk = !lastRows.length || smartScopeHasDirectChildHit(lastRows, rootFolder);
@@ -8339,17 +8970,17 @@
             applyResultsViewRadiosToDom('smart', false, resultsContentMode());
             syncViewRadioActiveFromDom();
             saveSettings();
-            if (st) st.textContent = 'Smart view: subfolders turned off — result set exceeded the cap.';
-            await runSearchNow('smart-narrow');
+            pendingSmartStatusNote = { text: 'Smart View is hiding subfolders.', kind: 'warn' };
+            await runSearchNow('smart-narrow', { keepPendingSmartNote: true });
             return true;
           }
         }
         if (!isFilesOnly() && !isFoldersOnly()) {
-          applyResultsViewRadiosToDom('smart', isShowSubfolders(), 'files');
+          applyResultsViewRadiosToDom('smart', isShowSubfolders(), 'folders');
           syncViewRadioActiveFromDom();
           saveSettings();
-          if (st) st.textContent = 'Smart view: switched to Files only — still exceeding the cap.';
-          await runSearchNow('smart-narrow');
+          pendingSmartStatusNote = { text: 'Smart View is hiding files.', kind: 'warn' };
+          await runSearchNow('smart-narrow', { keepPendingSmartNote: true });
           return true;
         }
       }
@@ -8358,36 +8989,41 @@
     }
 
     /**
-     * Smart after-paint: if all results fit and view is narrowed, probe-widen to full tree.
-     * If probe succeeded (smart-probe with !hasMore), show success status.
+     * Smart after-paint: if the view is narrowed but results are within Max results, probe-widen to full tree.
+     * Probe success: chip suppressed — main status line already reflects Smart view + toggles.
      */
     async function smartAfterPaint() {
-      if (!isSmartView()) { smartEvent = null; smartProbePrior = null; smartRevertFP = null; return; }
+      smartCapStressBigFolderAfterPaint = false;
+      if (!isSmartView()) {
+        smartEvent = null;
+        smartProbePrior = null;
+        smartRevertFP = null;
+        clearStatusSmartNote();
+        return;
+      }
       if (!resultsPagingCtx || resultsPagingCtx.mode !== 'single') return;
 
       if (smartRevertFP && smartOutcomeFingerprint() !== smartRevertFP) smartRevertFP = null;
 
-      const st = document.getElementById('status');
       const hasMore = !!resultsPagingCtx.hasMore;
 
-      /* Probe success: all results fit in full tree view. */
+      /* Probe success: main line already shows Smart view + subs; no chip. */
       if (smartEvent === 'smart-probe' && !hasMore) {
         smartProbePrior = null;
         smartRevertFP = null;
-        if (st) st.textContent = 'Smart view: showing full tree (all results fit in this cap).';
+        clearStatusSmartNote();
         return;
       }
 
-      /* manual / smart-narrow / refresh: no further auto-adjustment. */
-      if (smartEvent === 'manual' || smartEvent === 'smart-narrow' || smartEvent === 'refresh') return;
-
-      /* Still exceeding cap after all narrowing: terminal message. */
+      /* Cap stress: more hits in Everything than fit this page (incl. after smart-narrow). Chip text merged with pending in runSearch. */
       if (hasMore) {
         smartRevertFP = null;
-        if (isFilesOnly() && st)
-          st.textContent = 'Smart view: still more results than the cap (Load more or raise Max results).';
+        smartCapStressBigFolderAfterPaint = true;
         return;
       }
+
+      /* manual / smart-narrow / refresh: no probe-widen below (everything fits one page). */
+      if (smartEvent === 'manual' || smartEvent === 'smart-narrow' || smartEvent === 'refresh') return;
 
       /* All results fit but view is narrowed: probe-widen to full tree. */
       if (!isShowSubfolders() || !isAllContent()) {
@@ -8415,7 +9051,8 @@
       return false;
     }
 
-    async function runSearch(eventKind = 'identity') {
+    async function runSearch(eventKind = 'identity', opts = {}) {
+      const keepPendingSmartNote = !!opts.keepPendingSmartNote;
       searchInFlight = true;
       const runId = ++searchRunSeq;
       if (!isSmartView()) {
@@ -8438,7 +9075,7 @@
           syncViewRadioActiveFromDom();
         }
       }
-      const status = document.getElementById('status');
+      if (!keepPendingSmartNote) pendingSmartStatusNote = null;
       saveSettings();
       const baseUrl = document.getElementById('baseUrl').value.trim() || 'http://127.0.0.1';
       const ceilingNorms = getSearchScopeCeilingFoldersNorms();
@@ -8492,7 +9129,7 @@
         options,
       });
 
-      status.textContent = 'Searching…';
+      setStatusMain('Searching…');
 
       searchDebugLog('runSearch.branch', {
         runId,
@@ -8524,7 +9161,7 @@
         lastRows = [];
         resultsPagingCtx = null;
         searchDebugLog('runSearch.error', { runId, err: res.error || 'Search failed' });
-        status.textContent = res.error || 'Search failed';
+        setStatusMain(res.error || 'Search failed');
         maybeShowEverythingHttpHelpBanner(res.error);
         await syncSelectionAfterSearch();
         renderTagBar();
@@ -8558,12 +9195,29 @@
         seedOptions: stripOffsetFromOpts(res.optionsUsed),
       };
       if (runId === searchRunSeq && (await smartBeforePaint(runId))) return;
-      status.textContent = lastRows.length ? lastRows.length + ' result(s)' : 'No results';
       await syncSelectionAfterSearch();
       renderTagBar();
       renderTable();
       pulseEmptyResultHintsAfterSearchOk();
       if (runId === searchRunSeq) await smartAfterPaint();
+      if (runId === searchRunSeq) {
+        const pending = pendingSmartStatusNote;
+        pendingSmartStatusNote = null;
+        const cap = smartCapStressBigFolderAfterPaint;
+        clearStatusSmartNote();
+        const capChip = cap && !shouldSuppressCapOnlyBigFolderChip();
+        if (pending || capChip) {
+          /* pending: auto-narrow note. capChip: empty-browse page full — not when full Smart + query/tags/recency (normal paging). */
+          let text;
+          if (pending) {
+            const extra = bigFolderSmartChipNarrowSuffix(pending.text);
+            text = extra ? 'Big folder! ' + extra : 'Big folder!';
+          } else {
+            text = 'Big folder!';
+          }
+          setStatusSmartNote(text, pending ? pending.kind : 'warn');
+        }
+      }
       } finally {
         if (runId === searchRunSeq) searchInFlight = false;
       }
@@ -8593,7 +9247,7 @@
     });
 
     document.getElementById('query').addEventListener('input', () => {
-      syncQueryFilledChrome();
+      syncQueryGhostUi();
       scheduleSearch();
       scheduleSearchHistoryCommit();
     });
@@ -8628,35 +9282,35 @@
     );
 
     document.getElementById('btnSaveFavouriteFolder').addEventListener('click', () => {
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       const p = currentScopeFolderPath();
       if (!p) {
-        status.textContent = 'No folder to save — set the current folder in Settings, or click a folder row.';
+        setStatusMain('No folder to save — set the current folder in Settings, or click a folder row.');
         return;
       }
       const list = loadFavouriteFolders();
       if (list.some((x) => x.toLowerCase() === p.toLowerCase())) {
-        status.textContent = 'Already in favourites.';
+        setStatusMain('Already in favourites.');
         return;
       }
       list.push(p);
       saveFavouriteFolders(list);
       renderFavFoldersBar();
-      status.textContent = 'Favourite saved.';
+      setStatusMain('Favourite saved.');
     });
 
     document.getElementById('btnSaveFavouriteSearch').addEventListener('click', () => {
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       const snap = serializeSearchState();
       const list = loadFavouriteSearches();
       if (list.some((x) => searchStatesEqual(x, snap))) {
-        status.textContent = 'Already saved this search.';
+        setStatusMain('Already saved this search.');
         return;
       }
       list.push(snap);
       saveFavouriteSearches(list);
       renderFavSearchesBar();
-      status.textContent = 'Search saved.';
+      setStatusMain('Search saved.');
     });
 
     document.getElementById('btnNewTodoMdTags').addEventListener('click', () => openTagModalNewTodoDraft());
@@ -8738,12 +9392,38 @@
         cancelScopePathEditMode();
       }
     });
-    document.getElementById('btnStatusScopeSiblingPrev')?.addEventListener('click', () => void goToSiblingScopeFolder(-1));
-    document.getElementById('btnStatusScopeSiblingNext')?.addEventListener('click', () => void goToSiblingScopeFolder(1));
-    document.getElementById('btnStatusScopeParent').addEventListener('click', () => void goToParentScopeFolder());
-    /* Re-click active segment cycles (Tree→Smart→Flat; dirs→all→files); subs stay a 2-way pair. */
-    const viewLayoutTrioIds = ['optRvTree', 'optRvSmart', 'optRvFlat'];
-    const contentTrioIds = ['optRvDirsOnly', 'optRvAll', 'optRvFilesOnly'];
+    document.getElementById('btnStatusScopeParent')?.addEventListener('click', () => void goToParentScopeFolder());
+    document.getElementById('btnScopeBarOpen')?.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const raw = document.getElementById('rootFolder').value.trim();
+      if (!raw) return;
+      await window.tagBrowser.showInFolder(normalizeFolderPathForEverything(raw));
+    });
+    document.getElementById('btnScopeBarClip')?.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const status = document.getElementById('statusMain');
+      const raw = document.getElementById('rootFolder').value.trim();
+      if (!raw) return;
+      const r = await window.tagBrowser.copyExplorerPaste([normalizeFolderPathForEverything(raw)]);
+      if (!r || !r.ok) setStatusMain((r && r.error) || 'Copy for Explorer failed');
+    });
+    document.getElementById('btnScopeBarTags')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      const raw = document.getElementById('rootFolder').value.trim();
+      if (!raw) return;
+      openTagModal(normalizeFolderPathForEverything(raw));
+    });
+    document.getElementById('btnScopeBarMore')?.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const raw = document.getElementById('rootFolder').value.trim();
+      if (!raw) return;
+      const fp = normalizeFolderPathForEverything(raw);
+      const rect = e.currentTarget.getBoundingClientRect();
+      await openResultsRowItemActionsMenu(fp, rect.left, rect.bottom, null);
+    });
+    /* Re-click active segment cycles (Smart→Tree→Flat; all→folders→files); subs on↔off. */
+    const viewLayoutTrioIds = ['optRvSmart', 'optRvTree', 'optRvFlat'];
+    const contentTrioIds = ['optRvAll', 'optRvDirsOnly', 'optRvFilesOnly'];
     const viewPairs = [['optRvSubsOn', 'optRvSubsOff']];
     const viewRadioActive = {};
     /** Mirror checked state for toggle-on-reclick (loadSettings, setResultsViewRadios, column-sort flat switch). */
@@ -8835,17 +9515,17 @@
       void (async () => {
         if (!window.tagBrowser || typeof window.tagBrowser.globalToggleSet !== 'function') return;
         const r = await window.tagBrowser.globalToggleSet(acc);
-        const st = document.getElementById('status');
+        const st = document.getElementById('statusMain');
         const hint = document.getElementById('globalToggleHotkeyHelp');
         if (r && r.ok) {
-          if (st) st.textContent = 'Global toggle: ' + r.accelerator;
+          if (st) setStatusMain('Global toggle: ' + r.accelerator);
           if (hint)
             hint.textContent =
               'Saved ' +
               r.accelerator +
               '. Recording needs at least one modifier. Works while TagFox is hidden.';
         } else {
-          if (st) st.textContent = (r && r.error) || 'Could not set global shortcut.';
+          if (st) setStatusMain((r && r.error) || 'Could not set global shortcut.');
           if (hint) hint.textContent = (r && r.error) || 'Registration failed — shortcut unchanged.';
         }
         setGlobalToggleRecording(false);
@@ -8868,15 +9548,15 @@
       void (async () => {
         if (!window.tagBrowser || typeof window.tagBrowser.quickTodoHotkeySet !== 'function') return;
         const r = await window.tagBrowser.quickTodoHotkeySet(acc);
-        const st = document.getElementById('status');
+        const st = document.getElementById('statusMain');
         const hint = document.getElementById('quickTodoHotkeyHelp');
         if (r && r.ok) {
-          if (st) st.textContent = 'Quick TODO shortcut: ' + r.accelerator;
+          if (st) setStatusMain('Quick TODO shortcut: ' + r.accelerator);
           if (hint)
             hint.textContent =
               'Saved ' + r.accelerator + '. Recording needs at least one modifier. Works only while TagFox is running.';
         } else {
-          if (st) st.textContent = (r && r.error) || 'Could not set Quick TODO shortcut.';
+          if (st) setStatusMain((r && r.error) || 'Could not set Quick TODO shortcut.');
           if (hint) hint.textContent = (r && r.error) || 'Registration failed — shortcut unchanged.';
         }
         setQuickTodoHotkeyRecording(false);
@@ -8899,11 +9579,11 @@
       if (!text) return;
       try {
         await navigator.clipboard.writeText(text);
-        const status = document.getElementById('status');
-        if (status) status.textContent = 'Debug log copied.';
+        const status = document.getElementById('statusMain');
+        if (status) setStatusMain('Debug log copied.');
       } catch (_) {
-        const status = document.getElementById('status');
-        if (status) status.textContent = 'Could not copy debug log.';
+        const status = document.getElementById('statusMain');
+        if (status) setStatusMain('Could not copy debug log.');
       }
     });
 
@@ -8921,20 +9601,20 @@
       } else renderTable();
     });
     document.getElementById('btnBulkClip').addEventListener('click', async () => {
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       const p = getCheckedPathsArr();
       if (!p.length) return;
       const r = await window.tagBrowser.copyExplorerPaste(p);
-      if (!r || !r.ok) status.textContent = (r && r.error) || 'Copy for Explorer failed';
+      if (!r || !r.ok) setStatusMain((r && r.error) || 'Copy for Explorer failed');
     });
     document.getElementById('btnBulkTrash').addEventListener('click', async () => {
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       const p = getCheckedPathsArr();
       if (!p.length) return;
       if (!confirm(recycleBinConfirmMessage(p))) return;
       detachViewerEditorsForTrashedPaths(p);
       const r = await window.tagBrowser.trashPaths(p);
-      if (!r || !r.ok) status.textContent = (r && r.error) || 'Delete failed';
+      if (!r || !r.ok) setStatusMain((r && r.error) || 'Delete failed');
       else {
         checkedPathsMap.clear();
         updateBulkBar();
@@ -9026,15 +9706,15 @@
     document.getElementById('btnOpenGoogleWorkspace').addEventListener('click', async () => {
       const btn = document.getElementById('btnOpenGoogleWorkspace');
       const u = btn && btn.dataset && btn.dataset.url;
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       if (!u || !window.tagBrowser.openGoogleWorkspaceWindow) return;
       const r = await window.tagBrowser.openGoogleWorkspaceWindow({ url: u });
-      if (status) status.textContent = r.ok ? 'Opened in app window.' : (r.error || 'Open failed');
+      if (status) setStatusMain(r.ok ? 'Opened in app window.' : (r.error || 'Open failed'));
     });
 
     window.tagBrowser.setPathsMutatedHandler(() => void refreshAfterDiskMutation());
     window.tagBrowser.setShellActionErrorHandler((msg) => {
-      document.getElementById('status').textContent = String(msg || 'Action failed');
+      setStatusMain(String(msg || 'Action failed'));
     });
     if (typeof window.tagBrowser.setQuickTodoOpenHandler === 'function') {
       window.tagBrowser.setQuickTodoOpenHandler(() => showQuickTodoPop());
@@ -9369,13 +10049,15 @@
     }
 
     function syncStatusBarParentScopeButton() {
+      const raw = document.getElementById('rootFolder').value.trim();
+      const hasScope = !!normalizeFolderPathForEverything(raw);
       const canUp = canGoToParentScopeFolder();
       const b = document.getElementById('btnStatusScopeParent');
       if (b) b.disabled = !canUp;
-      const prev = document.getElementById('btnStatusScopeSiblingPrev');
-      const next = document.getElementById('btnStatusScopeSiblingNext');
-      if (prev) prev.disabled = !canUp;
-      if (next) next.disabled = !canUp;
+      for (const id of ['btnScopeBarOpen', 'btnScopeBarClip', 'btnScopeBarTags', 'btnScopeBarMore']) {
+        const el = document.getElementById(id);
+        if (el) el.disabled = !hasScope;
+      }
     }
 
     /**
@@ -9413,34 +10095,34 @@
 
     /** ← / → among sibling folders under the same parent (order = current table sort). */
     async function goToSiblingScopeFolder(delta) {
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       const raw = document.getElementById('rootFolder').value.trim();
       if (!raw) {
-        if (status) status.textContent = 'No current folder set.';
+        if (status) setStatusMain('No current folder set.');
         return;
       }
       const norm = normalizeFolderPathForEverything(raw);
       const parRaw = T.parentDir(norm);
       const par = normalizeFolderPathForEverything(parRaw);
       if (!par || pathNormKey(par) === pathNormKey(norm)) {
-        if (status) status.textContent = 'No sibling folders at this level.';
+        if (status) setStatusMain('No sibling folders at this level.');
         return;
       }
       const rows = await fetchSortedSiblingFolderRowsUnderParent(par);
       if (!rows.length) {
-        if (status) status.textContent = 'Could not list folders in parent.';
+        if (status) setStatusMain('Could not list folders in parent.');
         return;
       }
       const scopeKey = pathNormKey(norm);
       const idx = rows.findIndex((r) => pathNormKey(fullPathForRow(r)) === scopeKey);
       if (idx < 0) {
-        if (status) status.textContent = 'Current folder not in parent listing.';
+        if (status) setStatusMain('Current folder not in parent listing.');
         return;
       }
       const j = idx + delta;
       if (j < 0 || j >= rows.length) {
         if (status)
-          status.textContent = delta < 0 ? 'Already at first sibling folder.' : 'Already at last sibling folder.';
+          setStatusMain(delta < 0 ? 'Already at first sibling folder.' : 'Already at last sibling folder.');
         return;
       }
       await applySearchScopeAndRefresh(normalizeFolderPathForEverything(fullPathForRow(rows[j])));
@@ -9448,10 +10130,10 @@
 
     /** Move scope folder to parent (toolbar scope / Settings field). */
     async function goToParentScopeFolder() {
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       const raw = document.getElementById('rootFolder').value.trim();
       if (!raw) {
-        status.textContent = 'No current folder set.';
+        setStatusMain('No current folder set.');
         return;
       }
       const norm = normalizeFolderPathForEverything(raw);
@@ -9469,7 +10151,7 @@
       const parRaw = T.parentDir(norm);
       const par = normalizeFolderPathForEverything(parRaw);
       if (!par || par.replace(/[/\\]+$/, '').toLowerCase() === norm.replace(/[/\\]+$/, '').toLowerCase()) {
-        status.textContent = 'Already at top of path.';
+        setStatusMain('Already at top of path.');
         return;
       }
       await applySearchScopeAndRefresh(par);
@@ -9481,7 +10163,7 @@
       const row = selectedRowForActions();
       if (!row) return;
       const fp = fullPathForRow(row);
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       if (rowIsFolder(row)) {
         const folderFp = normalizeFolderPathForEverything(fp);
         selectedRow = row;
@@ -9565,7 +10247,7 @@
 
     async function keyboardRecycleConfirm() {
       if (tagRenameBusy) return;
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       let p = getCheckedPathsArr();
       if (!p.length && selectedFullPath) {
         const row = selectedRowForActions();
@@ -9575,7 +10257,7 @@
       if (!confirm(recycleBinConfirmMessage(p))) return;
       detachViewerEditorsForTrashedPaths(p);
       const r = await window.tagBrowser.trashPaths(p);
-      if (!r || !r.ok) status.textContent = (r && r.error) || 'Delete failed';
+      if (!r || !r.ok) setStatusMain((r && r.error) || 'Delete failed');
       else {
         checkedPathsMap.clear();
         updateBulkBar();
@@ -9584,7 +10266,7 @@
     }
 
     async function copyShortcutExplorerFiles() {
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       let paths = getCheckedPathsArr();
       if (!paths.length && selectedFullPath) {
         const row = selectedRowForActions();
@@ -9592,17 +10274,18 @@
       }
       if (!paths.length) return;
       const r = await window.tagBrowser.copyExplorerPaste(paths);
-      if (!r || !r.ok) status.textContent = (r && r.error) || 'Copy for Explorer failed';
+      if (!r || !r.ok) setStatusMain((r && r.error) || 'Copy for Explorer failed');
       else
-        status.textContent =
+        setStatusMain(
           paths.length === 1
             ? 'Copied 1 item for Explorer paste (Ctrl+V in a folder).'
-            : 'Copied ' + paths.length + ' items for Explorer paste.';
+            : 'Copied ' + paths.length + ' items for Explorer paste.'
+        );
     }
 
     /** Ctrl+Shift+C / ⌘+Shift+C: plain-text full paths (same strings as ⋯ → Full path); multiple checked → newline-separated. */
     async function keyboardCopyFullPathsText() {
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       let paths = getCheckedPathsArr();
       if (!paths.length && selectedFullPath) {
         const row = selectedRowForActions();
@@ -9612,15 +10295,14 @@
       const text = paths.join('\n');
       try {
         await navigator.clipboard.writeText(text);
-        status.textContent =
-          paths.length === 1 ? 'Copied full path.' : 'Copied ' + paths.length + ' full paths.';
+        setStatusMain(paths.length === 1 ? 'Copied full path.' : 'Copied ' + paths.length + ' full paths.');
       } catch (_) {
-        status.textContent = 'Could not copy paths.';
+        setStatusMain('Could not copy paths.');
       }
     }
 
     async function cutShortcutExplorerFiles() {
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       let paths = getCheckedPathsArr();
       if (!paths.length && selectedFullPath) {
         const row = selectedRowForActions();
@@ -9628,28 +10310,29 @@
       }
       if (!paths.length) return;
       if (!window.tagBrowser.cutExplorerPaste) {
-        status.textContent = 'Cut not available.';
+        setStatusMain('Cut not available.');
         return;
       }
       const r = await window.tagBrowser.cutExplorerPaste(paths);
-      if (!r || !r.ok) status.textContent = (r && r.error) || 'Cut for Explorer failed';
+      if (!r || !r.ok) setStatusMain((r && r.error) || 'Cut for Explorer failed');
       else
-        status.textContent =
+        setStatusMain(
           paths.length === 1
             ? 'Cut 1 item — paste in Explorer to move it.'
-            : 'Cut ' + paths.length + ' items — paste in Explorer to move them.';
+            : 'Cut ' + paths.length + ' items — paste in Explorer to move them.'
+        );
     }
 
     async function pasteShortcutClipboardIntoScope() {
-      const status = document.getElementById('status');
+      const status = document.getElementById('statusMain');
       const dest = currentScopeFolderPath();
       if (!dest) {
-        status.textContent = 'Set the current folder (breadcrumb or path editor) to paste into.';
+        setStatusMain('Set the current folder (breadcrumb or path editor) to paste into.');
         return;
       }
       const rootPrefix = T.normalizeRootPrefix(document.getElementById('rootFolder').value);
       const r = await pasteClipboardIntoScopeWithConflictPrompt(dest, rootPrefix);
-      if (!r || !r.ok) status.textContent = (r && r.error) || 'Paste failed';
+      if (!r || !r.ok) setStatusMain((r && r.error) || 'Paste failed');
       else void refreshAfterDiskMutation(); // + paths-mutated from main (defense in depth)
     }
 
@@ -9721,8 +10404,11 @@
         return;
       }
       if (modC && !e.shiftKey && (e.key === '/' || e.code === 'Slash')) {
+        if (document.querySelector('.modal.show')) return;
+        if (blockAppShortcutInTextField(e.target)) return;
         e.preventDefault();
-        focusQueryBox(true);
+        const hm = document.getElementById('helpModal');
+        if (hm) bootstrap.Modal.getOrCreateInstance(hm).show();
         return;
       }
       if (modC && !e.shiftKey && (e.key === ',' || e.code === 'Comma')) {
@@ -9892,7 +10578,7 @@
         return;
       }
 
-      /* Plain / must run before the Ctrl/Meta/Alt bail-out: AltGr (many layouts) sets ctrl+alt and would block it. Ctrl+/ is handled above. */
+      /* Plain / must run before the Ctrl/Meta/Alt bail-out: AltGr (many layouts) sets ctrl+alt and would block it. Ctrl+/ opens help above. */
       const isSlashFocusSearch =
         e.key === '/' || e.code === 'NumpadDivide' || (e.code === 'Slash' && !e.shiftKey);
       if (isSlashFocusSearch) {
@@ -10036,7 +10722,7 @@
         return;
       }
 
-      /* x: Smart view; l still cycles Tree → Smart → Flat. */
+      /* x: Smart view; l cycles Smart → Tree → Flat. */
       if (e.key === 'x') {
         e.preventDefault();
         const t = document.getElementById('optRvSmart');
@@ -10050,7 +10736,7 @@
       /* l / f / s: toggle View / Content / Subfolders radio pairs */
       if (e.key === 'l') {
         e.preventDefault();
-        const vl = ['optRvTree', 'optRvSmart', 'optRvFlat'];
+        const vl = ['optRvSmart', 'optRvTree', 'optRvFlat'];
         const ci = vl.findIndex((id) => document.getElementById(id)?.checked);
         const nextId = vl[(ci >= 0 ? ci : 0) + 1 >= vl.length ? 0 : ci + 1];
         const t = document.getElementById(nextId);
@@ -10063,7 +10749,7 @@
       }
       if (e.key === 'f') {
         e.preventDefault();
-        const cl = ['optRvDirsOnly', 'optRvAll', 'optRvFilesOnly'];
+        const cl = ['optRvAll', 'optRvDirsOnly', 'optRvFilesOnly'];
         const ci = cl.findIndex((id) => document.getElementById(id)?.checked);
         const nextId = cl[(ci >= 0 ? ci : 0) + 1 >= cl.length ? 0 : ci + 1];
         const t = document.getElementById(nextId);
@@ -10129,6 +10815,7 @@
           .querySelectorAll('#breadcrumbBar [data-drop-path].results-drag-over, #favFoldersBar [data-drop-path].results-drag-over')
           .forEach((n) => n.classList.remove('results-drag-over'));
         document.getElementById('appShelf')?.classList.remove('shelf-aside-drag-over');
+        clearInternalPathDragDropTargetHints();
         /* Defer clearing native paths: sync clear on dragend ran before dragover/drop (capture listener) and blocked drops. */
         const pathsRef = tagBrowserActiveNativeDragPaths;
         setTimeout(() => {
@@ -10162,43 +10849,44 @@
         const addCurrent = e.target.closest('#btnSearchScopeAddCurrent');
         if (!addFolder && !addProfile && !addCurrent) return;
         e.preventDefault();
-        const st = document.getElementById('status');
+        const st = document.getElementById('statusMain');
         void (async () => {
           if (!window.tagBrowser) {
-            if (st) st.textContent = 'Electron bridge missing — run TagFox with npm start (not a raw browser tab).';
+            if (st) setStatusMain('Electron bridge missing — run TagFox with npm start (not a raw browser tab).');
             console.warn('[TagFox] window.tagBrowser missing');
             return;
           }
           if (addFolder) {
             if (typeof window.tagBrowser.pickScopeFolder !== 'function') {
               if (st)
-                st.textContent =
-                  'Folder picker not available — fully quit TagFox and start again so preload.js is reloaded.';
+                setStatusMain(
+                  'Folder picker not available — fully quit TagFox and start again so preload.js is reloaded.'
+                );
               console.warn('[TagFox] pickScopeFolder missing on tagBrowser');
               return;
             }
             try {
               const r = await window.tagBrowser.pickScopeFolder();
               if (r && r.ok && r.path) await setSearchScopeMaxFromPicker(r.path);
-              else if (st) st.textContent = (r && r.error) || 'Folder picker cancelled.';
+              else if (st) setStatusMain((r && r.error) || 'Folder picker cancelled.');
             } catch (err) {
-              if (st) st.textContent = 'Folder picker failed: ' + (err && err.message ? err.message : String(err));
+              if (st) setStatusMain('Folder picker failed: ' + (err && err.message ? err.message : String(err)));
               console.warn('[TagFox] pickScopeFolder', err);
             }
             return;
           }
           if (addProfile) {
             if (typeof window.tagBrowser.userHomeDir !== 'function') {
-              if (st) st.textContent = 'Profile folder not available — restart TagFox.';
+              if (st) setStatusMain('Profile folder not available — restart TagFox.');
               console.warn('[TagFox] userHomeDir missing on tagBrowser');
               return;
             }
             try {
               const r = await window.tagBrowser.userHomeDir();
               if (r && r.ok && r.path) await setSearchScopeMaxFromPicker(r.path);
-              else if (st) st.textContent = (r && r.error) || 'Could not read profile folder.';
+              else if (st) setStatusMain((r && r.error) || 'Could not read profile folder.');
             } catch (err) {
-              if (st) st.textContent = 'Profile folder failed: ' + (err && err.message ? err.message : String(err));
+              if (st) setStatusMain('Profile folder failed: ' + (err && err.message ? err.message : String(err)));
               console.warn('[TagFox] userHomeDir', err);
             }
             return;
@@ -10206,7 +10894,7 @@
           if (addCurrent) {
             const p = currentScopeFolderPath() || getSearchScopeMaxFolderNorm();
             if (!p) {
-              if (st) st.textContent = 'No folder — set the breadcrumb or scope first.';
+              if (st) setStatusMain('No folder — set the breadcrumb or scope first.');
               return;
             }
             await setSearchScopeMaxFromPicker(p);
@@ -10228,10 +10916,10 @@
         const clearF = e.target.closest('#btnQuickTodoClearFolder');
         if (!pick && !setCur && !clearF) return;
         e.preventDefault();
-        const st = document.getElementById('status');
+        const st = document.getElementById('statusMain');
         void (async () => {
           if (!window.tagBrowser) {
-            if (st) st.textContent = 'Electron bridge missing — run TagFox with npm start.';
+            if (st) setStatusMain('Electron bridge missing — run TagFox with npm start.');
             return;
           }
           if (clearF) {
@@ -10240,22 +10928,22 @@
           }
           if (pick) {
             if (typeof window.tagBrowser.pickScopeFolder !== 'function') {
-              if (st) st.textContent = 'Folder picker not available — restart TagFox.';
+              if (st) setStatusMain('Folder picker not available — restart TagFox.');
               return;
             }
             try {
               const r = await window.tagBrowser.pickScopeFolder();
               if (r && r.ok && r.path) await setQuickTodoFolderFromPicker(r.path);
-              else if (st) st.textContent = (r && r.error) || 'Folder picker cancelled.';
+              else if (st) setStatusMain((r && r.error) || 'Folder picker cancelled.');
             } catch (err) {
-              if (st) st.textContent = 'Folder picker failed: ' + (err && err.message ? err.message : String(err));
+              if (st) setStatusMain('Folder picker failed: ' + (err && err.message ? err.message : String(err)));
             }
             return;
           }
           if (setCur) {
             const p = currentScopeFolderPath() || getSearchScopeMaxFolderNorm();
             if (!p) {
-              if (st) st.textContent = 'No folder — set the breadcrumb or scope first.';
+              if (st) setStatusMain('No folder — set the breadcrumb or scope first.');
               return;
             }
             await setQuickTodoFolderFromPicker(p);
@@ -10398,17 +11086,18 @@
     document.getElementById('btnShelfOpen').addEventListener('click', async () => {
       const st = await window.tagBrowser.shelfState();
       if (st.ok) void window.tagBrowser.openPath(st.path);
-      else document.getElementById('status').textContent = st.error || 'Shelf unavailable';
+      else setStatusMain(st.error || 'Shelf unavailable');
     });
     document.getElementById('btnShelfOsDrag').addEventListener('click', () => {
       tagBrowserNextOsFileDrag = true;
-      document.getElementById('status').textContent =
-        'Next drag armed as a real file drag — drop into Explorer or another app. Without this, drags stay inside TagFox.';
+      setStatusMain(
+        'Next drag armed as a real file drag — drop into Explorer or another app. Without this, drags stay inside TagFox.'
+      );
     });
     document.getElementById('btnShelfClear').addEventListener('click', async () => {
       if (!confirm('Remove everything from Shelf?')) return;
       const r = await window.tagBrowser.clearShelf();
-      document.getElementById('status').textContent = r.ok ? 'Shelf cleared.' : (r.error || 'Clear failed');
+      setStatusMain(r.ok ? 'Shelf cleared.' : (r.error || 'Clear failed'));
       // On success, main sends paths-mutated → refreshAfterDiskMutation (shelf strip + search retries).
     });
     loadPaneWidthsFromStorage();

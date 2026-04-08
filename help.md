@@ -28,7 +28,7 @@
 
   Bulk rename preview: first 200 rows in the dialog only; Rename applies to the full batch captured at open. Wildcard Find uses same Match case as the search row.
 
-  Keyboard nuance: Ctrl+/ (⌘+/ on Mac) focuses search; plain / when no dialog is open. Esc clears the query when it has text if no dialog or open dropdown needs Esc and focus is not in another text field (see Shortcuts table for fuller behaviour).
+  Keyboard nuance: Ctrl+/ (⌘+/ on Mac) opens help (same idea as F1); plain / when no dialog is open focuses search. Esc clears the query when it has text if no dialog or open dropdown needs Esc and focus is not in another text field (see Shortcuts table for fuller behaviour).
 
   Tab boundaries: see scripts/build-help.js — each pane is introduced by a single-line HTML comment whose body is help:tab plus JSON (id, label, exactly one "active":true, optional "format":"html" for raw HTML). Run npm run build:help after edits.
 
@@ -55,7 +55,7 @@ Welcome to TagFox — a fast, keyboard-friendly file manager powered by instant 
 5. **🏷️ Tag your files and folders for easy organisation.** Add tags like `draft`, `urgent`, or `2026` to any file or folder — then filter by tag to find exactly what you need. Tags are stored in the filename itself, so they travel with your files everywhere (Explorer, Google Drive, zip files). See **🏷️ Tags** for details.
 6. **⭐ Save favourite folders and searches.** Click 💾 to bookmark a folder or an entire search. Jump back with a click or `Ctrl`+`1`…`9`. See **⭐ Favourites**.
 7. **👀 Preview files without leaving TagFox.** The Viewer panel (right side) shows images, PDFs, Office docs, markdown, and more. For folders, it shows a folder readme doc you can edit in place. View and edit google files like gdocs, gslides without leaving TagFox.
-8. **❓ Press `F1` anytime** to reopen this help.
+8. **❓ Press `F1` or `Ctrl`+`/` anytime** to reopen this help.
 
 <!-- help:tab {"id":"motivation","label":"💡 Why TagFox?"} -->
 
@@ -109,16 +109,16 @@ Meanwhile, tools like Google Drive train you to type a word and expect the right
 
 Three icon-pair switches next to the search box — combine them freely:
 
-- <i class="fa-solid fa-wand-magic-sparkles fa-fw"></i> **Smart** (`x` jumps here; `l` cycles) — auto-adjusts subfolders and files/folders to fit the results cap.
+- <i class="fa-solid fa-wand-magic-sparkles fa-fw"></i> **Smart** (`x` jumps here; `l` cycles) — auto-adjusts subfolders and files/folders for manageable lists.
 - <i class="fa-solid fa-list fa-fw"></i> / <i class="fa-solid fa-sitemap fa-fw"></i> **Flat / Tree** (`l` cycles all three layouts) — flat list with Path column, or tree layout grouped by folder.
 - <i class="fa-solid fa-folder-tree fa-fw"></i> / <i class="fa-solid fa-folder fa-fw"></i> **Subfolders on / off** (`s`) — include items from subdirectories, or show only this folder.
-- <i class="fa-solid fa-copy fa-fw"></i> / <i class="fa-solid fa-folder fa-fw"></i> **Files+folders / Folders only** (`f`) — show everything, or folders only.
+- <i class="fa-solid fa-copy fa-fw"></i> / <i class="fa-solid fa-folder fa-fw"></i> **Files+folders / Folders only / Files only** (`f` cycles the three) — control what Everything returns for the list.
 
 ### ⏱️ Recency & sorting
 
 - The **recency buttons** (1h, 1d, 1w, 1m, 1y, All) filter results to items modified recently — handy for “what did I change today?”.
 - Click any **column header** to sort by that column. Click again to reverse. Drag the edges between headers to resize columns — widths are saved.
-- With focus outside a text field, `z` / `m` / `n` sort by size / modified / name (like clicking those columns; repeat to flip). `p` sorts by path (useful in tree view when the Path column is hidden). `t` opens tag edit like `Ctrl`+`T`.
+- With focus outside a text field, `z` / `m` / `n` sort by size / modified / name (like clicking those columns; repeat to flip). `t` opens tag edit like `Ctrl`+`T`.
 - On large scopes, Everything 1.5+ is recommended so files don’t get pushed entirely off the first “page” of results by folders (TagFox asks the index for mixed file/folder ordering when folders and files are shown together).
 
 ### ⏪ Search history
@@ -131,7 +131,7 @@ Three icon-pair switches next to the search box — combine them freely:
 
 - Click any segment of the breadcrumb to jump to that folder.
 - The small **▾** arrows between segments show sibling folders; the one after the last segment shows children. You can hover into nested menus to drill down quickly.
-- The ◀ ▲ ▶ chevrons next to the search box go to the previous sibling, parent, or next sibling folder.
+- **K** / **J** — previous or next sibling folder; ▲ (in the last breadcrumb segment) goes to the parent folder.
 
 ### 🏷️ Tags
 
@@ -225,10 +225,10 @@ Getting TagFox up and running takes about five minutes:
 
 <p class="text-muted mb-2 mt-3"><kbd>Ctrl</kbd> = <kbd>Ctrl</kbd> on Windows, <kbd>⌘</kbd> on Mac. Most shortcuts are disabled while a dialog is open.</p>
 
-<h6 class="text-secondary mt-3 mb-1">Search &amp; view</h6>
+<h5 class="help-md-section-title">Search &amp; view</h5>
 <div class="table-responsive">
 <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
-<tr><td><kbd>/</kbd></td><td>Toggle focus into / out of the search box (also <kbd>Ctrl</kbd>+<kbd>/</kbd> or <kbd>Ctrl</kbd>+<kbd>F</kbd>)</td></tr>
+<tr><td><kbd>/</kbd></td><td>Toggle focus into / out of the search box (from outside text fields); <kbd>Ctrl</kbd>+<kbd>F</kbd> always focuses the search box</td></tr>
 <tr><td><kbd>Esc</kbd></td><td>Close expanded Viewer / flyouts; if no dialog or open menu needs it — clear query when it has text, or with focus in the search box and an empty query, clear current folder (whole index)</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>Backspace</kbd></td><td>Clear current folder (whole index) from any focus when a folder is set; skipped if a dialog is open (replaces the usual “delete word” shortcut in text fields while scope is active)</td></tr>
 <tr><td><kbd>F5</kbd> or <kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>Refresh results</td></tr>
@@ -239,27 +239,30 @@ Getting TagFox up and running takes about five minutes:
 <tr><td><kbd>z</kbd> / <kbd>m</kbd> / <kbd>n</kbd></td><td>Sort by Size / Modified / Name (repeat toggles direction). In <strong>Tree</strong> view, those sorts or the same column headers switch to <strong>Flat</strong> first (status bar note); Tree alone keeps path A→Z.</td></tr>
 </tbody></table></div>
 
-<h6 class="text-secondary mt-3 mb-1">Navigation</h6>
+<h5 class="help-md-section-title">Navigation</h5>
 <div class="table-responsive">
 <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
 <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Move through the results list</td></tr>
 <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>Jump to next / previous <strong>sibling folder</strong> (same parent directory). At the last/first sibling, the next key press moves at the parent level (then grandparent, etc.). Scrolls the target row to the top of the results list.</td></tr>
 <tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>Jump to first / last row</td></tr>
 <tr><td><kbd>Enter</kbd></td><td>Open file or enter folder</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Set <strong>current folder</strong> to the parent of the highlighted row (same idea as the row’s ▲ parent button)</td></tr>
 <tr><td><kbd>→</kbd></td><td>Scope into selected folder</td></tr>
 <tr><td><kbd>←</kbd></td><td>Scope to parent or first subfolder on the row's path</td></tr>
 <tr><td><kbd>+</kbd> / <kbd>-</kbd></td><td>Expand / collapse folder in tree view; with multi-select (e.g.&nbsp;<kbd>Ctrl</kbd>+<kbd>A</kbd>) toggles all top-level folders</td></tr>
 <tr><td><kbd>Backspace</kbd></td><td>Go up to the parent folder</td></tr>
-<tr><td><kbd>Alt</kbd>+<kbd>↑</kbd></td><td>Go up to the parent of the <strong>current folder</strong> (including while the search box is focused)</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>↑</kbd> or <kbd>Ctrl</kbd>+<kbd>↑</kbd></td><td>Go up to the parent of the <strong>current folder</strong> (<kbd>Alt</kbd>+<kbd>↑</kbd> works from the search box via a dedicated listener; <kbd>Ctrl</kbd>+<kbd>↑</kbd> from other focus)</td></tr>
 <tr><td><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>→</kbd></td><td>Search history back / forward</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>L</kbd></td><td>Recent folders list</td></tr>
 </tbody></table></div>
 
-<h6 class="text-secondary mt-3 mb-1">Selection &amp; file operations</h6>
+<h5 class="help-md-section-title">Selection &amp; file operations</h5>
 <div class="table-responsive">
 <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
-<tr><td><kbd>Space</kbd></td><td>Check / uncheck the current row</td></tr>
-<tr><td><kbd>Shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd></td><td>Extend selection up or down</td></tr>
+<tr><td><kbd>Space</kbd></td><td>Toggle the current row’s <strong>bulk</strong> checkbox (Explorer copy/delete/tags)</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd></td><td>Bulk: check every row from the range anchor through the new highlight (inclusive); uncheck all other visible rows (same anchor rules as click range below)</td></tr>
+<tr><td><kbd>Ctrl</kbd>+click or <kbd>⌘</kbd>+click a row</td><td>Bulk: toggle that row’s checkbox; if you turn it <strong>on</strong> and the previously highlighted row was off, that row is checked too</td></tr>
+<tr><td><kbd>Shift</kbd>+click a row</td><td>Bulk: check every row from the current focus to the clicked row (inclusive); uncheck all other visible rows (same as <kbd>Shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd>)</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>A</kbd></td><td>Select all visible rows</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>X</kbd> / <kbd>V</kbd></td><td>Copy, cut, paste files (Explorer-compatible)</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd></td><td>Copy full path(s) as text</td></tr>
@@ -270,13 +273,13 @@ Getting TagFox up and running takes about five minutes:
 <tr><td><kbd>Ctrl</kbd>+<kbd>H</kbd></td><td>Bulk rename with wildcards</td></tr>
 </tbody></table></div>
 
-<h6 class="text-secondary mt-3 mb-1">Favourites &amp; app</h6>
+<h5 class="help-md-section-title">Favourites &amp; app</h5>
 <div class="table-responsive">
 <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
 <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>…<kbd>9</kbd></td><td>Jump to favourite folder #1–9</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>9</kbd></td><td>Restore saved search #1–9</td></tr>
 <tr><td><kbd>Shift</kbd>+<kbd>Space</kbd></td><td>Toggle Viewer fullscreen</td></tr>
-<tr><td><kbd>F1</kbd></td><td>Open this help</td></tr>
+<tr><td><kbd>F1</kbd> or <kbd>Ctrl</kbd>+<kbd>/</kbd></td><td>Open this help</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>,</kbd></td><td>Open / close Settings</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>Space</kbd></td><td>Show / hide TagFox (system-wide; changeable in Settings)</td></tr>
 </tbody></table></div>

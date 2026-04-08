@@ -22,6 +22,19 @@ html, body { height: 100%; margin: 0; }
   --tb-accent: #6366f1;
   --tb-accent-soft: #eef2ff;
   --tb-coral: #f472b6;
+  /* Search + breadcrumb outer chrome: same radius (sm); query row clips inner square edges via overflow:hidden. */
+  --tagfox-toolbar-shell-radius: var(--bs-border-radius-sm);
+  /* Path-sort folder tint: table folder rows, breadcrumb segs, scope chrome (dark overrides alpha). */
+  --tagfox-folder-row-bg: rgba(217, 119, 6, 0.1);
+  --tagfox-folder-row-bg-current: rgba(217, 119, 6, 0.18);
+  /* Visible on bg-body-secondary strips (grey): light “ridge” under each toolbar row. */
+  --tagfox-toolbar-row-rule: rgba(255, 255, 255, 0.82);
+  /* Advanced launcher: same green family as size heat .tagfox-size-heat-kb100 (#4d7c0f). */
+  --tagfox-advanced-accent-rgb: 77, 124, 15;
+  --tagfox-advanced-accent: #4d7c0f;
+  --tagfox-advanced-bg-subtle: rgba(77, 124, 15, 0.12);
+  --tagfox-advanced-border-subtle: rgba(77, 124, 15, 0.38);
+  --tagfox-advanced-text-emphasis: #3d6210;
 }
 body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 /* Indigo-to-coral gradient strip at top of window */
@@ -34,7 +47,10 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 }
 /* Pill-shaped buttons */
 .btn { border-radius: 999px; font-weight: 500; }
-.btn[style*="width: 2rem"], .btn[style*="width:2rem"] { border-radius: 0.5rem; }
+.btn[style*="width: 2rem"]:not(.tagfox-toolbar-clear),
+.btn[style*="width:2rem"]:not(.tagfox-toolbar-clear) {
+  border-radius: 0.5rem;
+}
 .btn-outline-secondary {
   --bs-btn-color: #52525b;
   --bs-btn-border-color: #d4d4d8;
@@ -51,6 +67,20 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   background-color: var(--bs-btn-active-bg);
   border-color: var(--bs-btn-active-border-color);
 }
+/* Vertical gap between fav / tags / breadcrumb / search rows; whiteish rule shows on grey secondary bg. */
+.tagfox-fav-toolbar-row,
+.tag-toolbar-row,
+.scope-breadcrumb-row,
+.tagfox-search-toolbar-row {
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--tagfox-toolbar-row-rule);
+}
+/* Breadcrumb row: no rule above (tag row) or below (before search) — those borders sandwich the strip. */
+.tag-toolbar-row,
+.scope-breadcrumb-row {
+  border-bottom: none;
+}
 /* Search toolbar: query + RHS filters; joined segments (global .btn is pill — flatten inside btn-group). */
 .tagfox-search-toolbar-row {
   row-gap: 0.35rem;
@@ -61,55 +91,232 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   min-width: 7rem;
   max-width: none;
 }
-/* Non-empty search: pale indigo (theme primary subtle) */
-#query.tagfox-query-filled {
-  background-color: var(--bs-primary-bg-subtle);
-  border-color: var(--bs-primary-border-subtle);
-}
-#query.tagfox-query-filled:focus {
-  border-color: rgba(var(--bs-primary-rgb), 0.45);
-  box-shadow: 0 0 0 0.2rem rgba(var(--bs-primary-rgb), 0.18);
-}
 @media (max-width: 720px) {
   .tagfox-search-toolbar-row .tagfox-query-input {
     flex: 1 1 100%;
     min-width: 0;
   }
 }
-/* Extra air between tree / recency / Advanced / <^> cluster (tight inside each btn-group). */
-.tagfox-search-toolbar-row .tagfox-search-opts-rhs {
+/* Smart view status chip + active Smart layout button (purple family). */
+.tagfox-status-smart-note {
+  border: 1px solid #7c3aed;
+  background-color: rgba(124, 58, 237, 0.12);
+  color: #5b21b6;
+  border-radius: var(--bs-border-radius-sm);
+  padding: 0.12rem 0.45rem;
+  line-height: 1.25;
+  max-width: 100%;
+}
+.tagfox-status-smart-note--warn {
+  border-color: #9333ea;
+  background-color: rgba(147, 51, 234, 0.16);
+  color: #6b21a8;
+}
+[data-bs-theme="dark"] .tagfox-status-smart-note {
+  border-color: #a78bfa;
+  background-color: rgba(167, 139, 250, 0.18);
+  color: #e9d5ff;
+}
+[data-bs-theme="dark"] .tagfox-status-smart-note--warn {
+  border-color: #c4b5fd;
+  background-color: rgba(196, 181, 253, 0.14);
+  color: #f5f3ff;
+}
+/* Status filter/hidden pills: theme indigo (tag/recency); green when Advanced path hides apply (see --tagfox-advanced-*). */
+.tagfox-status-hidden-hint {
+  background-color: var(--bs-primary-bg-subtle);
+  color: var(--bs-primary-text-emphasis);
+  border-radius: 0.25rem;
+  padding: 0.05rem 0.35rem;
+  white-space: nowrap;
+}
+.tagfox-status-hidden-hint--advanced {
+  background-color: var(--tagfox-advanced-bg-subtle);
+  color: var(--tagfox-advanced-text-emphasis);
+}
+/* Advanced launcher: green accent (see syncAdvancedBtnWarning → btn-outline-primary for “on” state). */
+.tagfox-advanced-hide-accent.btn {
+  background-color: var(--tagfox-advanced-bg-subtle) !important;
+  border-color: var(--tagfox-advanced-border-subtle) !important;
+  color: var(--tagfox-advanced-text-emphasis) !important;
+}
+#btnToggleSearchOptsAdvanced.tagfox-advanced-hide-accent.btn-outline-primary {
+  background-color: rgba(var(--tagfox-advanced-accent-rgb), 0.28) !important;
+  border-color: var(--tagfox-advanced-accent) !important;
+  color: var(--tagfox-advanced-text-emphasis) !important;
+}
+#btnToggleSearchOptsAdvanced.tagfox-advanced-hide-accent.btn-outline-primary:hover,
+#btnToggleSearchOptsAdvanced.tagfox-advanced-hide-accent.btn-outline-primary:focus-visible {
+  background-color: transparent !important;
+  color: var(--tagfox-advanced-accent) !important;
+  border-color: var(--tagfox-advanced-accent) !important;
+}
+#optRvSmart:checked + .btn {
+  background-color: rgba(124, 58, 237, 0.22);
+  border-color: #7c3aed;
+  color: #5b21b6;
+}
+[data-bs-theme="dark"] #optRvSmart:checked + .btn {
+  background-color: rgba(167, 139, 250, 0.2);
+  border-color: #a78bfa;
+  color: #ede9fe;
+}
+
+/* Gaps between control groups (view mode on #statusBar; recency + Advanced on tag row). */
+.tagfox-search-opts-rhs {
   column-gap: 0.65rem;
   row-gap: 0.35rem;
 }
-/* Current-folder chevrons: ← ↑ → with minimal gap (reads as <^>). */
-.tagfox-search-toolbar-row .tagfox-scope-nav-cluster {
+/* Scope strip after breadcrumb: pills on folder-tint tray; row gutter matches body surface */
+.tagfox-scope-bar-row-actions {
+  flex-wrap: nowrap;
   column-gap: 0.08rem;
 }
-.tagfox-search-toolbar-row .tagfox-scope-nav-chevron {
-  width: 1.42rem;
-  min-width: 1.42rem;
-  min-height: 1.5rem;
+.scope-breadcrumb-row .tagfox-scope-bar-row-actions {
+  background-color: var(--tagfox-folder-row-bg-current); /* same as current breadcrumb pill */
+  border-radius: var(--bs-border-radius);
+  padding: 0.15rem 0.35rem;
 }
-.tagfox-search-toolbar-row .tagfox-segmented > .btn-check + .btn {
+/* Favourites + saved-search hearts: quiet until hover/focus */
+.tagfox-soft-icon-lead {
+  opacity: 0.52;
+  transition: opacity 0.15s ease;
+}
+.tagfox-soft-icon-lead:hover,
+.tagfox-soft-icon-lead:focus-within {
+  opacity: 1;
+}
+/* Icon-only: breadcrumb scope strip + results row actions — no ring; calm default, full contrast on hover */
+.scope-breadcrumb-row .tagfox-scope-bar-row-actions .tagfox-scope-bar-icon-btn {
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0.1rem 0.2rem;
+  min-width: 0;
+  line-height: 1;
+  color: var(--bs-secondary-color);
+  opacity: 0.22; /* same quiet default as results row actions */
+  transition:
+    opacity 0.12s ease,
+    background-color 0.12s ease,
+    color 0.12s ease;
+}
+/* Hover anywhere on last-crumb pill (folder name + actions + ▾): icons readable before targeting one */
+#breadcrumbBar .tagfox-breadcrumb-folder-chip:hover .tagfox-scope-bar-row-actions .tagfox-scope-bar-icon-btn:not(:disabled) {
+  opacity: 0.62;
+}
+#resultsTable tbody .results-td-actions .tagfox-scope-bar-icon-btn {
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0.1rem 0.2rem;
+  min-width: 0;
+  line-height: 1;
+  color: var(--bs-secondary-color);
+  opacity: 0.22;
+  transition:
+    opacity 0.12s ease,
+    background-color 0.12s ease,
+    color 0.12s ease;
+}
+.scope-breadcrumb-row .tagfox-scope-bar-row-actions .tagfox-scope-bar-icon-btn.btn-outline-primary {
+  color: var(--bs-primary);
+}
+#resultsTable tbody .results-td-actions .tagfox-scope-bar-icon-btn.btn-outline-primary {
+  color: var(--bs-primary);
+}
+.scope-breadcrumb-row .tagfox-scope-bar-row-actions .tagfox-scope-bar-icon-btn:hover:not(:disabled) {
+  opacity: 1;
+  background-color: color-mix(in srgb, var(--bs-body-color) 9%, transparent);
+  color: var(--bs-body-color);
+}
+#resultsTable tbody tr:hover .results-td-actions .tagfox-scope-bar-icon-btn:not(:disabled) {
+  opacity: 0.62;
+}
+#resultsTable tbody .results-td-actions .tagfox-scope-bar-icon-btn:hover:not(:disabled) {
+  opacity: 1;
+  background-color: color-mix(in srgb, var(--bs-body-color) 9%, transparent);
+  color: var(--bs-body-color);
+}
+.scope-breadcrumb-row .tagfox-scope-bar-row-actions .tagfox-scope-bar-icon-btn.btn-outline-primary:hover:not(:disabled) {
+  opacity: 1;
+  color: var(--bs-primary);
+  background-color: color-mix(in srgb, var(--bs-primary) 14%, transparent);
+}
+#resultsTable tbody .results-td-actions .tagfox-scope-bar-icon-btn.btn-outline-primary:hover:not(:disabled) {
+  opacity: 1;
+  color: var(--bs-primary);
+  background-color: color-mix(in srgb, var(--bs-primary) 14%, transparent);
+}
+.scope-breadcrumb-row .tagfox-scope-bar-row-actions .tagfox-scope-bar-icon-btn:disabled {
+  opacity: 0.18;
+}
+#resultsTable tbody .results-td-actions .tagfox-scope-bar-icon-btn:disabled {
+  opacity: 0.18;
+}
+.scope-breadcrumb-row .tagfox-scope-bar-row-actions .tagfox-scope-bar-icon-btn:focus-visible {
+  opacity: 1;
+}
+#resultsTable tbody .results-td-actions .tagfox-scope-bar-icon-btn:focus-visible {
+  opacity: 1;
+}
+/* Flex lives on inner div — display:flex on <td> caused partial-width white hairlines between rows (Chrome). */
+#resultsTable tbody .results-td-actions-inner {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  column-gap: 0.08rem;
+  min-width: 0;
+}
+/* Path-sorted folder tint: row rule was #f0f0f3 — reads as bright gaps vs orange cells */
+#resultsTable.results-sort-path tbody tr.results-folder-row {
+  border-bottom-color: rgba(217, 119, 6, 0.22);
+}
+/* Last-crumb pill: open / ◀ ▲ ▶ / clip / tags / ⋯ between folder label and ▾ (same scope as that folder). */
+#breadcrumbBar .tagfox-breadcrumb-folder-chip > .tagfox-scope-bar-row-actions {
+  background-color: var(--tagfox-folder-row-bg-current);
+  border-radius: 0;
+  /* Left padding = former margin gap vs folder cap; kept inside strip so bgcolor fills it (no white gutter). */
+  padding: 0 0.12rem 0 0.65rem;
+  align-self: stretch;
+  align-items: center;
+  border: 1px solid var(--bs-border-color);
+  position: relative;
+  z-index: 0;
+}
+.tagfox-search-toolbar-row .tagfox-segmented > .btn-check + .btn,
+.tag-toolbar-row .tagfox-segmented > .btn-check + .btn,
+.results-status-bar .tagfox-segmented > .btn-check + .btn {
   border-radius: 0;
 }
-.tagfox-search-toolbar-row .tagfox-segmented > .btn-check:first-child + .btn {
+.tagfox-search-toolbar-row .tagfox-segmented > .btn-check:first-child + .btn,
+.tag-toolbar-row .tagfox-segmented > .btn-check:first-child + .btn,
+.results-status-bar .tagfox-segmented > .btn-check:first-child + .btn {
   border-top-left-radius: var(--bs-border-radius-sm);
   border-bottom-left-radius: var(--bs-border-radius-sm);
 }
-.tagfox-search-toolbar-row .tagfox-segmented > .btn-check:last-of-type + .btn {
+.tagfox-search-toolbar-row .tagfox-segmented > .btn-check:last-of-type + .btn,
+.tag-toolbar-row .tagfox-segmented > .btn-check:last-of-type + .btn,
+.results-status-bar .tagfox-segmented > .btn-check:last-of-type + .btn {
   border-top-right-radius: var(--bs-border-radius-sm);
   border-bottom-right-radius: var(--bs-border-radius-sm);
 }
 /* View radio pairs: icon-only (titles on labels). */
-.tagfox-search-toolbar-row .tagfox-results-view-mode > .btn-check + .btn.tagfox-results-view-icon {
+.tagfox-search-toolbar-row .tagfox-results-view-mode > .btn-check + .btn.tagfox-results-view-icon,
+.tag-toolbar-row .tagfox-results-view-mode > .btn-check + .btn.tagfox-results-view-icon,
+.results-status-bar .tagfox-results-view-mode > .btn-check + .btn.tagfox-results-view-icon {
   width: 2rem;
   min-width: 2rem;
   padding-left: 0;
   padding-right: 0;
   line-height: 1;
 }
-.tagfox-search-toolbar-row .tagfox-results-view-mode > .btn-check + .btn .fa-fw {
+.tagfox-search-toolbar-row .tagfox-results-view-mode > .btn-check + .btn .fa-fw,
+.tag-toolbar-row .tagfox-results-view-mode > .btn-check + .btn .fa-fw,
+.results-status-bar .tagfox-results-view-mode > .btn-check + .btn .fa-fw {
+  margin: 0;
+}
+.tag-toolbar-row .tagfox-advanced-icon-btn .fa-fw {
   margin: 0;
 }
 /* Tinted background to visually group each icon pair. */
@@ -119,8 +326,35 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   padding: 2px;
   gap: 0;
 }
-.tagfox-search-toolbar-row .tagfox-view-pair + .tagfox-view-pair {
+.tagfox-search-toolbar-row .tagfox-view-pair + .tagfox-view-pair,
+.tag-toolbar-row .tagfox-view-pair + .tagfox-view-pair,
+.results-status-bar .tagfox-view-pair + .tagfox-view-pair {
   margin-left: 0.25rem;
+}
+/* Smart view on: visually quiet the other layout modes + subs/content (still fully clickable). */
+.tagfox-search-opts-rhs:has(#optRvSmart:checked) .tagfox-rv-layout-trio > .btn-check:not(:checked) + .btn {
+  opacity: 0.42;
+}
+.tagfox-search-opts-rhs:has(#optRvSmart:checked) .tagfox-rv-smart-secondary > .btn-check:not(:checked) + .btn {
+  opacity: 0.42;
+}
+.tagfox-search-opts-rhs:has(#optRvSmart:checked) .tagfox-rv-smart-secondary.tagfox-view-pair {
+  background: color-mix(in srgb, var(--bs-secondary-bg) 40%, transparent);
+}
+/* Subfolders + content: lighter selected chip than view-mode row (Tree/Smart/Flat stay full contrast). */
+.tagfox-search-toolbar-row .tagfox-rv-smart-secondary > .btn-check:checked + .btn.btn-outline-secondary,
+.tag-toolbar-row .tagfox-rv-smart-secondary > .btn-check:checked + .btn.btn-outline-secondary,
+.results-status-bar .tagfox-rv-smart-secondary > .btn-check:checked + .btn.btn-outline-secondary {
+  background-color: color-mix(in srgb, var(--bs-secondary) 26%, var(--bs-body-bg));
+  color: var(--bs-body-color);
+  border-color: color-mix(in srgb, var(--bs-secondary) 35%, var(--bs-border-color));
+}
+.tagfox-search-toolbar-row .tagfox-rv-smart-secondary > .btn-check:checked + .btn.btn-outline-secondary:hover,
+.tag-toolbar-row .tagfox-rv-smart-secondary > .btn-check:checked + .btn.btn-outline-secondary:hover,
+.results-status-bar .tagfox-rv-smart-secondary > .btn-check:checked + .btn.btn-outline-secondary:hover {
+  background-color: color-mix(in srgb, var(--bs-secondary) 34%, var(--bs-body-bg));
+  color: var(--bs-body-color);
+  border-color: color-mix(in srgb, var(--bs-secondary) 42%, var(--bs-border-color));
 }
 /* Row recency dot (same buckets as 1h / 1d / 1w / 1m / 1y); slightly larger + more gap from checkbox in #resultsTable rules. */
 .recency-blob {
@@ -178,7 +412,7 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 #resultsTable tbody tr { border-bottom-color: #f0f0f3; }
 /* Folder rows: light orange tint only while Path is the active sort (path/tree cues). */
 #resultsTable.results-sort-path tbody tr.results-folder-row td {
-  background-color: rgba(217, 119, 6, 0.10);
+  background-color: var(--tagfox-folder-row-bg);
 }
 /* Size column heat: ≥1 GB .text-danger; ≥100 MB orange; ≥10 MB amber; ≥1 MB teal; ≥100 KB lime (renderer.js). */
 #resultsTable tbody td.results-td-size.tagfox-size-heat-orange,
@@ -309,9 +543,113 @@ body > .offcanvas-backdrop.show {
   align-items: center;
   justify-content: center;
 }
-/* Plain X clears (current folder + query): tiny negative margin so their column lines up with the 2rem leads. */
+/* Chrome × — shared “prepend” geometry: rounded LHS only, square RHS abutting the next control (breadcrumb tray + query row). */
 .tagfox-toolbar-clear.btn {
-  margin-left: -0.125rem;
+  background-color: var(--bs-tertiary-bg);
+  border-color: var(--bs-border-color);
+  color: var(--bs-body-color);
+  border-top-left-radius: var(--tagfox-toolbar-shell-radius);
+  border-bottom-left-radius: var(--tagfox-toolbar-shell-radius);
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.tagfox-toolbar-clear.btn:hover {
+  background-color: var(--bs-secondary-bg);
+  border-color: var(--bs-border-color);
+  color: var(--bs-body-color);
+}
+/* Search + breadcrumb shells: shared radius (--tagfox-toolbar-shell-radius; breadcrumb: no overflow:hidden — would clip folder history .dropdown-menu). */
+#queryInputGroup.input-group {
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--tagfox-toolbar-shell-radius);
+  background-color: var(--bs-body-bg);
+  overflow: hidden;
+}
+#breadcrumbShell {
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--tagfox-toolbar-shell-radius);
+  background-color: var(--bs-body-bg);
+}
+#queryInputGroup.input-group > .tagfox-query-field-wrap {
+  margin-left: 0 !important;
+}
+#queryInputGroup .tagfox-query-clear.tagfox-toolbar-clear.btn {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  margin-right: 0;
+  background-color: transparent;
+  border-right: 1px solid var(--bs-border-color);
+  color: var(--bs-secondary-color);
+  position: relative;
+  z-index: 1;
+}
+#queryInputGroup .tagfox-query-clear.tagfox-toolbar-clear.btn:hover {
+  background-color: var(--bs-secondary-bg);
+  color: var(--bs-body-color);
+}
+#queryInputGroup .tagfox-query-clear.tagfox-toolbar-clear.btn:focus-visible {
+  z-index: 2;
+  outline: none;
+  box-shadow: inset 0 0 0 2px rgba(var(--bs-emphasis-color-rgb, 33, 37, 41), 0.2);
+}
+/* Ghost hint sits behind empty #query (transparent); padding + metrics match .form-control-sm so caret lines up. */
+.tagfox-query-field-wrap {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.tagfox-query-ghost-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  /* Gap replaces leading spaces inside flex children — those collapse once spans are blockified. */
+  gap: 0.25em;
+  box-sizing: border-box;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tagfox-query-ghost-folder {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--bs-secondary-color);
+}
+#queryInputGroup #query.form-control {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  padding: 0.25rem 0.5rem;
+}
+#queryInputGroup #query.form-control:focus {
+  border-color: transparent;
+  box-shadow: none;
+}
+/* Whole search pill (× + field): match .form-control:focus accent ring */
+#queryInputGroup:focus-within {
+  border-color: var(--tb-accent);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+#query.form-control.tagfox-query-empty {
+  background-color: transparent;
+  position: relative;
+  z-index: 1;
+}
+#query.form-control:not(.tagfox-query-empty) {
+  background-color: var(--bs-body-bg);
+}
+/* Breadcrumb: same LHS cap; tray border is the outer curve — × only draws the internal divider on the right. */
+#breadcrumbShell .breadcrumb-shell-inner > .tagfox-toolbar-clear.btn {
+  border: 0;
+  border-right: 1px solid var(--bs-border-color);
+  box-shadow: none;
 }
 /* Favourite folder / saved-search chips: drag row to reorder (Ctrl+Shift+1…9 / Ctrl+1…9 follow bar order). */
 .tagfox-fav-chip-row {
@@ -365,16 +703,52 @@ body.tagfox-props-split-drag #propsAside {
   isolation: isolate;
 }
 #resultsTable tbody tr { cursor: pointer; }
-/* Folder row highlight when dragging selected items for in-table move */
+/* In-app row drag: folder rows only as row drop targets (file rows still have data-drop-path = parent) */
+body.tagfox-internal-path-drag #resultsTable tbody tr.results-folder-row[data-drop-path]:not(.tagfox-results-row--drag-source) {
+  outline: 2px dashed rgba(var(--bs-primary-rgb), 0.45);
+  outline-offset: -2px;
+}
+/* Folder row pointer-hover — beats hint; file rows use rule below to stay un-outlined */
+body.tagfox-internal-path-drag #resultsTable tbody tr.results-folder-row[data-drop-path].results-drag-over {
+  outline: 2px dashed var(--bs-primary);
+  outline-offset: -2px;
+}
 #resultsTable tbody tr.results-drag-over {
   outline: 2px dashed var(--bs-primary);
   outline-offset: -2px;
+}
+body.tagfox-internal-path-drag #resultsTable tbody tr:not(.results-folder-row).results-drag-over {
+  outline: none;
+  outline-offset: 0;
+}
+/* In-app row drag: possible drop zones (weaker than .results-drag-over hover on pills below) */
+body.tagfox-internal-path-drag #breadcrumbBar [data-drop-path],
+body.tagfox-internal-path-drag #favFoldersBar [data-drop-path] {
+  outline: 2px dashed rgba(var(--bs-primary-rgb), 0.45);
+  outline-offset: 2px;
+  border-radius: 0.2rem;
+}
+body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
+  outline: 2px dashed rgba(var(--bs-primary-rgb), 0.4);
+  outline-offset: -2px;
+  box-shadow: inset 0 0 0 1px rgba(var(--bs-primary-rgb), 0.2);
 }
 #breadcrumbBar [data-drop-path].results-drag-over,
 #favFoldersBar [data-drop-path].results-drag-over {
   outline: 2px dashed var(--bs-primary);
   outline-offset: 2px;
   border-radius: 0.2rem;
+}
+/* Results: HTTP alert + status full width; below that, Shelf | table (see index.html). */
+.results-shelf-stack {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.results-shelf-stack > #everythingHttpHelpAlert {
+  flex-shrink: 0;
 }
 /* Shelf: narrow column left of results; inner row rotated -90° (reads bottom → top along table). */
 .results-with-shelf {
@@ -757,11 +1131,16 @@ body.tagfox-props-split-drag #propsAside {
   background: #f8f9fa;
 }
 .breadcrumb-center { font-size: 0.8rem; }
-/* Flex column: alert + status fixed; inner #resultsScroll owns vertical scroll */
+/* Edit/history: same surface as shell; RHS corners follow outer radius (inner flex can’t use overflow:hidden). */
+#breadcrumbShell .tagfox-breadcrumb-shell-actions {
+  background-color: var(--bs-body-bg);
+  border-top-right-radius: var(--tagfox-toolbar-shell-radius);
+  border-bottom-right-radius: var(--tagfox-toolbar-shell-radius);
+}
+/* Flex column: inner #resultsScroll owns vertical scroll (status lives in .results-shelf-stack). */
 .results-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-/* Sit above table sticky headers if anything ever paints into the same band */
-.results-status-bar { flex-shrink: 0; position: relative; z-index: 5; }
-.results-wrap > #everythingHttpHelpAlert { flex-shrink: 0; }
+/* Below .tagfox-search-toolbar-row (1040) so query-row overlays aren’t covered; still above sticky th (4). */
+.results-status-bar { flex-shrink: 0; position: relative; z-index: 1038; }
 .results-table-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
 /* Drop target when there are no rows (Shelf → current folder). */
 #resultsTable tbody:empty {
@@ -791,18 +1170,21 @@ body.tagfox-props-split-drag #propsAside {
 #resultsTable td { vertical-align: middle; }
 #resultsTable td { padding-top: 0 !important; padding-bottom: 0 !important; }
 #resultsTable td { margin-top: 0 !important; margin-bottom: 0 !important; }
-/* Size / Modified / Actions: nowrap + fixed table width can clip — ellipsis; tooltips hold full value */
-#resultsTable tbody td:nth-child(4),
-#resultsTable tbody td:nth-child(5),
-#resultsTable tbody td:nth-child(6) {
+/* Modified: nowrap + ellipsis. Actions: no overflow:hidden (was compounding flex-td seam glitches). */
+#resultsTable tbody td:nth-child(5) {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+#resultsTable col:nth-child(4),
+#resultsTable thead th:nth-child(4),
+#resultsTable tbody td.results-td-size {
+  min-width: 6.75rem;
 }
 /* Five tools (chevron, Open, clip, ⋯, Tags): keep last col wide enough so % + drag resize can’t clip it */
 #resultsTable col:last-child,
 #resultsTable thead th:last-child,
 #resultsTable tbody td:last-child {
-  min-width: 11.75rem; /* five square action buttons + Bootstrap btn-sm gaps */
+  min-width: 11.75rem;
 }
 /* Checkbox + recency dot: floor width so tiny % on narrow panes doesn’t spill into Name */
 #resultsTable col:first-child {
@@ -865,6 +1247,13 @@ body.tagfox-props-split-drag #propsAside {
   color: var(--bs-body-color);
   font-weight: 500;
 }
+/* Search box text: faint hits in name + path (mark keeps truncation/ellipsis behavior). */
+#resultsTable mark.tagfox-query-hit {
+  padding: 0;
+  margin: 0;
+  background-color: rgba(var(--bs-warning-rgb), 0.38);
+  color: inherit;
+}
 .folder-type-icon, .file-type-icon {
   flex-shrink: 0;
   display: inline-flex;
@@ -902,6 +1291,8 @@ body.tagfox-props-split-drag #propsAside {
   padding-right: calc(var(--bs-btn-padding-x) - 2px);
 }
 #tagBar .tag-bar-pill:focus-visible { box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.35); }
+/* AND/OR only affects filtering when ≥1 tag is on — fade when idle. */
+#tagBar .tag-combine-toggle-idle { opacity: 0.5; }
 /* sticky comes from #resultsTable thead th — don’t use position:relative here (kills sticky) */
 #resultsTable thead th.sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
 #resultsTable thead th.sortable-th:hover { background-color: var(--bs-secondary-bg); }
@@ -931,12 +1322,6 @@ body.tagfox-props-split-drag #propsAside {
 #imageBlock img#propImagePreview { max-width: 100%; height: auto; display: block; border-radius: 0.25rem; }
 #videoBlock video#propVideoPreview { max-width: 100%; max-height: 60vh; display: block; border-radius: 0.25rem; }
 #audioBlock audio#propAudioPreview { display: block; }
-.status-bar-scope-up:hover:not(:disabled) {
-  background-color: var(--bs-secondary-bg);
-}
-.status-bar-scope-up:disabled {
-  opacity: 0.35;
-}
 /* Breadcrumb text path: illegal syntax or failed save — border (Bootstrap is-invalid) + red text */
 #scopePathEdit.is-invalid {
   color: var(--bs-form-invalid-color, #dc3545);
@@ -957,12 +1342,11 @@ body.tagfox-props-split-drag #propsAside {
   flex-shrink: 0;
 }
 /*
-  Stacking (low → high): sticky thead ~1020; .tagfox-search-toolbar-row 1040; .tag-toolbar-row 1045;
-  .scope-breadcrumb-row 1085 (must beat tag/search rows when menus overlap);
-  .tagfox-fav-toolbar-row 1090 (physically above breadcrumb — dropdowns must cover breadcrumb strip);
-  #quickTodoPop 1098 (global Quick TODO strip — above toolbars, below deepest flyout 1099);
-  body ul.breadcrumb-folder-flyout 1092–1099 (nested chain; below .modal-backdrop 1100);
-  .modal-backdrop 1100; .modal 1110; #propsTheater* 1990+.
+  Stacking (low → high): normal chrome .results-status-bar 1038; .tagfox-search-toolbar-row 1040;
+  .scope-breadcrumb-row 1043 (above search row menus only — must stay below .tag-toolbar-row so Advanced panel overlaps breadcrumb);
+  .tag-toolbar-row 1045 (+ .tagfox-advanced-wrap 1041); .tagfox-fav-toolbar-row 1090;
+  #quickTodoPop 1098; body ul.breadcrumb-folder-flyout 1092–1099 (renderer.js; below .modal-backdrop 1100);
+  .modal-backdrop 1100; .modal 1110; #propsTheater* 1990+; body > .tooltip 50000 (above all app flyouts).
 */
 #quickTodoPop {
   z-index: 1098;
@@ -970,27 +1354,107 @@ body.tagfox-props-split-drag #propsAside {
 .tagfox-fav-toolbar-row {
   position: relative;
   z-index: 1090;
+  /* Heart | wrapping chips | save — keeps lead + disk on one band vs flex-wrap isolating them */
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: 0.35rem;
+  align-items: center;
+}
+/* Wrapping chip rows: stronger horizontal banding than gap-1 alone */
+#favFoldersBar {
+  row-gap: 0.45rem;
+  column-gap: 0.25rem;
 }
 .scope-breadcrumb-row {
   position: relative;
-  z-index: 1085;
+  z-index: 1043;
+}
+/* Breadcrumb tray: gap-0 + chip margins handle X spacing; row-gap when chips wrap (.gap-0 is gap:0 !important — override row only). */
+#breadcrumbBar {
+  row-gap: 0.325rem !important;
 }
 /* Breadcrumb folder segments: same tint as folder rows in results. */
 .breadcrumb-folder-seg {
-  background-color: rgba(217, 119, 6, 0.10);
+  background-color: var(--tagfox-folder-row-bg);
   color: #495057 !important;
   text-decoration: none !important;
   border-radius: 0.25rem;
   padding: 0.05rem 0.35rem !important;
 }
 .breadcrumb-folder-seg-current {
-  background-color: rgba(217, 119, 6, 0.18);
+  background-color: var(--tagfox-folder-row-bg-current);
   font-weight: 600;
+}
+/* Split pill: folder segment + ▾ (same left/right cap geometry as fav chips; keeps folder-tint fills). */
+#breadcrumbBar .tagfox-breadcrumb-folder-chip {
+  align-items: stretch;
+  margin-inline-end: 0.25rem;
+}
+#breadcrumbBar .tagfox-breadcrumb-folder-chip:last-child {
+  margin-inline-end: 0;
+}
+/* After a prior segment + ▾ only — not when this chip is the sole crumb */
+#breadcrumbBar .tagfox-breadcrumb-folder-chip:last-child:not(:first-child) {
+  margin-inline-start: 0.45rem;
+}
+/* Folder icon vs label inside the current (LHS) cap — stronger than Bootstrap .gap-1 */
+#breadcrumbBar .tagfox-breadcrumb-folder-chip .breadcrumb-folder-seg.breadcrumb-folder-seg-current.d-inline-flex.gap-1 {
+  gap: 0.5rem !important;
+}
+#breadcrumbBar .tagfox-breadcrumb-folder-chip .breadcrumb-scope-dd {
+  display: flex;
+  align-items: stretch;
+  align-self: stretch;
+  margin-left: calc(-1 * var(--bs-border-width));
+  min-height: 100%;
+}
+/* Fill chip height (avoid d-inline-block / inline-flex shorthand on ▾). */
+#breadcrumbBar .tagfox-breadcrumb-folder-chip .breadcrumb-scope-dd > .dropdown {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 100%;
+  height: 100%;
+}
+#breadcrumbBar .tagfox-breadcrumb-folder-chip .breadcrumb-folder-seg {
+  border-radius: 999px 0 0 999px !important;
+  border: 1px solid var(--bs-border-color);
+  position: relative;
+}
+#breadcrumbBar .tagfox-breadcrumb-folder-chip .breadcrumb-dd-toggle.tagfox-scope-chevron {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 0 999px 999px 0;
+  border: 1px solid var(--bs-border-color);
+  background-color: var(--tagfox-folder-row-bg);
+  color: #495057 !important;
+  text-decoration: none !important;
+  box-shadow: none;
+  position: relative;
+}
+#breadcrumbBar .tagfox-breadcrumb-folder-chip:has(.breadcrumb-folder-seg-current) .breadcrumb-dd-toggle.tagfox-scope-chevron {
+  background-color: var(--tagfox-folder-row-bg-current);
+}
+/* Segmented with inline scope actions: one line between action tray and ▾. */
+#breadcrumbBar .tagfox-breadcrumb-folder-chip:has(.tagfox-scope-bar-row-actions) .breadcrumb-dd-toggle.tagfox-scope-chevron {
+  border-left: none;
+  margin-left: -1px;
+}
+#breadcrumbBar .tagfox-breadcrumb-folder-chip .breadcrumb-folder-seg:focus,
+#breadcrumbBar .tagfox-breadcrumb-folder-chip .breadcrumb-dd-toggle.tagfox-scope-chevron:focus-visible {
+  z-index: 1;
 }
 /* Modal open: drop back so backdrop + dimmer cover the bar (was stacking “above” the overlay). */
 body.modal-open .tagfox-fav-toolbar-row,
 body.modal-open .scope-breadcrumb-row,
 body.modal-open .tagfox-search-toolbar-row,
+body.modal-open .results-status-bar,
 body.modal-open .tag-toolbar-row {
   z-index: 0;
 }
@@ -1030,12 +1494,38 @@ ul.breadcrumb-folder-flyout li.breadcrumb-folder-on-scope-path > button.dropdown
   --fav-chip-fg: #3f3f46;
   --fav-chip-bg: #fafafa;
   --fav-chip-border: #e4e4e7;
+  align-items: stretch;
+  gap: 0; /* BS .btn-group has no gap; keep explicit for nested flex. */
 }
+/* BS sets .btn-group > .btn { flex:1 1 auto } — that flex-grow separates the two halves; pin to content width. */
 #favFoldersBar .fav-folder-chip-group > .fav-folder-chip-go {
+  flex: 0 1 auto;
   color: var(--fav-chip-fg);
   background-color: var(--fav-chip-bg);
   border-color: var(--fav-chip-border);
   font-weight: 500;
+  /* Global .btn is pill-shaped; left cap only so ▾ segment completes the pill. */
+  border-radius: 999px 0 0 999px;
+  position: relative;
+}
+/* Nested .dropdown — stretch to btn-group row height; ▾ fills RHS (inline-flex alone stays content-short). */
+#favFoldersBar .fav-folder-chip-group > .dropdown {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  align-self: stretch;
+  flex: 0 0 auto;
+  margin-left: calc(-1 * var(--bs-border-width));
+  min-height: 100%;
+}
+#favFoldersBar .fav-folder-chip-group > .dropdown > .fav-folder-chip-chevron.tagfox-scope-chevron {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 100%;
+  box-sizing: border-box;
 }
 #favFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:hover {
   color: #27272a;
@@ -1047,6 +1537,31 @@ ul.breadcrumb-folder-flyout li.breadcrumb-folder-on-scope-path > button.dropdown
   background-color: #e4e4e7;
   border-color: #a1a1aa;
 }
+/* Inline remove — sits after folder name inside .fav-folder-chip-go (not a nested <button>). */
+#favFoldersBar .fav-folder-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.1rem;
+  padding: 0 0.15rem;
+  border-radius: 0.25rem;
+  color: var(--fav-chip-fg);
+  opacity: 0.72;
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 1;
+}
+#favFoldersBar .fav-folder-chip-remove:hover {
+  opacity: 1;
+  color: #18181b;
+  background-color: rgba(0, 0, 0, 0.07);
+}
+#favFoldersBar .fav-folder-chip-remove:focus-visible {
+  outline: 2px solid rgba(var(--bs-primary-rgb), 0.45);
+  outline-offset: 1px;
+  position: relative;
+  z-index: 1;
+}
 #favFoldersBar .fav-folder-chip-group .dropdown-menu {
   z-index: 1060;
 }
@@ -1054,6 +1569,14 @@ ul.breadcrumb-folder-flyout li.breadcrumb-folder-on-scope-path > button.dropdown
   color: var(--fav-chip-fg);
   background-color: var(--fav-chip-bg);
   border-color: var(--fav-chip-border);
+  border-radius: 0 999px 999px 0;
+  position: relative;
+}
+#favFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:focus,
+#favFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:focus-visible,
+#favFoldersBar .fav-folder-chip-chevron:focus,
+#favFoldersBar .fav-folder-chip-chevron:focus-visible {
+  z-index: 1;
 }
 #favFoldersBar .fav-folder-chip-chevron:hover {
   color: #27272a;
@@ -1065,11 +1588,12 @@ ul.breadcrumb-folder-flyout li.breadcrumb-folder-on-scope-path > button.dropdown
   background-color: #e4e4e7;
   border-color: #a1a1aa;
 }
-/* Saved search chips: grey only — numbered slot + label (folder favourites unchanged above). */
+/* Saved search chips: same pill palette as folder favs; slot + inline × (no ▾ on this bar). */
 #favSearchesBar .fav-search-chip-group {
   --fav-search-fg: #3f3f46;
   --fav-search-bg: #fafafa;
   --fav-search-border: #e4e4e7;
+  align-items: stretch;
 }
 #favSearchesBar .fav-search-chip-group > .fav-search-chip-go {
   color: var(--fav-search-fg);
@@ -1080,6 +1604,8 @@ ul.breadcrumb-folder-flyout li.breadcrumb-folder-on-scope-path > button.dropdown
   justify-content: center;
   min-width: 1.75rem;
   padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  position: relative;
 }
 #favSearchesBar .fav-search-chip-group > .fav-search-chip-go:hover {
   color: #27272a;
@@ -1091,16 +1617,46 @@ ul.breadcrumb-folder-flyout li.breadcrumb-folder-on-scope-path > button.dropdown
   background-color: #e4e4e7;
   border-color: #a1a1aa;
 }
+#favSearchesBar .fav-search-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.05rem;
+  padding: 0 0.15rem;
+  border-radius: 0.25rem;
+  color: var(--fav-search-fg);
+  opacity: 0.5;
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 1;
+}
+#favSearchesBar .fav-search-chip-remove:hover {
+  opacity: 1;
+  color: #18181b;
+  background-color: rgba(0, 0, 0, 0.07);
+}
+#favSearchesBar .fav-search-chip-remove:focus-visible {
+  outline: 2px solid rgba(var(--bs-primary-rgb), 0.45);
+  outline-offset: 1px;
+  position: relative;
+  z-index: 1;
+}
+#favSearchesBar .fav-search-chip-group > .fav-search-chip-go:focus,
+#favSearchesBar .fav-search-chip-group > .fav-search-chip-go:focus-visible {
+  z-index: 1;
+}
 .tag-toolbar-row {
   position: relative;
   z-index: 1045;
 }
-/* Below breadcrumb popovers; above sticky thead (1020). */
+/* Above status bar (1038); below tag (1045) / breadcrumb (1043) rows for menu overlap. */
 .tagfox-search-toolbar-row {
   position: relative;
   z-index: 1040;
 }
-.tagfox-search-toolbar-row .dropdown-menu {
+.tagfox-search-toolbar-row .dropdown-menu,
+.tag-toolbar-row .dropdown-menu,
+.results-status-bar .dropdown-menu {
   z-index: 1060;
 }
 .tagfox-advanced-wrap {
@@ -1113,16 +1669,6 @@ ul.breadcrumb-folder-flyout li.breadcrumb-folder-on-scope-path > button.dropdown
 }
 .modal {
   z-index: 1110;
-}
-/* Advanced btn: orange bg when any switch is ON (normal = filled, hover = outline). */
-#btnToggleSearchOptsAdvanced.btn-outline-warning {
-  background-color: var(--bs-warning);
-  color: var(--bs-dark);
-}
-#btnToggleSearchOptsAdvanced.btn-outline-warning:hover,
-#btnToggleSearchOptsAdvanced.btn-outline-warning:focus-visible {
-  background-color: transparent;
-  color: var(--bs-warning);
 }
 /* Advanced: popover below the Advanced button (not inline in the toolbar row). */
 .search-opts-advanced-popover {
@@ -1215,6 +1761,24 @@ body > .tooltip {
 /* Markdown-built help panes (see help.md → build-help.js). */
 .help-md h3 { font-size: 1rem; color: var(--bs-secondary-color); margin-top: 1rem; margin-bottom: 0.5rem; }
 .help-md h6 { font-size: 0.875rem; color: var(--bs-secondary-color); margin-top: 1rem; margin-bottom: 0.25rem; }
+/* Shortcuts pane: major sections (e.g. Search & view) vs table column headers */
+.help-md .help-md-section-title {
+  font-size: 1.08rem;
+  font-weight: 600;
+  color: var(--bs-emphasis-color);
+  margin-top: 1.35rem;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--bs-border-color);
+}
+.help-md .help-md-section-title:first-of-type {
+  margin-top: 0.5rem;
+}
+.help-md .table thead th {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--bs-secondary-color);
+}
 .help-md ol > li,
 .help-md ul > li { margin-bottom: 0.5rem; }
 .help-md ol > li:last-child,
@@ -1231,7 +1795,14 @@ body > .tooltip {
   --bs-body-bg: #18181b;
   --bs-secondary-bg: #27272a;
   --bs-tertiary-bg: #1f1f23;
+  --tagfox-folder-row-bg: rgba(217, 119, 6, 0.15);
   --bs-border-color: #3f3f46;
+  --tagfox-toolbar-row-rule: rgba(255, 255, 255, 0.14);
+  --tagfox-advanced-accent-rgb: 190, 242, 100;
+  --tagfox-advanced-accent: #bef264;
+  --tagfox-advanced-bg-subtle: rgba(190, 242, 100, 0.14);
+  --tagfox-advanced-border-subtle: rgba(190, 242, 100, 0.45);
+  --tagfox-advanced-text-emphasis: #d9f99d;
   --bs-primary-bg-subtle: #1e1b4b;
   --bs-primary-border-subtle: #4338ca;
   --bs-primary-text-emphasis: #a5b4fc;
@@ -1260,8 +1831,8 @@ body > .tooltip {
   color: #a1a1aa;
 }
 [data-bs-theme="dark"] #resultsTable tbody tr { border-bottom-color: #3f3f46; }
-[data-bs-theme="dark"] #resultsTable.results-sort-path tbody tr.results-folder-row td {
-  background-color: rgba(217, 119, 6, 0.15);
+[data-bs-theme="dark"] #resultsTable.results-sort-path tbody tr.results-folder-row {
+  border-bottom-color: rgba(251, 146, 60, 0.3);
 }
 [data-bs-theme="dark"] .name-badges .folder-child-count.folder-child-count-over {
   background-color: rgba(248, 113, 113, 0.16);
@@ -1303,7 +1874,14 @@ body > .tooltip {
 }
 [data-bs-theme="dark"] .breadcrumb-folder-seg {
   color: #d4d4d8 !important;
-  background-color: rgba(217, 119, 6, 0.15);
+  background-color: var(--tagfox-folder-row-bg);
+}
+[data-bs-theme="dark"] #breadcrumbBar .tagfox-breadcrumb-folder-chip .breadcrumb-folder-seg,
+[data-bs-theme="dark"] #breadcrumbBar .tagfox-breadcrumb-folder-chip .breadcrumb-dd-toggle.tagfox-scope-chevron {
+  border-color: #3f3f46;
+}
+[data-bs-theme="dark"] #breadcrumbBar .tagfox-breadcrumb-folder-chip .breadcrumb-dd-toggle.tagfox-scope-chevron {
+  color: #d4d4d8 !important;
 }
 [data-bs-theme="dark"] #readmePreview.readme-preview--filled { background-color: #2d2006; }
 [data-bs-theme="dark"] #mdFilePreview { background-color: #27272a !important; }
@@ -1319,6 +1897,10 @@ body > .tooltip {
 [data-bs-theme="dark"] #favFoldersBar .fav-folder-chip-chevron:hover {
   color: #e4e4e7; background-color: #3f3f46; border-color: #52525b;
 }
+[data-bs-theme="dark"] #favFoldersBar .fav-folder-chip-remove:hover {
+  color: #fafafa;
+  background-color: rgba(255, 255, 255, 0.1);
+}
 [data-bs-theme="dark"] #favSearchesBar .fav-search-chip-group {
   --fav-search-fg: #d4d4d8;
   --fav-search-bg: #27272a;
@@ -1326,6 +1908,10 @@ body > .tooltip {
 }
 [data-bs-theme="dark"] #favSearchesBar .fav-search-chip-group > .fav-search-chip-go:hover {
   color: #e4e4e7; background-color: #3f3f46; border-color: #52525b;
+}
+[data-bs-theme="dark"] #favSearchesBar .fav-search-chip-remove:hover {
+  color: #fafafa;
+  background-color: rgba(255, 255, 255, 0.1);
 }
 [data-bs-theme="dark"] ul.breadcrumb-folder-flyout {
   background-color: #27272a;

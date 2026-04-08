@@ -2263,6 +2263,82 @@ function isAllowedGoogleWorkspaceAddressBarUrl(u) {
 }
 
 const GOOGLE_WORKSPACE_TOOLBAR_PX = 40;
+/** Child doc windows can otherwise be resized to a needle-thin strip — hard to hit title bar / taskbar restore. */
+const GOOGLE_WORKSPACE_WINDOW_MIN_W = 820;
+const GOOGLE_WORKSPACE_WINDOW_MIN_H = 420;
+
+/** Google’s mini strip is often closed shadow / not in inspectable DOM — simulate the “restore” hit with synthetic mouse. */
+async function googleWorkspaceTryRestoreSatellite(wc) {
+  if (!wc || wc.isDestroyed()) return;
+  const clickDom = `(function () {
+    function rects(el) {
+      try {
+        return el.getBoundingClientRect();
+      } catch (_) {
+        return { width: 0, height: 0, left: 0, top: 0, bottom: 0 };
+      }
+    }
+    function tryRoot(root) {
+      const ih = root.defaultView ? root.defaultView.innerHeight : window.innerHeight;
+      const divs = root.querySelectorAll('div, nav, section');
+      for (let i = 0; i < divs.length; i++) {
+        const d = divs[i];
+        const r = rects(d);
+        if (!r.width || !r.height) continue;
+        if (r.bottom < ih - 2 || r.top > ih - 110) continue;
+        if (r.left > 380) continue;
+        if (r.width > 760) continue;
+        const parts = d.querySelectorAll('button, [role="button"], [tabindex="0"]');
+        const clickables = [];
+        for (let j = 0; j < parts.length; j++) {
+          const b = parts[j];
+          const br = rects(b);
+          if (br.width > 2 && br.height > 2) clickables.push(b);
+        }
+        if (clickables.length >= 2) {
+          clickables[1].click();
+          return true;
+        }
+      }
+      return false;
+    }
+    function walk(doc) {
+      if (tryRoot(doc)) return true;
+      const all = doc.querySelectorAll('*');
+      for (let i = 0; i < all.length; i++) {
+        const n = all[i];
+        if (n.shadowRoot && walk(n.shadowRoot)) return true;
+      }
+      return false;
+    }
+    return walk(document);
+  })();`;
+
+  try {
+    if ((await wc.executeJavaScript(clickDom, true)) === true) return;
+  } catch (_) {}
+
+  let h = 600;
+  try {
+    const dim = await wc.executeJavaScript(`({ h: window.innerHeight })`);
+    if (dim && Number(dim.h) > 80) h = dim.h;
+  } catch (_) {}
+
+  const xs = [36, 48, 56, 64, 72, 84, 96];
+  const ys = [h - 12, h - 18, h - 24, h - 30];
+  for (const y of ys) {
+    for (const x of xs) {
+      const xi = Math.round(x);
+      const yi = Math.round(y);
+      try {
+        wc.sendInputEvent({ type: 'mouseMove', x: xi, y: yi });
+        wc.sendInputEvent({ type: 'mouseDown', x: xi, y: yi, button: 'left', clickCount: 1 });
+        wc.sendInputEvent({ type: 'mouseUp', x: xi, y: yi, button: 'left', clickCount: 1 });
+      } catch (_) {}
+      await new Promise((r) => setTimeout(r, 35));
+    }
+  }
+}
 
 function layoutGoogleWorkspaceBrowserViews(win) {
   if (!win || win.isDestroyed()) return;
@@ -2332,6 +2408,11 @@ function registerGoogleWorkspaceToolbarIpcOnce() {
     if (!wc || wc.isDestroyed()) return;
     wc.reload();
   });
+  ipcMain.on('gws-toolbar-restore-satellite', (event) => {
+    const w = BrowserWindow.fromWebContents(event.sender);
+    if (!w || w.isDestroyed() || !w.gwsContentWc || w.gwsContentWc.isDestroyed()) return;
+    void googleWorkspaceTryRestoreSatellite(w.gwsContentWc);
+  });
 }
 
 function mountGoogleWorkspaceBrowserViews(win, targetUrlArg, useBounds) {
@@ -2386,12 +2467,14 @@ function openGoogleWorkspaceEditorWindow(parentWin, targetUrl) {
     saved && isGoogleWorkspaceBoundsUsable({ x: saved.x, y: saved.y, width: saved.width, height: saved.height })
       ? saved
       : fallback;
+  const initW = Math.max(GOOGLE_WORKSPACE_WINDOW_MIN_W, use.width);
+  const initH = Math.max(GOOGLE_WORKSPACE_WINDOW_MIN_H, use.height);
   const win = new BrowserWindow({
     parent: parentWin || undefined,
     x: use.x,
     y: use.y,
-    width: use.width,
-    height: use.height,
+    width: initW,
+    height: initH,
     show: false,
     backgroundColor: '#f1f3f4',
     webPreferences: {
@@ -2400,6 +2483,7 @@ function openGoogleWorkspaceEditorWindow(parentWin, targetUrl) {
     },
   });
   attachGoogleWorkspaceWindowBoundsPersistence(win);
+  win.setMinimumSize(GOOGLE_WORKSPACE_WINDOW_MIN_W, GOOGLE_WORKSPACE_WINDOW_MIN_H);
   win.setMenuBarVisibility(false);
   mountGoogleWorkspaceBrowserViews(win, url, use);
   return { ok: true };
