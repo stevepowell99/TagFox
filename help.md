@@ -5,10 +5,9 @@
 
   Dev: Enable Everything HTTP → in repo: npm install && npm start → Settings: base URL (optional starting current folder).
 
-  Hot reload: View menu — Reload (Ctrl+R), Force reload (Ctrl+Shift+R), Ctrl+F5 / Ctrl+Shift+F5, Toggle DevTools (Ctrl+Shift+I).
+  Hot reload: F5 = refresh search in app; View → Reload (click) = full window reload; Restart TagFox (Ctrl+F5), Toggle DevTools (Ctrl+Shift+I).
   On Windows the menu bar is hidden by default; Alt toggles it.
-  | Renderer: index.html, styles.css, tags.js, renderer.js | hard reload (Ctrl+Shift+R / Ctrl+F5 / Ctrl+Shift+F5); if UI still stale, npm start again |
-  | preload.js, main.js | quit app and npm start |
+  | Any app code (index.html, styles.css, tags.js, renderer.js, preload.js, main.js) | restart TagFox (Ctrl+F5) |
 
   Ship: npm run dist (electron-builder) → NSIS under dist/. Not code-signed; SmartScreen may warn recipients.
 
@@ -18,7 +17,7 @@
   Ref: https://www.voidtools.com/forum/viewtopic.php?t=8994
 
   Row ⋯ menu: main process (Menu, shell, clipboard). Windows: Copy for Explorer paste (CF_HDROP), full path, parent, name only, slashes, file:// where applicable.
-  Ctrl+Shift+C (⌘+Shift+C on Mac): copy full path(s) as text. Paste from Explorer into current folder (Windows). Then Open, Reveal, Terminal, Notepad, Delete, etc.
+  Ctrl+Shift+C: copy full path(s) as text. Paste from Explorer into current folder (Windows). If the clipboard has no file list but has a bitmap (screenshot, copied image), paste saves Clipboard image.png in the current folder. Then Open, Reveal, Terminal, Notepad, Delete, etc.
 
   Drag and drop: default row/Shelf drag uses TagFox’s in-page protocol (move/copy inside the app; Shift = copy). External apps need Alt+drag or the Shelf “OS drag” arm for native paths (CF_HDROP). Native drag blocks the UI thread, hence the split.
 
@@ -28,7 +27,7 @@
 
   Bulk rename preview: first 200 rows in the dialog only; Rename applies to the full batch captured at open. Wildcard Find uses same Match case as the search row.
 
-  Keyboard nuance: Ctrl+/ (⌘+/ on Mac) opens help (same idea as F1); plain / when no dialog is open focuses search. Esc clears the query when it has text if no dialog or open dropdown needs Esc and focus is not in another text field (see Shortcuts table for fuller behaviour).
+Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when no dialog is open and focus is not already in another text field. `F1` and `Ctrl+/` open help. `Esc` clears the query when it has text if no dialog or open dropdown needs `Esc` and focus is not in another text field (see Shortcuts table for fuller behaviour).
 
   Tab boundaries: see scripts/build-help.js — each pane is introduced by a single-line HTML comment whose body is help:tab plus JSON (id, label, exactly one "active":true, optional "format":"html" for raw HTML). Run npm run build:help after edits.
 
@@ -63,7 +62,7 @@ Welcome to TagFox — a fast, keyboard-friendly file manager powered by instant 
 
 TagFox combines **instant search** (powered by Everything) with a **folder tree view** — so you see results *in context*. You can navigate folders, tag files, preview documents, and manage simple project specifications and tasks without ever opening File Explorer.
 
-**Tags** are labels like `draft`, `urgent`, or `2026` that you attach to files and folders to organise your work. You can filter by tag to instantly find everything marked that way. macOS users will recognise this idea — Finder has built-in colour tags for files and folders. Windows has no native equivalent, so TagFox fills that gap. TagFox stores tags in the filename itself (e.g. `Report[(draft,urgent)].docx`), so they travel with the file — no database, no hidden metadata. They work in Explorer, Google Drive, zip exports, everywhere.
+**Tags** are labels like `draft`, `urgent`, or `2026` that you attach to files and folders to organise your work. You can filter by tag to instantly find everything marked that way. Windows has no native equivalent, so TagFox fills that gap. TagFox stores tags in the filename itself (e.g. `Report[(draft,urgent)].docx`), so they travel with the file — no database, no hidden metadata. They work in Explorer, Google Drive, zip exports, everywhere.
 
 ### 🤔 The problems TagFox solves
 
@@ -81,19 +80,20 @@ Meanwhile, tools like Google Drive train you to type a word and expect the right
 - 👁️ **Fast previews** — images, PDFs, Word, Excel, PowerPoint, text, JSON, markdown and more, right in the Viewer panel.
 - 🏷️ **Filename tags** — add, remove and filter by `[(tag)]` labels. Tags scan your folder automatically; click them to filter results.
 - 📋 **Add TODO** — create a small markdown file tagged `[(TODO)]` in the current folder, right from the Viewer panel.
-- 📝 **Folder docs** — Viewer loads the first of `readme.md` → `readme.txt` → `claude.md` → `agents.md` → `about.md` → `about.txt` → `context.md` → `context.txt` → `index.md` → `index.txt` (details under **📁 Files & folders**).
+- 📝 **Folder docs** — Viewer loads the first of `-readme.md` → `-readme.txt` → `readme.md` → `readme.txt` → `claude.md` → `agents.md` → `about.md` → `about.txt` → `context.md` → `context.txt` → `index.md` → `index.txt` (details under **📁 Files & folders**).
 - 📦 **Shelf** — a visual staging area for files, like a kind of clipboard. Copy items onto the Shelf, navigate to another folder, paste them. No tabs or split panes needed.
 - 🔄 **Bulk rename** — check several files (or highlight one), press `Ctrl`+`H`, use wildcards (`*` / `?`) on the **last path segment only**; live preview shows the first 200 rows but **Rename** still applies to the whole batch captured when the dialog opened. **Match case** follows the search row toggle.
 - 📏 **Layout** — drag the splitter between results and the Viewer (width saved).
+- ↕️ **Split results panes** — drag the horizontal separator inside results to split into top/bottom panes. Each pane remembers its own filters/search state; clicking a pane restores that pane’s state.
 - ☁️ **Mixed local + Google Docs** — local Office files preview inline; Google Workspace shortcuts (`.gdoc`, `.gsheet`, `.gslides`) open in a popup window. On Windows with Google Drive for Desktop, TagFox resolves the Doc URL from the shortcut file or from the `user.drive.id` virtual stream when the stub JSON cannot be read (including many `.shortcut-targets-by-id` paths). That path usually works for **streamed** (on-demand) files too, not only fully mirrored ones.
 - 🔗 **Google Drive shortcut folders** — Google Drive for Desktop stores shared-folder shortcuts under `.shortcut-targets-by-id\<long ID>`. TagFox auto-resolves the real folder name: the Name column shows 🔗 plus the actual name, and the breadcrumb and Path column collapse the ugly ID segments. Hover any collapsed path for the full raw path. The resolved names are cached across restarts.
+
 
 <!-- help:tab {"id":"search","label":"🔍 Search & views"} -->
 
 ### 📂 Current folder
 
 - The **breadcrumb** under the favourites row shows your **scope folder** (if set in Settings) as the first segment, then your **current folder** beneath it. Everything you search, create and paste uses the current folder when set; if only the scope is set, those actions use the scope root. Clear the current folder (×) to widen to the whole tree under the scope. **Settings → Search scope folder** sets or clears the hard ceiling. If the search box still has text when you change folder (double-click a folder row, breadcrumb, favourites, etc.), that filter stays on; the search row flashes briefly as a reminder.
-- `Ctrl`+`Backspace` (`⌘`+`Backspace` on Mac) clears the current folder from **any** focus when a folder is set — skipped while a dialog is open (and it overrides the usual “delete previous word” in text fields while a scope is active).
 - The ✏️ **pen button** lets you type a path directly. Press `Enter` to apply, `Esc` to cancel.
 - The 🕐 **clock button** (or `Ctrl`+`L`) lists **recent folders** only (paths you have used), not full search snapshots. Full search history is `Alt`+`←` / `→` (or the toolbar arrows).
 
@@ -102,7 +102,7 @@ Meanwhile, tools like Google Drive train you to type a word and expect the right
 - Type in the search box — results update as you type. Press `Enter` to force a refresh.
 - Tip: `foo|bar` matches either word. `!foo` excludes files matching “foo”.
 - Next to the search row, **Both** / **Folders only** / **Files only** narrow what Everything returns (`folder:` / `file:` when narrowed). See [Everything searching](https://www.voidtools.com/support/everything/searching/).
-- The **Advanced** button opens extra options: match case, match path, whole word, diacritics, **Hide special**, **Hide ~**. **Hide special** removes rows whose path has a segment starting with `.` or `$`, or equals `desktop.ini` (`..` is ignored; `.shortcut-targets-by-id` is kept). **Hide ~** removes rows with any segment starting with `~` (e.g. profile junctions). Both are **table only**; Everything still fetches up to **Results per page** before filtering — if the list looks empty, raise that limit, use **Load more**, or narrow scope/query. When those rows are still shown (toggles off), **Hide special** matches fade more (lower opacity) than **~** matches.
+- The **Advanced** button opens extra options: match case, match path, whole word, diacritics, **Hide special**, **Hide ~**. Toggle **whole word** with `w` or `Ctrl`+`W` (see Shortcuts). **Hide special** removes rows whose path has a segment starting with `.` or `$`, or equals `desktop.ini` (`..` is ignored; `.shortcut-targets-by-id` is kept). **Hide ~** removes rows with any segment starting with `~` (e.g. profile junctions). Both are **table only**; Everything still fetches up to **Results per page** before filtering — if the list looks empty, raise that limit, use **Load more**, or narrow scope/query. When those rows are still shown (toggles off), **Hide special** matches fade more (lower opacity) than **~** matches.
 - **Tree** / **Smart** / **Flat** (`l` cycles; `x` → Smart): Tree hides the Path column and groups by folder; Tree mode keeps path sort A→Z. Size/Modified/Name sorts switch to Flat (status bar note).
 
 ### 👁️ View toggles
@@ -129,6 +129,8 @@ Three icon-pair switches next to the search box — combine them freely:
 
 ### 🧭 Breadcrumb navigation
 
+- **Paste image (Windows):** with a **current folder** set and focus outside a text field, **Ctrl**+**V** pastes Explorer files as usual; if the clipboard has **no file paths** but has a **screenshot or copied image**, TagFox saves **`Clipboard image.png`** there (then `Clipboard image (1).png`, …) and refreshes results.
+
 - Click any segment of the breadcrumb to jump to that folder.
 - The small **▾** arrows between segments show sibling folders; the one after the last segment shows children. You can hover into nested menus to drill down quickly.
 - **K** / **J** — previous or next sibling folder; ▲ (in the last breadcrumb segment) goes to the parent folder.
@@ -143,7 +145,7 @@ Three icon-pair switches next to the search box — combine them freely:
 ### 📄 Viewer panel
 
 - Select a file to see its details and preview on the right. Supports images, PDFs, Office files, markdown, text, audio, and video.
-- For folders, the Viewer shows a **folder doc** — the first match it finds (case-insensitive basename): `readme.md` → `readme.txt` → `claude.md` → `agents.md` → `about.md` → `about.txt` → `context.md` → `context.txt` → `index.md` → `index.txt`. **Edit** opens the editor (live preview); **Save** writes to disk, closes the editor, and refreshes the search. If none of those files exist yet, saving creates `readme.md`.
+- For folders, the Viewer shows a **folder doc** — the first match it finds (case-insensitive basename): `-readme.md` → `-readme.txt` → `readme.md` → `readme.txt` → `claude.md` → `agents.md` → `about.md` → `about.txt` → `context.md` → `context.txt` → `index.md` → `index.txt`. **Edit** opens the editor (live preview); **Save** writes to disk, closes the editor, and refreshes the search. If none of those files exist yet, saving creates `-readme.md`.
 - The row **⋯** menu gives you options to open, reveal in Explorer, copy the path, and more.
 - Press `Shift`+`Space` to expand the Viewer to near-fullscreen.
 - Google Workspace shortcuts (`.gdoc` / `.gsheet` / `.gslides`): **Open** uses an in-app window when TagFox can get the document URL (from the stub JSON, or on Windows from the Drive stream `filename:user.drive.id`). Streamed-only files are usually fine; if not, use Open again, context “Search Google Drive…”, or hydrate the file in Drive.
@@ -152,8 +154,14 @@ Three icon-pair switches next to the search box — combine them freely:
 
 ### 📂 Favourite folders
 
-- The 💾 **save button** on the favourites row saves the current folder as a chip. Click a chip to jump there; × removes it.
-- **Drag** a folder chip (grab anywhere except the subfolder ▾ control or ×) to reorder. While dragging, the **gaps** between chips widen and the **active gap** highlights — drop there (not on a pill). `Ctrl`+`Shift`+`1`…`9` follows *left-to-right* order.
+- The **left-hand folder sidebar** is the whole column on the left. It contains **Favourite folders** at the top, then **Recent folders** and **Recent files** below.
+- The 💾 **save button** saves the current folder into the **Favourite folders** part of that sidebar. Click a folder pill to jump there; × removes it.
+- Each folder row has a main pill plus a ▾ button. Click the main pill to go there; use ▾ to browse subfolders without leaving your current place first.
+- The sidebar has two display modes:
+  - **Fixed Mode**: the column stays open at its normal saved width, so long names are truncated to fit.
+  - **Peek Mode**: the column collapses to a thin strip. Hover it to peek it open temporarily, or click the rail button to return to Fixed Mode.
+- In **Peek Mode**, the sidebar also peeks open while you drag files onto it. That lets you reach the folder pills and their ▾ menus during a drag, and while it is peeked open the full names are shown instead of being truncated.
+- **Drag** a favourite folder pill (grab anywhere except the subfolder ▾ control or ×) to reorder. While dragging, the **gaps** between pills widen and the **active gap** highlights — drop there (not on a pill). `Ctrl`+`Shift`+`1`…`9` follows *top-to-bottom* order.
 
 ### 🔖 Saved searches
 
@@ -165,7 +173,7 @@ Three icon-pair switches next to the search box — combine them freely:
 
 ### 📦 What is the Shelf?
 
-The Shelf is the narrow vertical strip to the left of the results table. It's a **staging area** for files you want to move or copy between folders.
+The Shelf is the narrow vertical strip to the right of the results table. It's a **staging area** for files you want to move or copy between folders.
 
 ### 🔄 How to use it
 
@@ -187,7 +195,7 @@ TagFox lets you manage simple projects right on your filesystem — no separate 
 - 📝 **Folder docs** — write a short description of what a folder is for. Tag it *active*, *archived*, etc. to track project status. Filter by tag to see only active work.
 - 🌲 **Tree view + tags = lightweight project management.** You can organise a whole project with markdown notes, tags, and folder docs — no proprietary database. Everything stays as normal files that work in Explorer, Drive, and zip exports.
 
-<p class="text-muted mb-0">💡 Tip: if renaming <strong>folders</strong> on synced Google Drive is unreliable, just tag <em>files</em> instead and add a <code>readme.md</code> in the folder root.</p>
+<p class="text-muted mb-0">💡 Tip: if renaming <strong>folders</strong> on synced Google Drive is unreliable, just tag <em>files</em> instead and add a folder doc (e.g. <code>-readme.md</code>) in the folder root.</p>
 
 <!-- help:tab {"id":"gotchas","label":"⚠️ Gotchas"} -->
 
@@ -198,88 +206,86 @@ Things that might trip you up:
 - 📄 **Google Docs shortcuts** (`.gdoc` etc.) show one name in Drive on the web and a different name locally after you tag them — this mismatch is expected.
 - 📱 **Opening Docs/Sheets/Slides from Drive:** TagFox first reads the small JSON stub; if that fails (e.g. under `.shortcut-targets-by-id`), Windows + Google Drive for Desktop can still expose the cloud file id on the stream `yourfile.gdoc:user.drive.id`. That is metadata from the Drive client and normally works for **streamed** as well as **mirrored** files, without downloading the whole document. If the id is not ready (`local…` placeholder) or your install does not expose the stream, use normal **Open**, Search in Drive from the row menu, or open the file once in the browser.
 - 👥 **Shared Drive files** from other people may not resolve in the popup if your account cannot read the stub or stream; permissions and client version still matter.
-- 🔧 **Everything 1.5 vs 1.4** — some advanced search features work better with Everything 1.5+. Both versions work, but 1.5 is recommended.
+- 🔧 **Use Everything 1.5a.** TagFox relies on `sort-mix:` for mixed file/folder ordering. `1.4.x` may connect over HTTP, but it is not the supported setup.
 - ⚡ **Everything must be running.** TagFox only talks to Everything's HTTP server — if Everything is closed, you'll get no results.
 
 <!-- help:tab {"id":"installation","label":"📦 Installation"} -->
 
-Getting TagFox up and running takes about five minutes:
+1. **Install Everything 1.5a.** Download it here: <a href="https://www.voidtools.com/everything-1.5a" target="_blank" rel="noopener">Everything 1.5a downloads</a>. Then install the HTTP Server plugin for your build: <a href="https://www.voidtools.com/Everything-HTTP-Server-1.0.3.4.x64-Setup.exe" target="_blank" rel="noopener">x64 installer</a>, <a href="https://www.voidtools.com/Everything-HTTP-Server-1.0.3.4.x86-Setup.exe" target="_blank" rel="noopener">x86 installer</a>. Let Everything finish its first index.
 
-1. **Install [Voidtools Everything](https://www.voidtools.com/)** and let it finish its first index. TagFox uses Everything for search — it won't work without it.
+2. **Turn on HTTP Server in Everything.** Go to **Tools → Options → HTTP Server**, turn it on, and keep the default address `127.0.0.1` and port `8080` unless you want something else.
 
-   <p class="small mb-0 mt-2"><strong>Everything 1.5 Alpha</strong> builds (e.g. <code>sort-mix:</code>): <a href="https://www.voidtools.com/everything-1.5a" target="_blank" rel="noopener">https://www.voidtools.com/everything-1.5a</a>. <strong>HTTP Server plug-in</strong> (required for HTTP on 1.5a): <a href="https://www.voidtools.com/Everything-HTTP-Server-1.0.3.4.x64-Setup.exe" target="_blank" rel="noopener">x64 installer</a>, <a href="https://www.voidtools.com/Everything-HTTP-Server-1.0.3.4.x86-Setup.exe" target="_blank" rel="noopener">x86 installer</a> — portable zips and other versions: <a href="https://www.voidtools.com/forum/viewtopic.php?t=9799" target="_blank" rel="noopener">voidtools forum: Plug-ins</a>.</p>
-
-2. **Turn on the HTTP server** in Everything:
-   - **Everything 1.5 (Alpha)**: install the HTTP Server *plugin* first, then go to **Tools → Options → HTTP Server** — turn it on, set address to `127.0.0.1` and port to `8080` (or your preference). Optionally set a username/password.
-   - **Everything 1.4.x**: HTTP is built in — just go to **Tools → Options → HTTP Server** and enable it. No plugin needed.
-
-3. **Start TagFox:** in the TagFox folder, run `npm install` then `npm start`.
-
-4. **Configure the connection:** open **Settings** (top-left), set **Everything base URL** to match (e.g. `http://127.0.0.1:8080`). If you set HTTP auth in Everything, enter the same username/password here.
-
-5. **Limit where search runs (strongly recommended):** in **Settings**, under **Search scope limits**, click **Add profile folder** and/or **Add folder…** for other trees (work drive, projects). Results stay under those paths; you can list several (Everything combines them with **OR**). Leave the list empty only if you intentionally want the whole indexed machine (still subject to the breadcrumb). Optionally set a **starting current folder** via the breadcrumb / path editor.
-
-6. **Start browsing!** Set or clear the **current folder** breadcrumb, type in the search box, and you should see results instantly.
+3. **Start TagFox and connect it.**
+   - **If you installed TagFox from a `.exe`:** just launch TagFox.
+   - **If you cloned the repo:** in the TagFox folder run `npm install` then `npm start`.
+   In **Settings**, under **Connection to Everything Search**, use the same URL. Default: `http://127.0.0.1:8080`. If you set HTTP auth in Everything, enter the same username/password here. Optional: under **Search only inside one folder**, choose one main folder to keep searches narrower.
 
 <!-- help:tab {"id":"shortcuts","label":"⌨️ Shortcuts","format":"html"} -->
 
-<p class="text-muted mb-2 mt-3"><kbd>Ctrl</kbd> = <kbd>Ctrl</kbd> on Windows, <kbd>⌘</kbd> on Mac. Most shortcuts are disabled while a dialog is open.</p>
+<p class="text-muted mb-2 mt-3">Most shortcuts are disabled while a dialog is open. Bare-letter shortcuts work only outside text fields. Checked rows are the bulk selection. Repeating sort keys toggles direction; in <strong>Tree</strong>, sort keys switch to <strong>Flat</strong> first. <kbd>Esc</kbd> clears the query; with an empty query in the search box, it clears the current folder.</p>
 
 <h5 class="help-md-section-title">Search &amp; view</h5>
 <div class="table-responsive">
 <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
-<tr><td><kbd>/</kbd></td><td>Toggle focus into / out of the search box (from outside text fields); <kbd>Ctrl</kbd>+<kbd>F</kbd> always focuses the search box</td></tr>
-<tr><td><kbd>Esc</kbd></td><td>Close expanded Viewer / flyouts; if no dialog or open menu needs it — clear query when it has text, or with focus in the search box and an empty query, clear current folder (whole index)</td></tr>
-<tr><td><kbd>Ctrl</kbd>+<kbd>Backspace</kbd></td><td>Clear current folder (whole index) from any focus when a folder is set; skipped if a dialog is open (replaces the usual “delete word” shortcut in text fields while scope is active)</td></tr>
-<tr><td><kbd>F5</kbd> or <kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>Refresh results</td></tr>
-<tr><td><kbd>x</kbd></td><td>Switch to <strong>Smart</strong> view</td></tr>
-<tr><td><kbd>l</kbd></td><td>Cycle Tree / Smart / Flat layout</td></tr>
-<tr><td><kbd>s</kbd></td><td>Switch Subfolders on / off</td></tr>
-<tr><td><kbd>f</kbd></td><td>Switch Files+folders / Folders only</td></tr>
-<tr><td><kbd>z</kbd> / <kbd>m</kbd> / <kbd>n</kbd></td><td>Sort by Size / Modified / Name (repeat toggles direction). In <strong>Tree</strong> view, those sorts or the same column headers switch to <strong>Flat</strong> first (status bar note); Tree alone keeps path A→Z.</td></tr>
+<tr><td><kbd>/</kbd> / <kbd>Ctrl</kbd>+<kbd>U</kbd></td><td>Focus / unfocus search</td></tr>
+<tr><td><kbd>Esc</kbd></td><td>Close Viewer / flyouts, or clear query / current folder</td></tr>
+<tr><td><kbd>F5</kbd></td><td>Refresh results</td></tr>
+<tr><td><kbd>i</kbd> / <kbd>Ctrl</kbd>+<kbd>I</kbd></td><td>Cycle layout</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd></td><td>Reset to Smart view defaults (subfolders on, files + folders; not Flat), plus clear tag filters, recency <strong>All</strong>, whole word off</td></tr>
+<tr><td><kbd>w</kbd> / <kbd>Ctrl</kbd>+<kbd>W</kbd></td><td>Toggle whole word (Advanced)</td></tr>
+<tr><td><kbd>s</kbd> / <kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Toggle subfolders</td></tr>
+<tr><td><kbd>f</kbd> / <kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>Cycle content mode</td></tr>
+<tr><td><kbd>r</kbd> / <kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>Cycle recency</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd></td><td>Toggle recency between <strong>All</strong> and <strong>1h</strong> only</td></tr>
+<tr><td><kbd>z</kbd> / <kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Sort by size</td></tr>
+<tr><td><kbd>m</kbd> / <kbd>Ctrl</kbd>+<kbd>M</kbd></td><td>Sort by modified</td></tr>
+<tr><td><kbd>n</kbd> / <kbd>Ctrl</kbd>+<kbd>N</kbd></td><td>Sort by name</td></tr>
 </tbody></table></div>
 
 <h5 class="help-md-section-title">Navigation</h5>
 <div class="table-responsive">
 <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
-<tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Move through the results list</td></tr>
-<tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>Jump to next / previous <strong>sibling folder</strong> (same parent directory). At the last/first sibling, the next key press moves at the parent level (then grandparent, etc.). Scrolls the target row to the top of the results list.</td></tr>
-<tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>Jump to first / last row</td></tr>
-<tr><td><kbd>Enter</kbd></td><td>Open file or enter folder</td></tr>
-<tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Set <strong>current folder</strong> to the parent of the highlighted row (same idea as the row’s ▲ parent button)</td></tr>
+<tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Move selection</td></tr>
+<tr><td><kbd>j</kbd> / <kbd>Ctrl</kbd>+<kbd>J</kbd> and <kbd>k</kbd> / <kbd>Ctrl</kbd>+<kbd>K</kbd></td><td>Next / previous sibling folder</td></tr>
+<tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>First / last row</td></tr>
+<tr><td><kbd>Enter</kbd></td><td>Open / enter folder</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Set current folder to selected row’s parent</td></tr>
 <tr><td><kbd>→</kbd></td><td>Scope into selected folder</td></tr>
-<tr><td><kbd>←</kbd></td><td>Scope to parent or first subfolder on the row's path</td></tr>
-<tr><td><kbd>+</kbd> / <kbd>-</kbd></td><td>Expand / collapse folder in tree view; with multi-select (e.g.&nbsp;<kbd>Ctrl</kbd>+<kbd>A</kbd>) toggles all top-level folders</td></tr>
-<tr><td><kbd>Backspace</kbd></td><td>Go up to the parent folder</td></tr>
-<tr><td><kbd>Alt</kbd>+<kbd>↑</kbd> or <kbd>Ctrl</kbd>+<kbd>↑</kbd></td><td>Go up to the parent of the <strong>current folder</strong> (<kbd>Alt</kbd>+<kbd>↑</kbd> works from the search box via a dedicated listener; <kbd>Ctrl</kbd>+<kbd>↑</kbd> from other focus)</td></tr>
-<tr><td><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>→</kbd></td><td>Search history back / forward</td></tr>
+<tr><td><kbd>←</kbd></td><td>Scope toward parent</td></tr>
+<tr><td><kbd>+</kbd> / <kbd>-</kbd></td><td>Expand / collapse tree folder</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>↑</kbd> or <kbd>Ctrl</kbd>+<kbd>↑</kbd></td><td>Parent of current folder</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Home</kbd></td><td>Clear current folder: search everywhere</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Home</kbd></td><td>Clear current folder, active tag filters, and recency (set to <strong>All</strong>)</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>→</kbd></td><td>History back / forward</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>L</kbd></td><td>Recent folders list</td></tr>
 </tbody></table></div>
 
 <h5 class="help-md-section-title">Selection &amp; file operations</h5>
 <div class="table-responsive">
 <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
-<tr><td><kbd>Space</kbd></td><td>Toggle the current row’s <strong>bulk</strong> checkbox (Explorer copy/delete/tags)</td></tr>
-<tr><td><kbd>Shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd></td><td>Bulk: check every row from the range anchor through the new highlight (inclusive); uncheck all other visible rows (same anchor rules as click range below)</td></tr>
-<tr><td><kbd>Ctrl</kbd>+click or <kbd>⌘</kbd>+click a row</td><td>Bulk: toggle that row’s checkbox; if you turn it <strong>on</strong> and the previously highlighted row was off, that row is checked too</td></tr>
-<tr><td><kbd>Shift</kbd>+click a row</td><td>Bulk: check every row from the current focus to the clicked row (inclusive); uncheck all other visible rows (same as <kbd>Shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd>)</td></tr>
-<tr><td><kbd>Ctrl</kbd>+<kbd>A</kbd></td><td>Select all visible rows</td></tr>
-<tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>X</kbd> / <kbd>V</kbd></td><td>Copy, cut, paste files (Explorer-compatible)</td></tr>
+<tr><td><kbd>Space</kbd></td><td>Toggle checked row</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd></td><td>Check range</td></tr>
+<tr><td><kbd>Ctrl</kbd>+click a row</td><td>Toggle checked row</td></tr>
+<tr><td><kbd>Shift</kbd>+click a row</td><td>Check range to clicked row</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>A</kbd></td><td>Check all visible rows</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>X</kbd> / <kbd>V</kbd></td><td>Copy / cut / paste checked files</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd></td><td>Copy full path(s) as text</td></tr>
 <tr><td><kbd>F2</kbd></td><td>Rename the selected item</td></tr>
-<tr><td><kbd>Del</kbd></td><td>Delete selected items (Recycle Bin)</td></tr>
+<tr><td><kbd>Del</kbd></td><td>Delete checked items</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></td><td>Create a new folder</td></tr>
-<tr><td><kbd>Ctrl</kbd>+<kbd>T</kbd> or <kbd>t</kbd></td><td>Edit tags on selected items (<kbd>t</kbd> when not typing in a field — use <kbd>Ctrl</kbd>+<kbd>T</kbd> from the search box)</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>T</kbd> or <kbd>t</kbd></td><td>Edit tags on checked items</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>T</kbd></td><td>Remove tags from checked items</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd></td><td>Clear tag filter selection or restore it (toggle)</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>H</kbd></td><td>Bulk rename with wildcards</td></tr>
 </tbody></table></div>
 
 <h5 class="help-md-section-title">Favourites &amp; app</h5>
 <div class="table-responsive">
 <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
-<tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>…<kbd>9</kbd></td><td>Jump to favourite folder #1–9</td></tr>
-<tr><td><kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>9</kbd></td><td>Restore saved search #1–9</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>…<kbd>9</kbd></td><td>Favourite folder 1-9</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>9</kbd></td><td>Saved search 1-9</td></tr>
 <tr><td><kbd>Shift</kbd>+<kbd>Space</kbd></td><td>Toggle Viewer fullscreen</td></tr>
 <tr><td><kbd>F1</kbd> or <kbd>Ctrl</kbd>+<kbd>/</kbd></td><td>Open this help</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>,</kbd></td><td>Open / close Settings</td></tr>
-<tr><td><kbd>Ctrl</kbd>+<kbd>Space</kbd></td><td>Show / hide TagFox (system-wide; changeable in Settings)</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd></td><td>Show / hide TagFox from anywhere (default; change in Settings)</td></tr>
 </tbody></table></div>

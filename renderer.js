@@ -1,10 +1,15 @@
-// TagFox renderer UI logic (after vendor CDN loader + tags.js).
+﻿// TagFox renderer UI logic (after vendor scripts + tags.js).
     const T = window.TagBrowserTags;
     /** Pretty filename for one path segment (strip bracket tags). */
     function segmentPretty(name) {
       return T.parseSegmentTags(name).pretty;
     }
-    if (window.__tagBrowserCdnOk === false) throw new Error('CDN vendor load failed');
+    
+
+
+
+    if (!(window.bootstrap && window.marked && window.mammoth && window.XLSX && window.JSZip && window.CodeMirror))
+      throw new Error('Vendor scripts missing — run npm install (syncs vendor/ via postinstall).');
     const LS = {
       baseUrl: 'tagBrowserBaseUrl',
       rootFolder: 'tagBrowserRootFolder',
@@ -26,13 +31,16 @@
       showSubfolders: 'tagBrowserShowSubfolders',
       hideFiles: 'tagBrowserHideFiles',
       propsWidthPx: 'tagBrowserPropsW',
-      tableCols: 'tagBrowserTableCols',
+      favFoldersColPx: 'tagBrowserFavFoldersW',
+      favFoldersCollapsed: 'tagBrowserFavFoldersCollapsed',
+      tableCols: 'tagBrowserTableColsV2',
       favFolders: 'tagBrowserFavFolders',
+      folderFocusStats: 'tagBrowserFolderFocusStats',
+      fileFocusStats: 'tagBrowserFileFocusStats',
       favSearches: 'tagBrowserFavSearches',
       scopeFolderHistory: 'tagBrowserScopeFolderHist',
       searchScopeCeilings: 'tagBrowserSearchScopeCeilings',
       searchScopeMax: 'tagBrowserSearchScopeMax',
-      scopeRootsTipDismissed: 'tagBrowserScopeRootsTipDismissed',
       tagStore: 'tagBrowserTagStore',
       knownBracketTags: 'tagBrowserKnownBracketTags',
       activeTagFilter: 'tagBrowserActiveTag',
@@ -44,11 +52,17 @@
       darkMode: 'tagBrowserDarkMode',
       treeFolding: 'tagBrowserTreeFolding',
       treeGroupHighlight: 'tagBrowserTreeGroupHL',
+      highlightMatchedNames: 'tagBrowserHighlightMatchedNames',
       collapsedFolders: 'tagBrowserCollapsedFolders',
       resultsLayout: 'tagBrowserResultsLayout',
       resultsContent: 'tagBrowserResultsContent',
       gdriveShortcutNames: 'tagBrowserGDriveShortcutNames',
       quickTodoFolder: 'tagBrowserQuickTodoFolder',
+      globalViewerBasenames: 'tagBrowserGlobalViewerBasenames',
+      viewerDocSplitPct: 'tagBrowserViewerDocSplitPct',
+      viewerDocSplitPctTheater: 'tagBrowserViewerDocSplitPctTheater',
+      resultsSplitRatio: 'tagBrowserResultsSplitRatio',
+      paneBSearchState: 'tagBrowserPaneBSearchState',
     };
 
     /** One-time copy when upgrading from the old app name (everythang* keys). */
@@ -194,10 +208,17 @@
     }
 
     let propsPanePx = 300;
-    /** Percent weights: chk, name, path, size, modified, actions (sum 100). Type column removed — 6 cols. */
-    const COL_PERCENT_DEFAULT = [4, 34, 22, 8, 14, 18];
-    /** Drag resize: last boundary = Modified | Actions — don’t shrink Actions below this (% of table). */
-    const COL_RESIZE_MIN_ACTIONS_PCT = 11;
+    let viewerDocSplitPct = 50;
+    let viewerDocSplitPctTheater = 50;
+    /** Favourites column width when expanded (px). Collapsed rail peek reuses this saved full width. */
+    const FAV_COL_MIN = 120;
+    const FAV_COL_MAX = 600;
+    let favFoldersColPx = 220;
+    let favFoldersCollapsed = false;
+    /** Percent weights: chk, name, path, actions, size, modified (sum 100). Type column removed — 6 cols. */
+    const COL_PERCENT_DEFAULT = [4, 42, 24, 14, 6, 10];
+    /** Drag resize: don’t shrink Actions below this (% of table) at Path|Actions or Actions|Size. */
+    const COL_RESIZE_MIN_ACTIONS_PCT = 6;
     /** Table column index for Path (hidden in tree view). */
     const RESULTS_PATH_COL_IDX = 2;
     let colPercent = COL_PERCENT_DEFAULT.slice();
@@ -205,6 +226,8 @@
     let lastRows = [];
     /** HTML5 drag payload for moving rows onto folder rows in the results table. */
     const TAG_BROWSER_PATHS_DRAG_TYPE = 'application/x-tagbrowser-paths';
+    /** Single folder row drag: lets the favourites bar insert by gap instead of moving on disk. */
+    const TAG_BROWSER_FAV_FOLDER_DRAG_TYPE = 'application/x-tagbrowser-fav-folder';
     /** startDrag path: OS sets no custom MIME on dragover; stash until dragend. Not used for normal HTML5 drags. */
     let tagBrowserActiveNativeDragPaths = null;
     /** One-shot: next row/Shelf-chip drag uses OS file drag (Explorer); normal drag stays HTML5 for in-app. */
@@ -215,6 +238,15 @@
         return [...dt.types].includes(TAG_BROWSER_PATHS_DRAG_TYPE);
       } catch {
         return false;
+      }
+    }
+
+    function getDataTransferFavouriteFolder(dt) {
+      try {
+        const raw = dt.getData(TAG_BROWSER_FAV_FOLDER_DRAG_TYPE);
+        return normalizeFolderPathForEverything(String(raw || '').trim());
+      } catch {
+        return '';
       }
     }
 
@@ -264,6 +296,7 @@
     function clearInternalPathDragDropTargetHints() {
       document.querySelectorAll('.tagfox-results-row--drag-source').forEach((n) => n.classList.remove('tagfox-results-row--drag-source'));
       document.body.classList.remove('tagfox-internal-path-drag');
+      clearAllFavBarDropGaps();
     }
     /** Last tag scan: Everything r=1 + `\\[\\(` so we only index `[(…)]` blocks, not every `[`. */
     let tagDiscoveryRows = [];
@@ -274,6 +307,18 @@
     let searchDebounceTimer = null;
     const SEARCH_DEBUG_MAX = 3500;
     let searchDebugLines = [];
+    /** Saved before console is wrapped — searchDebugLog mirrors without recursion. */
+    const nativeConsole = {
+      log: console.log.bind(console),
+      debug: console.debug.bind(console),
+      info: console.info.bind(console),
+      warn: console.warn.bind(console),
+      error: console.error.bind(console),
+    };
+    /** Two-step test control: next click after clear expects Copy. */
+    let searchDebugTestAwaitingCopy = false;
+    /** Fresh debug capture: run one deeper scope probe on the next search. */
+    let searchDebugNextScopedProbe = false;
     /** Incremented at each runSearch start; in-flight HTTP from an older id must not touch UI (overlapping debounced runs). */
     let searchRunSeq = 0;
     /** True while runSearch() awaits Everything (auto-refresh skips ticks to avoid overlap). */
@@ -282,6 +327,27 @@
     let resultsLoadMoreBusy = false;
     /** Offset paging: replay same query with higher Everything offset (null = no further pages for current search). */
     let resultsPagingCtx = null;
+    /** Horizontal split panes in results area: active pane owns canonical #results* ids + global filter controls. */
+    let activeResultsPane = 'A';
+    let resultsSplitRatio = 0.5;
+    const RESULTS_SPLIT_COLLAPSE_EPS = 0.012;
+    /** One top-level search flow at a time: serializes runSearchNow (active runSearch + inactive refresh dance) and stand-alone refreshInactiveResultsPane. Nested calls (smart-narrow runSearchNow inside outer runSearch's smartBeforePaint, dance's inner runSearch inside refreshInactiveResultsPane) see topLevelSearchDepth>0 and skip mutex acquire to avoid deadlock. */
+    let searchMutex = Promise.resolve();
+    let topLevelSearchDepth = 0;
+    const RESULT_DOM_ID_MAP = Object.freeze([
+      { base: 'resultsWrap', A: 'resultsWrapA', B: 'resultsWrapB' },
+      { base: 'resultsScroll', A: 'resultsScrollA', B: 'resultsScrollB' },
+      { base: 'resultsTable', A: 'resultsTableA', B: 'resultsTableB' },
+      { base: 'tbody', A: 'tbodyA', B: 'tbodyB' },
+      { base: 'resultsLoadMoreWrap', A: 'resultsLoadMoreWrapA', B: 'resultsLoadMoreWrapB' },
+      { base: 'btnLoadMoreResults', A: 'btnLoadMoreResultsA', B: 'btnLoadMoreResultsB' },
+      { base: 'resultsLoadMoreHint', A: 'resultsLoadMoreHintA', B: 'resultsLoadMoreHintB' },
+      { base: 'chkSelectAllResults', A: 'chkSelectAllResultsA', B: 'chkSelectAllResultsB' },
+    ]);
+    const resultsPaneState = {
+      A: { searchState: null, lastRows: [], resultsPagingCtx: null },
+      B: { searchState: null, lastRows: [], resultsPagingCtx: null },
+    };
     /** Smart view event kind for the current search: identity|refresh|manual|smart-narrow|smart-probe|null. */
     let smartEvent = null;
     /** Before a Smart probe-widen: saved {subs, content} to revert if cap exceeded. */
@@ -305,6 +371,14 @@
     let searchHistIdx = 0;
     let searchHistDebounceTimer = null;
     let searchHistNavigating = false;
+    /** True only while the LHS favourites splitter is actively being dragged. */
+    let favFoldersSplitDragging = false;
+    const DID_YOU_KNOW_ROTATE_MS = 4 * 60 * 1000;
+    /** Tips + scores: did-you-know-tips.js → window.TagFoxDidYouKnowTips (empty array if load failed). */
+    const DID_YOU_KNOW_TIPS = window.TagFoxDidYouKnowTips || Object.freeze([]);
+    let didYouKnowBag = [];
+    let didYouKnowLastTipKey = '';
+    let didYouKnowTimerId = null;
     /** Favourites strip mid-drag: 'folder' | 'search' | null — HTML5 reorder only within the same bar. */
     let favListDragKind = null;
     /** When empty-results hints restart (query / tag / recursive changed while still empty). */
@@ -408,6 +482,42 @@
       syncViewRadioActiveFromDom();
     }
 
+    /**
+     * Smart layout + subfolders + files & folders; re-search.
+     * clearFilters: drop active tag filters, set recency to All, whole word off (same as Ctrl+Shift+Space).
+     */
+    function reimposeSmartViewDefaults(opts) {
+      const clearFilters = !!(opts && opts.clearFilters);
+      smartRevertFP = null;
+      smartProbePrior = null;
+      if (clearFilters) {
+        activeTagKeys.clear();
+        setRecencyFilterMode('all');
+        tagFilterSelectionRestoreSnapshot = null;
+        const ww = document.getElementById('optWholeWord');
+        if (ww) ww.checked = false;
+        syncAdvancedSearchIconFilledState();
+      }
+      applyResultsViewRadiosToDom('smart', true, 'all');
+      syncViewRadioActiveFromDom();
+      clearStatusSmartNote();
+      applyNaturalSortWhenTreeViewOn();
+      saveSettings();
+      updateSortHeaders();
+      applyResultsTablePathColumnVisibility();
+      renderTagBar();
+      if (clearFilters) {
+        void (async () => {
+          await runSearchNow('identity');
+          commitSearchHistoryNow();
+          updateEmptyResultsPulseHints(listRowsForUi().length);
+        })();
+        return;
+      }
+      void runSearchNow('identity');
+      commitSearchHistoryNow();
+    }
+
     /** Advanced: drop dot/$/desktop.ini paths from the table only (~ has its own toggle). */
     function isHideSpecialPaths() {
       return !!document.getElementById('optHideSpecial')?.checked;
@@ -437,10 +547,19 @@
     }
     function isTreeGroupHLOn() { return !!document.getElementById('optTreeGroupHL')?.checked; }
 
+    /** Yellow markup for search terms in Name / Path cells (Settings → Search results). Default on. */
+    function isHighlightMatchedNamesOn() {
+      const el = document.getElementById('optHighlightMatchedNames');
+      if (el) return !!el.checked;
+      return localStorage.getItem(LS.highlightMatchedNames) !== '0';
+    }
+
     /** @type {Set<string>} lowercase keys; tag bar filters with AND (click toggles each). */
     let activeTagKeys = new Set();
     /** Multiple tag filters: false = AND (default), true = OR (Everything regex + client filter). */
     let tagFilterCombineOr = false;
+    /** Saved when Ctrl+Shift+T clears active tag filters; next Ctrl+Shift+T restores. */
+    let tagFilterSelectionRestoreSnapshot = null;
     /** Tag modal targets (length 1 = single-name edit, &gt;1 = union add/remove on each). */
     let modalTargetPaths = [];
     let modalTags = [];
@@ -448,8 +567,22 @@
     let tagModalMode = 'rename';
     /** Bracket tags for the next Add TODO .md (default TODO); edited via same #tagModal as renames. */
     let newTodoMdTags = ['TODO'];
+    /** Bracket tags for the folder doc file name (stem + ext in UI); applied on Save in the readme editor. */
+    let folderDocMdTags = [];
+    /** Default folder doc stem (no ext); `-` sorts before letters in typical name order. */
+    const DEFAULT_FOLDER_DOC_STEM = '-readme';
+    /** When set: viewer uses this path or FOLDER_DOC_OVERRIDE_NEW instead of resolveFolderViewerDoc’s first match. */
+    const FOLDER_DOC_OVERRIDE_NEW = '__folderDocNew__';
+    let folderDocViewerOverridePath = null;
+    /** pathKeyLoose(doc path) last mirrored into stem/ext/tags — avoids refresh resetting a new filename. */
+    let folderDocHeaderLastSyncedKey = '';
     /** Multi-select checkboxes: path key lowercase → canonical path */
     const checkedPathsMap = new Map();
+    /** document pointermove listener for floating #bulkBar (only while checkedPathsMap.size > 0). */
+    let bulkBarPointerBound = false;
+    /** Last pointer (viewport) — used to show/position bulk bar right after selection changes without wiggling the mouse. */
+    let lastPointerClientX = 0;
+    let lastPointerClientY = 0;
     /** Persisted set of folder paths the user has collapsed in tree view. */
     const collapsedFolderPaths = new Set();
     /** Invalidates in-flight j/k follow-up scroll when another sibling nav runs. */
@@ -459,22 +592,356 @@
     /** Paths captured when bulk rename opens — preview and Apply use this list. */
     let bulkRenameTargetPaths = [];
     let tagRenameBusy = false;
+    /** Recent from→to renames; reapplied after every runSearch/loadMore while Everything may still list the old path. */
+    let tagRenamePendingPairs = null;
+    let tagRenamePendingPairsClearTimer = null;
     let renameItemBusy = false;
 
     let selectedRow = null;
     let selectedFullPath = null;
     /** Index in filteredRows() for Shift+↑/↓ range checkbox select; cleared on plain ↑/↓. */
     let resultsShiftRangeAnchorIdx = null;
+    /** Plain-click uncheck on a checked row is deferred so double-click (detail 2) can cancel it. */
+    let resultsRowUncheckTimer = null;
+    let resultsRowUncheckPendingFp = null;
+    /** Coalesce scrollIntoView during rapid ↑/↓ — one rAF, latest .table-active row only. */
+    let resultsActiveRowScrollRaf = null;
     let activeReadmePath = null;
     /** True after a successful read (or save) of activeReadmePath — ENOENT on that path is normal before first save; detach must not clear the binding then. */
     let readmeSaveTargetVerifiedOnDisk = false;
     /** After folder readme RHS is shown — same as `pathKeyLoose(folder)` so quick refresh does not hide readme / “Loading…”. */
     let lastReadmeFolderPathLoose = '';
+    /** Session-only: nested doc aggregate from selected folder (or parent of a trigger file). */
+    let globalNestedReadmeView = false;
+    /** Click handler on #readmePreview for per-section Edit/Save/Cancel in nested mode. */
+    let nestedReadmePreviewClickHandler = null;
+    /** Shallow copies of section records for cancel/save sync (mutate .text on save). */
+    let globalNestedCompositeSections = [];
     let activeMdPath = null;
     /** RHS .md / .txt editor: path the textarea belongs to + debounced write */
     let mdAutosaveTimer = null;
     let mdAutosaveTargetPath = null;
     const MD_AUTOSAVE_MS = 450;
+    const viewerMdEditors = { readme: null, mdFile: null };
+
+    function moveViewerMdSelectedLines(cm, delta) {
+      if (!cm || !window.CodeMirror || !delta) return;
+      const doc = cm.getDoc();
+      const Pos = window.CodeMirror.Pos;
+      const selections = doc.listSelections();
+      if (!selections.length) return;
+      const blocks = [];
+      for (const sel of selections) {
+        const from = sel.from();
+        const to = sel.to();
+        let startLine = from.line;
+        let endLine = to.line;
+        if (!sel.empty() && to.ch === 0 && endLine > startLine) endLine -= 1;
+        blocks.push({ startLine, endLine });
+      }
+      blocks.sort((a, b) => a.startLine - b.startLine || a.endLine - b.endLine);
+      const merged = [];
+      for (const block of blocks) {
+        const prev = merged[merged.length - 1];
+        if (prev && block.startLine <= prev.endLine + 1) {
+          prev.endLine = Math.max(prev.endLine, block.endLine);
+        } else {
+          merged.push({ startLine: block.startLine, endLine: block.endLine });
+        }
+      }
+      if (delta < 0 && merged[0].startLine <= 0) return;
+      if (delta > 0 && merged[merged.length - 1].endLine >= doc.lastLine()) return;
+      const shiftPos = (pos) => {
+        const line = Math.max(0, Math.min(doc.lastLine(), pos.line + delta));
+        return Pos(line, Math.min(pos.ch, doc.getLine(line).length));
+      };
+      cm.operation(() => {
+        const order = delta > 0 ? merged.slice().reverse() : merged;
+        for (const block of order) {
+          if (delta < 0) {
+            const aboveLine = block.startLine - 1;
+            const aboveText = doc.getLine(aboveLine);
+            const blockText = doc.getRange(Pos(block.startLine, 0), Pos(block.endLine, doc.getLine(block.endLine).length));
+            doc.replaceRange(
+              blockText + '\n' + aboveText,
+              Pos(aboveLine, 0),
+              Pos(block.endLine, doc.getLine(block.endLine).length),
+              '+moveLines'
+            );
+          } else {
+            const belowLine = block.endLine + 1;
+            const belowText = doc.getLine(belowLine);
+            const blockText = doc.getRange(Pos(block.startLine, 0), Pos(block.endLine, doc.getLine(block.endLine).length));
+            doc.replaceRange(
+              belowText + '\n' + blockText,
+              Pos(block.startLine, 0),
+              Pos(belowLine, doc.getLine(belowLine).length),
+              '+moveLines'
+            );
+          }
+        }
+        doc.setSelections(
+          selections.map((sel) => ({
+            anchor: shiftPos(sel.anchor),
+            head: shiftPos(sel.head),
+          }))
+        );
+      });
+      cm.scrollIntoView(doc.getCursor(), 40);
+    }
+
+    function addNextMatchToViewerSelection(cm) {
+      if (!cm || !window.CodeMirror) return;
+      const doc = cm.getDoc();
+      const primary = doc.listSelections()[doc.listSelections().length - 1];
+      if (!primary) return;
+      if (primary.empty()) {
+        const word = cm.findWordAt(primary.head);
+        const wordText = doc.getRange(word.anchor, word.head);
+        if (!wordText) return;
+        doc.setSelection(word.anchor, word.head);
+        return;
+      }
+      const query = doc.getRange(primary.from(), primary.to());
+      if (!query) return;
+      const keyOf = (from, to) => `${from.line}:${from.ch}-${to.line}:${to.ch}`;
+      const selectedKeys = new Set(
+        doc.listSelections().map((sel) => keyOf(sel.from(), sel.to()))
+      );
+      const searchStarts = [primary.to(), { line: 0, ch: 0 }];
+      for (const start of searchStarts) {
+        const cursor = doc.getSearchCursor(query, start);
+        while (cursor.findNext()) {
+          const from = cursor.from();
+          const to = cursor.to();
+          const key = keyOf(from, to);
+          if (selectedKeys.has(key)) continue;
+          doc.addSelection(from, to);
+          cm.scrollIntoView({ from, to }, 40);
+          return;
+        }
+      }
+    }
+
+    /** Shared markdown editor config for the RHS viewer. */
+    function createViewerMarkdownEditor(textarea) {
+      if (!textarea || !window.CodeMirror) return null;
+      const cm = window.CodeMirror.fromTextArea(textarea, {
+        mode: 'markdown',
+        lineNumbers: false,
+        lineWrapping: true,
+        indentUnit: 2,
+        tabSize: 2,
+        smartIndent: true,
+        extraKeys: {
+          Enter: 'newlineAndIndentContinueMarkdownList',
+          Tab(cmInst) {
+            if (cmInst.somethingSelected()) {
+              cmInst.indentSelection('add');
+              return;
+            }
+            cmInst.replaceSelection('  ', 'end', '+input');
+          },
+          'Shift-Tab'(cmInst) {
+            cmInst.indentSelection('subtract');
+          },
+          'Ctrl-F': 'findPersistent',
+          'Cmd-F': 'findPersistent',
+          'Ctrl-G': 'findNext',
+          'Cmd-G': 'findNext',
+          'Shift-Ctrl-G': 'findPrev',
+          'Shift-Cmd-G': 'findPrev',
+          'Ctrl-H': 'replace',
+          'Cmd-Alt-F': 'replace',
+          'Alt-G': 'jumpToLine',
+          'Alt-Up'(cmInst) {
+            moveViewerMdSelectedLines(cmInst, -1);
+          },
+          'Alt-Down'(cmInst) {
+            moveViewerMdSelectedLines(cmInst, 1);
+          },
+          'Ctrl-D'(cmInst) {
+            addNextMatchToViewerSelection(cmInst);
+          },
+          'Cmd-D'(cmInst) {
+            addNextMatchToViewerSelection(cmInst);
+          },
+        },
+      });
+      cm.getWrapperElement().classList.add('viewer-md-cm');
+      cm.getInputField()?.setAttribute('spellcheck', 'false');
+      cm.on('change', () => {
+        textarea.value = cm.getValue();
+      });
+      textarea.value = cm.getValue();
+      return cm;
+    }
+
+    function getViewerMdTextarea(which) {
+      return document.getElementById(which === 'mdFile' ? 'mdFileEditor' : 'readmeEditor');
+    }
+
+    function getViewerMdEditor(which) {
+      return viewerMdEditors[which] || null;
+    }
+
+    function ensureViewerMdEditor(which) {
+      const existing = getViewerMdEditor(which);
+      if (existing) return existing;
+      const textarea = getViewerMdTextarea(which);
+      const cm = createViewerMarkdownEditor(textarea);
+      if (cm) viewerMdEditors[which] = cm;
+      return cm;
+    }
+
+    function getViewerMdValue(which) {
+      const cm = getViewerMdEditor(which);
+      if (cm) return cm.getValue();
+      return getViewerMdTextarea(which)?.value || '';
+    }
+
+    function setViewerMdValue(which, text) {
+      const next = String(text ?? '');
+      const textarea = getViewerMdTextarea(which);
+      if (textarea) textarea.value = next;
+      const cm = ensureViewerMdEditor(which);
+      if (cm && cm.getValue() !== next) cm.setValue(next);
+    }
+
+    function focusViewerMdEditor(which, placeCaretAtEnd) {
+      const cm = ensureViewerMdEditor(which);
+      if (cm) {
+        cm.focus();
+        if (placeCaretAtEnd) {
+          const doc = cm.getDoc();
+          const line = doc.lastLine();
+          const ch = doc.getLine(line).length;
+          doc.setCursor({ line, ch });
+          cm.scrollIntoView({ line, ch }, 40);
+        }
+        return;
+      }
+      const textarea = getViewerMdTextarea(which);
+      if (!textarea) return;
+      textarea.focus();
+      if (placeCaretAtEnd) {
+        try {
+          textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+        } catch (_) {}
+      }
+    }
+
+    function replaceViewerMdSelection(which, text) {
+      const insert = String(text ?? '');
+      const cm = getViewerMdEditor(which);
+      if (cm) {
+        const doc = cm.getDoc();
+        doc.replaceRange(insert, doc.getCursor('from'), doc.getCursor('to'), '+input');
+        const cursor = doc.getCursor();
+        cm.focus();
+        cm.scrollIntoView(cursor, 40);
+        return cm.getValue();
+      }
+      const textarea = getViewerMdTextarea(which);
+      if (!textarea) return '';
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const value = textarea.value;
+      textarea.value = value.slice(0, start) + insert + value.slice(end);
+      const caret = start + insert.length;
+      textarea.selectionStart = textarea.selectionEnd = caret;
+      return textarea.value;
+    }
+
+    function initNestedMarkdownEditor(textarea) {
+      if (!textarea || textarea._tagfoxCm) return textarea?._tagfoxCm || null;
+      const cm = createViewerMarkdownEditor(textarea);
+      if (!cm) return null;
+      textarea._tagfoxCm = cm;
+      return cm;
+    }
+
+    function getNestedMarkdownValue(textarea) {
+      return textarea && textarea._tagfoxCm ? textarea._tagfoxCm.getValue() : textarea?.value || '';
+    }
+
+    function setNestedMarkdownValue(textarea, text) {
+      const next = String(text ?? '');
+      if (textarea) textarea.value = next;
+      const cm = initNestedMarkdownEditor(textarea);
+      if (cm && cm.getValue() !== next) cm.setValue(next);
+    }
+
+    function focusNestedMarkdownEditor(textarea) {
+      const cm = initNestedMarkdownEditor(textarea);
+      if (cm) {
+        cm.focus();
+        return;
+      }
+      textarea?.focus();
+    }
+
+    /** Default list shared by folder-doc pick and nested-doc aggregate (same order as main). */
+    const DEFAULT_GLOBAL_VIEWER_BASENAMES_LIST = [
+      '-readme.md',
+      '-readme.txt',
+      'readme.md',
+      'readme.txt',
+      'claude.md',
+      'agents.md',
+      'about.md',
+      'about.txt',
+      'context.md',
+      'context.txt',
+      'index.md',
+      'index.txt',
+    ];
+    const DEFAULT_GLOBAL_VIEWER_BASENAMES_STR = DEFAULT_GLOBAL_VIEWER_BASENAMES_LIST.join(', ');
+    /** User list: comma/semicolon/newline; pretty names (readme[(t)].md → readme.md); no path segments. */
+    function normalizeGlobalViewerBasenamesList(raw) {
+      const parts = String(raw ?? '')
+        .split(/[,;\n]+/)
+        .map((s) => s.trim().toLowerCase())
+        .filter((s) => s && !/[\\/]/.test(s));
+      const uniq = [...new Set(parts)];
+      return uniq.length ? uniq : DEFAULT_GLOBAL_VIEWER_BASENAMES_LIST.slice();
+    }
+    function getGlobalViewerBasenamesList() {
+      const stored = localStorage.getItem(LS.globalViewerBasenames);
+      return normalizeGlobalViewerBasenamesList(
+        stored != null && String(stored).trim() ? stored : DEFAULT_GLOBAL_VIEWER_BASENAMES_STR
+      );
+    }
+    function syncGlobalViewerBasenamesInputFromStorage() {
+      const inp = document.getElementById('inpGlobalViewerBasenames');
+      if (!inp) return;
+      inp.value = getGlobalViewerBasenamesList().join(', ');
+    }
+    function isGlobalViewerMarkdownFilePath(fullPath) {
+      const leaf = T.baseName(fullPath || '');
+      const pretty = String(T.parseSegmentTags(leaf).pretty || '').toLowerCase();
+      return getGlobalViewerBasenamesList().includes(pretty);
+    }
+    /** Directory for folder-doc / nested aggregate: selected folder, or parent of a trigger .md file. */
+    function readmeAggregateRootFolderFromSelection(fullPath, row) {
+      if (!fullPath || !row) return null;
+      if (rowIsFolder(row)) return String(fullPath).replace(/[/\\]+$/, '');
+      if (isGlobalViewerMarkdownFilePath(fullPath)) {
+        const par = T.parentDir(fullPath);
+        return par ? String(par).replace(/[/\\]+$/, '') : null;
+      }
+      return null;
+    }
+    /** Matches lastReadmeFolderPathLoose across quick refresh (folder row, or trigger file + nested toggle). */
+    function readmeBlockQuickVisibleFolderKey(propPath, propRow) {
+      if (!propPath || !propRow) return '';
+      if (rowIsFolder(propRow)) return pathKeyLoose(propPath);
+      if (globalNestedReadmeView && isGlobalViewerMarkdownFilePath(propPath)) {
+        const par = T.parentDir(propPath);
+        return par ? pathKeyLoose(par) : '';
+      }
+      return '';
+    }
 
     function cancelMdFileAutosave() {
       if (mdAutosaveTimer) {
@@ -487,8 +954,7 @@
       cancelMdFileAutosave();
       const p = mdAutosaveTargetPath;
       if (!p) return;
-      const ed = document.getElementById('mdFileEditor');
-      const text = ed.value;
+      const text = getViewerMdValue('mdFile');
       const r = await window.tagBrowser.writeTextFile({ fullPath: p, text });
       setStatusMain(r.ok ? 'Saved.' : (r.error || 'Save failed'));
     }
@@ -502,9 +968,10 @@
       }, MD_AUTOSAVE_MS);
     }
     let previewBlobUrls = [];
-    /** Idle PDF iframe HTML (keep in sync with srcdoc on #pdfFrame). */
-    const PDF_IFRAME_IDLE =
+    /** Idle iframe HTML for #pdfFrame / #htmlPreviewFrame (never clear via iframe.src=''). */
+    const PREVIEW_IFRAME_IDLE =
       "<!DOCTYPE html><html><head><meta charset='utf-8'></head><body style='margin:0;background:#f8f9fa'></body></html>";
+    const PDF_IFRAME_IDLE = PREVIEW_IFRAME_IDLE;
 
     /** Raster types for RHS image preview (SVG handled via readTextFile + blob). */
     const IMAGE_EXT_MIME = {
@@ -523,7 +990,7 @@
       const base = T.baseName(fp);
       const ext = /\.[^.]+$/.test(base) ? base.slice(base.lastIndexOf('.') + 1).toLowerCase() : '';
       if (ext === 'pdf') return true;
-      if (ext === 'docx' || ext === 'doc' || ext === 'xlsx' || ext === 'xls' || ext === 'pptx') return true;
+      if (ext === 'docx' || ext === 'doc' || ext === 'xlsx' || ext === 'xls' || ext === 'pptx' || ext === 'msg') return true;
       if (IMAGE_EXT_MIME[ext]) return true;
       if (VIDEO_EXT_MIME[ext] || AUDIO_EXT_MIME[ext]) return true;
       if (ext === 'odt' || ext === 'ods' || ext === 'odp') return true;
@@ -634,24 +1101,34 @@
             if (shellErr) setStatusMain('Could not open file.');
             else setStatusMain('');
           }
+          if (!shellErr) bumpFileFocusVisit(fp);
           return;
         }
         const r = await window.tagBrowser.openGoogleWorkspaceWindow({ url: rGw.url });
         if (status && !r.ok) setStatusMain(r.error || 'Open failed');
+        else bumpFileFocusVisit(fp);
         return;
       }
       const err = await window.tagBrowser.openPath(fp);
       if (err && status) setStatusMain('Open failed: ' + err);
+      else if (!err) bumpFileFocusVisit(fp);
     }
 
-    /** Extensions shown as read-only text in the props panel (not .md / .txt — those use the editor). */
-    const TEXT_PREVIEW_EXT = new Set([
+    /** Text files opened in the RHS viewer editor. Special rendered previews are deliberately bypassed here so these are editable. */
+    const TEXT_EDIT_EXT = new Set([
+      'md',
+      'markdown',
+      'mdx',
+      'txt',
+      'typ',
       'json',
       'jsonl',
       'ndjson',
       'text',
       'log',
       'tsv',
+      'srt',
+      'vtt',
       'xml',
       'xsl',
       'yml',
@@ -663,9 +1140,15 @@
       'config',
       'env',
       'gitignore',
+      'gitattributes',
+      'gitmodules',
       'dockerignore',
       'editorconfig',
       'npmrc',
+      'prettierrc',
+      'eslintrc',
+      'stylelintrc',
+      'babelrc',
       'properties',
       'sql',
       'http',
@@ -673,8 +1156,7 @@
       'scss',
       'sass',
       'less',
-      'html',
-      'htm',
+      'styl',
       'js',
       'mjs',
       'cjs',
@@ -691,34 +1173,133 @@
       'swift',
       'kt',
       'kts',
+      'scala',
+      'dart',
       'java',
       'cs',
       'fs',
+      'fsx',
       'cpp',
       'cc',
       'cxx',
       'h',
       'hpp',
+      'hh',
+      'hxx',
+      'ipp',
+      'inl',
       'c',
+      'm',
+      'mm',
+      'asm',
+      's',
       'sh',
       'bash',
       'zsh',
+      'fish',
+      'awk',
+      'sed',
       'ps1',
       'bat',
       'cmd',
+      'reg',
       'r',
+      'rprofile',
+      'f',
+      'for',
+      'f90',
+      'f95',
       'lua',
+      'pl',
+      'pm',
+      'tcl',
+      'jl',
+      'nim',
+      'zig',
+      'd',
+      'ex',
+      'exs',
+      'erl',
+      'hrl',
+      'clj',
+      'cljs',
+      'vb',
+      'vbs',
+      'ahk',
+      'au3',
+      'ml',
+      'mli',
+      'hs',
+      'lhs',
+      'elm',
+      'sol',
+      'proto',
+      'prisma',
       'graphql',
       'gql',
-      'mdx',
+      'qmd',
+      'rmd',
+      'rst',
+      'adoc',
+      'asciidoc',
+      'org',
+      'tex',
+      'bib',
+      'sty',
+      'cls',
       'dockerfile',
       'makefile',
       'cmake',
       'gradle',
       'plist',
+      'lock',
+      'desktop',
+      'service',
+      'timer',
+      'socket',
+      'patch',
+      'diff',
       'vcf',
       'ics',
     ]);
+
+    const TEXT_EDIT_BASENAME = new Set([
+      'dockerfile',
+      'makefile',
+      'cmakelists.txt',
+      'jenkinsfile',
+      'justfile',
+      'rakefile',
+      'gemfile',
+      'podfile',
+      'procfile',
+      'vagrantfile',
+      'license',
+      'notice',
+      'authors',
+      'contributors',
+      'changelog',
+      'copying',
+      'readme',
+      'hosts',
+    ]);
+
+    const MARKDOWN_EDIT_EXT = new Set(['md', 'markdown', 'mdx', 'rmd', 'qmd']);
+
+    function editableTextKindForBase(base) {
+      const lower = String(base || '').toLowerCase();
+      const i = lower.lastIndexOf('.');
+      const ext = i >= 0 ? lower.slice(i + 1) : '';
+      if (
+        !TEXT_EDIT_EXT.has(ext) &&
+        !TEXT_EDIT_BASENAME.has(lower) &&
+        !/^(dockerfile|makefile)(\.|$)/.test(lower) &&
+        !/^\.env(\.|$)/.test(lower)
+      ) {
+        return null;
+      }
+      return { ext, markdown: MARKDOWN_EDIT_EXT.has(ext) };
+    }
 
     const TEXT_PREVIEW_MAX_BYTES = 2 * 1024 * 1024;
     const TEXT_PREVIEW_MAX_CHARS = 450000;
@@ -1014,19 +1595,6 @@
       return truncateRichPreviewHtml(out, TEXT_PREVIEW_MAX_CHARS);
     }
 
-    /** Pretty-print .json when valid; otherwise raw (injected with textContent, not innerHTML). */
-    function formatTextPreviewBody(ext, raw) {
-      const t = String(raw ?? '');
-      if (ext === 'json') {
-        try {
-          return JSON.stringify(JSON.parse(t), null, 2);
-        } catch (_) {
-          return t;
-        }
-      }
-      return t;
-    }
-
     /** CSV → rows (RFC 4180-style: commas, quoted fields, "" → "). Newlines inside quotes supported. */
     function parseCsvRows(raw) {
       const text = String(raw ?? '').replace(/^\uFEFF/, '');
@@ -1143,7 +1711,12 @@
       const pdfFrame = document.getElementById('pdfFrame');
       if (pdfFrame) {
         pdfFrame.removeAttribute('src');
-        pdfFrame.srcdoc = PDF_IFRAME_IDLE;
+        pdfFrame.srcdoc = PREVIEW_IFRAME_IDLE;
+      }
+      const htmlPreviewFrame = document.getElementById('htmlPreviewFrame');
+      if (htmlPreviewFrame) {
+        htmlPreviewFrame.removeAttribute('src');
+        htmlPreviewFrame.srcdoc = PREVIEW_IFRAME_IDLE;
       }
       const imgEl = document.getElementById('propImagePreview');
       if (imgEl) imgEl.removeAttribute('src');
@@ -1158,6 +1731,13 @@
       const u8 = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
       return u8.buffer;
+    }
+
+    function arrayBufferToBase64(ab) {
+      const u8 = new Uint8Array(ab);
+      let bin = '';
+      for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
+      return btoa(bin);
     }
 
     function base64ToBlobUrl(b64, mime) {
@@ -1213,7 +1793,7 @@
       tagRenameBusy = true;
       const status = document.getElementById('statusMain');
       try {
-        const rootPrefix = T.normalizeRootPrefix(document.getElementById('rootFolder').value);
+        const rootPrefix = rootPrefixValue();
         const res = await window.tagBrowser.renamePath({ fromPath: fp, toPath, rootPrefix });
         if (!res || !res.ok) {
           setStatusMain((res && res.error) || 'Rename failed');
@@ -1365,21 +1945,15 @@
       localStorage.setItem(LS.searchScopeMax, n);
     }
 
-    function syncSearchScopeRootsTipVisibility() {
-      const el = document.getElementById('searchScopeRootsTip');
-      if (!el) return;
-      const dismissed = localStorage.getItem(LS.scopeRootsTipDismissed) === '1';
-      const has = !!getSearchScopeMaxFolderNorm();
-      el.classList.toggle('d-none', dismissed || has);
-    }
-
     function renderSearchScopeMaxUi() {
       const box = document.getElementById('searchScopeMaxDisplay');
+      const clearBtn = document.getElementById('btnSearchScopeClearMax');
       if (!box) return;
       const n = getSearchScopeMaxFolderNorm();
       box.className =
         'small border rounded px-2 py-2 bg-body font-monospace text-break' + (n ? '' : ' text-muted');
-      box.textContent = n || 'No scope folder — entire index (subject to current folder).';
+      box.textContent = n || 'No limit — Everything can search your whole index.';
+      if (clearBtn) clearBtn.classList.toggle('d-none', !n);
     }
 
     /** Settings: persisted folder for global Quick TODO shortcut. */
@@ -1391,7 +1965,7 @@
       hid.value = n;
       box.className =
         'small border rounded px-2 py-2 bg-body font-monospace text-break' + (n ? '' : ' text-muted');
-      box.textContent = n || 'No folder — set one above (or the shortcut will show an error).';
+      box.textContent = n || 'Not set — choose a folder before using Quick TODO.';
     }
 
     /** Settings: validate + persist Quick TODO destination folder (same checks as search scope max). */
@@ -1445,7 +2019,6 @@
       }
       searchScopeMaxFolder = norm0;
       renderSearchScopeMaxUi();
-      syncSearchScopeRootsTipVisibility();
       clampRootFolderUnderSearchScopeMax();
       saveSettings();
       renderScopeBreadcrumb();
@@ -1456,7 +2029,6 @@
     function clearSearchScopeMaxSetting() {
       searchScopeMaxFolder = '';
       renderSearchScopeMaxUi();
-      syncSearchScopeRootsTipVisibility();
       saveSettings();
       renderScopeBreadcrumb();
       void runSearchNow();
@@ -1486,6 +2058,7 @@
         btn.setAttribute('aria-label', 'Edit current folder path');
         btn.innerHTML = '<i class="fa-solid fa-pen" aria-hidden="true"></i>';
       }
+      refreshTagFoxChromeTooltips(document.getElementById('breadcrumbShell') || document.body);
       document.getElementById('scopePathEditWrap')?.classList.add('d-none');
     }
 
@@ -1509,6 +2082,7 @@
         btn.setAttribute('aria-label', 'Save current folder path');
         btn.innerHTML = '<i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>';
       }
+      refreshTagFoxChromeTooltips(document.getElementById('breadcrumbShell') || document.body);
       /* Scope strip is hidden in pen mode; park folder actions after shell like static HTML. */
       const scopeRowActs = document.getElementById('tagfoxScopeBarRowActions');
       const scopeBreadcrumbRow = document.querySelector('.scope-breadcrumb-row');
@@ -1573,6 +2147,21 @@
       commitSearchHistoryNow();
     }
 
+    /** Clear current folder plus active tag/recency filters; keep query and view mode unchanged. */
+    function clearSearchScopeAndTagRecencyFilters() {
+      leaveScopePathEditChrome();
+      document.getElementById('rootFolder').value = '';
+      activeTagKeys.clear();
+      persistActiveTagFilter();
+      tagFilterSelectionRestoreSnapshot = null;
+      setRecencyFilterMode('all');
+      saveSettings();
+      renderScopeBreadcrumb();
+      renderTagBar();
+      scheduleSearch();
+      commitSearchHistoryNow();
+    }
+
     /** Empty #query and refresh — same as the search-row ✕ (not current folder / scope). */
     function clearSearchQuery() {
       document.getElementById('query').value = '';
@@ -1581,8 +2170,177 @@
       commitSearchHistoryNow();
     }
 
+    /** Empty #query without triggering its own search; use when another action will refresh immediately. */
+    function clearSearchQueryInputOnly() {
+      document.getElementById('query').value = '';
+      syncQueryGhostUi();
+    }
+
     function applyPaneWidths() {
       document.getElementById('propsAside').style.width = propsPanePx + 'px';
+    }
+
+    function applyViewerDocSplitSizes() {
+      document.querySelectorAll('.viewer-doc-split').forEach((el) => {
+        el.style.setProperty('--tagfox-viewer-doc-editor-pct', viewerDocSplitPct + '%');
+        el.style.setProperty('--tagfox-viewer-doc-editor-pct-theater', viewerDocSplitPctTheater + '%');
+      });
+    }
+
+    function loadViewerDocSplitFromStorage() {
+      const normal = parseInt(localStorage.getItem(LS.viewerDocSplitPct) || '', 10);
+      const theater = parseInt(localStorage.getItem(LS.viewerDocSplitPctTheater) || '', 10);
+      if (Number.isFinite(normal) && normal >= 20 && normal <= 80) viewerDocSplitPct = normal;
+      if (Number.isFinite(theater) && theater >= 20 && theater <= 80) viewerDocSplitPctTheater = theater;
+      applyViewerDocSplitSizes();
+    }
+
+    function persistViewerDocSplitSizes() {
+      localStorage.setItem(LS.viewerDocSplitPct, String(viewerDocSplitPct));
+      localStorage.setItem(LS.viewerDocSplitPctTheater, String(viewerDocSplitPctTheater));
+    }
+
+    function syncViewerDocDividerOrientation() {
+      const vertical = isPropsTheaterOn();
+      document.querySelectorAll('.viewer-doc-split-divider').forEach((el) => {
+        el.setAttribute('aria-orientation', vertical ? 'vertical' : 'horizontal');
+      });
+    }
+
+    function applyFavFoldersColumnWidth() {
+      const col = document.getElementById('favFoldersColumn');
+      const btn = document.getElementById('btnToggleFavFoldersCollapse');
+      if (!col) return;
+      col.style.setProperty('--tagfox-fav-expanded-w', favFoldersColPx + 'px');
+      col.classList.toggle('tagfox-fav-column--collapsed', favFoldersCollapsed);
+      col.title = favFoldersCollapsed ? 'Favourites — Peek Mode' : 'Favourites — Fixed Mode';
+      if (!btn) return;
+      btn.title = favFoldersCollapsed
+        ? 'Peek Mode — click to switch to Fixed Mode'
+        : 'Fixed Mode — click to switch to Peek Mode';
+      btn.setAttribute(
+        'aria-label',
+        favFoldersCollapsed
+          ? 'Favourites sidebar in Peek Mode — switch to Fixed Mode'
+          : 'Favourites sidebar in Fixed Mode — switch to Peek Mode'
+      );
+      btn.setAttribute('aria-expanded', favFoldersCollapsed ? 'false' : 'true');
+      btn.setAttribute('aria-pressed', favFoldersCollapsed ? 'true' : 'false');
+    }
+
+    function loadFavFoldersColFromStorage() {
+      const w = parseInt(localStorage.getItem(LS.favFoldersColPx) || '', 10);
+      if (Number.isFinite(w) && w >= FAV_COL_MIN && w <= FAV_COL_MAX) favFoldersColPx = w;
+      favFoldersCollapsed = localStorage.getItem(LS.favFoldersCollapsed) === '1';
+      applyFavFoldersColumnWidth();
+    }
+
+    function persistFavFoldersCol() {
+      localStorage.setItem(LS.favFoldersColPx, String(favFoldersColPx));
+      localStorage.setItem(LS.favFoldersCollapsed, favFoldersCollapsed ? '1' : '0');
+    }
+
+    function toggleFavFoldersCollapsed() {
+      const col = document.getElementById('favFoldersColumn');
+      favFoldersCollapsed = !favFoldersCollapsed;
+      if (col) col.classList.toggle('tagfox-fav-column--peek-suppressed', favFoldersCollapsed);
+      if (favFoldersCollapsed) closeFavColumnHoverUi();
+      if (!favFoldersCollapsed) favFoldersColPx = Math.max(FAV_COL_MIN, favFoldersColPx);
+      applyFavFoldersColumnWidth();
+      persistFavFoldersCol();
+    }
+
+    function closeFavColumnHoverUi() {
+      hideBreadcrumbSubfolderFlyout();
+      document
+        .querySelectorAll('#favFoldersColumn [data-bs-toggle="dropdown"]')
+        .forEach((btn) => bootstrap.Dropdown.getInstance(btn)?.hide());
+      const a = document.activeElement;
+      if (
+        a &&
+        a !== document.body &&
+        a.blur &&
+        (a.closest?.('#favFoldersColumn') || a.closest?.('ul.breadcrumb-folder-flyout'))
+      ) {
+        a.blur();
+      }
+    }
+
+    /** Collapsed rail uses CSS :hover for peek; HTML5 drag suppresses hover, so toggle an explicit class. */
+    function setFavColumnDragPeek(on) {
+      const col = document.getElementById('favFoldersColumn');
+      if (!col) return;
+      const want = !!on && !!favFoldersCollapsed;
+      if (col.classList.contains('tagfox-fav-column--drag-peek') === want) return;
+      col.classList.toggle('tagfox-fav-column--drag-peek', want);
+      if (!want) closeFavColumnHoverUi();
+      if (isSearchDebugOn()) searchDebugLog('folderPathDrop.favRailPeek', { on: want, collapsed: !!favFoldersCollapsed });
+    }
+
+    /** Splitter hover in collapsed mode should keep the rail open so the user can resize it. */
+    function setFavColumnSplitPeek(on) {
+      const col = document.getElementById('favFoldersColumn');
+      if (!col) return;
+      const want = !!on && !!favFoldersCollapsed;
+      if (col.classList.contains('tagfox-fav-column--split-peek') === want) return;
+      col.classList.toggle('tagfox-fav-column--split-peek', want);
+      if (!want) closeFavColumnHoverUi();
+    }
+
+    /** Body-rooted subfolder flyouts are outside #favFoldersColumn, so :hover peek drops; mirror drag-peek while open. */
+    function syncFavColumnFlyoutPeek() {
+      const col = document.getElementById('favFoldersColumn');
+      if (!col) return;
+      const fly0 = breadcrumbSubfolderFlyoutChain[0];
+      const anchoredInFav =
+        !!favFoldersCollapsed &&
+        fly0 &&
+        fly0.classList.contains('is-open') &&
+        fly0._anchorLi &&
+        fly0._anchorLi.isConnected &&
+        fly0._anchorLi.closest('#favFoldersColumn');
+      if (col.classList.contains('tagfox-fav-column--flyout-peek') === !!anchoredInFav) return;
+      col.classList.toggle('tagfox-fav-column--flyout-peek', !!anchoredInFav);
+    }
+
+    /** Hover zone that should keep the collapsed LHS rail open. */
+    function isFavColumnHoverZonePoint(clientX, clientY) {
+      try {
+        const hit = document.elementFromPoint(clientX, clientY);
+        if (!hit || !hit.closest) return false;
+        return !!(
+          hit.closest('#favFoldersColumn') ||
+          hit.closest('#splitFavFolders') ||
+          hit.closest('#favFoldersColumn .dropdown-menu.show') ||
+          hit.closest('ul.breadcrumb-folder-flyout.is-open')
+        );
+      } catch {
+        return false;
+      }
+    }
+
+    function bindFavColumnCollapsedHoverExit() {
+      document.addEventListener(
+        'pointermove',
+        (ev) => {
+          if (!favFoldersCollapsed) return;
+          if (favFoldersSplitDragging) return;
+          const col = document.getElementById('favFoldersColumn');
+          const t = ev.target;
+          if (!t || !t.closest) return;
+          if (
+            t.closest('#favFoldersColumn') ||
+            t.closest('#splitFavFolders') ||
+            t.closest('#favFoldersColumn .dropdown-menu.show') ||
+            t.closest('ul.breadcrumb-folder-flyout.is-open')
+          ) {
+            return;
+          }
+          if (col) col.classList.remove('tagfox-fav-column--peek-suppressed');
+          closeFavColumnHoverUi();
+        },
+        true
+      );
     }
 
     function isPropsTheaterOn() {
@@ -1601,6 +2359,7 @@
       aside.classList.toggle('props-theater', show);
       backdrop.classList.toggle('d-none', !show);
       split.classList.toggle('d-none', show);
+      syncViewerDocDividerOrientation();
       if (btn) {
         btn.setAttribute('aria-expanded', show ? 'true' : 'false');
         btn.title = show ? 'Exit expanded view (Shift+Space or Esc)' : 'Near full screen (Shift+Space)';
@@ -1658,6 +2417,94 @@
       });
     }
 
+    function bindViewerDocSplitters() {
+      const MIN_PCT = 20;
+      const MAX_PCT = 80;
+      document.querySelectorAll('.viewer-doc-split-divider').forEach((divider) => {
+        divider.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          const split = divider.closest('.viewer-doc-split');
+          if (!split) return;
+          const theater = isPropsTheaterOn();
+          const rect = split.getBoundingClientRect();
+          const size = theater ? rect.width : rect.height;
+          if (!Number.isFinite(size) || size <= 24) return;
+          document.body.classList.add('tagfox-viewer-doc-split-drag');
+          let raf = 0;
+          function flushViewerDocSplit() {
+            raf = 0;
+            applyViewerDocSplitSizes();
+          }
+          function move(ev) {
+            const raw = theater ? ((ev.clientX - rect.left) / size) * 100 : ((ev.clientY - rect.top) / size) * 100;
+            const next = Math.min(MAX_PCT, Math.max(MIN_PCT, Math.round(raw)));
+            if (theater) viewerDocSplitPctTheater = next;
+            else viewerDocSplitPct = next;
+            if (!raf) raf = requestAnimationFrame(flushViewerDocSplit);
+          }
+          function up() {
+            document.removeEventListener('mousemove', move);
+            document.removeEventListener('mouseup', up);
+            if (raf) cancelAnimationFrame(raf);
+            flushViewerDocSplit();
+            document.body.classList.remove('tagfox-viewer-doc-split-drag');
+            persistViewerDocSplitSizes();
+          }
+          document.addEventListener('mousemove', move);
+          document.addEventListener('mouseup', up);
+        });
+      });
+    }
+
+    /** Draggable right edge of favourite-folders column (same handle style as viewer splitter). */
+    function bindFavFoldersSplitter() {
+      const split = document.getElementById('splitFavFolders');
+      if (!split) return;
+      split.addEventListener('mouseenter', () => setFavColumnSplitPeek(true));
+      split.addEventListener('mouseleave', () => {
+        if (!favFoldersSplitDragging) setFavColumnSplitPeek(false);
+      });
+      split.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        favFoldersSplitDragging = true;
+        setFavColumnSplitPeek(true);
+        const startedCollapsed = !!favFoldersCollapsed;
+        favFoldersColPx = Math.max(FAV_COL_MIN, favFoldersColPx);
+        applyFavFoldersColumnWidth();
+        const startX = e.clientX;
+        const startW = favFoldersColPx;
+        let raf = 0;
+        function flush() {
+          raf = 0;
+          applyFavFoldersColumnWidth();
+        }
+        function move(ev) {
+          /* Column is left of the handle: drag handle right = wider favourites column. */
+          favFoldersColPx = Math.min(FAV_COL_MAX, Math.max(FAV_COL_MIN, startW + (ev.clientX - startX)));
+          if (!raf) raf = requestAnimationFrame(flush);
+        }
+        function up(ev) {
+          document.removeEventListener('mousemove', move);
+          document.removeEventListener('mouseup', up);
+          if (raf) cancelAnimationFrame(raf);
+          favFoldersSplitDragging = false;
+          favFoldersCollapsed = startedCollapsed;
+          favFoldersColPx = Math.max(FAV_COL_MIN, favFoldersColPx);
+          flush();
+          setFavColumnSplitPeek(startedCollapsed && isFavColumnHoverZonePoint(ev.clientX, ev.clientY));
+          persistFavFoldersCol();
+        }
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', up);
+      });
+    }
+
+    function bindFavFoldersCollapseButton() {
+      const btn = document.getElementById('btnToggleFavFoldersCollapse');
+      if (!btn) return;
+      btn.addEventListener('click', () => toggleFavFoldersCollapsed());
+    }
+
     function loadColWidthsFromStorage() {
       try {
         const parsed = JSON.parse(localStorage.getItem(LS.tableCols) || 'null');
@@ -1711,6 +2558,19 @@
       });
     }
 
+    /** Show/hide handles: flat uses name|path + path|actions; tree uses only name|actions (same col indices 2|3 as path|actions). */
+    function syncResultsTableResizeHandles() {
+      const showPath = !isTreeViewOn();
+      const table = document.getElementById('resultsTable');
+      if (!table) return;
+      for (const el of table.querySelectorAll('.th-resize[data-resize-mode]')) {
+        const mode = el.dataset.resizeMode;
+        if (mode === 'always') el.style.removeProperty('display');
+        else if (mode === 'flat') el.style.display = showPath ? '' : 'none';
+        else if (mode === 'tree') el.style.display = showPath ? 'none' : '';
+      }
+    }
+
     /** Flat view: show Path column; tree view: hide Path col+header (grouping uses name gutter). */
     function applyResultsTablePathColumnVisibility() {
       const showPath = !isTreeViewOn();
@@ -1726,41 +2586,99 @@
         if (cell) cell.style.display = showPath ? '' : 'none';
       });
       applyTableColWidths();
+      syncResultsTableResizeHandles();
     }
 
-    function startTableColResize(e, boundaryIdx) {
+    /** Clamp the dragged pair so a divider cannot collapse either column. */
+    function clampTableResizePair(leftIdx, rightIdx, leftPct, rightPct) {
+      let left = leftPct;
+      let right = rightPct;
+      const minLeft =
+        leftIdx === 0 ? 4 : leftIdx === 3 ? COL_RESIZE_MIN_ACTIONS_PCT : 3;
+      const minRight = rightIdx === 3 ? COL_RESIZE_MIN_ACTIONS_PCT : 3;
+      if (left < minLeft) {
+        right -= minLeft - left;
+        left = minLeft;
+      }
+      if (right < minRight) {
+        left -= minRight - right;
+        right = minRight;
+      }
+      return [left, right];
+    }
+
+    /** Pointer-driven column resize: keeps dragging working outside the tiny handle hit area. */
+    function startTableColResize(e, handleEl, leftIdx, rightIdx) {
+      if (e.button !== 0) return;
       e.preventDefault();
-      const startX = e.clientX;
-      const startP = colPercent.slice();
       const table = document.getElementById('resultsTable');
-      function move(ev) {
-        const tw = table.getBoundingClientRect().width;
-        if (tw < 80) return;
-        let d = ((ev.clientX - startX) / tw) * 100;
-        let a = startP[boundaryIdx] + d;
-        let b = startP[boundaryIdx + 1] - d;
-        const minLeft = boundaryIdx === 0 ? 4 : 3;
-        if (a < minLeft) {
-          b -= minLeft - a;
-          a = minLeft;
-        }
-        const minRight = boundaryIdx === 4 ? COL_RESIZE_MIN_ACTIONS_PCT : 3;
-        if (b < minRight) {
-          a -= minRight - b;
-          b = minRight;
-        }
-        colPercent = startP.slice();
-        colPercent[boundaryIdx] = a;
-        colPercent[boundaryIdx + 1] = b;
+      if (!table || !handleEl) return;
+      const startX = e.clientX;
+      const pointerId = e.pointerId;
+      const startP = colPercent.slice();
+      const pairTotal = (startP[leftIdx] || 0) + (startP[rightIdx] || 0);
+      let nextP = startP.slice();
+      let raf = 0;
+
+      document.body.classList.add('tagfox-table-col-resize-active');
+      handleEl.classList.add('th-resize-active');
+      if (handleEl.setPointerCapture && pointerId != null) {
+        try {
+          handleEl.setPointerCapture(pointerId);
+        } catch (_) {}
+      }
+
+      function flush() {
+        raf = 0;
+        colPercent = nextP.slice();
         applyTableColWidths();
       }
-      function up() {
-        document.removeEventListener('mousemove', move);
-        document.removeEventListener('mouseup', up);
-        localStorage.setItem(LS.tableCols, JSON.stringify(colPercent));
+
+      function finish(commit) {
+        document.removeEventListener('pointermove', move, true);
+        document.removeEventListener('pointerup', up, true);
+        document.removeEventListener('pointercancel', cancel, true);
+        document.body.classList.remove('tagfox-table-col-resize-active');
+        handleEl.classList.remove('th-resize-active');
+        if (handleEl.releasePointerCapture && pointerId != null) {
+          try {
+            handleEl.releasePointerCapture(pointerId);
+          } catch (_) {}
+        }
+        if (raf) cancelAnimationFrame(raf);
+        colPercent = nextP.slice();
+        applyTableColWidths();
+        if (commit) localStorage.setItem(LS.tableCols, JSON.stringify(colPercent));
       }
-      document.addEventListener('mousemove', move);
-      document.addEventListener('mouseup', up);
+
+      function move(ev) {
+        if (pointerId != null && ev.pointerId !== pointerId) return;
+        const tw = table.getBoundingClientRect().width;
+        if (tw < 80) return;
+        const deltaPct = ((ev.clientX - startX) / tw) * 100;
+        let left = (startP[leftIdx] || 0) + deltaPct;
+        let right = pairTotal - left;
+        [left, right] = clampTableResizePair(leftIdx, rightIdx, left, right);
+        nextP = startP.slice();
+        nextP[leftIdx] = left;
+        nextP[rightIdx] = right;
+        if (!raf) raf = requestAnimationFrame(flush);
+        ev.preventDefault();
+      }
+
+      function up(ev) {
+        if (pointerId != null && ev.pointerId !== pointerId) return;
+        finish(true);
+      }
+
+      function cancel(ev) {
+        if (pointerId != null && ev.pointerId !== pointerId) return;
+        finish(false);
+      }
+
+      document.addEventListener('pointermove', move, true);
+      document.addEventListener('pointerup', up, true);
+      document.addEventListener('pointercancel', cancel, true);
     }
 
     /**
@@ -1771,19 +2689,403 @@
       leaveScopePathEditChrome();
       setSearchScopeFolder(clampFolderPathToSearchMax(folderAbsPath));
       const scopeNorm = normalizeFolderPathForEverything(document.getElementById('rootFolder').value.trim());
-      if (scopeNorm) rememberScopeFolderHistory(scopeNorm);
+      if (scopeNorm) {
+        rememberScopeFolderHistory(scopeNorm);
+        bumpFolderFocusVisit(scopeNorm);
+      }
       saveSettings();
       renderScopeBreadcrumb();
       await runSearchNow();
       commitSearchHistoryNow();
       pulseSearchBoxAfterScopeFolderChange();
+      void renderRecentFoldersBar();
+    }
+
+    function cloneResultsPagingCtx(ctx) {
+      if (!ctx || typeof ctx !== 'object') return null;
+      try {
+        return JSON.parse(JSON.stringify(ctx));
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function cloneSearchStateObject(s) {
+      if (!s || typeof s !== 'object') return null;
+      try {
+        return JSON.parse(JSON.stringify(s));
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function copyPaneState(fromPaneKey, toPaneKey) {
+      const from = resultsPaneState[fromPaneKey];
+      const to = resultsPaneState[toPaneKey];
+      if (!from || !to) return;
+      to.searchState = cloneSearchStateObject(from.searchState);
+      to.lastRows = Array.isArray(from.lastRows) ? from.lastRows.slice() : [];
+      to.resultsPagingCtx = cloneResultsPagingCtx(from.resultsPagingCtx);
+      repaintPaneFromSavedState(toPaneKey);
+      persistPaneBSearchStateToStorage();
+    }
+
+    function swapPaneStates() {
+      const a = resultsPaneState.A;
+      const b = resultsPaneState.B;
+      const snapA = {
+        searchState: cloneSearchStateObject(a.searchState),
+        lastRows: Array.isArray(a.lastRows) ? a.lastRows.slice() : [],
+        resultsPagingCtx: cloneResultsPagingCtx(a.resultsPagingCtx),
+      };
+      a.searchState = cloneSearchStateObject(b.searchState);
+      a.lastRows = Array.isArray(b.lastRows) ? b.lastRows.slice() : [];
+      a.resultsPagingCtx = cloneResultsPagingCtx(b.resultsPagingCtx);
+      b.searchState = snapA.searchState;
+      b.lastRows = snapA.lastRows;
+      b.resultsPagingCtx = snapA.resultsPagingCtx;
+      restorePaneStateIntoUi(activeResultsPane);
+      repaintPaneFromSavedState(paneStateKeyOfOther(activeResultsPane));
+      persistPaneBSearchStateToStorage();
+    }
+
+    function paneStateKeyOfOther(paneKey) {
+      return paneKey === 'B' ? 'A' : 'B';
+    }
+
+    function saveActivePaneStateFromUi() {
+      const pane = resultsPaneState[activeResultsPane];
+      if (!pane) return;
+      pane.searchState = serializeSearchState();
+      pane.lastRows = Array.isArray(lastRows) ? lastRows.slice() : [];
+      pane.resultsPagingCtx = cloneResultsPagingCtx(resultsPagingCtx);
+      /* Only persist B when B was actually mutated (active = B during the inactive-refresh dance, or user is in pane B). Persisting on every save-of-A would wipe the LS key on first startup before init has a chance to load it. */
+      if (activeResultsPane === 'B') persistPaneBSearchStateToStorage();
+    }
+
+    /* Pane A is implicit in the live UI (persisted via per-control LS keys). Pane B has no live UI when inactive — persist its searchState as a JSON blob so it survives restart. lastRows/resultsPagingCtx are search results (stale after restart) and intentionally not persisted; the init-time refreshInactiveResultsPane re-runs B's search to rebuild them. */
+    function persistPaneBSearchStateToStorage() {
+      try {
+        const s = resultsPaneState.B && resultsPaneState.B.searchState;
+        if (s) localStorage.setItem(LS.paneBSearchState, JSON.stringify(s));
+        else localStorage.removeItem(LS.paneBSearchState);
+      } catch (_) {
+        /* ignore quota / serialize errors — pane B will fall back to mirroring A on next restart */
+      }
+    }
+    function loadPaneBSearchStateFromStorage() {
+      try {
+        const raw = localStorage.getItem(LS.paneBSearchState);
+        if (!raw) return null;
+        const obj = JSON.parse(raw);
+        return obj && typeof obj === 'object' ? obj : null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function restorePaneStateIntoUi(paneKey) {
+      const pane = resultsPaneState[paneKey];
+      if (!pane) return;
+      lastRows = Array.isArray(pane.lastRows) ? pane.lastRows.slice() : [];
+      resultsPagingCtx = cloneResultsPagingCtx(pane.resultsPagingCtx);
+      if (pane.searchState) {
+        applySearchState(pane.searchState);
+        updateQueryPlaceholder();
+        persistActiveTagFilter();
+        saveSettings();
+      }
+      updateSortHeaders();
+      renderScopeBreadcrumb();
+      renderTagBar();
+      applyResultsTablePathColumnVisibility();
+      renderTable();
+      bindResultsDomListeners();
+    }
+
+    function swapCanonicalResultsIds(nextPaneKey) {
+      if (nextPaneKey === activeResultsPane) return;
+      const prevPaneKey = activeResultsPane;
+      for (const pair of RESULT_DOM_ID_MAP) {
+        const activeEl = document.getElementById(pair.base);
+        const targetId = nextPaneKey === 'A' ? pair.A : pair.B;
+        const inactiveId = prevPaneKey === 'A' ? pair.A : pair.B;
+        const targetEl = document.getElementById(targetId);
+        if (!activeEl || !targetEl) continue;
+        activeEl.id = inactiveId;
+        targetEl.id = pair.base;
+      }
+      activeResultsPane = nextPaneKey;
+      document.querySelectorAll('.results-pane').forEach((el) => {
+        el.classList.toggle('results-pane-active', el.getAttribute('data-results-pane') === activeResultsPane);
+      });
+    }
+
+    async function activateResultsPane(paneKey, opts = {}) {
+      const next = paneKey === 'B' ? 'B' : 'A';
+      if (next === activeResultsPane) return;
+      saveActivePaneStateFromUi();
+      swapCanonicalResultsIds(next);
+      restorePaneStateIntoUi(next);
+      if (opts && opts.skipSearch) return;
+      await runSearchNow('identity', { singlePaneOnly: true });
+      saveActivePaneStateFromUi();
+    }
+
+    /* Active pane "owns" the global status bar (#statusMain + #statusSmartNote). Inactive pane's runSearch (in the dance below) would otherwise clobber both with its own data; snapshot before, restore after. */
+    function snapshotGlobalStatusBar() {
+      const main = document.getElementById('statusMain');
+      const smart = document.getElementById('statusSmartNote');
+      return {
+        mainHtml: main ? main.innerHTML : '',
+        smartHtml: smart ? smart.innerHTML : '',
+        smartHidden: smart ? smart.classList.contains('d-none') : true,
+        smartWarn: smart ? smart.classList.contains('tagfox-status-hidden-hint--warn') : false,
+      };
+    }
+    function restoreGlobalStatusBar(snap) {
+      if (!snap) return;
+      const main = document.getElementById('statusMain');
+      const smart = document.getElementById('statusSmartNote');
+      if (main) main.innerHTML = snap.mainHtml;
+      if (smart) {
+        smart.innerHTML = snap.smartHtml;
+        smart.classList.toggle('d-none', snap.smartHidden);
+        smart.classList.toggle('tagfox-status-hidden-hint--warn', snap.smartWarn);
+      }
+    }
+
+    /* Background refresh of the inactive pane: swap canonical #results* ids onto its DOM, restore its saved filter UI, run a fresh search (renderTable writes to its tbody), then swap back and restore active pane UI + status bar. Acquires searchMutex when called outside an existing search flow (e.g. initial load) so the dance can't race a concurrent F5. */
+    async function refreshInactiveResultsPane(eventKind = 'identity', opts = {}) {
+      const inactive = paneStateKeyOfOther(activeResultsPane);
+      const inactivePane = resultsPaneState[inactive];
+      console.log('[paneB-debug] refreshInactiveResultsPane ENTER', {
+        eventKind,
+        activeResultsPane,
+        inactive,
+        hasInactiveState: !!(inactivePane && inactivePane.searchState),
+        inactiveQuery: inactivePane && inactivePane.searchState && inactivePane.searchState.query,
+        inactiveRoot: inactivePane && inactivePane.searchState && inactivePane.searchState.rootFolder,
+        topLevelSearchDepth,
+      });
+      if (!inactivePane || !inactivePane.searchState) {
+        console.log('[paneB-debug] refreshInactiveResultsPane EARLY RETURN: no inactive state');
+        return;
+      }
+      const isNested = topLevelSearchDepth > 0;
+      let releaseMutex = null;
+      if (!isNested) {
+        const prev = searchMutex;
+        searchMutex = new Promise((r) => {
+          releaseMutex = r;
+        });
+        await prev;
+      }
+      topLevelSearchDepth++;
+      const activePaneKey = activeResultsPane;
+      const activeUiSnapshot = serializeSearchState();
+      const statusSnapshot = snapshotGlobalStatusBar();
+      try {
+        console.log('[paneB-debug] dance: swap to inactive', { inactive });
+        swapCanonicalResultsIds(inactive);
+        console.log('[paneB-debug] dance: after swap, activeResultsPane=', activeResultsPane, 'tbody id sanity:', !!document.getElementById('tbody'));
+        restorePaneStateIntoUi(inactive);
+        console.log('[paneB-debug] dance: await runSearch for inactive');
+        await runSearch(eventKind, { ...opts, singlePaneOnly: true });
+        console.log('[paneB-debug] dance: runSearch returned, lastRows.length=', lastRows.length);
+        saveActivePaneStateFromUi();
+      } catch (e) {
+        console.log('[paneB-debug] dance THREW', String(e && e.stack ? e.stack : e));
+        throw e;
+      } finally {
+        console.log('[paneB-debug] dance: finally, swap back to active', { activePaneKey });
+        swapCanonicalResultsIds(activePaneKey);
+        resultsPaneState[activePaneKey].searchState = activeUiSnapshot;
+        restorePaneStateIntoUi(activePaneKey);
+        restoreGlobalStatusBar(statusSnapshot);
+        topLevelSearchDepth--;
+        if (!isNested && releaseMutex) releaseMutex();
+        const inactiveTbodyId = inactive === 'A' ? 'tbodyA' : 'tbodyB';
+        const inactiveTbody = document.getElementById(inactiveTbodyId);
+        console.log('[paneB-debug] dance: EXIT, inactive tbody rows=', inactiveTbody ? inactiveTbody.querySelectorAll('tr').length : 'N/A');
+      }
+    }
+
+    /* Repaint inactive pane DOM from its saved state (no fresh Everything search). Used after divider copy/swap so the inactive pane's tbody reflects newly-assigned state. */
+    function repaintPaneFromSavedState(paneKey) {
+      if (paneKey === activeResultsPane) {
+        restorePaneStateIntoUi(paneKey);
+        return;
+      }
+      const pane = resultsPaneState[paneKey];
+      if (!pane) return;
+      const activePaneKey = activeResultsPane;
+      const activeUiSnapshot = serializeSearchState();
+      const statusSnapshot = snapshotGlobalStatusBar();
+      try {
+        swapCanonicalResultsIds(paneKey);
+        restorePaneStateIntoUi(paneKey);
+      } finally {
+        swapCanonicalResultsIds(activePaneKey);
+        resultsPaneState[activePaneKey].searchState = activeUiSnapshot;
+        restorePaneStateIntoUi(activePaneKey);
+        restoreGlobalStatusBar(statusSnapshot);
+      }
+    }
+
+    function bindResultsPaneActivation() {
+      document.querySelectorAll('.results-pane[data-results-pane]').forEach((paneEl) => {
+        if (paneEl.dataset.paneActivationBound === '1') return;
+        paneEl.dataset.paneActivationBound = '1';
+        paneEl.addEventListener('pointerdown', () => {
+          const paneKey = paneEl.getAttribute('data-results-pane') === 'B' ? 'B' : 'A';
+          if (paneKey === activeResultsPane) return;
+          void activateResultsPane(paneKey);
+        });
+      });
+    }
+
+    function normalizeResultsSplitRatio(raw) {
+      let r = Math.max(0, Math.min(1, Number(raw)));
+      if (!Number.isFinite(r)) r = 0.5;
+      if (r <= RESULTS_SPLIT_COLLAPSE_EPS) return 0;
+      if (r >= 1 - RESULTS_SPLIT_COLLAPSE_EPS) return 1;
+      return r;
+    }
+
+    function applyResultsSplitLayout() {
+      const stack = document.getElementById('resultsSplitStack');
+      const split = document.getElementById('splitResultsH');
+      const splitTop = document.getElementById('splitResultsTop');
+      const splitBottom = document.getElementById('splitResultsBottom');
+      const paneA = document.querySelector('.results-pane[data-results-pane="A"]');
+      const paneB = document.querySelector('.results-pane[data-results-pane="B"]');
+      if (!stack || !split || !paneA || !paneB || !splitTop || !splitBottom) return;
+      const r = normalizeResultsSplitRatio(resultsSplitRatio);
+      resultsSplitRatio = r;
+      const singlePane = r === 0 || r === 1;
+      paneA.style.display = '';
+      paneB.style.display = '';
+      split.classList.toggle('d-none', singlePane);
+      splitTop.classList.toggle('d-none', !singlePane);
+      splitBottom.classList.toggle('d-none', !singlePane);
+      if (r === 0) {
+        paneA.style.display = 'none';
+        paneA.style.flex = '0 0 0%';
+        paneB.style.flex = '1 1 auto';
+        return;
+      }
+      if (r === 1) {
+        paneB.style.display = 'none';
+        paneB.style.flex = '0 0 0%';
+        paneA.style.flex = '1 1 auto';
+        return;
+      }
+      const topPct = Math.max(0, Math.min(100, r * 100));
+      const bottomPct = 100 - topPct;
+      paneA.style.flex = `0 1 ${topPct}%`;
+      paneB.style.flex = `0 1 ${bottomPct}%`;
+    }
+
+    function loadResultsSplitLayoutFromStorage() {
+      const raw = parseFloat(localStorage.getItem(LS.resultsSplitRatio) || '');
+      if (Number.isFinite(raw)) resultsSplitRatio = normalizeResultsSplitRatio(raw);
+      applyResultsSplitLayout();
+    }
+
+    function persistResultsSplitLayout() {
+      localStorage.setItem(LS.resultsSplitRatio, String(resultsSplitRatio));
+    }
+
+    function bindResultsHorizontalSplitter() {
+      const split = document.getElementById('splitResultsH');
+      const splitTop = document.getElementById('splitResultsTop');
+      const splitBottom = document.getElementById('splitResultsBottom');
+      const stack = document.getElementById('resultsSplitStack');
+      const btnCopyTopToBottom = document.getElementById('btnSplitCopyTopToBottom');
+      const btnCopyBottomToTop = document.getElementById('btnSplitCopyBottomToTop');
+      const btnSwap = document.getElementById('btnSplitSwapPanes');
+      const btnClose = document.getElementById('btnSplitClose');
+      if (!split || !splitTop || !splitBottom || !stack) return;
+      const splitActions = split.querySelector('.split-h-actions');
+
+      function startDragFromHandle(e) {
+        if (e.button !== 0) return;
+        if (e.target && e.target.closest && e.target.closest('.split-h-actions')) return;
+        e.preventDefault();
+        const rect = stack.getBoundingClientRect();
+        if (!Number.isFinite(rect.height) || rect.height < 10) return;
+        function move(ev) {
+          const raw = (ev.clientY - rect.top) / rect.height;
+          resultsSplitRatio = normalizeResultsSplitRatio(raw);
+          applyResultsSplitLayout();
+        }
+        function up() {
+          document.removeEventListener('mousemove', move);
+          document.removeEventListener('mouseup', up);
+          persistResultsSplitLayout();
+        }
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', up);
+      }
+
+      split.addEventListener('mousedown', startDragFromHandle);
+      splitTop.addEventListener('mousedown', startDragFromHandle);
+      splitBottom.addEventListener('mousedown', startDragFromHandle);
+      splitActions?.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+      });
+      /* Edge-bar "restore split" pills: shown when one pane is collapsed (ratio 0 or 1); click springs back to 50/50. Mousedown stopPropagation so the drag-from-handle path never fires. */
+      for (const edgeEl of [splitTop, splitBottom]) {
+        edgeEl.querySelector('.split-h-edge-actions')?.addEventListener('mousedown', (e) => {
+          e.stopPropagation();
+        });
+        edgeEl.querySelector('[data-split-reopen]')?.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          resultsSplitRatio = 0.5;
+          applyResultsSplitLayout();
+          persistResultsSplitLayout();
+        });
+      }
+
+      /* Divider buttons: copyPaneState / swapPaneStates handle both active re-render and inactive repaint via the swap-canonical-IDs dance. */
+      btnCopyTopToBottom?.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        saveActivePaneStateFromUi();
+        copyPaneState('A', 'B');
+        setStatusMain('Bottom pane copied from top pane.');
+      });
+      btnCopyBottomToTop?.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        saveActivePaneStateFromUi();
+        copyPaneState('B', 'A');
+        setStatusMain('Top pane copied from bottom pane.');
+      });
+      btnSwap?.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        saveActivePaneStateFromUi();
+        swapPaneStates();
+        setStatusMain('Swapped top and bottom panes.');
+      });
+      /* Close split: collapse to the currently active pane (keep what the user is working in). */
+      btnClose?.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        resultsSplitRatio = activeResultsPane === 'A' ? 1 : 0;
+        applyResultsSplitLayout();
+        persistResultsSplitLayout();
+      });
     }
 
     function scheduleSearch(eventKind = 'identity') {
       if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
       searchDebounceTimer = setTimeout(() => {
         searchDebounceTimer = null;
-        void runSearch(eventKind);
+        void runSearchNow(eventKind);
       }, 300);
     }
 
@@ -1828,62 +3130,127 @@
       }
     }
 
+    /* Serialize whole runSearchNow flow (active runSearch + inactive refresh dance) so two F5/auto-refresh ticks can't interleave the swap-canonical-IDs dance. Reuses searchMutex/topLevelSearchDepth; nested runSearchNow (smart-narrow inside outer runSearch) sees depth>0 and skips re-acquire. */
     async function runSearchNow(eventKind = 'identity', opts) {
-      if (searchDebounceTimer) {
-        clearTimeout(searchDebounceTimer);
-        searchDebounceTimer = null;
+      const isNested = topLevelSearchDepth > 0;
+      let releaseMutex = null;
+      if (!isNested) {
+        const prev = searchMutex;
+        searchMutex = new Promise((r) => {
+          releaseMutex = r;
+        });
+        await prev;
       }
-      await runSearch(eventKind, opts);
+      topLevelSearchDepth++;
+      try {
+        if (searchDebounceTimer) {
+          clearTimeout(searchDebounceTimer);
+          searchDebounceTimer = null;
+        }
+        await runSearch(eventKind, opts);
+        saveActivePaneStateFromUi();
+        /* Background refresh of inactive pane only on disk-change-style events (F5, auto-refresh, disk mutation). Skips identity/manual/smart-* to avoid UI flicker on every keystroke. */
+        if (
+          !isNested &&
+          eventKind === 'refresh' &&
+          (!opts || !opts.singlePaneOnly)
+        ) {
+          const inactive = paneStateKeyOfOther(activeResultsPane);
+          const activeState = resultsPaneState[activeResultsPane] && resultsPaneState[activeResultsPane].searchState;
+          const inactiveState = resultsPaneState[inactive] && resultsPaneState[inactive].searchState;
+          if (activeState && inactiveState && searchStatesEqual(activeState, inactiveState)) {
+            copyPaneState(activeResultsPane, inactive);
+          } else {
+            await refreshInactiveResultsPane(eventKind, { ...(opts || {}), singlePaneOnly: true });
+          }
+        }
+      } finally {
+        topLevelSearchDepth--;
+        if (!isNested && releaseMutex) releaseMutex();
+      }
     }
 
-    /** Pending staggered Everything re-queries (index can lag behind disk). */
+    /** Pending delayed Everything re-query (index can lag behind disk after file ops). */
     let diskMutationRefreshTimeouts = [];
+    /** Skip duplicate refresh when renderer + paths-mutated both fire within a few ms (same drop). */
+    let lastDiskMutationRefreshStart = 0;
+    const DISK_MUTATION_REFRESH_COALESCE_MS = 120;
 
-    function clearAndScheduleSearchRetries() {
+    function diskMutationPayloadPaths(payload) {
+      const p = payload && typeof payload === 'object' ? payload : {};
+      const list = [];
+      if (Array.isArray(p.paths)) list.push(...p.paths);
+      if (p.destFolder) list.push(p.destFolder);
+      return list.map((x) => normalizeFolderPathForEverything(String(x || '').trim())).filter(Boolean);
+    }
+
+    function diskMutationMayAffectInactivePane(payload) {
+      const inactive = paneStateKeyOfOther(activeResultsPane);
+      const inactiveState = resultsPaneState[inactive] && resultsPaneState[inactive].searchState;
+      const inactiveRoot = normalizeFolderPathForEverything(String((inactiveState && inactiveState.rootFolder) || '').trim());
+      if (!inactiveState || !inactiveRoot) return true;
+      const paths = diskMutationPayloadPaths(payload);
+      if (!paths.length) return true;
+      return paths.some((p) => pathIsUnderOrEqualFolder(p, inactiveRoot) || pathIsUnderOrEqualFolder(inactiveRoot, p));
+    }
+
+    function clearAndScheduleSearchRetries(payload) {
       for (const id of diskMutationRefreshTimeouts) clearTimeout(id);
       diskMutationRefreshTimeouts = [];
-      for (const ms of [450, 1100, 2600]) {
-        diskMutationRefreshTimeouts.push(
-          setTimeout(() => {
-            void runSearchNow('refresh');
-          }, ms)
-        );
-      }
+      diskMutationRefreshTimeouts.push(
+        setTimeout(() => {
+          const retryOpts = diskMutationMayAffectInactivePane(payload) ? {} : { singlePaneOnly: true };
+          void runSearchNow('refresh', retryOpts);
+        }, 1200)
+      );
     }
 
-    /** After paste / move / trash: search now plus a few delayed retries so the table catches up. */
-    async function refreshAfterDiskMutation() {
+    /** After paste / move / trash: refresh now, then one scoped catch-up for Everything index lag. */
+    async function refreshAfterDiskMutation(payload) {
+      const now = Date.now();
+      if (now - lastDiskMutationRefreshStart < DISK_MUTATION_REFRESH_COALESCE_MS) return;
+      lastDiskMutationRefreshStart = now;
       folderChildCountCache.clear();
       await detachViewerEditorsIfOpenTargetsGone();
       void renderShelf();
-      clearAndScheduleSearchRetries();
-      void runSearchNow('refresh');
+      clearAndScheduleSearchRetries(payload);
+      const refreshOpts = diskMutationMayAffectInactivePane(payload) ? {} : { singlePaneOnly: true };
+      void runSearchNow('refresh', refreshOpts);
     }
 
     function tagModalIsNewTodoDraft() {
       return tagModalMode === 'newTodo';
     }
 
+    function tagModalIsFolderDocDraft() {
+      return tagModalMode === 'folderDocDraft';
+    }
+
+    /** Add TODO or folder doc title: chips edit local list only until create / readme save. */
+    function tagModalIsNameDraft() {
+      return tagModalIsNewTodoDraft() || tagModalIsFolderDocDraft();
+    }
+
     function syncTagModalHintsAndTitle() {
       const renameEl = document.getElementById('tagModalHintRename');
       const newTodoEl = document.getElementById('tagModalHintNewTodo');
+      const folderDocEl = document.getElementById('tagModalHintFolderDoc');
       const lbl = document.getElementById('tagModalLabel');
+      const isRename = !tagModalIsNameDraft();
+      renameEl?.classList.toggle('d-none', !isRename);
+      newTodoEl?.classList.toggle('d-none', !tagModalIsNewTodoDraft());
+      folderDocEl?.classList.toggle('d-none', !tagModalIsFolderDocDraft());
       if (tagModalIsNewTodoDraft()) {
         if (lbl) lbl.textContent = 'Tags for new TODO file';
-        renameEl?.classList.add('d-none');
-        newTodoEl?.classList.remove('d-none');
+      } else if (tagModalIsFolderDocDraft()) {
+        if (lbl) lbl.textContent = 'Tags for folder doc file';
       } else {
         if (lbl) lbl.textContent = 'Edit tags (rename)';
-        renameEl?.classList.remove('d-none');
-        newTodoEl?.classList.add('d-none');
       }
     }
 
-    /** Re-fill tag-modal datalist + quick-add (≤12) from global known tags (not current search scope). */
-    function refreshTagModalDatalist() {
-      const dl = document.getElementById('tagModalExistingTags');
-      const quick = document.getElementById('tagModalQuickTags');
-      if (!dl || !quick) return;
+    /** Known bracket-tag labels, de-duped case-insensitively and sorted for draft tag pickers. */
+    function collectKnownTagLabels() {
       const seen = new Set();
       const labels = [];
       const addLabel = (disp) => {
@@ -1896,6 +3263,15 @@
       };
       for (const t of knownBracketTagsList) addLabel(t.display);
       labels.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+      return labels;
+    }
+
+    /** Re-fill tag-modal datalist + quick-add (≤12) from global known tags (not current search scope). */
+    function refreshTagModalDatalist() {
+      const dl = document.getElementById('tagModalExistingTags');
+      const quick = document.getElementById('tagModalQuickTags');
+      if (!dl || !quick) return;
+      const labels = collectKnownTagLabels();
       dl.innerHTML = '';
       for (const text of labels) {
         const opt = document.createElement('option');
@@ -1904,7 +3280,7 @@
       }
       quick.innerHTML = '';
       const quickMax = 12;
-      const onSingle = modalTargetPaths.length === 1 || tagModalIsNewTodoDraft();
+      const onSingle = modalTargetPaths.length === 1 || tagModalIsNameDraft();
       for (const text of labels.slice(0, quickMax)) {
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -1913,7 +3289,7 @@
         btn.className = already ? 'btn btn-sm btn-outline-secondary' : 'btn btn-sm btn-outline-primary';
         btn.textContent = text;
         btn.title = already
-          ? tagModalIsNewTodoDraft()
+          ? tagModalIsNameDraft()
             ? 'Already in this list'
             : 'Already on this item'
           : 'Add tag ' + text;
@@ -1923,21 +3299,149 @@
       }
     }
 
+    /** Quick TODO tags button reflects whether the inline panel is open. */
+    function syncQuickTodoTagsToggleButton() {
+      const btn = document.getElementById('btnQuickTodoPopTags');
+      const panel = document.getElementById('quickTodoTagsPanel');
+      if (!btn || !panel) return;
+      const open = !panel.classList.contains('d-none');
+      btn.classList.toggle('btn-primary', open);
+      btn.classList.toggle('btn-outline-secondary', !open);
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+
+    /** Quick TODO body button reflects whether the inline panel is open. */
+    function syncQuickTodoBodyToggleButton() {
+      const btn = document.getElementById('btnQuickTodoPopBody');
+      const panel = document.getElementById('quickTodoBodyPanel');
+      if (!btn || !panel) return;
+      const open = !panel.classList.contains('d-none');
+      btn.classList.toggle('btn-primary', open);
+      btn.classList.toggle('btn-outline-secondary', !open);
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+
+    /** Quick TODO: remove one draft tag from the next file name. */
+    function removeQuickTodoTagAt(idx) {
+      if (idx < 0 || idx >= newTodoMdTags.length) return;
+      newTodoMdTags.splice(idx, 1);
+      renderQuickTodoTagsPanel();
+    }
+
+    /** Quick TODO: add one draft tag for the next file name. */
+    function addQuickTodoTag(value) {
+      const raw = String(value || '').trim();
+      if (!raw) return;
+      const low = raw.toLowerCase();
+      if (newTodoMdTags.some((t) => t.toLowerCase() === low)) return;
+      newTodoMdTags.push(raw);
+      rememberTag(low, raw);
+      renderQuickTodoTagsPanel();
+    }
+
+    /** Quick TODO: rebuild the inline tag editor inside the popup. */
+    function renderQuickTodoTagsPanel() {
+      const chips = document.getElementById('quickTodoTagsChips');
+      const quick = document.getElementById('quickTodoTagsQuick');
+      const dl = document.getElementById('quickTodoExistingTags');
+      if (!chips || !quick || !dl) return;
+      chips.innerHTML = '';
+      if (!newTodoMdTags.length) {
+        const empty = document.createElement('span');
+        empty.className = 'text-muted';
+        empty.textContent = 'No tags yet.';
+        chips.appendChild(empty);
+      } else {
+        newTodoMdTags.forEach((tag, idx) => {
+          const span = document.createElement('span');
+          span.className = 'badge align-middle me-1';
+          span.style.backgroundColor = tagColorCss(tag);
+          span.style.color = '#212529';
+          span.appendChild(document.createTextNode(tag + ' '));
+          const x = document.createElement('button');
+          x.type = 'button';
+          x.className = 'btn btn-sm btn-light py-0 px-1 align-baseline d-inline-flex align-items-center justify-content-center';
+          x.innerHTML = '<i class="fa-solid fa-xmark" style="font-size:0.7rem;line-height:1" aria-hidden="true"></i>';
+          x.setAttribute('aria-label', 'Remove');
+          x.addEventListener('click', () => removeQuickTodoTagAt(idx));
+          span.appendChild(x);
+          chips.appendChild(span);
+        });
+      }
+      const labels = collectKnownTagLabels();
+      dl.innerHTML = '';
+      for (const text of labels) {
+        const opt = document.createElement('option');
+        opt.value = text;
+        dl.appendChild(opt);
+      }
+      quick.innerHTML = '';
+      for (const text of labels.slice(0, 12)) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        const low = text.toLowerCase();
+        const already = newTodoMdTags.some((t) => t.toLowerCase() === low);
+        btn.className = already ? 'btn btn-sm btn-outline-secondary' : 'btn btn-sm btn-outline-primary';
+        btn.textContent = text;
+        btn.disabled = already;
+        btn.title = already ? 'Already in this list' : 'Add tag ' + text;
+        btn.addEventListener('click', () => addQuickTodoTag(text));
+        quick.appendChild(btn);
+      }
+      syncQuickTodoTagsToggleButton();
+    }
+
+    /** Quick TODO: close the inline tags panel. */
+    function hideQuickTodoTagsPanel() {
+      const panel = document.getElementById('quickTodoTagsPanel');
+      if (!panel) return;
+      panel.classList.add('d-none');
+      syncQuickTodoTagsToggleButton();
+    }
+
+    /** Quick TODO: toggle the inline tags panel inside the popup. */
+    function toggleQuickTodoTagsPanel(forceOpen) {
+      const panel = document.getElementById('quickTodoTagsPanel');
+      if (!panel) return;
+      const open = typeof forceOpen === 'boolean' ? forceOpen : panel.classList.contains('d-none');
+      panel.classList.toggle('d-none', !open);
+      renderQuickTodoTagsPanel();
+      if (open) requestAnimationFrame(() => document.getElementById('quickTodoTagInput')?.focus());
+    }
+
+    /** Quick TODO: close the inline body panel. */
+    function hideQuickTodoBodyPanel() {
+      const panel = document.getElementById('quickTodoBodyPanel');
+      if (!panel) return;
+      panel.classList.add('d-none');
+      syncQuickTodoBodyToggleButton();
+    }
+
+    /** Quick TODO: toggle the inline body panel inside the popup. */
+    function toggleQuickTodoBodyPanel(forceOpen) {
+      const panel = document.getElementById('quickTodoBodyPanel');
+      if (!panel) return;
+      const open = typeof forceOpen === 'boolean' ? forceOpen : panel.classList.contains('d-none');
+      panel.classList.toggle('d-none', !open);
+      syncQuickTodoBodyToggleButton();
+      if (open) requestAnimationFrame(() => document.getElementById('quickTodoBodyInput')?.focus());
+    }
+
     /** After tag rename / add / remove on disk: search now; optional pathRenames patches rows if Everything is still stale (bulk). */
     async function refreshAfterTagsSaved(pathRenames) {
       void renderShelf();
+      if (pathRenames && pathRenames.length) {
+        tagRenamePendingPairs = pathRenames.slice();
+        if (tagRenamePendingPairsClearTimer) clearTimeout(tagRenamePendingPairsClearTimer);
+        tagRenamePendingPairsClearTimer = setTimeout(() => {
+          tagRenamePendingPairs = null;
+          tagRenamePendingPairsClearTimer = null;
+        }, 8000);
+      } else {
+        tagRenamePendingPairs = null;
+      }
       clearAndScheduleSearchRetries();
       await runSearchNow('refresh');
-      if (pathRenames && pathRenames.length) {
-        patchResultRowsAfterRenames(pathRenames);
-        pruneLastRowsRenamedSources(pathRenames);
-        dedupeLastRowsByPathKey();
-        sortLastRowsForDisplay(true);
-        await syncSelectionAfterSearch();
-        renderTagBar();
-        renderTable();
-        updateSelectAllCheckboxState();
-      }
       refreshTagModalDatalist();
     }
 
@@ -1984,7 +3488,7 @@
 
     /** Status strip: brief primary glow (matches pulse-hint accent; one-shot). */
     function pulseStatusBarBrief() {
-      const bar = document.getElementById('statusBar');
+      const bar = document.getElementById('tagfoxNavbarStatus');
       if (!bar) return;
       bar.classList.remove('status-bar--pulse-hint');
       void bar.offsetWidth;
@@ -1996,13 +3500,101 @@
       );
     }
 
-    /** Smart automation line (purple chip); kind warn = big-folder / cap stress. */
+    /** Escape plain text for safe HTML inside #statusMain segments. */
+    function escStatusHtmlForStatus(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+    function escStatusAttrForStatus(s) {
+      return escStatusHtmlForStatus(s).replace(/"/g, '&quot;');
+    }
+    function didYouKnowSegmentsPlain(segments) {
+      return segments.map((seg) => (typeof seg === 'string' ? seg : seg.kbd)).join('');
+    }
+    function didYouKnowSegmentsHtml(segments) {
+      return segments
+        .map((seg) =>
+          typeof seg === 'string'
+            ? escStatusHtmlForStatus(seg)
+            : '<kbd class="tagfox-navbar-tip-kbd">' +
+              escStatusHtmlForStatus(seg.kbd) +
+              '</kbd>'
+        )
+        .join('');
+    }
+    function shuffleDidYouKnowBag() {
+      didYouKnowBag = [];
+      for (const entry of DID_YOU_KNOW_TIPS) {
+        for (let i = 0; i < (entry.score || 1); i++) didYouKnowBag.push(entry.tip);
+      }
+      for (let i = didYouKnowBag.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const tmp = didYouKnowBag[i];
+        didYouKnowBag[i] = didYouKnowBag[j];
+        didYouKnowBag[j] = tmp;
+      }
+      if (didYouKnowBag.length > 1 && JSON.stringify(didYouKnowBag[0]) === didYouKnowLastTipKey) {
+        const tmp = didYouKnowBag[0];
+        didYouKnowBag[0] = didYouKnowBag[1];
+        didYouKnowBag[1] = tmp;
+      }
+    }
+    function nextDidYouKnowTip() {
+      if (!didYouKnowBag.length) shuffleDidYouKnowBag();
+      const tip = didYouKnowBag.shift() || [];
+      didYouKnowLastTipKey = JSON.stringify(tip);
+      return tip;
+    }
+    function renderDidYouKnowTip(segments) {
+      const mount = document.getElementById('navbarDidYouKnow');
+      if (!mount) return;
+      if (!segments || !segments.length) {
+        mount.innerHTML = '';
+        return;
+      }
+      const plain = didYouKnowSegmentsPlain(segments);
+      const full = 'Did you know? ' + plain;
+      mount.innerHTML =
+        '<span class="tagfox-navbar-tip" title="' +
+        escStatusAttrForStatus(full) +
+        '" aria-label="' +
+        escStatusAttrForStatus(full) +
+        '">' +
+        '<i class="fa-regular fa-lightbulb text-warning" aria-hidden="true"></i>' +
+        '<span class="tagfox-navbar-tip-label">Did you know?</span>' +
+        '<span class="tagfox-navbar-tip-text">' +
+        didYouKnowSegmentsHtml(segments) +
+        '</span>' +
+        '</span>';
+      refreshTagFoxChromeTooltips(mount);
+    }
+    function showNextDidYouKnowTip() {
+      renderDidYouKnowTip(nextDidYouKnowTip());
+    }
+    function startDidYouKnowTips() {
+      if (didYouKnowTimerId) clearInterval(didYouKnowTimerId);
+      showNextDidYouKnowTip();
+      didYouKnowTimerId = setInterval(() => showNextDidYouKnowTip(), DID_YOU_KNOW_ROTATE_MS);
+    }
+    /** Leading icon inside a status hint chip (Font Awesome solid class, e.g. fa-gear). */
+    function statusHintPillInnerHtml(iconFaClass, escapedInnerHtml) {
+      return (
+        '<i class="fa-solid ' +
+        iconFaClass +
+        ' fa-fw" aria-hidden="true"></i> ' +
+        escapedInnerHtml
+      );
+    }
+
+    /** Smart automation line (wand icon + chip); kind warn = big-folder / cap stress. */
     function clearStatusSmartNote() {
       const el = document.getElementById('statusSmartNote');
       if (!el) return;
-      el.textContent = '';
+      el.innerHTML = '';
       el.classList.add('d-none');
-      el.classList.remove('tagfox-status-smart-note--warn');
+      el.classList.remove('tagfox-status-hidden-hint--warn');
     }
     /** Cap-stress chip from smartAfterPaint; clear when paging shows no further pages (load-more doesn’t rerun smartAfterPaint). */
     function clearBigFolderCapSmartNoteIfStale() {
@@ -2019,9 +3611,11 @@
         clearStatusSmartNote();
         return;
       }
-      el.textContent = text;
+      /* Same chip as filter hints; wand icon links to Smart view control. */
+      el.innerHTML =
+        statusHintPillInnerHtml('fa-wand-magic-sparkles', escStatusHtmlForStatus(text));
       el.classList.remove('d-none');
-      el.classList.toggle('tagfox-status-smart-note--warn', kind === 'warn');
+      el.classList.toggle('tagfox-status-hidden-hint--warn', kind === 'warn');
       /* Chip already says Smart/layout context — remove trailing “Smart view, …” from main line. */
       stripViewModeSentenceFromStatusMain();
     }
@@ -2049,43 +3643,66 @@
       clearStatusSmartNote();
     }
 
-    /** Escape plain text for safe HTML inside #statusMain segments. */
-    function escStatusHtmlForStatus(s) {
-      return String(s)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
+    /** First #statusMain segment: raw hit count from Everything (not table row count — path tree may add rows). */
+    function formatRowCountLeadingSegmentForStatus(vis, raw) {
+      void vis;
+      if (raw === 0) return { text: '0 hits' };
+      return { text: raw === 1 ? '1 hit' : raw + ' hits' };
     }
-    /** First #statusMain segment: hits wording; HTML when client filters hide rows (“(N hidden)” pill). */
-    function formatRowCountLeadingSegmentForStatus(vis, raw, opts) {
-      const advancedHidden = !!(opts && opts.advancedHidden);
-      const rawHitsText = raw === 1 ? '1 hit' : raw + ' hits';
-      if (raw === 0 && vis === 0) return { text: '0 hits' };
-      /* Path grouping can add display-only rows — status shows hit count only, not row count. */
-      if (vis > raw) {
-        return { text: rawHitsText };
+    /** Hidden-row reasons only (icons + labels); no “N hidden due to” prefix — count stays in the hits segment. */
+    function hiddenDueToStatusHtml(hiddenN, reasonParts) {
+      void hiddenN;
+      const body = reasonParts
+        .map((p, i) => {
+          const sep =
+            i === 0 ? '' : ' <span class="tagfox-status-hidden-sep text-muted">|</span> ';
+          return (
+            sep +
+            '<i class="fa-solid ' +
+            p.icon +
+            ' fa-fw" aria-hidden="true"></i> ' +
+            escStatusHtmlForStatus(p.label)
+          );
+        })
+        .join('');
+      return '<span class="tagfox-status-hidden-hint">' + body + '</span>';
+    }
+    /** Hide special / ~ only (no row delta): eye-slash matches Advanced popover icon. */
+    function hideOptionHintStatusHtml(plain) {
+      return (
+        '<span class="tagfox-status-hidden-hint">' +
+        '<i class="fa-solid fa-eye-slash fa-fw" aria-hidden="true"></i> ' +
+        escStatusHtmlForStatus(plain) +
+        '</span>'
+      );
+    }
+    /** “Filters on: …” chip: tags vs clock for recency (no gear). */
+    function tagRecencyStatusFilterHintHtml(plain) {
+      if (!plain) return '';
+      if (plain === 'Filters on: tags and recency') {
+        return (
+          '<span class="tagfox-status-hidden-hint">' +
+          '<i class="fa-solid fa-tags fa-fw" aria-hidden="true"></i> ' +
+          '<i class="fa-solid fa-clock fa-fw" aria-hidden="true"></i> ' +
+          escStatusHtmlForStatus(plain) +
+          '</span>'
+        );
       }
-      if (vis < raw) {
-        const n = raw - vis;
-        const hiddenLabel = n === 1 ? '1 hidden' : n + ' hidden';
-        const hintCls =
-          'tagfox-status-hidden-hint' + (advancedHidden ? ' tagfox-status-hidden-hint--advanced' : '');
-        return {
-          html: rawHitsText + ' <span class="' + hintCls + '">(' + hiddenLabel + ')</span>',
-        };
-      }
-      return { text: rawHitsText };
+      const icon = plain === 'Filters on: recency' ? 'fa-clock' : 'fa-tags';
+      return (
+        '<span class="tagfox-status-hidden-hint">' +
+        '<i class="fa-solid ' + icon + ' fa-fw" aria-hidden="true"></i> ' +
+        escStatusHtmlForStatus(plain) +
+        '</span>'
+      );
     }
-    /** @param {boolean} [forAdvancedPathHides] match Advanced launcher green when true */
-    function statusFilterHintHtmlForStatus(plain, forAdvancedPathHides) {
-      const hintCls =
-        'tagfox-status-hidden-hint' + (forAdvancedPathHides ? ' tagfox-status-hidden-hint--advanced' : '');
-      return '<span class="' + hintCls + '">' + escStatusHtmlForStatus(plain) + '</span>';
-    }
-    /** Plain text for status bar: “Filters on: tags / recency / both” (empty = neither). */
-    function tagRecencyStatusFilterHintPlain(activeKeys, recencyMode) {
+    /**
+     * Plain text for status bar: “Filters on: tags / recency / both” (empty = neither).
+     * recencyNarrows: recency bucket is on and removed ≥1 row vs tag-only set (else recency chip omitted).
+     */
+    function tagRecencyStatusFilterHintPlain(activeKeys, recencyMode, recencyNarrows) {
       const hasTags = activeKeys && activeKeys.size > 0;
-      const hasRec = recencyMode && recencyMode !== 'all';
+      const hasRec = recencyMode && recencyMode !== 'all' && recencyNarrows;
       if (!hasTags && !hasRec) return '';
       if (hasTags && hasRec) return 'Filters on: tags and recency';
       if (hasTags) return 'Filters on: tags';
@@ -2100,22 +3717,68 @@
         visN,
         rawN,
         tagRecencyHintPlain,
+        hiddenDueHtml,
         showHideSpecialHint,
         showHideTildeHint,
         omitViewSuffix,
         viewModeSentence,
       } = opts;
-      const advancedPathHides = !!(showHideSpecialHint || showHideTildeHint);
-      const rowLead = formatRowCountLeadingSegmentForStatus(visN, rawN, { advancedHidden: advancedPathHides });
+      const rowLead = formatRowCountLeadingSegmentForStatus(visN, rawN);
       const segments = [];
-      if (rowLead.html != null) segments.push(rowLead.html);
-      else segments.push(escStatusHtmlForStatus(rowLead.text));
-      if (tagRecencyHintPlain) segments.push(statusFilterHintHtmlForStatus(tagRecencyHintPlain, false));
-      if (showHideSpecialHint) segments.push(statusFilterHintHtmlForStatus('Hiding special files/folders', true));
-      if (showHideTildeHint) segments.push(statusFilterHintHtmlForStatus('Hiding paths with ~ segment', true));
+      segments.push(escStatusHtmlForStatus(rowLead.text));
+      if (hiddenDueHtml) segments.push(hiddenDueHtml);
+      else {
+        if (showHideSpecialHint) segments.push(hideOptionHintStatusHtml('Hiding special files/folders'));
+        if (showHideTildeHint) segments.push(hideOptionHintStatusHtml('Hiding paths with ~ segment'));
+      }
+      if (tagRecencyHintPlain) segments.push(tagRecencyStatusFilterHintHtml(tagRecencyHintPlain));
       if (!omitViewSuffix && viewModeSentence)
         segments.push('<span class="tagfox-status-view-suffix">' + escStatusHtmlForStatus(viewModeSentence) + '</span>');
       return segments.join(' · ');
+    }
+
+    /** After startup: one Drive API call — green tick (or warning) in header next to New dbg. */
+    async function refreshGoogleDriveApiPingSegment() {
+      const mount = document.getElementById('navbarGoogleDrivePing');
+      if (!window.tagBrowser || typeof window.tagBrowser.googleDriveApiPing !== 'function') {
+        if (mount) mount.innerHTML = '';
+        return;
+      }
+      try {
+        const r = await window.tagBrowser.googleDriveApiPing();
+        if (r && r.skipped) {
+          if (mount) mount.innerHTML = '';
+          return;
+        }
+        if (r && r.ok && r.email) {
+          const tip =
+            'Drive API: ' +
+            r.email +
+            (r.sampleFileName ? ' · ' + r.sampleFileName : '');
+          const safeTip = String(tip).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+          if (mount)
+            mount.innerHTML =
+              '<span class="tagfox-navbar-drive-ping" title="' +
+              safeTip +
+              '" aria-label="' +
+              safeTip +
+              '"><i class="fa-solid fa-check text-success" aria-hidden="true"></i></span>';
+        } else if (r && r.error) {
+          const short = String(r.error).length > 96 ? String(r.error).slice(0, 96) + '…' : String(r.error);
+          if (mount)
+            mount.innerHTML =
+              '<span class="tagfox-navbar-drive-ping text-warning small">' +
+              escStatusHtmlForStatus('Drive API: ' + short) +
+              '</span>';
+        } else {
+          if (mount) mount.innerHTML = '';
+        }
+      } catch (e) {
+        const msg = 'Drive API: ' + String(e.message || e);
+        if (mount)
+          mount.innerHTML =
+            '<span class="tagfox-navbar-drive-ping text-warning small">' + escStatusHtmlForStatus(msg) + '</span>';
+      }
     }
 
     /** Tree + Size/Modified/Name (z/m/n or those headers): Flat on so sort sticks. */
@@ -2145,6 +3808,8 @@
     /** Path folder grouping: synthetic ancestor folders when path-sorted non-flat + subfolders shown. */
     function shouldShowPathFolderGrouping() {
       if (!isTreeViewOn() || sortColumn !== 'path') return false;
+      /* Files-only: list file hits in path order only — no real or synthetic folder rows. */
+      if (isFilesOnly()) return false;
       return isShowSubfolders();
     }
 
@@ -2332,51 +3997,119 @@
       return rel || '—';
     }
 
-    /** Optional substring highlight (#query trim); case-insensitive, all non-overlapping matches. */
-    function appendHighlightedTextInto(el, text, needleLower, needleLen) {
+    /** Highlight #query in a cell: quoted = phrase (flexible \\s+ between tokens); else space = AND (each term anywhere), like Everything nopath. */
+    function appendHighlightedTextInto(el, text, needleRaw) {
       const t = String(text ?? '');
       el.replaceChildren();
-      if (!needleLower || needleLen < 1 || !t) {
+      let needle = String(needleRaw ?? '').trim();
+      if (!needle || !t) {
         el.textContent = t;
         return;
       }
-      const lower = t.toLowerCase();
-      let start = 0;
-      let idx = lower.indexOf(needleLower, start);
-      if (idx < 0) {
+      let quotedPhrase = false;
+      if (
+        (needle.startsWith('"') && needle.endsWith('"') && needle.length >= 2) ||
+        (needle.startsWith("'") && needle.endsWith("'") && needle.length >= 2)
+      ) {
+        quotedPhrase = true;
+        needle = needle.slice(1, -1).trim();
+      }
+      if (!needle) {
         el.textContent = t;
         return;
       }
-      while (idx >= 0) {
-        if (idx > start) el.appendChild(document.createTextNode(t.slice(start, idx)));
-        const mk = document.createElement('mark');
-        mk.className = 'tagfox-query-hit';
-        mk.textContent = t.slice(idx, idx + needleLen);
-        el.appendChild(mk);
-        start = idx + needleLen;
-        idx = lower.indexOf(needleLower, start);
+      const parts = needle.split(/\s+/).filter(Boolean);
+      if (!parts.length) {
+        el.textContent = t;
+        return;
       }
-      if (start < t.length) el.appendChild(document.createTextNode(t.slice(start)));
+      const esc = (p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const escaped = parts.map(esc);
+      const matchCase = !!document.getElementById('optCase')?.checked;
+      const wholeWord = !!document.getElementById('optWholeWord')?.checked;
+      const wrapWw = (e) => (wholeWord ? '\\b' + e + '\\b' : e);
+      const flags = matchCase ? 'g' : 'gi';
+
+      function mergeIntervals(ranges) {
+        ranges.sort((a, b) => a.start - b.start || b.end - a.end);
+        const out = [];
+        for (const r of ranges) {
+          if (!out.length || r.start > out[out.length - 1].end) out.push({ start: r.start, end: r.end });
+          else out[out.length - 1].end = Math.max(out[out.length - 1].end, r.end);
+        }
+        return out;
+      }
+
+      function appendFromMerged(merged) {
+        let last = 0;
+        for (const r of merged) {
+          if (r.start > last) el.appendChild(document.createTextNode(t.slice(last, r.start)));
+          const mk = document.createElement('mark');
+          mk.className = 'tagfox-query-hit';
+          mk.textContent = t.slice(r.start, r.end);
+          el.appendChild(mk);
+          last = r.end;
+        }
+        if (last < t.length) el.appendChild(document.createTextNode(t.slice(last)));
+      }
+
+      try {
+        if (quotedPhrase && parts.length > 1) {
+          const re = new RegExp(escaped.map(wrapWw).join('\\s+'), flags);
+          const merged = [];
+          let m;
+          while ((m = re.exec(t)) !== null) {
+            merged.push({ start: m.index, end: m.index + m[0].length });
+            if (m[0].length === 0) re.lastIndex++;
+          }
+          appendFromMerged(mergeIntervals(merged));
+          return;
+        }
+        if (parts.length === 1) {
+          const re = new RegExp(wrapWw(escaped[0]), flags);
+          const merged = [];
+          let m;
+          while ((m = re.exec(t)) !== null) {
+            merged.push({ start: m.index, end: m.index + m[0].length });
+            if (m[0].length === 0) re.lastIndex++;
+          }
+          appendFromMerged(mergeIntervals(merged));
+          return;
+        }
+        /* Unquoted multi-token: AND — highlight every occurrence of each term. */
+        const merged = [];
+        for (const e of escaped) {
+          const re = new RegExp(wrapWw(e), flags);
+          let m;
+          while ((m = re.exec(t)) !== null) {
+            merged.push({ start: m.index, end: m.index + m[0].length });
+            if (m[0].length === 0) re.lastIndex++;
+          }
+        }
+        appendFromMerged(mergeIntervals(merged));
+      } catch (_) {
+        el.textContent = t;
+      }
     }
 
     /** Fill path cell: muted prefix + stronger final segment (ellipsis still via .path-ellip-start). */
-    function fillPathCellBox(pathBox, displayStr, queryHit) {
+    function fillPathCellBox(pathBox, displayStr, queryNeedle) {
       pathBox.replaceChildren();
       const bdi = document.createElement('bdi');
       bdi.dir = 'ltr';
       const s = String(displayStr ?? '');
-      const hit = queryHit && queryHit.low && queryHit.len > 0 ? queryHit : null;
+      const hit = queryNeedle ? String(queryNeedle) : null;
       const fillSpan = (span, part) => {
         if (!part) {
           span.textContent = '';
           return;
         }
-        if (hit) appendHighlightedTextInto(span, part, hit.low, hit.len);
+        if (hit) appendHighlightedTextInto(span, part, hit);
         else span.textContent = part;
       };
       if (!s || s === '—') {
         const show = s || '—';
-        if (hit) appendHighlightedTextInto(bdi, show, hit.low, hit.len);
+        if (hit) appendHighlightedTextInto(bdi, show, hit);
         else bdi.textContent = show;
         pathBox.appendChild(bdi);
         return;
@@ -2413,6 +4146,102 @@
       localStorage.setItem(LS.favFolders, JSON.stringify(paths.slice(0, 30)));
     }
 
+    /** Per-folder focus counts + last visit (normalized path keys, lowercased) for the Recent bar. */
+    function loadFolderFocusStats() {
+      try {
+        const raw = localStorage.getItem(LS.folderFocusStats);
+        const o = raw ? JSON.parse(raw) : {};
+        if (!o || typeof o !== 'object') return {};
+        const out = {};
+        for (const k of Object.keys(o)) {
+          const v = o[k];
+          if (!v || typeof v !== 'object') continue;
+          const visits = typeof v.visits === 'number' && v.visits >= 0 ? v.visits : 0;
+          const lastTs = typeof v.lastTs === 'number' ? v.lastTs : 0;
+          const p0 = typeof v.path === 'string' && v.path.trim() ? v.path.trim() : k;
+          const norm = normalizeFolderPathForEverything(p0);
+          if (!norm) continue;
+          out[norm.toLowerCase()] = { visits, lastTs, path: norm };
+        }
+        return out;
+      } catch {
+        return {};
+      }
+    }
+
+    function saveFolderFocusStats(o) {
+      try {
+        localStorage.setItem(LS.folderFocusStats, JSON.stringify(o));
+      } catch (_) {}
+    }
+
+    /** Per-file open counts + last open (normalized path keys) for Recent files bar. */
+    function loadFileFocusStats() {
+      try {
+        const raw = localStorage.getItem(LS.fileFocusStats);
+        const o = raw ? JSON.parse(raw) : {};
+        if (!o || typeof o !== 'object') return {};
+        const out = {};
+        for (const k of Object.keys(o)) {
+          const v = o[k];
+          if (!v || typeof v !== 'object') continue;
+          const visits = typeof v.visits === 'number' && v.visits >= 0 ? v.visits : 0;
+          const lastTs = typeof v.lastTs === 'number' ? v.lastTs : 0;
+          const p0 = typeof v.path === 'string' && v.path.trim() ? v.path.trim() : k;
+          const norm = normalizeFolderPathForEverything(p0);
+          if (!norm) continue;
+          out[norm.toLowerCase()] = { visits, lastTs, path: norm };
+        }
+        return out;
+      } catch {
+        return {};
+      }
+    }
+
+    function saveFileFocusStats(o) {
+      try {
+        localStorage.setItem(LS.fileFocusStats, JSON.stringify(o));
+      } catch (_) {}
+    }
+
+    function bumpFileFocusVisit(filePathRaw) {
+      const norm = normalizeFolderPathForEverything(String(filePathRaw || '').trim());
+      if (!norm) return;
+      const o = loadFileFocusStats();
+      const key = norm.toLowerCase();
+      const prev = o[key] || { visits: 0, lastTs: 0, path: norm };
+      o[key] = {
+        path: norm,
+        visits: (prev.visits || 0) + 1,
+        lastTs: Date.now(),
+      };
+      const keys = Object.keys(o);
+      if (keys.length > 280) {
+        keys.sort((a, b) => (o[b].lastTs || 0) - (o[a].lastTs || 0));
+        for (const k of keys.slice(250)) delete o[k];
+      }
+      saveFileFocusStats(o);
+      void renderRecentFilesBar();
+    }
+
+    function bumpFolderFocusVisit(norm) {
+      if (!norm) return;
+      const o = loadFolderFocusStats();
+      const key = norm.toLowerCase();
+      const prev = o[key] || { visits: 0, lastTs: 0, path: norm };
+      o[key] = {
+        path: norm,
+        visits: (prev.visits || 0) + 1,
+        lastTs: Date.now(),
+      };
+      const keys = Object.keys(o);
+      if (keys.length > 220) {
+        keys.sort((a, b) => (o[b].lastTs || 0) - (o[a].lastTs || 0));
+        for (const k of keys.slice(200)) delete o[k];
+      }
+      saveFolderFocusStats(o);
+    }
+
     /** Move item from fromIdx to gap gapIdx (0…length): insert before that slot; keeps keyboard order in sync. */
     function reorderFavListByGap(list, fromIdx, gapIdx) {
       const n = list.length;
@@ -2425,6 +4254,36 @@
       if (ins < 0 || ins > next.length) return list.slice();
       next.splice(ins, 0, item);
       return next;
+    }
+
+    /** Save one folder into favourites at gap 0…n; if already saved, move that existing slot. */
+    function upsertFavouriteFolderAtGap(folderPathRaw, gapIdx) {
+      const folderPath = normalizeFolderPathForEverything(String(folderPathRaw || '').trim());
+      if (!folderPath) return { changed: false, existed: false };
+      const prev = loadFavouriteFolders()
+        .map((p) => normalizeFolderPathForEverything(String(p || '').trim()))
+        .filter(Boolean);
+      const key = folderPath.toLowerCase();
+      const existed = prev.some((p) => p.toLowerCase() === key);
+      const n = prev.length;
+      const safeGapIdx = Number.isFinite(gapIdx) ? Math.max(0, Math.min(gapIdx, n)) : n;
+      let removedBeforeGap = 0;
+      const next = [];
+      for (let i = 0; i < prev.length; i++) {
+        if (prev[i].toLowerCase() === key) {
+          if (i < safeGapIdx) removedBeforeGap += 1;
+          continue;
+        }
+        next.push(prev[i]);
+      }
+      const ins = Math.max(0, Math.min(safeGapIdx - removedBeforeGap, next.length));
+      next.splice(ins, 0, folderPath);
+      const changed =
+        next.length !== prev.length || next.some((p, i) => pathNormKey(p) !== pathNormKey(prev[i] || ''));
+      if (!changed) return { changed: false, existed };
+      saveFavouriteFolders(next);
+      renderFavFoldersBar();
+      return { changed: true, existed };
     }
 
     const SCOPE_FOLDER_HISTORY_MAX = 30;
@@ -2484,43 +4343,36 @@
       refreshTagFoxChromeTooltips(ul);
     }
 
-    function renderFavFoldersBar() {
-      const el = document.getElementById('favFoldersBar');
-      if (!el) return;
-      el.innerHTML = '';
-      const paths = loadFavouriteFolders();
-      if (!paths.length) {
-        el.innerHTML = '<span class="text-muted small fst-italic px-2">Click <i class="fa-solid fa-floppy-disk"></i> to save the current folder</span>';
-        return;
-      }
-      for (let idx = 0; idx < paths.length; idx++) {
-        const fp = paths[idx];
-        const parentNorm = normalizeFolderPathForEverything(fp);
-        const row = document.createElement('span');
-        row.className = 'd-inline-flex align-items-stretch tagfox-fav-chip-row';
-        row.draggable = true;
-        row.dataset.favIdx = String(idx);
-        /* Drag hint lives on .fav-folder-chip-go only — a row-level title/tooltip would cover ✕ / ▾ and steal hover. */
-        const grp = document.createElement('div');
-        grp.className = 'btn-group btn-group-sm fav-folder-chip-group';
-        const go = document.createElement('button');
-        go.type = 'button';
-        /* Amber folder icon + parseSegmentTags pretty + badges; pill colours from #favFoldersBar CSS. */
-        go.className = 'btn btn-sm fav-folder-chip-go d-inline-flex align-items-center flex-wrap gap-1 text-start';
-        const n = String(fp || '').replace(/[/\\]+$/, '');
-        const base = T.baseName(n) || n;
-        const parsed = T.parseSegmentTags(base);
-        let pretty = parsed.pretty || base;
-        const max = 26;
-        if (pretty.length > max) pretty = pretty.slice(0, max - 1) + '…';
-        const lead = document.createElement('span');
-        lead.className = 'd-inline-flex align-items-center gap-1';
-        lead.appendChild(folderIconEl());
-        const nm = document.createElement('span');
-        nm.textContent = pretty;
-        lead.appendChild(nm);
-        go.appendChild(lead);
-        /* × inside LHS (after name); span+role=button — cannot nest <button> in .fav-folder-chip-go. */
+    /**
+     * LHS column: folder chip + ▾ + same subfolder flyouts as breadcrumb; drop target via data-drop-path on .fav-folder-chip-go.
+     * opts.recent: no ×, no reorder slot; opts.removable + favIdx: favourites bar only.
+     */
+    function buildFavColumnFolderChipRowEl(fp, opts) {
+      opts = opts || {};
+      const parentNorm = normalizeFolderPathForEverything(fp);
+      const row = document.createElement('span');
+      row.className = 'd-flex align-items-stretch w-100 tagfox-fav-chip-row';
+      if (Number.isFinite(opts.favIdx)) row.dataset.favIdx = String(opts.favIdx);
+      const grp = document.createElement('div');
+      grp.className = 'btn-group btn-group-sm fav-folder-chip-group';
+      const go = document.createElement('span');
+      go.setAttribute('role', 'button');
+      go.tabIndex = 0;
+      go.draggable = false;
+      go.className = 'btn btn-sm fav-folder-chip-go d-inline-flex align-items-center flex-wrap gap-1 text-start';
+      const n = String(fp || '').replace(/[/\\]+$/, '');
+      const base = T.baseName(n) || n;
+      const parsed = T.parseSegmentTags(base);
+      const pretty = parsed.pretty || base;
+      const lead = document.createElement('span');
+      lead.className = 'd-inline-flex align-items-center gap-1 fav-folder-chip-lead';
+      lead.appendChild(folderIconEl());
+      const nm = document.createElement('span');
+      nm.className = 'fav-folder-chip-name';
+      nm.textContent = pretty;
+      lead.appendChild(nm);
+      go.appendChild(lead);
+      if (opts.removable) {
         const rm = document.createElement('span');
         rm.className = 'fav-folder-chip-remove';
         rm.setAttribute('role', 'button');
@@ -2546,18 +4398,23 @@
           removeThisFav();
         });
         go.appendChild(rm);
-        for (const tag of parsed.tags) {
-          const b = document.createElement('span');
-          b.className = 'badge';
-          b.style.backgroundColor = tagColorCss(tag);
-          b.style.color = '#212529';
-          b.textContent = tag;
-          go.appendChild(b);
-        }
+      }
+      for (const tag of parsed.tags) {
+        const b = document.createElement('span');
+        b.className = 'badge';
+        b.style.backgroundColor = tagColorCss(tag);
+        b.style.color = '#212529';
+        b.textContent = tag;
+        go.appendChild(b);
+      }
+      if (opts.recent) {
+        go.title = fp;
+        go.setAttribute('aria-label', 'Open recent folder ' + fp);
+      } else {
+        const idx = opts.favIdx | 0;
         const slot = idx + 1;
-        // Short hover text; aria-label still has path + keyboard slot.
         go.title =
-          'Drag to reorder.' + (idx < 9 ? ' Shortcut: Ctrl+Shift+' + slot + '.' : '');
+          'Drag to reorder (up/down).' + (idx < 9 ? ' Shortcut: Ctrl+Shift+' + slot + '.' : '');
         go.setAttribute(
           'aria-label',
           'Open favourite folder ' +
@@ -2566,29 +4423,259 @@
             '. ' +
             fp
         );
-        go.addEventListener('click', () => void applySearchScopeAndRefresh(fp));
-        /* Same as breadcrumb: row/Shelf/file drops move or copy (Shift) into this folder. */
-        go.dataset.dropPath = parentNorm;
-        const ddWrap = document.createElement('div');
-        ddWrap.className = 'dropdown';
-        const ddBtn = document.createElement('button');
-        ddBtn.type = 'button';
-        ddBtn.className = 'btn btn-sm dropdown-toggle fav-folder-chip-chevron tagfox-scope-chevron';
-        ddBtn.setAttribute('data-bs-toggle', 'dropdown');
-        ddBtn.setAttribute('data-fav-no-drag', '1');
-        ddBtn.setAttribute('aria-expanded', 'false');
-        ddBtn.setAttribute('aria-label', 'Subfolders of this favourite');
-        /* No tooltip on ▾ — screen reader uses aria-label; avoids clutter next to folder/go tooltips. */
-        ddBtn.innerHTML = '<span class="visually-hidden">Subfolders</span>' + breadcrumbDropdownChevronHtml();
-        const menu = document.createElement('ul');
-        const hl = breadcrumbHighlightChildPathNorm(parentNorm);
-        bindSubfolderDropdownWithFlyouts(ddBtn, menu, ddWrap, parentNorm, hl || '', true);
-        grp.appendChild(go);
-        ddWrap.appendChild(ddBtn);
-        ddWrap.appendChild(menu);
-        grp.appendChild(ddWrap);
-        row.appendChild(grp);
-        el.appendChild(row);
+      }
+      go.addEventListener('click', () => void applySearchScopeAndRefresh(fp));
+      go.addEventListener('keydown', (ev) => {
+        if (ev.key !== 'Enter' && ev.key !== ' ') return;
+        ev.preventDefault();
+        void applySearchScopeAndRefresh(fp);
+      });
+      go.dataset.dropPath = parentNorm;
+      const ddWrap = document.createElement('div');
+      ddWrap.className = 'dropdown';
+      const ddBtn = document.createElement('button');
+      ddBtn.type = 'button';
+      ddBtn.className = 'btn btn-sm dropdown-toggle fav-folder-chip-chevron tagfox-scope-chevron';
+      ddBtn.setAttribute('data-bs-toggle', 'dropdown');
+      ddBtn.setAttribute('data-fav-no-drag', '1');
+      ddBtn.setAttribute('aria-expanded', 'false');
+      ddBtn.setAttribute(
+        'aria-label',
+        opts.recent ? 'Subfolders of this recent folder' : 'Subfolders of this favourite'
+      );
+      ddBtn.innerHTML = '<span class="visually-hidden">Subfolders</span>' + breadcrumbDropdownChevronHtml();
+      const menu = document.createElement('ul');
+      const hl = breadcrumbHighlightChildPathNorm(parentNorm);
+      bindSubfolderDropdownWithFlyouts(ddBtn, menu, ddWrap, parentNorm, hl || '', true, {
+        favColumnSubmenu: true,
+        menuAlignStart: false,
+      });
+      grp.appendChild(go);
+      ddWrap.appendChild(ddBtn);
+      ddWrap.appendChild(menu);
+      grp.appendChild(ddWrap);
+      row.appendChild(grp);
+      return row;
+    }
+
+    /** LHS column: file chip + ▾ (parent folder submenus); opens file with default app / Workspace. */
+    function buildFavColumnFileChipRowEl(fp) {
+      const fileNorm = normalizeFolderPathForEverything(String(fp || '').trim());
+      const parentNorm = normalizeFolderPathForEverything(T.parentDir(fileNorm));
+      const row = document.createElement('span');
+      row.className = 'd-flex align-items-stretch w-100 tagfox-fav-chip-row';
+      const grp = document.createElement('div');
+      grp.className = 'btn-group btn-group-sm fav-folder-chip-group';
+      const go = document.createElement('span');
+      go.setAttribute('role', 'button');
+      go.tabIndex = 0;
+      go.draggable = false;
+      go.className = 'btn btn-sm fav-folder-chip-go d-inline-flex align-items-center flex-wrap gap-1 text-start';
+      const n = String(fileNorm || '').replace(/[/\\]+$/, '');
+      const base = T.baseName(n) || n;
+      const parsed = T.parseSegmentTags(base);
+      const pretty = parsed.pretty || base;
+      const lead = document.createElement('span');
+      lead.className = 'd-inline-flex align-items-center gap-1 fav-folder-chip-lead';
+      lead.appendChild(fileIconEl(fileExtFromPretty(parsed.pretty)));
+      const nm = document.createElement('span');
+      nm.className = 'fav-folder-chip-name';
+      nm.textContent = pretty;
+      lead.appendChild(nm);
+      go.appendChild(lead);
+      for (const tag of parsed.tags) {
+        const b = document.createElement('span');
+        b.className = 'badge';
+        b.style.backgroundColor = tagColorCss(tag);
+        b.style.color = '#212529';
+        b.textContent = tag;
+        go.appendChild(b);
+      }
+      go.title = fileNorm;
+      go.setAttribute('aria-label', 'Open recent file ' + fileNorm);
+      go.addEventListener('click', () => void openFileDefaultOrGoogleWorkspace(fileNorm));
+      go.addEventListener('keydown', (ev) => {
+        if (ev.key !== 'Enter' && ev.key !== ' ') return;
+        ev.preventDefault();
+        void openFileDefaultOrGoogleWorkspace(fileNorm);
+      });
+      go.dataset.dropPath = parentNorm;
+      const ddWrap = document.createElement('div');
+      ddWrap.className = 'dropdown';
+      const ddBtn = document.createElement('button');
+      ddBtn.type = 'button';
+      ddBtn.className = 'btn btn-sm dropdown-toggle fav-folder-chip-chevron tagfox-scope-chevron';
+      ddBtn.setAttribute('data-bs-toggle', 'dropdown');
+      ddBtn.setAttribute('data-fav-no-drag', '1');
+      ddBtn.setAttribute('aria-expanded', 'false');
+      ddBtn.setAttribute('aria-label', 'Subfolders of folder containing this file');
+      ddBtn.innerHTML = '<span class="visually-hidden">Subfolders</span>' + breadcrumbDropdownChevronHtml();
+      const menu = document.createElement('ul');
+      const hl = breadcrumbHighlightChildPathNorm(parentNorm);
+      bindSubfolderDropdownWithFlyouts(ddBtn, menu, ddWrap, parentNorm, hl || '', true, {
+        favColumnSubmenu: true,
+        menuAlignStart: false,
+      });
+      grp.appendChild(go);
+      ddWrap.appendChild(ddBtn);
+      ddWrap.appendChild(menu);
+      grp.appendChild(ddWrap);
+      row.appendChild(grp);
+      return row;
+    }
+
+    function renderFavFoldersBar() {
+      const el = document.getElementById('favFoldersBar');
+      if (!el) return;
+      el.innerHTML = '';
+      const paths = loadFavouriteFolders();
+      if (!paths.length) {
+        el.innerHTML = '<span class="text-muted small fst-italic px-2">Click <i class="fa-solid fa-floppy-disk"></i> to save the current folder</span>';
+        void renderRecentFoldersBar();
+        void renderRecentFilesBar();
+        return;
+      }
+      for (let idx = 0; idx < paths.length; idx++) {
+        el.appendChild(
+          buildFavColumnFolderChipRowEl(paths[idx], { favIdx: idx, removable: true })
+        );
+      }
+      refreshTagFoxChromeTooltips(el);
+      void renderRecentFoldersBar();
+      void renderRecentFilesBar();
+    }
+
+    /** Recent bar (under favourites): merged TagFox visit stats + Windows shell Recent; excludes favourite paths. */
+    async function renderRecentFoldersBar() {
+      const el = document.getElementById('favRecentFoldersBar');
+      if (!el) return;
+      el.innerHTML = '';
+      const favSet = new Set(loadFavouriteFolders().map((p) => String(p).toLowerCase()));
+      const stats = loadFolderFocusStats();
+      let winFolders = [];
+      try {
+        if (window.tagBrowser && typeof window.tagBrowser.windowsRecentFolders === 'function') {
+          const r = await window.tagBrowser.windowsRecentFolders();
+          if (r && r.ok && Array.isArray(r.folders)) winFolders = r.folders;
+        }
+      } catch (_) {}
+      const byKey = new Map();
+      for (const k of Object.keys(stats)) {
+        const ent = stats[k];
+        if (!ent || !ent.path) continue;
+        const norm = normalizeFolderPathForEverything(String(ent.path));
+        if (!norm) continue;
+        const low = norm.toLowerCase();
+        if (favSet.has(low)) continue;
+        byKey.set(low, {
+          path: norm,
+          visits: ent.visits || 0,
+          lastTs: ent.lastTs || 0,
+          winMtimeMs: 0,
+        });
+      }
+      for (const w of winFolders) {
+        const raw = w && w.path ? String(w.path) : '';
+        if (!raw) continue;
+        const norm = normalizeFolderPathForEverything(raw);
+        if (!norm) continue;
+        const low = norm.toLowerCase();
+        if (favSet.has(low)) continue;
+        const mt = typeof w.mtimeMs === 'number' ? w.mtimeMs : 0;
+        if (byKey.has(low)) {
+          const o = byKey.get(low);
+          o.winMtimeMs = Math.max(o.winMtimeMs || 0, mt);
+          o.lastTs = Math.max(o.lastTs || 0, mt);
+        } else {
+          byKey.set(low, { path: norm, visits: 0, lastTs: mt, winMtimeMs: mt });
+        }
+      }
+      const now = Date.now();
+      const ranked = [];
+      for (const v of byKey.values()) {
+        const lastTs = Math.max(v.lastTs || 0, v.winMtimeMs || 0);
+        const ageMs = Math.max(0, now - lastTs);
+        const week = 7 * 24 * 3600000;
+        const recency = Math.exp(-ageMs / week);
+        const freq = Math.log(1 + (v.visits || 0));
+        const score = freq * 2.2 + recency * 3.5;
+        ranked.push({ ...v, lastTs, score });
+      }
+      ranked.sort((a, b) => b.score - a.score);
+      const top = ranked.slice(0, 20);
+      if (!top.length) {
+        el.innerHTML =
+          '<span class="text-muted small fst-italic px-2">Open folders here to build this list</span>';
+        return;
+      }
+      for (const row of top) {
+        el.appendChild(buildFavColumnFolderChipRowEl(row.path, { recent: true }));
+      }
+      refreshTagFoxChromeTooltips(el);
+    }
+
+    /** Recent files: merged TagFox open counts + Windows shell Recent file targets. */
+    async function renderRecentFilesBar() {
+      const el = document.getElementById('favRecentFilesBar');
+      if (!el) return;
+      el.innerHTML = '';
+      const stats = loadFileFocusStats();
+      let winFiles = [];
+      try {
+        if (window.tagBrowser && typeof window.tagBrowser.windowsRecentFiles === 'function') {
+          const r = await window.tagBrowser.windowsRecentFiles();
+          if (r && r.ok && Array.isArray(r.files)) winFiles = r.files;
+        }
+      } catch (_) {}
+      const byKey = new Map();
+      for (const k of Object.keys(stats)) {
+        const ent = stats[k];
+        if (!ent || !ent.path) continue;
+        const norm = normalizeFolderPathForEverything(String(ent.path));
+        if (!norm) continue;
+        const low = norm.toLowerCase();
+        byKey.set(low, {
+          path: norm,
+          visits: ent.visits || 0,
+          lastTs: ent.lastTs || 0,
+          winMtimeMs: 0,
+        });
+      }
+      for (const w of winFiles) {
+        const raw = w && w.path ? String(w.path) : '';
+        if (!raw) continue;
+        const norm = normalizeFolderPathForEverything(raw);
+        if (!norm) continue;
+        const low = norm.toLowerCase();
+        const mt = typeof w.mtimeMs === 'number' ? w.mtimeMs : 0;
+        if (byKey.has(low)) {
+          const o = byKey.get(low);
+          o.winMtimeMs = Math.max(o.winMtimeMs || 0, mt);
+          o.lastTs = Math.max(o.lastTs || 0, mt);
+        } else {
+          byKey.set(low, { path: norm, visits: 0, lastTs: mt, winMtimeMs: mt });
+        }
+      }
+      const now = Date.now();
+      const ranked = [];
+      for (const v of byKey.values()) {
+        const lastTs = Math.max(v.lastTs || 0, v.winMtimeMs || 0);
+        const ageMs = Math.max(0, now - lastTs);
+        const week = 7 * 24 * 3600000;
+        const recency = Math.exp(-ageMs / week);
+        const freq = Math.log(1 + (v.visits || 0));
+        const score = freq * 2.2 + recency * 3.5;
+        ranked.push({ ...v, lastTs, score });
+      }
+      ranked.sort((a, b) => b.score - a.score);
+      const top = ranked.slice(0, 20);
+      if (!top.length) {
+        el.innerHTML =
+          '<span class="text-muted small fst-italic px-2">Open files here to build this list</span>';
+        return;
+      }
+      for (const row of top) {
+        el.appendChild(buildFavColumnFileChipRowEl(row.path));
       }
       refreshTagFoxChromeTooltips(el);
     }
@@ -2607,7 +4694,10 @@
       const chips = [...barEl.querySelectorAll(':scope > .tagfox-fav-chip-row')];
       barEl.dataset.tagfoxGapsInjected = '1';
       barEl.classList.add('tagfox-fav-bar--dnd');
-      if (!chips.length) return;
+      if (!chips.length) {
+        barEl.appendChild(createFavDropGapEl(0));
+        return;
+      }
       barEl.insertBefore(createFavDropGapEl(0), chips[0]);
       for (let i = 0; i < chips.length; i++) {
         const chip = chips[i];
@@ -2615,6 +4705,11 @@
         if (chip.nextSibling) barEl.insertBefore(gap, chip.nextSibling);
         else barEl.appendChild(gap);
       }
+      searchDebugLog('favBar.dnd.injectGaps', {
+        bar: barEl.id,
+        chipRows: chips.length,
+        gapSlots: barEl.querySelectorAll('.tagfox-fav-drop-gap').length,
+      });
     }
 
     function clearFavBarDropGaps(barEl) {
@@ -2641,7 +4736,7 @@
       });
     }
 
-    /** Which gap is closest to the pointer (fallback when hovering a chip). */
+    /** Which gap is closest to the pointer (fallback when not over a chip row). */
     function nearestFavGapIndex(barEl, clientX, clientY) {
       const gaps = [...barEl.querySelectorAll('.tagfox-fav-drop-gap')];
       if (!gaps.length) return 0;
@@ -2660,8 +4755,152 @@
       return best;
     }
 
+    /** Gap index 0…n for reorder: explicit gap hit, else left/right half of chip row (fixes “drop at end” vs nearest-centre). */
+    function favGapIndexFromBarPointer(barEl, clientX, clientY, e) {
+      const raw = e && e.target;
+      const t = raw && raw.nodeType === 3 ? raw.parentElement : raw;
+      const vertical = barEl && barEl.classList && barEl.classList.contains('tagfox-fav-bar--vertical');
+      if (t) {
+        const gEl = t.closest && t.closest('.tagfox-fav-drop-gap');
+        if (gEl && barEl.contains(gEl)) return +gEl.dataset.favGapIdx;
+        const row = t.closest && t.closest('.tagfox-fav-chip-row');
+        if (row && barEl.contains(row)) {
+          const idx = +row.dataset.favIdx;
+          if (Number.isFinite(idx) && idx >= 0) {
+            const gapA = barEl.querySelector('.tagfox-fav-drop-gap[data-fav-gap-idx="' + idx + '"]');
+            const gapB = barEl.querySelector('.tagfox-fav-drop-gap[data-fav-gap-idx="' + (idx + 1) + '"]');
+            if (vertical) {
+              /* Vertical bar: gap idx is above chip idx, gap idx+1 below — split by horizontal midline between gaps. */
+              if (gapA && gapB) {
+                const ra = gapA.getBoundingClientRect();
+                const rb = gapB.getBoundingClientRect();
+                const midY = (ra.bottom + rb.top) / 2;
+                return clientY < midY ? idx : idx + 1;
+              }
+              const goEl = row.querySelector('.fav-folder-chip-go, .fav-search-chip-go');
+              const r = (goEl && goEl.getBoundingClientRect()) || row.getBoundingClientRect();
+              return clientY < r.top + r.height / 2 ? idx : idx + 1;
+            }
+            /* Horizontal bar: midpoint between gap left of chip and gap right of chip. */
+            if (gapA && gapB) {
+              const mid = (gapA.getBoundingClientRect().right + gapB.getBoundingClientRect().left) / 2;
+              return clientX < mid ? idx : idx + 1;
+            }
+            const goEl = row.querySelector('.fav-folder-chip-go, .fav-search-chip-go');
+            const r = (goEl && goEl.getBoundingClientRect()) || row.getBoundingClientRect();
+            return clientX < r.left + r.width / 2 ? idx : idx + 1;
+          }
+        }
+      }
+      return nearestFavGapIndex(barEl, clientX, clientY);
+    }
+
     let favouriteBarsReorderBound = false;
-    /** One-time: HTML5 drag-drop reorder on #favFoldersBar / #favSearchesBar (not subfolder ▾ / ✕). */
+    let suppressNextFavGoClick = false;
+    let favFolderPointerState = null;
+    /** Favourite folders (LHS column): pointer-driven reorder — HTML5 drag/drop fails in Electron here. */
+    function bindFavFoldersPointerReorderOnce() {
+      const barEl = document.getElementById('favFoldersBar');
+      if (!barEl || barEl.dataset.tagfoxFavPointerBound === '1') return;
+      barEl.dataset.tagfoxFavPointerBound = '1';
+      const DRAG_THR2 = 5 * 5;
+
+      function onPointerMove(e) {
+        const state = favFolderPointerState;
+        if (!state) return;
+        const dx = e.clientX - state.startX;
+        const dy = e.clientY - state.startY;
+        if (!state.active) {
+          if (dx * dx + dy * dy < DRAG_THR2) return;
+          state.active = true;
+          favListDragKind = 'folder';
+          injectFavBarDropGaps(barEl);
+          state.row.classList.add('tagfox-fav-chip-row--dragging');
+        }
+        e.preventDefault();
+        const gapIdx = favGapIndexFromBarPointer(barEl, e.clientX, e.clientY, e);
+        setActiveFavDropGap(barEl, gapIdx);
+        state.lastGapIdx = gapIdx;
+      }
+
+      function onPointerUp(e) {
+        const state = favFolderPointerState;
+        favFolderPointerState = null;
+        document.removeEventListener('pointermove', onPointerMove);
+        document.removeEventListener('pointerup', onPointerUp);
+        document.removeEventListener('pointercancel', onPointerUp);
+        if (!state) return;
+        if (!state.active) return;
+        const fromIdx = state.fromIdx;
+        state.row.classList.remove('tagfox-fav-chip-row--dragging');
+        clearFavBarDropGaps(barEl);
+        favListDragKind = null;
+        const gapIdx = Number.isFinite(state.lastGapIdx)
+          ? state.lastGapIdx
+          : favGapIndexFromBarPointer(barEl, e.clientX, e.clientY, e);
+        if (!Number.isFinite(gapIdx)) return;
+        const list = loadFavouriteFolders();
+        if (fromIdx < 0 || fromIdx >= list.length) return;
+        const next = reorderFavListByGap(list, fromIdx, gapIdx);
+        let unchanged = list.length === next.length;
+        if (unchanged) {
+          for (let i = 0; i < list.length; i++) {
+            if (list[i] !== next[i]) {
+              unchanged = false;
+              break;
+            }
+          }
+        }
+        if (unchanged) return;
+        suppressNextFavGoClick = true;
+        saveFavouriteFolders(next);
+        renderFavFoldersBar();
+        const st = document.getElementById('statusMain');
+        if (st) setStatusMain('Favourite folders reordered.');
+      }
+
+      barEl.addEventListener(
+        'pointerdown',
+        (e) => {
+          if (e.button !== 0) return;
+          if (document.querySelector('.modal.show')) return;
+          if (e.target.closest && e.target.closest('[data-fav-no-drag="1"]')) return;
+          const go = e.target.closest && e.target.closest('.fav-folder-chip-go');
+          if (!go || !barEl.contains(go)) return;
+          const row = go.closest('.tagfox-fav-chip-row');
+          if (!row) return;
+          const fromIdx = +row.dataset.favIdx;
+          if (!Number.isFinite(fromIdx)) return;
+          favFolderPointerState = {
+            fromIdx,
+            row,
+            startX: e.clientX,
+            startY: e.clientY,
+            active: false,
+            lastGapIdx: null,
+          };
+          document.addEventListener('pointermove', onPointerMove);
+          document.addEventListener('pointerup', onPointerUp);
+          document.addEventListener('pointercancel', onPointerUp);
+        },
+        true
+      );
+
+      barEl.addEventListener(
+        'click',
+        (e) => {
+          if (!suppressNextFavGoClick) return;
+          const go = e.target.closest && e.target.closest('.fav-folder-chip-go');
+          if (!go || !barEl.contains(go)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          suppressNextFavGoClick = false;
+        },
+        true
+      );
+    }
+
+    /** One-time: HTML5 drag-drop reorder on #favSearchesBar only (#favFoldersBar uses pointer reorder). */
     function bindFavouriteBarsDragReorderOnce() {
       if (favouriteBarsReorderBound) return;
       favouriteBarsReorderBound = true;
@@ -2669,22 +4908,58 @@
       function wire(barEl, kind) {
         if (!barEl) return;
         const dndKey = kind === 'folder' ? 'tagfox-fav:folder' : 'tagfox-fav:search';
+        let lastLoggedGapIdx = -1;
+        const dropEl = barEl;
 
         barEl.addEventListener(
           'dragstart',
           (e) => {
             if (document.querySelector('.modal.show')) {
               e.preventDefault();
+              searchDebugLog('favBar.dnd.dragstart', { bar: barEl.id, kind, phase: 'blocked', reason: 'modal' });
               return;
             }
-            const row = e.target.closest('.tagfox-fav-chip-row');
-            if (!row || !barEl.contains(row)) return;
-            if (e.target.closest('[data-fav-no-drag="1"]')) {
+            const t = e.target && e.target.nodeType === 3 ? e.target.parentElement : e.target;
+            if (!t || typeof t.closest !== 'function') {
+              searchDebugLog('favBar.dnd.dragstart', { bar: barEl.id, kind, phase: 'blocked', reason: 'noTargetElement' });
+              return;
+            }
+            const row = t.closest('.tagfox-fav-chip-row');
+            if (!row || !barEl.contains(row)) {
+              searchDebugLog('favBar.dnd.dragstart', {
+                bar: barEl.id,
+                kind,
+                phase: 'blocked',
+                reason: 'noChipRow',
+                tag: t.tagName,
+                inBar: !!(row && barEl.contains(row)),
+              });
+              return;
+            }
+            if (t.closest('[data-fav-no-drag="1"]')) {
               e.preventDefault();
+              searchDebugLog('favBar.dnd.dragstart', { bar: barEl.id, kind, phase: 'blocked', reason: 'noDragZone', tag: t.tagName });
               return;
             }
             const idx = +row.dataset.favIdx;
-            if (!Number.isFinite(idx) || idx < 0) return;
+            if (!Number.isFinite(idx) || idx < 0) {
+              searchDebugLog('favBar.dnd.dragstart', { bar: barEl.id, kind, phase: 'blocked', reason: 'badFavIdx', raw: row.dataset.favIdx });
+              return;
+            }
+            const rr = row.getBoundingClientRect();
+            searchDebugLog('favBar.dnd.dragstart', {
+              bar: barEl.id,
+              kind,
+              phase: 'ok',
+              favIdx: idx,
+              targetTag: t.tagName,
+              targetClass: t.className && String(t.className).slice(0, 160),
+              clientX: e.clientX,
+              clientY: e.clientY,
+              rowLeft: Math.round(rr.left),
+              rowRight: Math.round(rr.right),
+              rowWidth: Math.round(rr.width),
+            });
             favListDragKind = kind;
             e.dataTransfer.setData('text/plain', dndKey + ':' + idx);
             e.dataTransfer.effectAllowed = 'move';
@@ -2696,41 +4971,66 @@
         );
 
         barEl.addEventListener('dragend', () => {
+          searchDebugLog('favBar.dnd.dragend', { bar: barEl.id, kind, lastGapHover: lastLoggedGapIdx });
+          lastLoggedGapIdx = -1;
           favListDragKind = null;
           document.querySelectorAll('.tagfox-fav-chip-row--dragging').forEach((n) => n.classList.remove('tagfox-fav-chip-row--dragging'));
           clearAllFavBarDropGaps();
         });
 
-        barEl.addEventListener('dragover', (e) => {
+        dropEl.addEventListener('dragover', (e) => {
           if (favListDragKind !== kind) return;
           e.preventDefault();
           e.dataTransfer.dropEffect = 'move';
           if (barEl.dataset.tagfoxGapsInjected !== '1') injectFavBarDropGaps(barEl);
-          const gEl = e.target.closest('.tagfox-fav-drop-gap');
-          const gapIdx = gEl && barEl.contains(gEl) ? +gEl.dataset.favGapIdx : nearestFavGapIndex(barEl, e.clientX, e.clientY);
+          const gapIdx = favGapIndexFromBarPointer(barEl, e.clientX, e.clientY, e);
+          if (gapIdx !== lastLoggedGapIdx) {
+            lastLoggedGapIdx = gapIdx;
+            searchDebugLog('favBar.dnd.gapHover', { bar: barEl.id, kind, gapIdx, clientX: e.clientX, clientY: e.clientY });
+          }
           setActiveFavDropGap(barEl, gapIdx);
         });
 
-        barEl.addEventListener('drop', (e) => {
-          if (favListDragKind !== kind) return;
+        dropEl.addEventListener('drop', (e) => {
+          if (favListDragKind !== kind) {
+            searchDebugLog('favBar.dnd.drop', {
+              bar: barEl.id,
+              kind,
+              phase: 'ignored',
+              reason: 'favListDragKindMismatch',
+              favListDragKind,
+            });
+            return;
+          }
           e.preventDefault();
           const raw = e.dataTransfer.getData('text/plain');
           const re = kind === 'folder' ? /^tagfox-fav:folder:(\d+)$/ : /^tagfox-fav:search:(\d+)$/;
           const m = raw.match(re);
           if (!m) {
+            searchDebugLog('favBar.dnd.drop', {
+              bar: barEl.id,
+              kind,
+              phase: 'blocked',
+              reason: 'badPlaintext',
+              raw: String(raw).slice(0, 120),
+              clientX: e.clientX,
+              clientY: e.clientY,
+            });
             clearAllFavBarDropGaps();
             return;
           }
           const fromIdx = +m[1];
           if (!Number.isFinite(fromIdx)) {
+            searchDebugLog('favBar.dnd.drop', { bar: barEl.id, kind, phase: 'blocked', reason: 'badFromIdx' });
             clearAllFavBarDropGaps();
             return;
           }
-          let gapIdx;
-          const gHit = e.target.closest('.tagfox-fav-drop-gap');
-          if (gHit && barEl.contains(gHit)) gapIdx = +gHit.dataset.favGapIdx;
-          else gapIdx = nearestFavGapIndex(barEl, e.clientX, e.clientY);
+          const gapIdx = favGapIndexFromBarPointer(barEl, e.clientX, e.clientY, e);
+          const tgt = e.target && e.target.nodeType === 3 ? e.target.parentElement : e.target;
+          const tgtTag = tgt && tgt.tagName;
+          const hitGap = tgt && tgt.closest && tgt.closest('.tagfox-fav-drop-gap');
           if (!Number.isFinite(gapIdx)) {
+            searchDebugLog('favBar.dnd.drop', { bar: barEl.id, kind, phase: 'blocked', reason: 'badGapIdx', fromIdx, clientX: e.clientX });
             clearAllFavBarDropGaps();
             return;
           }
@@ -2738,18 +5038,46 @@
           if (kind === 'folder') {
             const list = loadFavouriteFolders();
             if (fromIdx >= list.length) {
+              searchDebugLog('favBar.dnd.drop', { bar: barEl.id, kind, phase: 'blocked', reason: 'fromIdxOOB', fromIdx, listLen: list.length });
               clearAllFavBarDropGaps();
               return;
             }
-            saveFavouriteFolders(reorderFavListByGap(list, fromIdx, gapIdx));
+            const next = reorderFavListByGap(list, fromIdx, gapIdx);
+            searchDebugLog('favBar.dnd.drop', {
+              bar: barEl.id,
+              kind,
+              phase: 'ok',
+              fromIdx,
+              gapIdx,
+              listLen: list.length,
+              hitGap: !!hitGap,
+              dropTargetTag: tgtTag,
+              clientX: e.clientX,
+              clientY: e.clientY,
+            });
+            saveFavouriteFolders(next);
             renderFavFoldersBar();
           } else {
             const list = loadFavouriteSearches();
             if (fromIdx >= list.length) {
+              searchDebugLog('favBar.dnd.drop', { bar: barEl.id, kind, phase: 'blocked', reason: 'fromIdxOOB', fromIdx, listLen: list.length });
               clearAllFavBarDropGaps();
               return;
             }
-            saveFavouriteSearches(reorderFavListByGap(list, fromIdx, gapIdx));
+            const next = reorderFavListByGap(list, fromIdx, gapIdx);
+            searchDebugLog('favBar.dnd.drop', {
+              bar: barEl.id,
+              kind,
+              phase: 'ok',
+              fromIdx,
+              gapIdx,
+              listLen: list.length,
+              hitGap: !!hitGap,
+              dropTargetTag: tgtTag,
+              clientX: e.clientX,
+              clientY: e.clientY,
+            });
+            saveFavouriteSearches(next);
             renderFavSearchesBar();
           }
           clearAllFavBarDropGaps();
@@ -2758,7 +5086,6 @@
         });
       }
 
-      wire(document.getElementById('favFoldersBar'), 'folder');
       wire(document.getElementById('favSearchesBar'), 'search');
     }
 
@@ -2774,6 +5101,29 @@
 
     function saveFavouriteSearches(entries) {
       localStorage.setItem(LS.favSearches, JSON.stringify(entries.slice(0, 30)));
+    }
+
+    /* Index for deleteSavedSearchModal confirm; cleared when modal closes. */
+    let pendingRemoveFavSearchIdx = null;
+
+    /** Open Bootstrap confirm before removing slot idx from saved searches. */
+    function openRemoveSavedSearchConfirm(idx) {
+      const list = loadFavouriteSearches();
+      if (idx < 0 || idx >= list.length) return;
+      pendingRemoveFavSearchIdx = idx;
+      const n = idx + 1;
+      const q = list[idx].query != null ? String(list[idx].query).trim() : '';
+      const bodyEl = document.getElementById('deleteSavedSearchModalBody');
+      const modalEl = document.getElementById('deleteSavedSearchModal');
+      if (bodyEl) {
+        let msg = 'Remove saved search #' + n + ' from the bar? This only removes the shortcut, not any files.';
+        if (q) {
+          const short = q.length > 80 ? q.slice(0, 77) + '…' : q;
+          msg = 'Remove saved search #' + n + ' (“' + short + '”)? This only removes the shortcut, not any files.';
+        }
+        bodyEl.textContent = msg;
+      }
+      if (modalEl) bootstrap.Modal.getOrCreateInstance(modalEl).show();
     }
 
     /** Tooltip: full snapshot summary (same fields as search history). slotIdx 0–8 → Ctrl+1…9 in the shortcuts table. */
@@ -2842,14 +5192,15 @@
       entries.forEach((s, idx) => {
         const row = document.createElement('span');
         row.className = 'd-inline-flex align-items-stretch tagfox-fav-chip-row';
-        row.draggable = true;
         row.dataset.favIdx = String(idx);
         /* Same as folder chips: no row-level tooltip (would overlap ✕). Drag line prepended onto go below. */
         const grp = document.createElement('div');
         grp.className = 'btn-group btn-group-sm fav-search-chip-group';
         const n = idx + 1;
-        const go = document.createElement('button');
-        go.type = 'button';
+        const go = document.createElement('span');
+        go.setAttribute('role', 'button');
+        go.tabIndex = 0;
+        go.draggable = true;
         go.className = 'btn btn-sm fav-search-chip-go d-inline-flex align-items-center gap-1';
         const slotNum = document.createElement('span');
         slotNum.textContent = String(n);
@@ -2863,24 +5214,16 @@
         rm.setAttribute('aria-label', 'Remove saved search');
         rm.title = 'Remove saved search';
         rm.innerHTML = '<i class="fa-solid fa-xmark fa-sm" aria-hidden="true"></i>';
-        const removeThisSearch = () => {
-          const next = loadFavouriteSearches();
-          if (idx >= 0 && idx < next.length) {
-            next.splice(idx, 1);
-            saveFavouriteSearches(next);
-          }
-          renderFavSearchesBar();
-        };
         rm.addEventListener('click', (e) => {
           e.stopPropagation();
           e.preventDefault();
-          removeThisSearch();
+          openRemoveSavedSearchConfirm(idx);
         });
         rm.addEventListener('keydown', (e) => {
           if (e.key !== 'Enter' && e.key !== ' ') return;
           e.preventDefault();
           e.stopPropagation();
-          removeThisSearch();
+          openRemoveSavedSearchConfirm(idx);
         });
         go.appendChild(rm);
         const a11y =
@@ -2891,6 +5234,11 @@
         go.setAttribute('aria-label', a11y);
         go.title = 'Drag to reorder.\n\n' + favouriteSearchTooltip(s, idx);
         go.addEventListener('click', () => void applyFavouriteSearchState(s));
+        go.addEventListener('keydown', (ev) => {
+          if (ev.key !== 'Enter' && ev.key !== ' ') return;
+          ev.preventDefault();
+          void applyFavouriteSearchState(s);
+        });
         grp.appendChild(go);
         row.appendChild(grp);
         el.appendChild(row);
@@ -2995,20 +5343,155 @@
       return '<i class="fa-solid fa-chevron-down fa-fw" aria-hidden="true"></i>';
     }
 
+    /** Scope bars that can host folder-drop pills and subfolder ▾ toggles. */
+    const SCOPE_FOLDER_DROP_BAR_IDS = ['breadcrumbBar', 'favFoldersBar', 'favRecentFoldersBar', 'favRecentFilesBar'];
+    /** Breadcrumb / fav / recent ▾ toggles — derived from the same bar list to keep hover/drag logic in sync. */
+    const SCOPE_FOLDER_SUBMENU_DD_TOGGLE_SEL = SCOPE_FOLDER_DROP_BAR_IDS.map((id) => `#${id} [data-bs-toggle="dropdown"]`).join(', ');
+
+    /** Open one scope ▾ and close the others (Bootstrap). Used by hover and by dragover — DnD does not fire mouseenter. */
+    function showScopeSubfolderDropdownToggle(toggleEl) {
+      if (!toggleEl || toggleEl.getAttribute('data-bs-toggle') !== 'dropdown') return;
+      document.querySelectorAll(SCOPE_FOLDER_SUBMENU_DD_TOGGLE_SEL).forEach((btn) => {
+        if (btn === toggleEl) return;
+        const o = bootstrap.Dropdown.getInstance(btn);
+        if (o) o.hide();
+      });
+      bootstrap.Dropdown.getOrCreateInstance(toggleEl).show();
+    }
+
+    /**
+     * During HTML5 drag, e.target is often wrong (Electron); use elementFromPoint fallback.
+     * @returns {{ barId: string, dd: Element, tgl: Element | null, hitSource: string } | null}
+     */
+    function resolveScopeDropdownFromDragEvent(e) {
+      let el = e.target;
+      if (el && el.nodeType === 3) el = el.parentElement;
+      let dd = el && el.closest && el.closest('.dropdown');
+      let hitSource = 'target.closest';
+      if (!dd) {
+        try {
+          const hit = document.elementFromPoint(e.clientX, e.clientY);
+          dd = hit && hit.closest && hit.closest('.dropdown');
+          hitSource = hit ? 'elementFromPoint' : 'elementFromPoint-null';
+        } catch (err) {
+          hitSource = 'elementFromPoint-error:' + String(err && err.message ? err.message : err);
+        }
+      }
+      if (!dd) return null;
+      for (const id of SCOPE_FOLDER_DROP_BAR_IDS) {
+        const bar = document.getElementById(id);
+        if (bar && bar.contains(dd)) {
+          const tgl = dd.querySelector('[data-bs-toggle="dropdown"]');
+          return { barId: id, dd, tgl, hitSource };
+        }
+      }
+      return null;
+    }
+
+    let scopeFolderDropdownDragCaptureBound = false;
+    /** document capture + hit-test: bar listeners often miss dragover target during row→breadcrumb drags. */
+    function bindScopeFolderDropdownDragCaptureOnce() {
+      if (scopeFolderDropdownDragCaptureBound) return;
+      scopeFolderDropdownDragCaptureBound = true;
+      let lastDdDebugAt = 0;
+      document.addEventListener(
+        'dragover',
+        (e) => {
+          if (favListDragKind === 'folder' && !dataTransferHasTagBrowserOrFiles(e.dataTransfer)) return;
+          if (!dataTransferHasTagBrowserOrFiles(e.dataTransfer)) {
+            setFavColumnDragPeek(false);
+            return;
+          }
+          const favCol = document.getElementById('favFoldersColumn');
+          const overFavCol =
+            !!favCol &&
+            e.clientX >= favCol.getBoundingClientRect().left &&
+            e.clientX <= favCol.getBoundingClientRect().right &&
+            e.clientY >= favCol.getBoundingClientRect().top &&
+            e.clientY <= favCol.getBoundingClientRect().bottom;
+          setFavColumnDragPeek(overFavCol);
+          const resolved = resolveScopeDropdownFromDragEvent(e);
+          const now = Date.now();
+          const debugOk = isSearchDebugOn() && now - lastDdDebugAt > 320;
+          if (debugOk) lastDdDebugAt = now;
+          let types = [];
+          try {
+            types = [...e.dataTransfer.types];
+          } catch (_) {}
+          if (!resolved || !resolved.tgl) {
+            if (debugOk) {
+              searchDebugLog('folderPathDrop.dd.capture', {
+                phase: !resolved ? 'no-scope-dropdown' : 'dropdown-no-toggle',
+                barId: resolved && resolved.barId,
+                hitSource: resolved && resolved.hitSource,
+                tag: e.target && e.target.tagName,
+                types,
+                hasTagFoxMime: dataTransferHasTagBrowserPaths(e.dataTransfer),
+                nativePathStash: !!(tagBrowserActiveNativeDragPaths && tagBrowserActiveNativeDragPaths.length),
+              });
+            }
+            return;
+          }
+          if (debugOk) {
+            searchDebugLog('folderPathDrop.dd.capture', {
+              phase: 'show',
+              barId: resolved.barId,
+              hitSource: resolved.hitSource,
+              toggleId: resolved.tgl.id || '',
+              ariaExpanded: resolved.tgl.getAttribute('aria-expanded'),
+              types,
+              hasTagFoxMime: dataTransferHasTagBrowserPaths(e.dataTransfer),
+              nativePathStash: !!(tagBrowserActiveNativeDragPaths && tagBrowserActiveNativeDragPaths.length),
+            });
+          }
+          e.preventDefault();
+          e.dataTransfer.dropEffect = e.shiftKey ? 'copy' : 'move';
+          showScopeSubfolderDropdownToggle(resolved.tgl);
+        },
+        true
+      );
+    }
+
     /**
      * Hover opens ▾ menus (click still works). No mouseleave-close: flyouts live on document.body; the pointer must
      * leave .dropdown to reach them. Other ▾ close on this menu’s mouseenter; their hidden.bs.dropdown clears flyouts.
      */
     function bindBreadcrumbDropdownHover(ddWrap, toggleEl) {
+      let openTimer = null;
       ddWrap.addEventListener('mouseenter', () => {
-        document
-          .querySelectorAll('#breadcrumbBar [data-bs-toggle="dropdown"], #favFoldersBar [data-bs-toggle="dropdown"]')
-          .forEach((btn) => {
-            if (btn === toggleEl) return;
-            const o = bootstrap.Dropdown.getInstance(btn);
-            if (o) o.hide();
-          });
-        bootstrap.Dropdown.getOrCreateInstance(toggleEl).show();
+        if (openTimer) clearTimeout(openTimer);
+        openTimer = setTimeout(() => {
+          openTimer = null;
+          showScopeSubfolderDropdownToggle(toggleEl);
+        }, 150);
+      });
+      ddWrap.addEventListener('mouseleave', () => {
+        if (openTimer) { clearTimeout(openTimer); openTimer = null; }
+      });
+    }
+
+    /** LHS fav column: subfolder list opens to the right of ▾; clamp to viewport. */
+    function positionFavSubfolderDropdownMenu(ddBtn, menu) {
+      if (!ddBtn || !menu) return;
+      const r = ddBtn.getBoundingClientRect();
+      menu.style.position = 'fixed';
+      menu.style.margin = '0';
+      menu.style.transform = 'none';
+      menu.style.maxWidth = 'min(26rem, calc(100vw - 2rem))';
+      menu.style.width = 'max-content';
+      menu.style.top = r.top + 'px';
+      menu.style.zIndex = '1060';
+      menu.style.right = 'auto';
+      let left = r.right + 4;
+      menu.style.left = left + 'px';
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const mw = menu.offsetWidth || 0;
+          let L = r.right + 4;
+          if (L + mw > window.innerWidth - 8) L = Math.max(8, window.innerWidth - mw - 8);
+          menu.style.left = L + 'px';
+          menu.classList.add('tagfox-fav-dd-placed');
+        });
       });
     }
 
@@ -3016,9 +5499,33 @@
      * Trailing-▾ pattern: list direct subfolders of parentPathRaw + chained ul.breadcrumb-folder-flyout (same IPC as breadcrumb).
      * highlightPathNorm: optional path segment hint along current scope. hoverOpen: hover-opens-menu on ddWrap (breadcrumb + favourites; fav wraps only ▾ + menu so Go isn’t hijacked).
      */
-    function bindSubfolderDropdownWithFlyouts(ddBtn, menu, ddWrap, parentPathRaw, highlightPathNorm, hoverOpen) {
+    function bindSubfolderDropdownWithFlyouts(ddBtn, menu, ddWrap, parentPathRaw, highlightPathNorm, hoverOpen, opts) {
+      opts = opts || {};
       const parentForList = normalizeFolderPathForEverything(parentPathRaw);
-      menu.className = 'dropdown-menu dropdown-menu-start py-1 small shadow';
+      menu.className =
+        'dropdown-menu py-1 small shadow' + (opts.menuAlignStart === false ? '' : ' dropdown-menu-start');
+      if (opts.favColumnSubmenu) {
+        ddWrap.setAttribute('data-bs-display', 'static');
+        ddBtn.removeAttribute('data-bs-placement');
+        ddBtn.addEventListener('shown.bs.dropdown', function favSubmenuPlace() {
+          requestAnimationFrame(() => requestAnimationFrame(() => positionFavSubfolderDropdownMenu(ddBtn, menu)));
+        });
+        ddBtn.addEventListener('hidden.bs.dropdown', function favSubmenuClearPlace() {
+          menu.classList.remove('tagfox-fav-dd-placed');
+          menu.style.position = '';
+          menu.style.left = '';
+          menu.style.top = '';
+          menu.style.margin = '';
+          menu.style.transform = '';
+          menu.style.zIndex = '';
+          menu.style.maxWidth = '';
+          menu.style.width = '';
+          menu.style.right = '';
+        });
+      } else {
+        ddWrap.removeAttribute('data-bs-display');
+        ddBtn.removeAttribute('data-bs-placement');
+      }
       menu.style.maxHeight = 'min(50vh, 280px)';
       menu.style.overflow = 'auto';
       menu.addEventListener('scroll', () => repositionBreadcrumbFlyoutChain());
@@ -3054,6 +5561,13 @@
         void (async () => {
           const r = await window.tagBrowser.listChildFolders({ parentPath: parentForList });
           menu.innerHTML = '';
+          function repositionFavMenuIfNeeded() {
+            if (opts.favColumnSubmenu) {
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => positionFavSubfolderDropdownMenu(ddBtn, menu))
+              );
+            }
+          }
           if (!r || !r.ok) {
             const li0 = document.createElement('li');
             li0.innerHTML =
@@ -3061,6 +5575,7 @@
               (r && r.error ? String(r.error) : 'Could not list folders') +
               '</span>';
             menu.appendChild(li0);
+            repositionFavMenuIfNeeded();
             return;
           }
           const folders = r.folders || [];
@@ -3068,11 +5583,13 @@
             const li0 = document.createElement('li');
             li0.innerHTML = '<span class="dropdown-item-text text-muted">(no subfolders)</span>';
             menu.appendChild(li0);
+            repositionFavMenuIfNeeded();
             return;
           }
-          const opts = { onMouseLeaveRow: scheduleHideBreadcrumbSubfolderFlyout };
-          if (highlightPathNorm) opts.highlightPathNorm = highlightPathNorm;
-          appendBreadcrumbFolderListItems(menu, folders, ddBtn, 0, opts);
+          const listOpts = { onMouseLeaveRow: scheduleHideBreadcrumbSubfolderFlyout };
+          if (highlightPathNorm) listOpts.highlightPathNorm = highlightPathNorm;
+          appendBreadcrumbFolderListItems(menu, folders, ddBtn, 0, listOpts);
+          repositionFavMenuIfNeeded();
         })();
       });
       if (hoverOpen && ddWrap) bindBreadcrumbDropdownHover(ddWrap, ddBtn);
@@ -3103,6 +5620,7 @@
         fly.innerHTML = '';
         fly._anchorLi = null;
       }
+      syncFavColumnFlyoutPeek();
     }
 
     function breadcrumbSubfolderFlyoutsAreOpen() {
@@ -3153,7 +5671,15 @@
         const fr = fly.getBoundingClientRect();
         let left = r.right + 2;
         let top = r.top;
-        if (left + fr.width > window.innerWidth - 8) left = Math.max(8, r.left - fr.width - 2);
+        const anchorInFavCol =
+          li.closest &&
+          (li.closest('#favFoldersBar') || li.closest('#favRecentFoldersBar') || li.closest('#favRecentFilesBar'));
+        /* LHS fav / Recent: keep chained panels opening to the right; only clamp (don’t flip left of row). */
+        if (anchorInFavCol) {
+          if (left + fr.width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - fr.width - 8);
+        } else if (left + fr.width > window.innerWidth - 8) {
+          left = Math.max(8, r.left - fr.width - 2);
+        }
         if (top + fr.height > window.innerHeight - 8) top = Math.max(8, window.innerHeight - fr.height - 8);
         fly.style.left = left + 'px';
         fly.style.top = top + 'px';
@@ -3278,10 +5804,14 @@
           cancelBreadcrumbFlyoutHideTimer();
           void openBreadcrumbSubfolderFlyoutForPath(f.fullPath, li, toggleBtn, openFlyoutAtDepth);
         };
-        /* Same path as keyboard: focus the row button so Bootstrap :focus styling applies (avoid hover-only vs focus-only mismatch). */
+        /* Hover: focus button for Bootstrap :focus styling AND open flyout directly.
+           Don't rely on focusin alone — focus may already be on b (e.g., keyboard-focused row whose flyout
+           was timed-out closed after the mouse strayed), in which case b.focus() is a no-op and focusin never fires. */
         li.addEventListener('mouseenter', () => {
           if (document.activeElement !== b) b.focus({ preventScroll: true });
+          onEnterRow();
         });
+        /* Keyboard nav: arrow keys move focus → focusin → open flyout. */
         li.addEventListener('focusin', (ev) => {
           if (ev.target === b) onEnterRow();
         });
@@ -3304,52 +5834,60 @@
 
     /** @returns {Promise<void>} */
     async function openBreadcrumbSubfolderFlyoutForPath(parentPath, anchorLi, subBtnToggle, depth) {
-      if (depth > BREADCRUMB_FLYOUT_MAX_DEPTH) return;
-      closeBreadcrumbFlyoutsDeeperThan(depth);
-      const fly = ensureBreadcrumbFlyoutAtDepth(depth);
-      if (!fly) return;
-      fly._anchorLi = anchorLi;
-      fly._subBtnToggle = subBtnToggle;
-      fly._loadGen = (fly._loadGen | 0) + 1;
-      const loadGen = fly._loadGen;
-      fly.innerHTML =
-        '<li><span class="dropdown-item-text text-muted">' +
-        (window.tagBrowser.listChildFolders ? 'Loading…' : 'Not available') +
-        '</span></li>';
-      fly.classList.add('is-open');
-      positionBreadcrumbFlyoutAtDepth(depth);
-      if (!window.tagBrowser.listChildFolders) return;
-      const r = await window.tagBrowser.listChildFolders({ parentPath });
-      if (fly._loadGen !== loadGen || fly._anchorLi !== anchorLi) return;
-      if (!subBtnToggle.isConnected) {
-        hideBreadcrumbSubfolderFlyout();
-        return;
-      }
-      if (subBtnToggle.getAttribute('aria-expanded') !== 'true') {
-        hideBreadcrumbSubfolderFlyout();
-        return;
-      }
-      fly.innerHTML = '';
-      fly._subBtnToggle = subBtnToggle;
-      if (!r || !r.ok) {
-        const li0 = document.createElement('li');
-        li0.innerHTML =
-          '<span class="dropdown-item-text text-danger small">' +
-          (r && r.error ? String(r.error) : 'Could not list folders') +
-          '</span>';
-        fly.appendChild(li0);
+      try {
+        if (depth > BREADCRUMB_FLYOUT_MAX_DEPTH) return;
+        /* Idempotent: same row already opened at this depth → skip (avoids double-load when mouseenter focuses
+           the button and synchronously triggers focusin, both calling this opener). */
+        const existing = breadcrumbSubfolderFlyoutChain[depth];
+        if (existing && existing.classList.contains('is-open') && existing._anchorLi === anchorLi) return;
+        closeBreadcrumbFlyoutsDeeperThan(depth);
+        const fly = ensureBreadcrumbFlyoutAtDepth(depth);
+        if (!fly) return;
+        fly._anchorLi = anchorLi;
+        fly._subBtnToggle = subBtnToggle;
+        fly._loadGen = (fly._loadGen | 0) + 1;
+        const loadGen = fly._loadGen;
+        fly.innerHTML =
+          '<li><span class="dropdown-item-text text-muted">' +
+          (window.tagBrowser.listChildFolders ? 'Loading…' : 'Not available') +
+          '</span></li>';
+        fly.classList.add('is-open');
         positionBreadcrumbFlyoutAtDepth(depth);
-        return;
+        if (!window.tagBrowser.listChildFolders) return;
+        const r = await window.tagBrowser.listChildFolders({ parentPath });
+        if (fly._loadGen !== loadGen || fly._anchorLi !== anchorLi) return;
+        if (!subBtnToggle.isConnected) {
+          hideBreadcrumbSubfolderFlyout();
+          return;
+        }
+        if (subBtnToggle.getAttribute('aria-expanded') !== 'true') {
+          hideBreadcrumbSubfolderFlyout();
+          return;
+        }
+        fly.innerHTML = '';
+        fly._subBtnToggle = subBtnToggle;
+        if (!r || !r.ok) {
+          const li0 = document.createElement('li');
+          li0.innerHTML =
+            '<span class="dropdown-item-text text-danger small">' +
+            (r && r.error ? String(r.error) : 'Could not list folders') +
+            '</span>';
+          fly.appendChild(li0);
+          positionBreadcrumbFlyoutAtDepth(depth);
+          return;
+        }
+        const folders = r.folders || [];
+        if (!folders.length) {
+          const li0 = document.createElement('li');
+          li0.innerHTML = '<span class="dropdown-item-text text-muted">(no subfolders)</span>';
+          fly.appendChild(li0);
+          positionBreadcrumbFlyoutAtDepth(depth);
+          return;
+        }
+        populateBreadcrumbSubfolderFlyoutAtDepth(fly, folders, subBtnToggle, depth, parentPath);
+      } finally {
+        syncFavColumnFlyoutPeek();
       }
-      const folders = r.folders || [];
-      if (!folders.length) {
-        const li0 = document.createElement('li');
-        li0.innerHTML = '<span class="dropdown-item-text text-muted">(no subfolders)</span>';
-        fly.appendChild(li0);
-        positionBreadcrumbFlyoutAtDepth(depth);
-        return;
-      }
-      populateBreadcrumbSubfolderFlyoutAtDepth(fly, folders, subBtnToggle, depth, parentPath);
     }
 
     /** Highlight drive/volume row when current scope path is under that root. */
@@ -3608,8 +6146,10 @@
           btn.className =
             'btn btn-link btn-sm p-0 align-baseline breadcrumb-folder-seg' +
             (i === parts.length - 1 ? ' breadcrumb-folder-seg-current' : '');
+          const folderForSearch = normalizeFolderPathForEverything(acc);
           if (isGDriveShortcutId) {
             btn.innerHTML = '<i class="fa-solid fa-link fa-xs" aria-hidden="true"></i>';
+            btn.setAttribute('aria-label', 'Google Drive shortcut: ' + folderForSearch);
           } else if (i === parts.length - 1) {
             btn.classList.add('d-inline-flex', 'align-items-center', 'gap-1');
             btn.appendChild(folderIconEl());
@@ -3619,11 +6159,7 @@
           } else {
             btn.textContent = parsed.pretty;
           }
-          const folderForSearch = normalizeFolderPathForEverything(acc);
           wrap.dataset.dropPath = folderForSearch;
-          btn.title = isGDriveShortcutId
-            ? 'Google Drive shortcut: ' + folderForSearch
-            : 'Current folder: ' + folderForSearch + ' (recursive under this folder)';
           btn.addEventListener('click', async (e) => {
             e.stopPropagation();
             await applySearchScopeAndRefresh(folderForSearch);
@@ -3668,7 +6204,6 @@
         } else {
           btnR.textContent = segmentPretty(T.baseName(maxNormFull)) || T.baseName(maxNormFull);
         }
-        btnR.title = 'Scope root: ' + maxNormFull;
         btnR.addEventListener('click', async (e) => {
           e.stopPropagation();
           await applySearchScopeAndRefresh(maxNormFull);
@@ -3698,8 +6233,10 @@
           btn.className =
             'btn btn-link btn-sm p-0 align-baseline breadcrumb-folder-seg' +
             (i === parts.length - 1 ? ' breadcrumb-folder-seg-current' : '');
+          const folderForSearch = normalizeFolderPathForEverything(acc);
           if (isGDriveShortcutId) {
             btn.innerHTML = '<i class="fa-solid fa-link fa-xs" aria-hidden="true"></i>';
+            btn.setAttribute('aria-label', 'Google Drive shortcut: ' + folderForSearch);
           } else if (i === parts.length - 1) {
             btn.classList.add('d-inline-flex', 'align-items-center', 'gap-1');
             btn.appendChild(folderIconEl());
@@ -3709,11 +6246,7 @@
           } else {
             btn.textContent = parsed.pretty;
           }
-          const folderForSearch = normalizeFolderPathForEverything(acc);
           wrap.dataset.dropPath = folderForSearch;
-          btn.title = isGDriveShortcutId
-            ? 'Google Drive shortcut: ' + folderForSearch
-            : 'Current folder: ' + folderForSearch + ' (recursive under this folder)';
           btn.addEventListener('click', async (e) => {
             e.stopPropagation();
             await applySearchScopeAndRefresh(folderForSearch);
@@ -3775,9 +6308,43 @@
       refreshTagFoxChromeTooltips(document.getElementById('breadcrumbBar'));
     }
 
-    function mdPreviewHtml(md) {
+    /** Resolve relative `![](path)` targets against the .md file’s folder (preview loads as file:// index, not beside the .md). */
+    function resolveRelativeImagePathFromMdFile(mdFileAbsPath, relUrl) {
+      let dir = T.parentDir(String(mdFileAbsPath || '').replace(/\//g, '\\'));
+      if (!dir) return null;
+      const parts = String(relUrl || '')
+        .trim()
+        .replace(/\\/g, '/')
+        .split('/')
+        .filter((p) => p.length);
+      for (const p of parts) {
+        if (p === '..') {
+          dir = T.parentDir(dir);
+          if (!dir) return null;
+        } else if (p !== '.') {
+          dir = joinFolderAndFileName(dir, p);
+        }
+      }
+      return dir;
+    }
+
+    function rewriteMarkdownRelativeImageUrlsForPreview(md, mdSourceAbsPath) {
+      const base = String(mdSourceAbsPath || '').trim();
+      if (!base) return md || '';
+      return String(md || '').replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (full, alt, dest) => {
+        const d = String(dest || '').trim();
+        if (!d || /^(https?:|file:|data:|mailto:|#)/i.test(d)) return full;
+        const abs = resolveRelativeImagePathFromMdFile(base, d);
+        if (!abs) return full;
+        return '![' + alt + '](' + localPathToFileUrl(abs) + ')';
+      });
+    }
+
+    /** Optional `{ mdSourcePath }` so relative `![](.images/…)` resolve to real files in preview. */
+    function mdPreviewHtml(md, opts) {
       try {
-        const src = md || '';
+        let src = md || '';
+        if (opts && opts.mdSourcePath) src = rewriteMarkdownRelativeImageUrlsForPreview(src, opts.mdSourcePath);
         if (typeof marked !== 'undefined' && marked.parse) return marked.parse(src, { async: false });
         if (typeof marked !== 'undefined' && marked.marked && marked.marked.parse) return marked.marked.parse(src);
       } catch (_) {
@@ -3786,8 +6353,20 @@
       return '<p class="text-muted">Preview unavailable.</p>';
     }
 
+    /** Markdown sources get rendered; code/config stays literal beside the editor. */
+    function editableTextPreviewHtml(text, fullPath) {
+      const kind = editableTextKindForBase(T.baseName(fullPath || ''));
+      if (kind && kind.markdown) return mdPreviewHtml(text, { mdSourcePath: fullPath });
+      return (
+        '<pre class="m-0 font-monospace small" style="white-space: pre-wrap; word-break: break-word">' +
+        escapeHtmlForPreview(text) +
+        '</pre>'
+      );
+    }
+
+    /** Disk-mutation guard root: configured scope-max only (empty = no root restriction). */
     function rootPrefixValue() {
-      return document.getElementById('rootFolder').value.trim();
+      return T.normalizeRootPrefix(getSearchScopeMaxFolderNorm());
     }
 
     /** Safe single path segment for a new filename (no path separators). */
@@ -3869,6 +6448,7 @@
         const cleanup = () => {
           btnCreate.removeEventListener('click', onCreate);
           input.removeEventListener('keydown', onKey);
+          input.removeEventListener('pointerdown', onInputPtr);
           modalEl.removeEventListener('hidden.bs.modal', onHidden);
         };
         const finish = (val) => {
@@ -3888,17 +6468,91 @@
             onCreate();
           }
         };
+        const onInputPtr = () => pullWebContentsKeyboardFocus();
+        const pinModalTextFocus = () => {
+          pullWebContentsKeyboardFocus();
+          input.focus({ preventScroll: true });
+          input.select();
+        };
         input.value = 'New folder';
         btnCreate.addEventListener('click', onCreate);
         modalEl.addEventListener('hidden.bs.modal', onHidden);
         input.addEventListener('keydown', onKey);
+        input.addEventListener('pointerdown', onInputPtr);
         modalEl.addEventListener(
           'shown.bs.modal',
           () => {
-            requestAnimationFrame(() => {
-              input.focus();
-              input.select();
-            });
+            pinModalTextFocus();
+            requestAnimationFrame(pinModalTextFocus);
+          },
+          { once: true }
+        );
+        modal.show();
+      });
+    }
+
+    /** Modal folder picker for ambiguous paste targets. */
+    function promptPasteTargetModal(destFolders, currentFolder) {
+      return new Promise((resolve) => {
+        const modalEl = document.getElementById('pasteTargetModal');
+        const hint = document.getElementById('pasteTargetModalHint');
+        const select = document.getElementById('pasteTargetSelect');
+        const btnApply = document.getElementById('pasteTargetModalApply');
+        if (!modalEl || !hint || !select || !btnApply) {
+          resolve(null);
+          return;
+        }
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl, { focus: false });
+        let settled = false;
+        const cleanup = () => {
+          btnApply.removeEventListener('click', onApply);
+          select.removeEventListener('keydown', onKey);
+          select.removeEventListener('dblclick', onDblClick);
+          select.removeEventListener('pointerdown', onSelectPtr);
+          modalEl.removeEventListener('hidden.bs.modal', onHidden);
+        };
+        const finish = (val) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          resolve(val);
+        };
+        const onApply = () => {
+          finish(String(select.value || '').trim() || null);
+          modal.hide();
+        };
+        const onHidden = () => finish(null);
+        const onKey = (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            onApply();
+          }
+        };
+        const onDblClick = () => onApply();
+        const onSelectPtr = () => pullWebContentsKeyboardFocus();
+        const pinModalFocus = () => {
+          pullWebContentsKeyboardFocus();
+          select.focus({ preventScroll: true });
+        };
+        hint.textContent = 'Choose the destination folder for the clipboard items.';
+        select.innerHTML = '';
+        for (const folder of destFolders || []) {
+          const opt = document.createElement('option');
+          opt.value = folder;
+          opt.textContent = pathNormKey(folder) === pathNormKey(currentFolder) ? folder + '  (current folder)' : folder;
+          select.appendChild(opt);
+        }
+        if (select.options.length) select.selectedIndex = 0;
+        btnApply.addEventListener('click', onApply);
+        modalEl.addEventListener('hidden.bs.modal', onHidden);
+        select.addEventListener('keydown', onKey);
+        select.addEventListener('dblclick', onDblClick);
+        select.addEventListener('pointerdown', onSelectPtr);
+        modalEl.addEventListener(
+          'shown.bs.modal',
+          () => {
+            pinModalFocus();
+            requestAnimationFrame(pinModalFocus);
           },
           { once: true }
         );
@@ -3923,6 +6577,7 @@
         const cleanup = () => {
           btnApply.removeEventListener('click', onApply);
           input.removeEventListener('keydown', onKey);
+          input.removeEventListener('pointerdown', onInputPtr);
           modalEl.removeEventListener('hidden.bs.modal', onHidden);
         };
         const finish = (val) => {
@@ -3942,18 +6597,22 @@
             onApply();
           }
         };
+        const onInputPtr = () => pullWebContentsKeyboardFocus();
+        const pinModalTextFocus = () => {
+          pullWebContentsKeyboardFocus();
+          input.focus({ preventScroll: true });
+          input.select();
+        };
         input.value = String(initialBase || '');
         btnApply.addEventListener('click', onApply);
         modalEl.addEventListener('hidden.bs.modal', onHidden);
         input.addEventListener('keydown', onKey);
+        input.addEventListener('pointerdown', onInputPtr);
         modalEl.addEventListener(
           'shown.bs.modal',
           () => {
-            pullWebContentsKeyboardFocus();
-            requestAnimationFrame(() => {
-              input.focus();
-              input.select();
-            });
+            pinModalTextFocus();
+            requestAnimationFrame(pinModalTextFocus);
           },
           { once: true }
         );
@@ -3964,9 +6623,17 @@
     /** Rename selected row (optional path for ⋯ menu). Same folder only; respects rootPrefix in main. */
     async function renameItemInteractive(fpOpt) {
       const status = document.getElementById('statusMain');
-      const fp = String(fpOpt || selectedFullPath || '').trim();
+      let fp = String(fpOpt || '').trim();
       if (!fp) {
-        setStatusMain('Select a row to rename.');
+        const chk = getCheckedPathsArr();
+        if (chk.length > 1) {
+          openBulkRenameModal();
+          return;
+        }
+        if (chk.length === 1) fp = chk[0];
+      }
+      if (!fp) {
+        setStatusMain('Check a row to rename.');
         return;
       }
       if (renameItemBusy || tagRenameBusy) return;
@@ -3983,7 +6650,7 @@
       if (fromN === toN) return;
       renameItemBusy = true;
       try {
-        const rootPrefix = T.normalizeRootPrefix(document.getElementById('rootFolder').value);
+        const rootPrefix = rootPrefixValue();
         const mdWas = mdAutosaveTargetPath && mdAutosaveTargetPath.replace(/[/\\]+$/, '').toLowerCase() === fromN;
         if (mdWas) await flushMdFileAutosave();
         const res = await window.tagBrowser.renamePath({ fromPath: fp, toPath, rootPrefix });
@@ -3997,7 +6664,7 @@
         }
         if (mdWas) mdAutosaveTargetPath = toPath;
         setStatusMain('Renamed.');
-        void refreshAfterDiskMutation();
+        void refreshAfterDiskMutation({ paths: [fp, toPath] });
         refreshTagModalDatalist();
       } finally {
         renameItemBusy = false;
@@ -4068,7 +6735,7 @@
     }
 
     function openBulkRenameModal() {
-      const paths = pathsForBulkRename();
+      const paths = getCheckedPathsArr();
       const status = document.getElementById('statusMain');
       const hint = document.getElementById('bulkRenameTargetHint');
       const fb = document.getElementById('bulkRenameFeedback');
@@ -4076,7 +6743,7 @@
       const replEl = document.getElementById('bulkRenameReplace');
       if (!hint || !document.getElementById('bulkRenameModal')) return;
       if (!paths.length) {
-        if (status) setStatusMain('Check rows or highlight one row to rename.');
+        if (status) setStatusMain('Check one or more rows to rename.');
         return;
       }
       bulkRenameTargetPaths = paths.slice();
@@ -4106,7 +6773,7 @@
         return;
       }
       if (renameItemBusy || tagRenameBusy) return;
-      const paths = bulkRenameTargetPaths.length ? bulkRenameTargetPaths : pathsForBulkRename();
+      const paths = bulkRenameTargetPaths.length ? bulkRenameTargetPaths : getCheckedPathsArr();
       if (!paths.length) {
         if (fb) fb.textContent = 'Nothing selected.';
         return;
@@ -4117,7 +6784,7 @@
         if (fb) fb.textContent = 'Invalid pattern.';
         return;
       }
-      const rootPrefix = T.normalizeRootPrefix(document.getElementById('rootFolder').value);
+      const rootPrefix = T.normalizeRootPrefix(getSearchScopeMaxFolderNorm() || document.getElementById('rootFolder').value);
       const pathPairs = [];
       renameItemBusy = true;
       if (fb) fb.textContent = '';
@@ -4166,7 +6833,7 @@
      */
     async function createNewFolderInScopeInteractive(parentOverride) {
       const status = document.getElementById('statusMain');
-      const parent =
+      let parent =
         parentOverride != null && String(parentOverride).trim()
           ? normalizeFolderPathForEverything(String(parentOverride).trim())
           : currentScopeFolderPath();
@@ -4174,13 +6841,20 @@
         setStatusMain('Set the current folder (Settings or breadcrumb) first.');
         return;
       }
+      if (!(parentOverride != null && String(parentOverride).trim())) {
+        parent = await chooseTargetFolderFromCheckedRows(parent);
+        if (!parent) {
+          setStatusMain('Create folder cancelled.');
+          return;
+        }
+      }
       const raw = await promptNewFolderNameModal();
       if (raw === null) return;
       if (!window.tagBrowser.createEmptyFolder) {
         setStatusMain('Create folder is not available.');
         return;
       }
-      const rootPrefix = T.normalizeRootPrefix(document.getElementById('rootFolder').value);
+      const rootPrefix = rootPrefixValue();
       const r = await window.tagBrowser.createEmptyFolder({ parentFolder: parent, nameSegment: raw, rootPrefix });
       if (!r || !r.ok) setStatusMain((r && r.error) || 'Could not create folder');
       else {
@@ -4210,33 +6884,42 @@
         setStatusMain('File already exists: ' + baseName);
         return false;
       }
-      const body = '# ' + safe + '\n\n';
+      const extraBody = String((opts && opts.bodyText) || '');
+      const body = extraBody.trim()
+        ? '# ' + safe + '\n\n' + extraBody.replace(/\r\n/g, '\n').replace(/\s+$/, '') + '\n'
+        : '# ' + safe + '\n\n';
       const r = await window.tagBrowser.writeTextFile({ fullPath, text: body });
       if (!r.ok) {
         setStatusMain(r.error || 'Could not create file');
         return false;
       }
       setStatusMain('Created ' + baseName);
-      void refreshAfterDiskMutation();
-      return true;
+      if (!opts.skipRefreshAfterMutation) void refreshAfterDiskMutation();
+      return fullPath;
     }
 
     async function createTodoMdInScope() {
       const folder = currentScopeFolderPath();
       const raw = document.getElementById('newMdTitleInput').value.trim();
-      const ok = await createTodoMdAt(folder, raw, {});
-      if (ok) document.getElementById('newMdTitleInput').value = '';
+      const created = await createTodoMdAt(folder, raw, {});
+      if (created) document.getElementById('newMdTitleInput').value = '';
     }
 
     function hideQuickTodoPop() {
       const el = document.getElementById('quickTodoPop');
       if (el) el.classList.add('d-none');
+      hideQuickTodoTagsPanel();
+      hideQuickTodoBodyPanel();
     }
 
     function showQuickTodoPop() {
       const el = document.getElementById('quickTodoPop');
       if (!el) return;
       el.classList.remove('d-none');
+      hideQuickTodoTagsPanel();
+      hideQuickTodoBodyPanel();
+      renderQuickTodoTagsPanel();
+      syncQuickTodoBodyToggleButton();
       pullWebContentsKeyboardFocus();
       requestAnimationFrame(() => {
         const inp = document.getElementById('quickTodoTitleInput');
@@ -4245,19 +6928,31 @@
           inp.select();
         }
       });
+      const loadSw = document.getElementById('quickTodoLoadAfterCreate');
+      if (loadSw) loadSw.checked = false;
     }
 
     async function createQuickTodoFromPop() {
       const hid = document.getElementById('quickTodoFolder');
       const folder = hid ? hid.value.trim() : '';
       const ti = document.getElementById('quickTodoTitleInput');
+      const bodyInp = document.getElementById('quickTodoBodyInput');
       const raw = ti ? ti.value : '';
-      const ok = await createTodoMdAt(folder, raw, {
+      const bodyText = bodyInp ? bodyInp.value : '';
+      const loadAfter = !!document.getElementById('quickTodoLoadAfterCreate')?.checked;
+      const created = await createTodoMdAt(folder, raw, {
+        bodyText,
         errNoFolder: 'Set Quick TODO folder in Settings first.',
+        skipRefreshAfterMutation: loadAfter,
       });
-      if (ok) {
+      if (created) {
         if (ti) ti.value = '';
+        if (bodyInp) bodyInp.value = '';
         hideQuickTodoPop();
+        if (loadAfter) {
+          await navigateTagFoxToShortcutTarget(created, false);
+          void refreshAfterDiskMutation();
+        }
       }
     }
 
@@ -4270,11 +6965,13 @@
       mdAutosaveTargetPath = null;
       revokePreviewBlobs();
       const pdfBlock = document.getElementById('pdfBlock');
+      const htmlBlock = document.getElementById('htmlBlock');
       const officeBlock = document.getElementById('officeBlock');
       const imageBlock = document.getElementById('imageBlock');
       const videoBlock = document.getElementById('videoBlock');
       const audioBlock = document.getElementById('audioBlock');
       if (pdfBlock) pdfBlock.classList.add('d-none');
+      if (htmlBlock) htmlBlock.classList.add('d-none');
       if (officeBlock) officeBlock.classList.add('d-none');
       if (imageBlock) imageBlock.classList.add('d-none');
       if (videoBlock) videoBlock.classList.add('d-none');
@@ -4293,11 +6990,44 @@
       }
       document.getElementById('propsEmpty').classList.remove('d-none');
       document.getElementById('propsDetails').classList.add('d-none');
+      const propTitleBlock = document.getElementById('propTitleBlock');
+      if (propTitleBlock) {
+        propTitleBlock.classList.add('d-none');
+        propTitleBlock.style.order = '';
+      }
+      const addTodoRow = document.getElementById('propsAddTodoRow');
+      if (addTodoRow) addTodoRow.style.order = '';
+      const iconMount = document.getElementById('propTitleIconMount');
+      if (iconMount) iconMount.innerHTML = '';
+      const secTitle = document.getElementById('propsPanelSectionTitle');
+      if (secTitle) secTitle.textContent = 'Viewer';
+      const todoLbl = document.getElementById('labelNewMdTitle');
+      if (todoLbl) {
+        todoLbl.textContent = 'Add TODO here';
+        todoLbl.title = 'Creates Title[(TODO)].md in the current folder';
+      }
+      const readmeStem = document.getElementById('readmeFolderDocStemInput');
+      const readmeExt = document.getElementById('readmeFolderDocExt');
+      if (readmeStem) readmeStem.value = DEFAULT_FOLDER_DOC_STEM;
+      if (readmeExt) readmeExt.textContent = '.md';
+      folderDocMdTags = [];
+      syncFolderDocTagPillsDisplay();
+      folderDocViewerOverridePath = null;
+      folderDocHeaderLastSyncedKey = '';
       activeReadmePath = null;
       readmeSaveTargetVerifiedOnDisk = false;
       lastReadmeFolderPathLoose = '';
+      globalNestedReadmeView = false;
+      const single = document.getElementById('optViewerDocSingle');
+      const nested = document.getElementById('optViewerDocNested');
+      if (single) single.checked = true;
+      if (nested) nested.checked = false;
+      document.getElementById('propsNestedReadmeToggleWrap')?.classList.add('d-none');
       activeMdPath = null;
+      detachNestedReadmePreviewHandler();
       resetViewerDocEditorChrome();
+      syncViewerCopyButton();
+      syncReadmeNestedDocsUi();
       renderScopeBreadcrumbIfScopeChanged();
     }
 
@@ -4326,6 +7056,11 @@
         path: parent,
         size: '',
         date_modified: '',
+        /**
+         * path=parent, name=leaf (path-grouping ghost rows). Without this flag, fullPathForRow’s “name already in path”
+         * shortcut treats e.g. parent …\subb + name subb as complete → wrong path …\subb instead of …\subb\subb (nested subb\subb\sub in logs).
+         */
+        __pathGroupingSynthetic: true,
       };
     }
 
@@ -4438,8 +7173,13 @@
         selectedRow = row;
         renderScopeBreadcrumbIfScopeChanged();
         const kSel = pathKeyLoose(pathForSig);
+        const aggKey = readmeAggregateRootFolderFromSelection(pathForSig, row);
+        const aggK = aggKey ? pathKeyLoose(aggKey) : '';
         const needFolderDocResync =
-          rowIsFolder(row) && (!lastReadmeFolderPathLoose || kSel !== lastReadmeFolderPathLoose);
+          (rowIsFolder(row) && (!lastReadmeFolderPathLoose || kSel !== lastReadmeFolderPathLoose)) ||
+          (globalNestedReadmeView &&
+            isGlobalViewerMarkdownFilePath(pathForSig) &&
+            (!lastReadmeFolderPathLoose || aggK !== lastReadmeFolderPathLoose));
         if (prevSig === nextSig || suppressViewerResyncForTimerSearch) {
           if (needFolderDocResync) await refreshPropsPanel();
           else cancelPropsPreviewSchedule();
@@ -4515,15 +7255,43 @@
       revokePreviewBlobs();
       empty.classList.add('d-none');
       details.classList.remove('d-none');
+      const propTitleBlock = document.getElementById('propTitleBlock');
+      if (propTitleBlock) propTitleBlock.classList.remove('d-none');
+      const addTodoRow = document.getElementById('propsAddTodoRow');
+      const isFolder = rowIsFolder(propRow);
+      /* Folder: title above Add TODO; file: Add TODO above title. */
+      if (propTitleBlock) propTitleBlock.style.order = isFolder ? '0' : '1';
+      if (addTodoRow) addTodoRow.style.order = isFolder ? '1' : '0';
+      const secTitle = document.getElementById('propsPanelSectionTitle');
+      if (secTitle) secTitle.textContent = isFolder ? 'View/edit text files in folder' : 'Viewer';
+      const todoLbl = document.getElementById('labelNewMdTitle');
+      if (todoLbl) {
+        if (isFolder) {
+          todoLbl.textContent = 'Add TODO here';
+          todoLbl.title = 'Creates Title[(TODO)].md in the current folder';
+        } else {
+          const par = T.parentDir(propPath);
+          const leaf = segmentPretty(T.baseName(String(par || '').replace(/[/\\]+$/, '')));
+          todoLbl.textContent = leaf ? 'Add TODO in current folder: ' + leaf : 'Add TODO in current folder';
+          todoLbl.title = 'Creates Title[(TODO)].md in ' + (leaf ? leaf : 'this folder');
+        }
+      }
+      const nestReadmeToggle = document.getElementById('propsNestedReadmeToggleWrap');
+      const showNestReadmeToggle = isFolder || isGlobalViewerMarkdownFilePath(propPath);
+      if (nestReadmeToggle) nestReadmeToggle.classList.toggle('d-none', !showNestReadmeToggle);
+      if (showNestReadmeToggle) syncGlobalViewerBasenamesInputFromStorage();
+      const kReadmeQuick = readmeBlockQuickVisibleFolderKey(propPath, propRow);
       const isSameFolderReadme =
-        rowIsFolder(propRow) &&
-        lastReadmeFolderPathLoose &&
-        pathKeyLoose(propPath) === lastReadmeFolderPathLoose &&
+        !!kReadmeQuick &&
+        !!lastReadmeFolderPathLoose &&
+        kReadmeQuick === lastReadmeFolderPathLoose &&
         !readmeBlock.classList.contains('d-none');
       if (!isSameFolderReadme) readmeBlock.classList.add('d-none');
       mdFileBlock.classList.add('d-none');
       if (gdocWorkspaceBlock) gdocWorkspaceBlock.classList.add('d-none');
       if (pdfBlock) pdfBlock.classList.add('d-none');
+      const htmlBlockQuick = document.getElementById('htmlBlock');
+      if (htmlBlockQuick) htmlBlockQuick.classList.add('d-none');
       if (officeBlock) officeBlock.classList.add('d-none');
       if (imageBlock) imageBlock.classList.add('d-none');
       if (videoBlock) videoBlock.classList.add('d-none');
@@ -4548,17 +7316,13 @@
       const tagBand = document.getElementById('propTitleTags');
       tagBand.innerHTML = '';
       for (const tag of parsedTitle.tags) appendTagPillWithRemove(tagBand, tag, propPath);
-
-      const propFullPathEl = document.getElementById('propFullPath');
-      propFullPathEl.textContent = collapseGDriveShortcutDisplay(propPath);
-      propFullPathEl.title = propPath;
-      document.getElementById('propType').textContent = rowIsFolder(propRow) ? 'Folder' : 'File';
-      const propSizeEl = document.getElementById('propSize');
-      propSizeEl.textContent = formatSize(propRow.size);
-      applySizeHeatToElement(propSizeEl, propRow);
-      document.getElementById('propModified').textContent = formatModified(
-        propRow.date_modified ?? propRow.date_modified_unix
-      );
+      const iconMount = document.getElementById('propTitleIconMount');
+      if (iconMount) {
+        iconMount.innerHTML = '';
+        if (isFolder) iconMount.appendChild(folderIconEl());
+        else iconMount.appendChild(fileIconEl(fileExtFromPretty(parsedTitle.pretty)));
+      }
+      syncViewerCopyButton();
     }
 
     /** Full preview load; drop results if selection moved (rapid ↑/↓). */
@@ -4583,21 +7347,40 @@
       const base = T.baseName(targetFp);
       const parsedTitle = T.parseSegmentTags(base);
       const ext = /\.[^.]+$/.test(base) ? base.slice(base.lastIndexOf('.') + 1).toLowerCase() : '';
-      const isMdOrTxt = !rowIsFolder(targetRow) && /\.(md|txt)$/i.test(base);
+      const editableTextKind = !rowIsFolder(targetRow) ? editableTextKindForBase(base) : null;
 
       propPh.classList.add('d-none');
 
       if (rowIsFolder(targetRow)) {
         activeMdPath = null;
         mdAutosaveTargetPath = null;
-        await loadReadmeForFolder(targetFp);
+        await loadReadmeForFolder(targetFp, targetFp);
         return;
       }
 
-      if (isMdOrTxt) {
+      if (isGlobalViewerMarkdownFilePath(targetFp) && globalNestedReadmeView) {
+        const par = T.parentDir(targetFp);
+        if (!par) {
+          activeReadmePath = null;
+          activeMdPath = null;
+          mdAutosaveTargetPath = null;
+          propPh.classList.remove('d-none');
+          propPh.textContent = 'No parent folder for nested docs.';
+          return;
+        }
+        activeReadmePath = null;
+        activeMdPath = null;
+        mdAutosaveTargetPath = null;
+        mdFileBlock.classList.add('d-none');
+        await loadReadmeForFolder(String(par).replace(/[/\\]+$/, ''), targetFp);
+        return;
+      }
+
+      if (editableTextKind) {
         activeReadmePath = null;
         mdFileBlock.classList.remove('d-none');
-        const ed = document.getElementById('mdFileEditor');
+        const titleEl = document.getElementById('mdFileTitle');
+        if (titleEl) titleEl.textContent = editableTextKind.markdown ? 'Markdown file' : 'Text file';
         const mdWrap = document.getElementById('mdFileEditorWrap');
         /* Poll/search refresh changes mtime → full heavy run used to reset UI; keep editing session if same file + editor open. */
         const sameMdEditing =
@@ -4606,21 +7389,29 @@
           activeMdPath &&
           propsPathKey(activeMdPath) === propsPathKey(targetFp);
         if (sameMdEditing) {
-          document.getElementById('mdFilePreview').innerHTML = mdPreviewHtml(ed.value);
+          document.getElementById('mdFilePreview').innerHTML = editableTextPreviewHtml(
+            getViewerMdValue('mdFile'),
+            mdAutosaveTargetPath || activeMdPath
+          );
+          syncViewerCopyButton();
           return;
         }
         mdAutosaveTargetPath = null;
         const rTxt = await window.tagBrowser.readTextFile({ fullPath: targetFp });
         if (!propsViewStill(targetFp)) return;
         if (rTxt.ok) {
-          ed.value = rTxt.text;
+          setViewerMdValue('mdFile', rTxt.text);
           mdAutosaveTargetPath = targetFp;
         } else {
-          ed.value = '/* read error: ' + (rTxt.error || '') + ' */';
+          setViewerMdValue('mdFile', '/* read error: ' + (rTxt.error || '') + ' */');
         }
         activeMdPath = mdAutosaveTargetPath ? targetFp : null;
-        document.getElementById('mdFilePreview').innerHTML = mdPreviewHtml(ed.value);
+        document.getElementById('mdFilePreview').innerHTML = editableTextPreviewHtml(
+          getViewerMdValue('mdFile'),
+          mdAutosaveTargetPath
+        );
         resetViewerDocEditorChrome();
+        syncViewerCopyButton();
         return;
       }
 
@@ -4753,6 +7544,40 @@
         aud.removeAttribute('src');
         aud.src = localPathToFileUrl(targetFp);
         aud.load();
+        return;
+      }
+
+      if ((ext === 'html' || ext === 'htm') && window.tagBrowser.readTextFile) {
+        activeReadmePath = null;
+        activeMdPath = null;
+        mdAutosaveTargetPath = null;
+        const htmlBlock = document.getElementById('htmlBlock');
+        const htmlPreviewFrame = document.getElementById('htmlPreviewFrame');
+        const sz = rowSizeBytes(targetRow);
+        if (sz != null && sz > TEXT_PREVIEW_MAX_BYTES) {
+          propPh.classList.remove('d-none');
+          propPh.textContent = 'HTML preview: file too large (max ~2 MB). Use Open.';
+          return;
+        }
+        const rHtml = await window.tagBrowser.readTextFile({ fullPath: targetFp });
+        if (!propsViewStill(targetFp)) return;
+        if (!htmlBlock || !htmlPreviewFrame) {
+          propPh.classList.remove('d-none');
+          propPh.textContent = 'HTML preview UI missing.';
+          return;
+        }
+        if (!rHtml.ok) {
+          propPh.classList.remove('d-none');
+          propPh.textContent = 'HTML: ' + (rHtml.error || 'Could not load.');
+          return;
+        }
+        htmlBlock.classList.remove('d-none');
+        let doc = String(rHtml.text ?? '');
+        if (doc.length > TEXT_PREVIEW_MAX_CHARS) {
+          doc = doc.slice(0, TEXT_PREVIEW_MAX_CHARS) + '\n<!-- … preview truncated -->';
+        }
+        htmlPreviewFrame.removeAttribute('src');
+        htmlPreviewFrame.srcdoc = doc;
         return;
       }
 
@@ -4953,6 +7778,34 @@
         return;
       }
 
+      if (ext === 'msg' && window.tagBrowser.readMsgPreview && textFileBlock) {
+        activeReadmePath = null;
+        activeMdPath = null;
+        mdAutosaveTargetPath = null;
+        const sz = rowSizeBytes(targetRow);
+        if (sz != null && sz > 50 * 1024 * 1024) {
+          propPh.classList.remove('d-none');
+          propPh.textContent = 'MSG preview: file too large (max 50 MB). Use Open.';
+          return;
+        }
+        const rMsg = await window.tagBrowser.readMsgPreview({ fullPath: targetFp });
+        if (!propsViewStill(targetFp)) return;
+        if (!rMsg.ok) {
+          propPh.classList.remove('d-none');
+          propPh.textContent = 'Outlook MSG: ' + (rMsg.error || 'Could not load.');
+          return;
+        }
+        textFileBlock.classList.remove('d-none');
+        document.getElementById('textPreviewTitle').textContent = 'Outlook (.msg)';
+        let body = String(rMsg.text ?? '');
+        if (body.length > TEXT_PREVIEW_MAX_CHARS) {
+          body = body.slice(0, TEXT_PREVIEW_MAX_CHARS) + '\n\n… [truncated for preview]';
+        }
+        document.getElementById('textPreviewPre').textContent = body;
+        syncViewerCopyButton();
+        return;
+      }
+
       if (ext === 'csv' && window.tagBrowser.readTextFile && officeBlock) {
         activeReadmePath = null;
         activeMdPath = null;
@@ -4982,33 +7835,6 @@
         return;
       }
 
-      if (TEXT_PREVIEW_EXT.has(ext) && window.tagBrowser.readTextFile && textFileBlock) {
-        activeReadmePath = null;
-        activeMdPath = null;
-        mdAutosaveTargetPath = null;
-        const sz = rowSizeBytes(targetRow);
-        if (sz != null && sz > TEXT_PREVIEW_MAX_BYTES) {
-          propPh.classList.remove('d-none');
-          propPh.textContent = 'Text preview: file too large (max ~2 MB). Use Open.';
-          return;
-        }
-        const rTxt = await window.tagBrowser.readTextFile({ fullPath: targetFp });
-        if (!propsViewStill(targetFp)) return;
-        if (!rTxt.ok) {
-          propPh.classList.remove('d-none');
-          propPh.textContent = 'Text: ' + (rTxt.error || 'Could not load.');
-          return;
-        }
-        textFileBlock.classList.remove('d-none');
-        document.getElementById('textPreviewTitle').textContent = ext === 'json' ? 'JSON' : 'Text preview';
-        let body = formatTextPreviewBody(ext, rTxt.text);
-        if (body.length > TEXT_PREVIEW_MAX_CHARS) {
-          body = body.slice(0, TEXT_PREVIEW_MAX_CHARS) + '\n\n… [truncated for preview]';
-        }
-        document.getElementById('textPreviewPre').textContent = body;
-        return;
-      }
-
       activeReadmePath = null;
       activeMdPath = null;
       mdAutosaveTargetPath = null;
@@ -5023,14 +7849,90 @@
       await refreshPropsPanelHeavy();
     }
 
+    /** Viewer header copy: reuse the visible text source for readme, md/txt, and plain text previews. */
+    function currentViewerCopyText() {
+      const readmeBlock = document.getElementById('readmeBlock');
+      const mdFileBlock = document.getElementById('mdFileBlock');
+      const textFileBlock = document.getElementById('textFileBlock');
+      if (readmeBlock && !readmeBlock.classList.contains('d-none')) {
+        if (globalNestedReadmeView) return (document.getElementById('readmePreview')?.textContent || '').trim();
+        return getViewerMdValue('readme').trim();
+      }
+      if (mdFileBlock && !mdFileBlock.classList.contains('d-none')) {
+        return getViewerMdValue('mdFile').trim();
+      }
+      if (textFileBlock && !textFileBlock.classList.contains('d-none')) {
+        return (document.getElementById('textPreviewPre')?.textContent || '').trim();
+      }
+      return '';
+    }
+
+    function syncMdFileViewerButtons() {
+      const block = document.getElementById('mdFileBlock');
+      const visible = !!(block && !block.classList.contains('d-none'));
+      const text = getViewerMdValue('mdFile');
+      const copyBtn = document.getElementById('btnMdFileCopyText');
+      const refreshBtn = document.getElementById('btnMdFileRefresh');
+      if (copyBtn) copyBtn.disabled = !visible || !text.length;
+      if (refreshBtn) refreshBtn.disabled = !visible || !propsTargetPath();
+    }
+
+    function syncViewerCopyButton() {
+      const btn = document.getElementById('btnPropsCopyText');
+      const text = currentViewerCopyText();
+      if (btn) {
+        btn.classList.toggle('d-none', !text);
+        btn.disabled = !text;
+      }
+      syncMdFileViewerButtons();
+    }
+
+    async function copyMdFileViewerText() {
+      const text = getViewerMdValue('mdFile');
+      if (!text.length) return;
+      const ok = await copyPlainTextToClipboard(text);
+      setStatusMain(ok ? 'Copied file text.' : 'Could not copy file text.');
+    }
+
+    async function refreshMdFileViewerFromDisk() {
+      const targetPath = propsTargetPath();
+      if (!targetPath) return;
+      await flushMdFileAutosave();
+      activeMdPath = null;
+      mdAutosaveTargetPath = null;
+      await refreshPropsPanel();
+      setStatusMain('Refreshed file text.');
+    }
+
+    async function refreshPdfViewerFromDisk() {
+      const targetPath = propsTargetPath();
+      if (!targetPath) return;
+      await refreshPropsPanel();
+      setStatusMain('Refreshed PDF output.');
+    }
+
     /** Folder readme RHS: pale orange when non-empty; optional one-shot pulse after load. */
     function syncReadmePreviewChrome(opts) {
       const pulse = !!(opts && opts.pulse);
       const prev = document.getElementById('readmePreview');
-      const ed = document.getElementById('readmeEditor');
-      const filled = (ed.value || '').trim().length > 0;
+      let filled;
+      if (opts && Object.prototype.hasOwnProperty.call(opts, 'filled')) {
+        filled = !!opts.filled;
+      } else if (globalNestedReadmeView) {
+        const root = prev && prev.querySelector('.global-readme-root');
+        if (root) {
+          filled = Array.from(root.querySelectorAll('.global-readme-section-body')).some((el) =>
+            (el.textContent || '').trim()
+          );
+        } else {
+          filled = false;
+        }
+      } else {
+        filled = getViewerMdValue('readme').trim().length > 0;
+      }
       if (!pulse) prev.classList.remove('readme-preview--pulse');
       prev.classList.toggle('readme-preview--filled', filled);
+      syncViewerCopyButton();
       if (!pulse || !filled) return;
       prev.classList.remove('readme-preview--pulse');
       void prev.offsetWidth;
@@ -5038,59 +7940,84 @@
       prev.addEventListener('animationend', () => prev.classList.remove('readme-preview--pulse'), { once: true });
     }
 
-    /** Folder doc + .md/.txt viewer: editor hidden until Edit or double-click preview (same chrome for both). */
+    /** Folder doc + text-file viewer: editor hidden until Edit or double-click preview (same chrome for both). */
     function resetViewerDocEditorChrome() {
       for (const which of ['readme', 'mdFile']) {
         const wrapId = which === 'readme' ? 'readmeEditorWrap' : 'mdFileEditorWrap';
+        const dividerId = which === 'readme' ? 'readmeEditorDivider' : 'mdFileEditorDivider';
         const btnId = which === 'readme' ? 'btnReadmeEdit' : 'btnMdFileEdit';
         document.getElementById(wrapId)?.classList.add('d-none');
+        document.getElementById(dividerId)?.classList.add('d-none');
         const b = document.getElementById(btnId);
         if (b) {
-          b.textContent = 'Edit';
           b.setAttribute('aria-expanded', 'false');
           b.title = which === 'readme' ? 'Edit folder doc' : 'Edit file';
+          b.setAttribute('aria-label', which === 'readme' ? 'Edit folder doc' : 'Edit file');
           if (which === 'readme') {
-            b.classList.remove('btn-primary');
+            b.innerHTML = '<i class="fa-solid fa-pen" aria-hidden="true"></i>';
+            b.classList.remove('btn-primary', 'btn-outline-primary');
             b.classList.add('btn-outline-secondary');
+            document.getElementById('btnReadmeCancel')?.classList.add('d-none');
+          } else {
+            b.innerHTML = '<i class="fa-solid fa-pen" aria-hidden="true"></i>';
           }
         }
       }
+      refreshTagFoxChromeTooltips(document.getElementById('propsChromeStack') || document.body);
     }
 
     function setViewerDocEditorOpen(which, open) {
       const wrapId = which === 'readme' ? 'readmeEditorWrap' : 'mdFileEditorWrap';
-      const edId = which === 'readme' ? 'readmeEditor' : 'mdFileEditor';
+      const dividerId = which === 'readme' ? 'readmeEditorDivider' : 'mdFileEditorDivider';
       const prevId = which === 'readme' ? 'readmePreview' : 'mdFilePreview';
       const btnId = which === 'readme' ? 'btnReadmeEdit' : 'btnMdFileEdit';
+      const cancelBtn = which === 'readme' ? document.getElementById('btnReadmeCancel') : null;
       const wrap = document.getElementById(wrapId);
-      const ed = document.getElementById(edId);
+      const divider = document.getElementById(dividerId);
       const prev = document.getElementById(prevId);
       const btn = document.getElementById(btnId);
-      if (!wrap || !ed || !prev) return;
+      if (!wrap || !prev) return;
       const show = !!open;
+      if (show && which === 'readme' && globalNestedReadmeView) return;
       if (!show && which === 'mdFile') void flushMdFileAutosave();
       wrap.classList.toggle('d-none', !show);
+      if (divider) divider.classList.toggle('d-none', !show);
+      if (show) ensureViewerMdEditor(which);
       if (btn) {
-        btn.textContent = show ? (which === 'readme' ? 'Save' : 'Done') : 'Edit';
         btn.setAttribute('aria-expanded', show ? 'true' : 'false');
-        btn.classList.toggle('btn-primary', which === 'readme' && show);
-        btn.classList.toggle('btn-outline-secondary', !(which === 'readme' && show));
         if (which === 'readme') {
-          btn.title = show ? 'Save folder doc to disk and close editor' : 'Edit folder doc';
+          btn.innerHTML = show
+            ? '<i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>'
+            : '<i class="fa-solid fa-pen" aria-hidden="true"></i>';
+          btn.classList.toggle('btn-outline-primary', show);
+          btn.classList.toggle('btn-outline-secondary', !show);
+          btn.title = show ? 'Save folder doc to disk and close editor (Ctrl+Enter)' : 'Edit folder doc';
+          btn.setAttribute('aria-label', show ? 'Save folder doc' : 'Edit folder doc');
         } else {
+          btn.innerHTML = show
+            ? '<i class="fa-solid fa-xmark" aria-hidden="true"></i>'
+            : '<i class="fa-solid fa-pen" aria-hidden="true"></i>';
+          btn.classList.remove('btn-outline-primary');
+          btn.classList.add('btn-outline-secondary');
           btn.title = show ? 'Close editor (pending edits are saved automatically)' : 'Edit file';
+          btn.setAttribute('aria-label', show ? 'Close editor' : 'Edit file');
         }
       }
+      if (cancelBtn) cancelBtn.classList.toggle('d-none', !show);
+      refreshTagFoxChromeTooltips(document.getElementById('propsChromeStack') || document.body);
       if (!show) {
-        prev.innerHTML = mdPreviewHtml(ed.value);
+        if (!(which === 'readme' && globalNestedReadmeView)) {
+          const p = which === 'readme' ? activeReadmePath : mdAutosaveTargetPath;
+          prev.innerHTML =
+            which === 'mdFile'
+              ? editableTextPreviewHtml(getViewerMdValue(which), p)
+              : mdPreviewHtml(getViewerMdValue(which), p ? { mdSourcePath: p } : undefined);
+        }
         if (which === 'readme') syncReadmePreviewChrome({ pulse: false });
       }
       if (show) {
         requestAnimationFrame(() => {
-          ed.focus();
-          try {
-            ed.setSelectionRange(ed.value.length, ed.value.length);
-          } catch (_) {}
+          focusViewerMdEditor(which, true);
         });
       }
     }
@@ -5103,19 +8030,54 @@
         setViewerDocEditorOpen('readme', false);
         return;
       }
-      const text = document.getElementById('readmeEditor').value;
-      const r = await window.tagBrowser.writeTextFile({ fullPath: activeReadmePath, text });
-      const label = segmentPretty(T.baseName(activeReadmePath));
+      const parent = T.parentDir(activeReadmePath);
+      if (!parent) {
+        if (status) setStatusMain('Folder doc path invalid.');
+        return;
+      }
+      const targetPath = folderDocTargetPathFromUi(parent);
+      const kFrom = pathKeyLoose(activeReadmePath);
+      const kTo = pathKeyLoose(targetPath);
+      let writePath = activeReadmePath;
+      if (kFrom !== kTo) {
+        const probeTo = await window.tagBrowser.readTextFile({ fullPath: targetPath });
+        if (probeTo.ok) {
+          if (status) setStatusMain('A file already exists: ' + T.baseName(targetPath));
+          return;
+        }
+        /* New path only: keeps the previous folder doc file on disk (no rename). */
+        writePath = targetPath;
+      }
+      const text = getViewerMdValue('readme');
+      const r = await window.tagBrowser.writeTextFile({ fullPath: writePath, text });
+      const label = segmentPretty(T.baseName(writePath));
       if (!r.ok) {
         if (status) setStatusMain(r.error || 'Save failed');
         return;
       }
+      activeReadmePath = writePath;
+      folderDocViewerOverridePath = writePath;
       readmeSaveTargetVerifiedOnDisk = true;
       if (status) setStatusMain(label + ' saved.');
       setViewerDocEditorOpen('readme', false);
       folderChildCountCache.clear();
       clearAndScheduleSearchRetries();
       void runSearchNow('refresh');
+    }
+
+    /** Folder doc cancel: discard in-editor changes and reload the current folder doc. */
+    async function cancelReadmeEditor() {
+      const folderPath = propsTargetPath();
+      const row = propsTargetRowForDisplay();
+      if (!folderPath || !row || !rowIsFolder(row)) {
+        setViewerDocEditorOpen('readme', false);
+        return;
+      }
+      folderDocViewerOverridePath = null;
+      folderDocHeaderLastSyncedKey = '';
+      activeReadmePath = null;
+      readmeSaveTargetVerifiedOnDisk = false;
+      await loadReadmeForFolder(String(folderPath).replace(/[/\\]+$/, ''), folderPath);
     }
 
     function toggleViewerDocEditor(which) {
@@ -5130,29 +8092,375 @@
       setViewerDocEditorOpen(which, willOpen);
     }
 
-    /** Folder row / current folder: first match among FOLDER_VIEWER_DOC_NAMES in main; else empty editor → Save creates readme.md. */
-    async function loadReadmeForFolder(folderPath) {
+    /** Build folder doc path from Viewer stem / ext / folderDocMdTags (same rules as Add TODO basename). */
+    function folderDocTargetPathFromUi(parentFolderNorm) {
+      const stemInp = document.getElementById('readmeFolderDocStemInput');
+      const extEl = document.getElementById('readmeFolderDocExt');
+      const stem = sanitizeFileTitleSegment(stemInp ? stemInp.value : DEFAULT_FOLDER_DOC_STEM);
+      let ext = String((extEl && extEl.textContent) || '.md').trim();
+      if (!ext.startsWith('.')) ext = '.' + ext;
+      const base = T.buildTaggedComponent(stem + ext, folderDocMdTags);
+      return joinFolderAndFileName(parentFolderNorm, base);
+    }
+
+    /** Stem/tags now point at a different path than the file we loaded → empty draft (replaces old New/Default controls). */
+    function folderDocOnFilenameUiChanged() {
+      if (globalNestedReadmeView) return;
+      const folderPath = propsTargetPath();
+      const row = propsTargetRowForDisplay();
+      if (!folderPath || !row || !rowIsFolder(row)) return;
+      const norm = String(folderPath).replace(/[/\\]+$/, '');
+      const uiPath = folderDocTargetPathFromUi(norm);
+      const uiK = pathKeyLoose(uiPath);
+      if (folderDocViewerOverridePath === FOLDER_DOC_OVERRIDE_NEW) return;
+      const loadedK = pathKeyLoose(activeReadmePath || '');
+      if (loadedK && uiK === loadedK) return;
+      folderDocViewerOverridePath = FOLDER_DOC_OVERRIDE_NEW;
+      folderDocHeaderLastSyncedKey = '';
+      setViewerMdValue('readme', '');
+      const prev = document.getElementById('readmePreview');
+      if (prev) prev.innerHTML = mdPreviewHtml('');
+      syncReadmePreviewChrome({ pulse: true });
+      activeReadmePath = uiPath;
+      readmeSaveTargetVerifiedOnDisk = false;
+      resetViewerDocEditorChrome();
+    }
+
+    /** Read-only pills under folder doc filename (same colours as results tags; edit via tags button). */
+    function syncFolderDocTagPillsDisplay() {
+      const wrap = document.getElementById('readmeFolderDocTagPills');
+      if (!wrap) return;
+      wrap.innerHTML = '';
+      for (const t of folderDocMdTags) {
+        const b = document.createElement('span');
+        b.className = 'badge rounded-pill';
+        b.style.backgroundColor = tagColorCss(t);
+        b.style.color = '#212529';
+        b.textContent = t;
+        wrap.appendChild(b);
+      }
+    }
+
+    /** Sync stem input, extension label, and folderDocMdTags from a resolved doc path (or defaults when null). */
+    function syncFolderDocTitleControlsFromPath(docPath) {
+      const stemInp = document.getElementById('readmeFolderDocStemInput');
+      const extEl = document.getElementById('readmeFolderDocExt');
+      if (!stemInp || !extEl) return;
+      if (!docPath) {
+        stemInp.value = DEFAULT_FOLDER_DOC_STEM;
+        extEl.textContent = '.md';
+        folderDocMdTags = [];
+        syncFolderDocTagPillsDisplay();
+        return;
+      }
+      const base = T.baseName(docPath);
+      const parsed = T.parseSegmentTags(base);
+      const pretty = String(parsed.pretty || '');
+      const dot = pretty.lastIndexOf('.');
+      if (dot > 0) {
+        stemInp.value = pretty.slice(0, dot);
+        extEl.textContent = pretty.slice(dot);
+      } else {
+        stemInp.value = pretty || DEFAULT_FOLDER_DOC_STEM;
+        extEl.textContent = '.md';
+      }
+      folderDocMdTags = parsed.tags.slice();
+      syncFolderDocTagPillsDisplay();
+    }
+
+    function detachNestedReadmePreviewHandler() {
+      const prevEl = document.getElementById('readmePreview');
+      if (prevEl && nestedReadmePreviewClickHandler) {
+        prevEl.removeEventListener('click', nestedReadmePreviewClickHandler);
+        nestedReadmePreviewClickHandler = null;
+      }
+      globalNestedCompositeSections = [];
+    }
+
+    /** Hide single-doc chrome; aggregated mode uses per-section Edit instead of folder doc editor. */
+    function syncReadmeNestedDocsUi() {
+      const wrap = document.getElementById('readmeFolderDocControlsWrap');
+      const single = document.getElementById('optViewerDocSingle');
+      const nested = document.getElementById('optViewerDocNested');
+      const prev = document.getElementById('readmePreview');
+      if (single) single.checked = !globalNestedReadmeView;
+      if (nested) nested.checked = globalNestedReadmeView;
+      if (wrap) wrap.classList.toggle('d-none', globalNestedReadmeView);
+      if (!prev) return;
+      if (globalNestedReadmeView) {
+        prev.removeAttribute('title');
+        prev.setAttribute('tabindex', '-1');
+        prev.setAttribute('role', 'region');
+        prev.setAttribute('aria-label', 'Nested folder docs — Edit saves each file to disk');
+      } else {
+        prev.setAttribute('title', 'Double-click to edit');
+        prev.setAttribute('tabindex', '0');
+        prev.setAttribute('role', 'button');
+        prev.removeAttribute('aria-label');
+      }
+    }
+
+    /** Combined preview under folderPath; each section Edit → Save writes that file’s path. */
+    async function loadGlobalNestedReadmeComposite(folderPath, viewAnchorPath) {
+      const viewAnchor = viewAnchorPath != null && viewAnchorPath !== '' ? viewAnchorPath : folderPath;
+      const prev = document.getElementById('readmePreview');
+      resetViewerDocEditorChrome();
+      activeReadmePath = null;
+      readmeSaveTargetVerifiedOnDisk = false;
+
+      const rootNorm = String(folderPath || '').replace(/[/\\]+$/, '');
+      const r = await window.tagBrowser.collectGlobalViewerDocs({
+        folderPath: rootNorm,
+        basenames: getGlobalViewerBasenamesList(),
+      });
+      if (!propsViewStill(viewAnchor)) return;
+
+      if (!r.ok) {
+        setViewerMdValue('readme', '');
+        if (prev) {
+          prev.innerHTML =
+            '<p class="text-danger small">' + escapeHtmlForPreview(String(r.error || 'Load failed')) + '</p>';
+        }
+        syncReadmePreviewChrome({ pulse: true, filled: false });
+        lastReadmeFolderPathLoose = pathKeyLoose(folderPath);
+        return;
+      }
+      const sections = Array.isArray(r.sections) ? r.sections : [];
+      if (sections.length === 0) {
+        setViewerMdValue('readme', '');
+        if (prev) {
+          prev.innerHTML =
+            '<p class="text-muted small mb-0">No nested doc files under this folder (check Settings → Viewer docs name list).</p>';
+        }
+        syncReadmePreviewChrome({ pulse: false, filled: false });
+        lastReadmeFolderPathLoose = pathKeyLoose(folderPath);
+        return;
+      }
+      globalNestedCompositeSections = sections.map((s) => ({
+        fullPath: s.fullPath,
+        relPath: s.relPath,
+        depth: s.depth,
+        baseName: s.baseName,
+        text: s.text,
+      }));
+      let primaryRootIdx = -1;
+      for (let i = 0; i < sections.length; i++) {
+        if ((sections[i].depth ?? 0) === 0) {
+          primaryRootIdx = i;
+          break;
+        }
+      }
+      let html = '<div class="global-readme-root">';
+      if (r.truncated) {
+        html +=
+          '<p class="small text-warning mb-2 pb-2 border-bottom">' +
+          'First 50 matching files only — tree may continue beyond.</p>';
+      }
+      for (const s of sections) {
+        const d = s.depth != null ? s.depth : 0;
+        const head = escapeHtmlForPreview(String(s.relPath || s.baseName || ''));
+        const encPath = encodeURIComponent(String(s.fullPath || ''));
+        html +=
+          '<section class="global-readme-section" data-doc-path="' +
+          encPath +
+          '" style="--gr-depth:' +
+          d +
+          '"><header class="global-readme-section-head d-flex align-items-start justify-content-between gap-2 flex-wrap" title="Expand/collapse section">' +
+          '<span class="min-w-0 text-break">' +
+          head +
+          '</span>' +
+          '<div class="d-inline-flex align-items-center gap-1 flex-shrink-0">' +
+          '<button type="button" class="btn btn-sm btn-outline-secondary nested-doc-toggle d-inline-flex align-items-center justify-content-center px-2" aria-expanded="true" title="Collapse">' +
+          '<i class="fa-solid fa-chevron-down fa-fw" aria-hidden="true"></i>' +
+          '<span class="visually-hidden">Toggle section</span>' +
+          '</button>' +
+          '<button type="button" class="btn btn-sm btn-outline-secondary nested-doc-edit">Edit</button>' +
+          '<button type="button" class="btn btn-sm btn-primary nested-doc-save d-none">Save</button>' +
+          '<button type="button" class="btn btn-sm btn-outline-secondary nested-doc-cancel d-none" title="Discard changes">Esc</button>' +
+          '</div>' +
+          '</header>' +
+          '<div class="nested-doc-view global-readme-section-body">' +
+          mdPreviewHtml(s.text, { mdSourcePath: s.fullPath }) +
+          '</div>' +
+          '<div class="nested-doc-editor d-none mt-1">' +
+          '<textarea class="form-control form-control-sm font-monospace nested-doc-ta" rows="10" spellcheck="false"></textarea>' +
+          '</div>' +
+          '</section>';
+      }
+      html += '</div>';
+      if (prev) prev.innerHTML = html;
+      setViewerMdValue('readme', '');
+      if (prev) {
+        function setNestedDocHeaderEditMode(sec, editing) {
+          if (!sec) return;
+          const on = !!editing;
+          const editB = sec.querySelector('button.nested-doc-edit');
+          const saveB = sec.querySelector('button.nested-doc-save');
+          const escB = sec.querySelector('button.nested-doc-cancel');
+          if (editB) editB.classList.toggle('d-none', on);
+          if (saveB) saveB.classList.toggle('d-none', !on);
+          if (escB) escB.classList.toggle('d-none', !on);
+        }
+        function setNestedSectionCollapsed(sec, collapsed) {
+          if (!sec) return;
+          const isCollapsed = !!collapsed;
+          const view = sec.querySelector('.nested-doc-view');
+          const editor = sec.querySelector('.nested-doc-editor');
+          const toggleBtn = sec.querySelector('button.nested-doc-toggle');
+          const icon = toggleBtn && toggleBtn.querySelector('i');
+          if (isCollapsed) setNestedDocHeaderEditMode(sec, false);
+          sec.classList.toggle('global-readme-section--collapsed', isCollapsed);
+          if (view) view.classList.toggle('d-none', isCollapsed);
+          if (editor) editor.classList.add('d-none');
+          if (toggleBtn) {
+            toggleBtn.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+            toggleBtn.setAttribute('title', isCollapsed ? 'Expand' : 'Collapse');
+          }
+          if (icon) {
+            icon.classList.toggle('fa-chevron-right', isCollapsed);
+            icon.classList.toggle('fa-chevron-down', !isCollapsed);
+          }
+        }
+        prev.querySelectorAll('section.global-readme-section').forEach((sec, idx) => {
+          const expand = primaryRootIdx >= 0 && idx === primaryRootIdx;
+          setNestedSectionCollapsed(sec, !expand);
+        });
+        nestedReadmePreviewClickHandler = function (ev) {
+          const t = ev.target;
+          if (!t || !t.closest) return;
+          const sec = t.closest('section.global-readme-section');
+          if (!sec) return;
+          const enc = sec.getAttribute('data-doc-path');
+          if (!enc) return;
+          let fullPath;
+          try {
+            fullPath = decodeURIComponent(enc);
+          } catch (_) {
+            return;
+          }
+          const viewEl = sec.querySelector('.nested-doc-view');
+          const editorEl = sec.querySelector('.nested-doc-editor');
+          const ta = sec.querySelector('textarea.nested-doc-ta');
+
+          if (t.closest('button.nested-doc-edit')) {
+            ev.preventDefault();
+            if (!propsViewStill(viewAnchor)) return;
+            setNestedSectionCollapsed(sec, false);
+            prev.querySelectorAll('.nested-doc-editor').forEach((edw) => {
+              edw.classList.add('d-none');
+              const psec = edw.closest('section');
+              const v = psec && psec.querySelector('.nested-doc-view');
+              if (v) v.classList.remove('d-none');
+              if (psec) setNestedDocHeaderEditMode(psec, false);
+            });
+            const rec = globalNestedCompositeSections.find(
+              (x) => propsPathKey(x.fullPath) === propsPathKey(fullPath)
+            );
+            if (ta && rec) setNestedMarkdownValue(ta, rec.text);
+            if (viewEl && editorEl && ta) {
+              viewEl.classList.add('d-none');
+              editorEl.classList.remove('d-none');
+              focusNestedMarkdownEditor(ta);
+            }
+            setNestedDocHeaderEditMode(sec, true);
+            return;
+          }
+          if (t.closest('button.nested-doc-save')) {
+            ev.preventDefault();
+            void (async () => {
+              if (!propsViewStill(viewAnchor)) return;
+              const text = getNestedMarkdownValue(ta);
+              const rWr = await window.tagBrowser.writeTextFile({ fullPath, text });
+              const st = document.getElementById('statusMain');
+              if (!rWr.ok) {
+                if (st) setStatusMain(rWr.error || 'Save failed');
+                return;
+              }
+              if (st) setStatusMain('Saved: ' + segmentPretty(T.baseName(fullPath)));
+              const rec = globalNestedCompositeSections.find(
+                (x) => propsPathKey(x.fullPath) === propsPathKey(fullPath)
+              );
+              if (rec) rec.text = text;
+              if (viewEl) viewEl.innerHTML = mdPreviewHtml(text, { mdSourcePath: fullPath });
+              if (viewEl && editorEl) {
+                editorEl.classList.add('d-none');
+                viewEl.classList.remove('d-none');
+              }
+              setNestedDocHeaderEditMode(sec, false);
+              syncReadmePreviewChrome({ pulse: false });
+              folderChildCountCache.clear();
+              // Nested doc save: one refresh only — retries stack 3 extra full searches and hammer huge parent scopes.
+              void runSearchNow('refresh');
+            })();
+            return;
+          }
+          if (t.closest('button.nested-doc-cancel')) {
+            ev.preventDefault();
+            const rec = globalNestedCompositeSections.find(
+              (x) => propsPathKey(x.fullPath) === propsPathKey(fullPath)
+            );
+            if (ta && rec) setNestedMarkdownValue(ta, rec.text);
+            if (viewEl && editorEl) {
+              editorEl.classList.add('d-none');
+              viewEl.classList.remove('d-none');
+            }
+            setNestedDocHeaderEditMode(sec, false);
+            return;
+          }
+          if (t.closest('button.nested-doc-toggle')) {
+            ev.preventDefault();
+            const isCollapsed = sec.classList.contains('global-readme-section--collapsed');
+            setNestedSectionCollapsed(sec, !isCollapsed);
+            return;
+          }
+          if (t.closest('header.global-readme-section-head') && !t.closest('button')) {
+            ev.preventDefault();
+            const isCollapsed = sec.classList.contains('global-readme-section--collapsed');
+            setNestedSectionCollapsed(sec, !isCollapsed);
+            return;
+          }
+        };
+        prev.addEventListener('click', nestedReadmePreviewClickHandler);
+      }
+      const filled = sections.some((s) => String(s.text || '').trim().length > 0);
+      syncReadmePreviewChrome({ pulse: true, filled });
+      lastReadmeFolderPathLoose = pathKeyLoose(folderPath);
+    }
+
+    /** Folder row / current folder: first match from shared Viewer docs basename list; else empty editor → Save creates default stem + .md. */
+    async function loadReadmeForFolder(folderPath, viewAnchorPath) {
+      detachNestedReadmePreviewHandler();
+      const viewAnchor = viewAnchorPath != null && viewAnchorPath !== '' ? viewAnchorPath : folderPath;
       const readmeBlock = document.getElementById('readmeBlock');
       const sep = folderPath.includes('/') ? '/' : '\\';
-      const readmeOnlyPath = folderPath.replace(/[/\\]+$/, '') + sep + 'readme.md';
+      const readmeOnlyPath = folderPath.replace(/[/\\]+$/, '') + sep + DEFAULT_FOLDER_DOC_STEM + '.md';
 
-      const ed = document.getElementById('readmeEditor');
-      const titleEl = document.getElementById('readmeFolderDocTitle');
       const kTarget = pathKeyLoose(folderPath);
       /* New folder vs last loaded: clear immediately so scope/selection changes never keep the previous readme text. */
       if (lastReadmeFolderPathLoose && kTarget !== lastReadmeFolderPathLoose) {
-        ed.value = '';
+        setViewerMdValue('readme', '');
         document.getElementById('readmePreview').innerHTML = mdPreviewHtml('');
         syncReadmePreviewChrome({ pulse: false });
-        if (titleEl) titleEl.textContent = 'Folder doc';
+        syncFolderDocTitleControlsFromPath(null);
+        folderDocViewerOverridePath = null;
+        folderDocHeaderLastSyncedKey = '';
         activeReadmePath = null;
         readmeSaveTargetVerifiedOnDisk = false;
       }
 
-      const pick = await window.tagBrowser.resolveFolderViewerDoc({ folderPath });
-      if (!propsViewStill(folderPath)) return;
-
       readmeBlock.classList.remove('d-none');
+      syncReadmeNestedDocsUi();
+      if (globalNestedReadmeView) {
+        if (!propsViewStill(viewAnchor)) return;
+        await loadGlobalNestedReadmeComposite(folderPath, viewAnchor);
+        return;
+      }
+
+      const pick = await window.tagBrowser.resolveFolderViewerDoc({
+        folderPath,
+        basenames: getGlobalViewerBasenamesList(),
+      });
+      if (!propsViewStill(viewAnchor)) return;
 
       const readmeWrap = document.getElementById('readmeEditorWrap');
       const sameFolderDocEditing =
@@ -5161,30 +8469,48 @@
         lastReadmeFolderPathLoose &&
         kTarget === lastReadmeFolderPathLoose;
       if (sameFolderDocEditing) {
-        document.getElementById('readmePreview').innerHTML = mdPreviewHtml(ed.value);
+        document.getElementById('readmePreview').innerHTML = mdPreviewHtml(getViewerMdValue('readme'), {
+          mdSourcePath: activeReadmePath,
+        });
         syncReadmePreviewChrome({ pulse: false });
         return;
       }
 
-      if (!pick.ok) {
+      const folderNormForUi = folderPath.replace(/[/\\]+$/, '');
+      let docPath = pick.ok ? pick.fullPath : null;
+      if (folderDocViewerOverridePath === FOLDER_DOC_OVERRIDE_NEW) {
+        docPath = folderDocTargetPathFromUi(folderNormForUi);
+      } else if (folderDocViewerOverridePath) {
+        const parO = pathKeyLoose(T.parentDir(folderDocViewerOverridePath));
+        const parF = pathKeyLoose(folderPath);
+        if (parO === parF) docPath = folderDocViewerOverridePath;
+      }
+
+      if (!pick.ok && !docPath) {
         activeReadmePath = null;
         readmeSaveTargetVerifiedOnDisk = false;
-        if (titleEl) titleEl.textContent = 'Folder doc';
-        ed.value = '/* read error: ' + (pick.error || '') + ' */';
-        document.getElementById('readmePreview').innerHTML = mdPreviewHtml(ed.value);
+        syncFolderDocTitleControlsFromPath(null);
+        folderDocHeaderLastSyncedKey = '';
+        setViewerMdValue('readme', '/* read error: ' + (pick.error || '') + ' */');
+        document.getElementById('readmePreview').innerHTML = mdPreviewHtml(getViewerMdValue('readme'));
         syncReadmePreviewChrome({ pulse: true });
         lastReadmeFolderPathLoose = pathKeyLoose(folderPath);
         resetViewerDocEditorChrome();
         return;
       }
 
-      const docPath = pick.fullPath;
       if (!docPath) {
         activeReadmePath = readmeOnlyPath;
         readmeSaveTargetVerifiedOnDisk = false;
-        if (titleEl) titleEl.textContent = 'readme.md — folder doc';
-        ed.value = '';
-        document.getElementById('readmePreview').innerHTML = mdPreviewHtml(ed.value);
+        {
+          const ndk = pathKeyLoose(readmeOnlyPath);
+          if (ndk !== folderDocHeaderLastSyncedKey) {
+            syncFolderDocTitleControlsFromPath(null);
+            folderDocHeaderLastSyncedKey = ndk;
+          }
+        }
+        setViewerMdValue('readme', '');
+        document.getElementById('readmePreview').innerHTML = mdPreviewHtml(getViewerMdValue('readme'), { mdSourcePath: readmeOnlyPath });
         syncReadmePreviewChrome({ pulse: true });
         lastReadmeFolderPathLoose = pathKeyLoose(folderPath);
         resetViewerDocEditorChrome();
@@ -5192,20 +8518,28 @@
       }
 
       activeReadmePath = docPath;
-      if (titleEl) titleEl.textContent = segmentPretty(T.baseName(docPath)) + ' — folder doc';
+      {
+        const dk = pathKeyLoose(docPath);
+        if (dk !== folderDocHeaderLastSyncedKey) {
+          if (folderDocViewerOverridePath !== FOLDER_DOC_OVERRIDE_NEW) {
+            syncFolderDocTitleControlsFromPath(docPath);
+          }
+          folderDocHeaderLastSyncedKey = dk;
+        }
+      }
 
       const r = await window.tagBrowser.readTextFile({ fullPath: docPath });
-      if (!propsViewStill(folderPath)) return;
+      if (!propsViewStill(viewAnchor)) return;
 
       readmeSaveTargetVerifiedOnDisk = !!r.ok;
       if (r.ok) {
-        ed.value = r.text;
+        setViewerMdValue('readme', r.text);
       } else if (r.code === 'ENOENT') {
-        ed.value = '';
+        setViewerMdValue('readme', '');
       } else {
-        ed.value = '/* read error: ' + (r.error || '') + ' */';
+        setViewerMdValue('readme', '/* read error: ' + (r.error || '') + ' */');
       }
-      document.getElementById('readmePreview').innerHTML = mdPreviewHtml(ed.value);
+      document.getElementById('readmePreview').innerHTML = mdPreviewHtml(getViewerMdValue('readme'), { mdSourcePath: docPath });
       syncReadmePreviewChrome({ pulse: true });
       lastReadmeFolderPathLoose = pathKeyLoose(folderPath);
       resetViewerDocEditorChrome();
@@ -5402,7 +8736,7 @@
     async function runTagDiscoverySearchInner(pruneDeadRemembered) {
       const statusEl = document.getElementById('statusMain');
       const baseUrl = document.getElementById('baseUrl').value.trim() || 'http://127.0.0.1';
-      const mr = Math.max(1, parseInt(document.getElementById('maxResults').value, 10) || 200);
+      const mr = Math.max(1, parseInt(document.getElementById('maxResults').value, 10) || 60);
       const countCap = Math.min(50000, Math.max(5000, mr));
       const httpUser = document.getElementById('httpUser').value;
       const httpPassword = document.getElementById('httpPassword').value;
@@ -5672,7 +9006,7 @@
       'tagfox-size-heat-kb100',
     ];
 
-    /** Size column / props: accent by magnitude (Everything gives size for many folder rows too; synthetic tree folders stay —). */
+    /** Size column: accent by magnitude (Everything gives size for many folder rows too; synthetic tree folders stay —). */
     function applySizeHeatToElement(el, row) {
       if (!el) return;
       el.classList.remove('text-danger', 'fw-semibold', ...SIZE_HEAT_CLASSES);
@@ -5770,15 +9104,53 @@
       return [...checkedPathsMap.values()];
     }
 
-    /** Checked rows, else single highlighted row (same idea as bulk copy/delete). */
-    function pathsForBulkRename() {
-      const bulk = getCheckedPathsArr();
-      if (bulk.length) return bulk;
-      if (selectedFullPath) {
-        const row = selectedRowForActions();
-        if (row) return [fullPathForRow(row)];
+    /** Checked row by path in the current table render. */
+    function findCheckedRowByPath(fp) {
+      const key = pathNormKey(fp);
+      if (!key) return null;
+      return lastRows.find((row) => pathNormKey(fullPathForRow(row)) === key) || null;
+    }
+
+    /** Current folder plus checked subfolders / file-parent subfolders for ambiguous paste. */
+    function getPasteTargetOptionsForCheckedRows(currentFolderRaw) {
+      const currentFolder = normalizeFolderPathForEverything(String(currentFolderRaw || '').trim()).replace(/[/\\]+$/, '');
+      const currentKey = pathNormKey(currentFolder);
+      const seen = new Set();
+      const folders = [];
+      let hasCheckedSubfolder = false;
+      let hasCheckedFileInCurrentFolder = false;
+      const addFolder = (folderRaw) => {
+        const folder = normalizeFolderPathForEverything(String(folderRaw || '').trim()).replace(/[/\\]+$/, '');
+        if (!folder) return;
+        if (currentFolder && !pathIsUnderOrEqualFolder(folder, currentFolder)) return;
+        const key = pathNormKey(folder);
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        folders.push(folder);
+      };
+      addFolder(currentFolder);
+      for (const fp of getCheckedPathsArr()) {
+        const row = findCheckedRowByPath(fp);
+        if (row && rowIsFolder(row)) {
+          const folder = normalizeFolderPathForEverything(fp).replace(/[/\\]+$/, '');
+          if (pathNormKey(folder) !== currentKey) hasCheckedSubfolder = true;
+          addFolder(folder);
+          continue;
+        }
+        const parent = normalizeFolderPathForEverything(T.parentDir(fp)).replace(/[/\\]+$/, '');
+        if (!parent) continue;
+        if (pathNormKey(parent) === currentKey) hasCheckedFileInCurrentFolder = true;
+        else addFolder(parent);
       }
-      return [];
+      return { folders, hasCheckedSubfolder, hasCheckedFileInCurrentFolder };
+    }
+
+    /** Use current folder unless checked rows make the destination ambiguous. */
+    async function chooseTargetFolderFromCheckedRows(currentFolder) {
+      const info = getPasteTargetOptionsForCheckedRows(currentFolder);
+      if (!info.hasCheckedSubfolder && info.hasCheckedFileInCurrentFolder) return currentFolder;
+      if (info.folders.length <= 1) return currentFolder;
+      return promptPasteTargetModal(info.folders, currentFolder);
     }
 
     /** Last path segment for Recycle Bin confirm (file or folder name). */
@@ -5802,6 +9174,39 @@
       const lines = list.slice(0, cap).map((fp) => '• ' + pathBasenameForConfirm(fp));
       const more = n > cap ? '\n… and ' + (n - cap) + ' more' : '';
       return head + '\n\n' + lines.join('\n') + more;
+    }
+
+    /** Status waiter while Recycle Bin operation runs. */
+    function setDeletingStatus(count) {
+      const n = Math.max(1, Number(count) || 1);
+      setStatusMain(n === 1 ? 'Deleting 1 item...' : 'Deleting ' + n + ' items...');
+    }
+
+    /** One `trashPaths` IPC + paired search-debug lines (begin / batch | ipcReturn | invokeThrow). */
+    async function trashPathsInvokeWithSearchDebug(paths, source) {
+      const p = Array.isArray(paths) ? paths : [];
+      const cap = 12;
+      searchDebugLog('recycle.begin', {
+        source,
+        count: p.length,
+        paths: p.slice(0, cap),
+        truncated: p.length > cap,
+      });
+      try {
+        const r = await window.tagBrowser.trashPaths(p, { debugSource: source });
+        if (r && r.recycleLog) searchDebugLog('recycle.batch', r.recycleLog);
+        else
+          searchDebugLog('recycle.ipcReturn', {
+            source,
+            ok: !!(r && r.ok),
+            err: (r && r.error) || '',
+            keys: r && typeof r === 'object' ? Object.keys(r) : [],
+          });
+        return { r, threw: false };
+      } catch (e) {
+        searchDebugLog('recycle.invokeThrow', { source, err: String(e && e.message ? e.message : e) });
+        return { r: null, threw: true };
+      }
     }
 
     /** Drag-out: all checked paths, or single row path. */
@@ -5851,20 +9256,23 @@
       return run(true);
     }
 
-    /** Internal drop: move (default) or copy with Shift — into dest folder. */
+    /** Internal drop: move (default) or copy with Shift — into dest folder. Returns true on success. */
     async function applyInternalPathsDrop(destFolderRaw, paths, mode) {
       const destFolder = normalizeFolderPathForEverything(destFolderRaw);
       const status = document.getElementById('statusMain');
-      const rootPrefix = T.normalizeRootPrefix(document.getElementById('rootFolder').value);
+      const rootPrefix = rootPrefixValue();
       const destKey = pathNormKey(destFolder);
       const filtered = paths.filter((p) => pathNormKey(p) !== destKey);
-      if (!filtered.length) return;
+      if (!filtered.length) return false;
 
       if (mode === 'copy') {
         if (!window.tagBrowser.copyPathsIntoFolder) {
           setStatusMain('Copy into folder is not available.');
-          return;
+          return false;
         }
+        setBusyStatusHint(
+          filtered.length === 1 ? 'Copying 1 item into folder...' : 'Copying ' + filtered.length + ' items into folder...'
+        );
         const r = await scopeCopyOrMoveWithConflictPrompt('copy', {
           sourcePaths: filtered,
           destFolder,
@@ -5873,14 +9281,15 @@
         setStatusMain(r.ok ? 'Copied into folder.' : (r.error || 'Copy failed'));
         if (r.ok) {
           await renderShelf(); // Shelf chips must match disk after drop (drop event may end before this await).
-          void refreshAfterDiskMutation();
+          void refreshAfterDiskMutation({ paths: filtered, destFolder });
+          return true;
         }
-        return;
+        return false;
       }
 
       if (!window.tagBrowser.movePathsIntoFolder) {
         setStatusMain('Move not available.');
-        return;
+        return false;
       }
       const r = await scopeCopyOrMoveWithConflictPrompt('move', {
         sourcePaths: filtered,
@@ -5890,70 +9299,92 @@
       setStatusMain(r.ok ? 'Moved into folder.' : (r.error || 'Move failed'));
       if (r.ok) {
         await renderShelf();
-        void refreshAfterDiskMutation();
+        void refreshAfterDiskMutation({ paths: filtered, destFolder });
+        return true;
       }
+      return false;
+    }
+
+    /** One-shot acknowledgement on a folder pill after successful drop. */
+    function pulseFolderDropTarget(el) {
+      if (!el || !el.classList) return;
+      el.classList.remove('folder-drop-success');
+      void el.offsetWidth; // restart one-shot animation for repeated drops on the same pill
+      el.classList.add('folder-drop-success');
+      setTimeout(() => {
+        if (el.isConnected) el.classList.remove('folder-drop-success');
+      }, 900);
     }
 
     /** One-time: results scroll area dragover/drop — row targets, else empty space below rows → current scope folder (Shelf chips). */
     function bindResultsTableDragDrop() {
-      const wrap = document.getElementById('resultsWrap');
-      const tbody = document.getElementById('tbody');
-      if (!wrap || !tbody || wrap.dataset.dragDropBound === '1') return;
-      wrap.dataset.dragDropBound = '1';
+      const wraps = Array.from(document.querySelectorAll('.results-pane'));
+      for (const wrap of wraps) {
+        if (!wrap || wrap.dataset.dragDropBound === '1') continue;
+        wrap.dataset.dragDropBound = '1';
 
-      function clearRowDragOver() {
-        tbody.querySelectorAll('tr.results-drag-over').forEach((tr) => tr.classList.remove('results-drag-over'));
-      }
+        function clearRowDragOver() {
+          wrap.querySelectorAll('tr.results-drag-over').forEach((tr) => tr.classList.remove('results-drag-over'));
+        }
 
-      function clearScopeDropOver() {
-        wrap.classList.remove('results-scope-drop-over');
-      }
+        function clearScopeDropOver() {
+          wrap.classList.remove('results-scope-drop-over');
+        }
 
-      wrap.addEventListener('dragover', (e) => {
-        if (!dataTransferHasTagBrowserOrFiles(e.dataTransfer)) {
+        function paneScopeFolderForDrop() {
+          const paneKey = wrap.getAttribute('data-results-pane') === 'B' ? 'B' : 'A';
+          const s = resultsPaneState[paneKey] && resultsPaneState[paneKey].searchState;
+          const paneRoot = normalizeFolderPathForEverything(String((s && s.rootFolder) || '').trim());
+          if (paneRoot) return paneRoot;
+          return currentScopeFolderPath();
+        }
+
+        wrap.addEventListener('dragover', (e) => {
+          if (!dataTransferHasTagBrowserOrFiles(e.dataTransfer)) {
+            clearRowDragOver();
+            clearScopeDropOver();
+            return;
+          }
+          const tr = e.target.closest('tr[data-drop-path]');
+          if (tr && wrap.contains(tr) && tr.dataset.dropPath) {
+            clearScopeDropOver();
+            e.preventDefault();
+            e.dataTransfer.dropEffect = e.shiftKey ? 'copy' : 'move';
+            clearRowDragOver();
+            tr.classList.add('results-drag-over');
+            return;
+          }
+          clearRowDragOver();
+          const scopeDest = paneScopeFolderForDrop();
+          if (scopeDest) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = e.shiftKey ? 'copy' : 'move';
+            wrap.classList.add('results-scope-drop-over');
+          } else {
+            clearScopeDropOver();
+          }
+        });
+
+        wrap.addEventListener('drop', async (e) => {
           clearRowDragOver();
           clearScopeDropOver();
-          return;
-        }
-        const tr = e.target.closest('#resultsTable tbody tr');
-        if (tr && tr.dataset.dropPath) {
-          clearScopeDropOver();
+          const paths = collectPathsForShelfDrop(e.dataTransfer);
+          if (!paths.length) return;
           e.preventDefault();
-          e.dataTransfer.dropEffect = e.shiftKey ? 'copy' : 'move';
-          clearRowDragOver();
-          tr.classList.add('results-drag-over');
-          return;
-        }
-        clearRowDragOver();
-        const scopeDest = currentScopeFolderPath();
-        if (scopeDest) {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = e.shiftKey ? 'copy' : 'move';
-          wrap.classList.add('results-scope-drop-over');
-        } else {
-          clearScopeDropOver();
-        }
-      });
-
-      wrap.addEventListener('drop', async (e) => {
-        clearRowDragOver();
-        clearScopeDropOver();
-        const paths = collectPathsForShelfDrop(e.dataTransfer);
-        if (!paths.length) return;
-        e.preventDefault();
-        e.stopPropagation();
-        const tr = e.target.closest('#resultsTable tbody tr');
-        if (tr && tr.dataset.dropPath) {
-          await applyInternalPathsDrop(tr.dataset.dropPath, paths, e.shiftKey ? 'copy' : 'move');
-          return;
-        }
-        const scopeDest = currentScopeFolderPath();
-        if (!scopeDest) {
-          setStatusMain('Set the current folder (breadcrumb or path editor) to drop into the list.');
-          return;
-        }
-        await applyInternalPathsDrop(scopeDest, paths, e.shiftKey ? 'copy' : 'move');
-      });
+          e.stopPropagation();
+          const tr = e.target.closest('tr[data-drop-path]');
+          if (tr && wrap.contains(tr) && tr.dataset.dropPath) {
+            await applyInternalPathsDrop(tr.dataset.dropPath, paths, e.shiftKey ? 'copy' : 'move');
+            return;
+          }
+          const scopeDest = paneScopeFolderForDrop();
+          if (!scopeDest) {
+            setStatusMain('Set the current folder (breadcrumb or path editor) to drop into the list.');
+            return;
+          }
+          await applyInternalPathsDrop(scopeDest, paths, e.shiftKey ? 'copy' : 'move');
+        });
+      }
     }
 
     /** Breadcrumb + favourite folder pills: drop rows/Shelf/files to move (Shift = copy) into that folder. */
@@ -5962,7 +9393,7 @@
       if (folderPathDropTargetBarsBound) return;
       folderPathDropTargetBarsBound = true;
 
-      const barIds = ['breadcrumbBar', 'favFoldersBar'];
+      const barIds = ['breadcrumbBar', 'favFoldersBar', 'favRecentFoldersBar', 'favRecentFilesBar'];
       for (const id of barIds) {
         const bar = document.getElementById(id);
         if (!bar || bar.dataset.folderPathDropBound === '1') continue;
@@ -5975,6 +9406,29 @@
         const isFavFoldersBar = bar.id === 'favFoldersBar';
 
         bar.addEventListener('dragover', (e) => {
+          const favFolderInsertPath = isFavFoldersBar ? getDataTransferFavouriteFolder(e.dataTransfer) : '';
+          if (favFolderInsertPath) {
+            if (bar.dataset.tagfoxGapsInjected !== '1') injectFavBarDropGaps(bar);
+            const hasFavRows = !!bar.querySelector(':scope > .tagfox-fav-chip-row');
+            /* Gaps are narrow; “between pills” usually hits the chip row, not .tagfox-fav-drop-gap — use pointer vs main pill only. */
+            let overPillGo = null;
+            if (e.target.closest) {
+              const g = e.target.closest('.fav-folder-chip-go');
+              if (g && bar.contains(g)) overPillGo = g;
+            }
+            if (hasFavRows && overPillGo) {
+              clearFavBarDropGaps(bar);
+              /* fall through: highlight pill for move/copy into that folder */
+            } else {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'copy';
+              clearBarPathDragOver();
+              const gapIdx = favGapIndexFromBarPointer(bar, e.clientX, e.clientY, e);
+              setActiveFavDropGap(bar, gapIdx);
+              return;
+            }
+          }
+          if (isFavFoldersBar) clearFavBarDropGaps(bar);
           /* Reorder-only drag has no x-tagbrowser-paths / files — don't let a stuck favListDragKind block row→folder drops. */
           if (
             isFavFoldersBar &&
@@ -6000,6 +9454,29 @@
         });
 
         bar.addEventListener('drop', async (e) => {
+          const favFolderInsertPath = isFavFoldersBar ? getDataTransferFavouriteFolder(e.dataTransfer) : '';
+          if (favFolderInsertPath) {
+            const hasFavRows = !!bar.querySelector(':scope > .tagfox-fav-chip-row');
+            let overPillGo = null;
+            if (e.target.closest) {
+              const g = e.target.closest('.fav-folder-chip-go');
+              if (g && bar.contains(g)) overPillGo = g;
+            }
+            if (!hasFavRows || !overPillGo) {
+              e.preventDefault();
+              e.stopPropagation();
+              clearBarPathDragOver();
+              const gapIdx = favGapIndexFromBarPointer(bar, e.clientX, e.clientY, e);
+              clearFavBarDropGaps(bar);
+              if (!Number.isFinite(gapIdx)) return;
+              const r = upsertFavouriteFolderAtGap(favFolderInsertPath, gapIdx);
+              if (!r.changed) return;
+              setStatusMain(r.existed ? 'Favourite folders reordered.' : 'Favourite folder saved.');
+              return;
+            }
+            clearFavBarDropGaps(bar);
+          }
+          if (isFavFoldersBar) clearFavBarDropGaps(bar);
           if (
             isFavFoldersBar &&
             favListDragKind === 'folder' &&
@@ -6015,7 +9492,8 @@
           if (!paths.length) return;
           e.preventDefault();
           e.stopPropagation();
-          await applyInternalPathsDrop(node.dataset.dropPath, paths, e.shiftKey ? 'copy' : 'move');
+          const ok = await applyInternalPathsDrop(node.dataset.dropPath, paths, e.shiftKey ? 'copy' : 'move');
+          if (ok) pulseFolderDropTarget(node);
         });
       }
     }
@@ -6057,12 +9535,11 @@
       const aside = document.getElementById('appShelf');
       const rot = aside?.querySelector?.('.app-shelf-rot');
       if (!aside || !rot) return;
-      // Same geometry empty or with chips: pre-rot minWidth ≈ column height so -90° strip spans the shelf; shrink slightly so ends (hand / drop zone) don’t sit flush on aside top/bottom.
+      // Pre-rot minWidth ≈ column height so ±90° strip spans the shelf; match results column height (no vertical inset — aligns with results card / table).
       rot.style.minWidth = '';
       const parent = aside.closest('.results-with-shelf') || aside.parentElement;
       const h = parent ? parent.clientHeight : 0;
-      const shelfStripEndInsetPx = 6;
-      if (h > 48) rot.style.minWidth = Math.max(48, h - shelfStripEndInsetPx * 2) + 'px';
+      if (h > 48) rot.style.minWidth = Math.max(48, h) + 'px';
       const br = rot.getBoundingClientRect();
       aside.style.width = Math.max(48, Math.ceil(br.width)) + 'px';
     }
@@ -6101,20 +9578,28 @@
       const zone = document.getElementById('shelfDropZone');
       const chips = document.getElementById('shelfChips');
       const hint = document.getElementById('shelfEmptyHint');
+      const clearAllBtn = document.getElementById('btnShelfClear');
       if (!zone || !chips || !hint || !window.tagBrowser.shelfState) return;
       const r = await window.tagBrowser.shelfState();
       const shelfDropHelp =
-        'Drop here (move; Shift+copy). Drag chips within TagFox, or use the hand button / Alt+drag to drag into Explorer.';
+        'The shelf is temporary storage, like a clipboard. Drag files or folders to and from it (to move not copy, press shift while dragging). To drag things ourside TagFox, press the hand button first or use Alt+drag.';
       zone.title = r.ok ? shelfDropHelp + ' Staging folder: ' + r.path : shelfDropHelp + ' ' + String(r.error || 'Shelf unavailable');
       chips.innerHTML = '';
       if (!r.ok || !r.entries.length) {
         hint.classList.remove('d-none');
+        if (clearAllBtn) clearAllBtn.classList.add('d-none');
         refreshTagFoxChromeTooltips(zone);
         scheduleSyncShelfAsideWidth();
         return;
       }
       hint.classList.add('d-none');
+      if (clearAllBtn) clearAllBtn.classList.toggle('d-none', r.entries.length < 2);
       const allPaths = r.entries.map((ent) => ent.fullPath);
+      // Label before pills (empty state uses #shelfEmptyHint instead).
+      const shelfLbl = document.createElement('span');
+      shelfLbl.className = 'text-muted fw-semibold align-middle me-3';
+      shelfLbl.textContent = 'Shelf';
+      chips.appendChild(shelfLbl);
       if (r.entries.length > 1) {
         const allChip = document.createElement('span');
         allChip.className = 'badge bg-primary shelf-chip shelf-chip-all align-middle';
@@ -6122,20 +9607,52 @@
         allChip.title =
           'All ' +
           r.entries.length +
-          ' items on the Shelf — drag within TagFox; use hand button or Alt+drag to send to Explorer';
+          ' items on the Shelf — drag within TagFox; use OS drag button or Alt+drag to send to Explorer';
         bindShelfChipDrag(allChip, allPaths);
         chips.appendChild(allChip);
       }
       for (const ent of r.entries) {
+        const row = document.createElement('span');
+        row.className = 'd-inline-flex align-items-center gap-0 shelf-chip-with-remove';
         const chip = document.createElement('span');
         chip.className = 'badge bg-secondary shelf-chip align-middle';
         chip.textContent = ent.name;
         chip.title =
           ent.fullPath +
           (ent.isDirectory ? ' (folder)' : '') +
-          ' — drag within TagFox; use hand button or Alt+drag to send to Explorer';
+          ' — drag within TagFox; use OS drag button or Alt+drag to send to Explorer';
         bindShelfChipDrag(chip, [ent.fullPath]);
-        chips.appendChild(chip);
+        row.appendChild(chip);
+        const rm = document.createElement('button');
+        rm.type = 'button';
+        rm.className =
+          'btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0 shelf-chip-remove';
+        rm.style.width = '1.25rem';
+        rm.style.height = '1.25rem';
+        rm.title = 'Remove this item from Shelf';
+        rm.innerHTML = '<i class="fa-solid fa-xmark" aria-hidden="true"></i>';
+        rm.addEventListener(
+          'mousedown',
+          (ev) => {
+            ev.stopPropagation();
+          },
+          true
+        );
+        rm.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const rmFn = window.tagBrowser && window.tagBrowser.removeShelfPaths;
+          if (!rmFn) {
+            setStatusMain('Fully quit TagFox and start again so Shelf remove is available.');
+            return;
+          }
+          void (async () => {
+            const res = await rmFn([ent.fullPath]);
+            if (!res.ok) setStatusMain(res.error || 'Remove from Shelf failed');
+          })();
+        });
+        row.appendChild(rm);
+        chips.appendChild(row);
       }
       refreshTagFoxChromeTooltips(zone);
       refreshTagFoxChromeTooltips(chips);
@@ -6185,6 +9702,9 @@
 
             let r;
             if (copy) {
+              setBusyStatusHint(
+                filtered.length === 1 ? 'Copying 1 item to Shelf...' : 'Copying ' + filtered.length + ' items to Shelf...'
+              );
               r = await scopeCopyOrMoveWithConflictPrompt('copy', {
                 sourcePaths: filtered,
                 destFolder: st.path,
@@ -6208,7 +9728,7 @@
                   : 'Moved to Shelf.'
                 : r.error || (copy ? 'Shelf copy failed' : 'Shelf move failed')
             );
-            if (r.ok) void refreshAfterDiskMutation();
+            if (r.ok) void refreshAfterDiskMutation({ paths: filtered, destFolder: st.path });
           })();
         }, 40);
       });
@@ -6222,17 +9742,172 @@
       updateBulkBar();
     }
 
+    /** Clamp fixed #bulkBar inside the viewport (after layout). */
+    function positionBulkBarFloat(clientX, clientY) {
+      const bar = document.getElementById('bulkBar');
+      if (!bar || bar.classList.contains('d-none')) return;
+      const pad = 10;
+      let x = clientX + pad;
+      let y = clientY + pad;
+      bar.style.left = x + 'px';
+      bar.style.top = y + 'px';
+      const w = bar.offsetWidth;
+      const h = bar.offsetHeight;
+      const maxLeft = Math.max(4, window.innerWidth - w - 4);
+      const maxTop = Math.max(4, window.innerHeight - h - 4);
+      const nx = Math.min(Math.max(4, x), maxLeft);
+      const ny = Math.min(Math.max(4, y), maxTop);
+      if (nx !== x || ny !== y) {
+        bar.style.left = nx + 'px';
+        bar.style.top = ny + 'px';
+      }
+    }
+
+    /** True if pointer is in an expanded box around the visible bar (crossing empty space from row → buttons). */
+    function pointerNearBulkBar(clientX, clientY) {
+      const bar = document.getElementById('bulkBar');
+      if (!bar || bar.classList.contains('d-none')) return false;
+      const r = bar.getBoundingClientRect();
+      const pad = 72;
+      return (
+        clientX >= r.left - pad &&
+        clientX <= r.right + pad &&
+        clientY >= r.top - pad &&
+        clientY <= r.bottom + pad
+      );
+    }
+
+    /** After selection changes: if pointer is already over a checked row (or the bar), show/update without moving the mouse. */
+    function bulkBarSyncFloatFromLastPointer() {
+      if (!checkedPathsMap.size) return;
+      const bar = document.getElementById('bulkBar');
+      if (!bar) return;
+      const x = lastPointerClientX;
+      const y = lastPointerClientY;
+      const el = document.elementFromPoint(x, y);
+      if (!el) return;
+      if (el.closest && el.closest('#bulkBar')) {
+        const lbl = document.getElementById('bulkBarLabel');
+        if (lbl) lbl.textContent = checkedPathsMap.size + ' selected:';
+        bar.classList.remove('d-none');
+        bar.setAttribute('aria-hidden', 'false');
+        return;
+      }
+      const tr = el.closest && el.closest('#resultsTable tbody tr');
+      const fp = tr && tr.dataset && tr.dataset.rowPath ? String(tr.dataset.rowPath) : '';
+      if (fp && isCheckedPath(fp)) {
+        const lbl = document.getElementById('bulkBarLabel');
+        if (lbl) lbl.textContent = checkedPathsMap.size + ' selected:';
+        bar.classList.remove('d-none');
+        bar.setAttribute('aria-hidden', 'false');
+        requestAnimationFrame(() => positionBulkBarFloat(x, y));
+      }
+    }
+
+    /** Show bar near cursor on checked rows; keep visible while pointer is over #bulkBar. */
+    function onBulkBarPointerMove(e) {
+      if (!checkedPathsMap.size) return;
+      const bar = document.getElementById('bulkBar');
+      if (!bar) return;
+      if (e.target.closest && e.target.closest('#bulkBar')) return;
+      const tr = e.target.closest && e.target.closest('#resultsTable tbody tr');
+      const fp = tr && tr.dataset && tr.dataset.rowPath ? String(tr.dataset.rowPath) : '';
+      if (fp && isCheckedPath(fp)) {
+        const lbl = document.getElementById('bulkBarLabel');
+        if (lbl) lbl.textContent = checkedPathsMap.size + ' selected:';
+        bar.classList.remove('d-none');
+        bar.setAttribute('aria-hidden', 'false');
+        positionBulkBarFloat(e.clientX, e.clientY);
+      } else if (pointerNearBulkBar(e.clientX, e.clientY)) {
+        return;
+      } else {
+        bar.classList.add('d-none');
+        bar.setAttribute('aria-hidden', 'true');
+      }
+    }
+
+    function syncBulkBarPointerTracking() {
+      if (checkedPathsMap.size > 0) {
+        if (!bulkBarPointerBound) {
+          document.addEventListener('pointermove', onBulkBarPointerMove, true);
+          bulkBarPointerBound = true;
+        }
+      } else if (bulkBarPointerBound) {
+        document.removeEventListener('pointermove', onBulkBarPointerMove, true);
+        bulkBarPointerBound = false;
+      }
+    }
+
     function updateBulkBar() {
       const n = checkedPathsMap.size;
       const bar = document.getElementById('bulkBar');
       if (!bar) return;
+      const lbl = document.getElementById('bulkBarLabel');
+      if (lbl) lbl.textContent = n + ' selected:';
       if (!n) {
         bar.classList.add('d-none');
+        bar.setAttribute('aria-hidden', 'true');
+        syncBulkBarPointerTracking();
         return;
       }
-      bar.classList.remove('d-none');
-      const lbl = document.getElementById('bulkBarLabel');
-      if (lbl) lbl.textContent = n + ' selected';
+      bar.classList.add('d-none');
+      bar.setAttribute('aria-hidden', 'true');
+      syncBulkBarPointerTracking();
+      bulkBarSyncFloatFromLastPointer();
+    }
+
+    /** Uncheck all result rows (bulk bar “Clear selection”). */
+    function clearResultsCheckedSelection() {
+      clearResultsRowUncheckPending();
+      if (!checkedPathsMap.size) return;
+      checkedPathsMap.clear();
+      updateBulkBar();
+      renderTable();
+    }
+
+    function clearResultsRowUncheckPending() {
+      if (!resultsRowUncheckTimer) return;
+      clearTimeout(resultsRowUncheckTimer);
+      resultsRowUncheckTimer = null;
+      resultsRowUncheckPendingFp = null;
+    }
+
+    /** Plain click / Home / End / single-step ↑↓: one checked row; checks stay aligned with focus (Explorer-style). */
+    function resultsExclusiveSelectRow(row, fp) {
+      clearResultsRowUncheckPending();
+      resultsShiftRangeAnchorIdx = null;
+      checkedPathsMap.clear();
+      toggleCheckPath(fp, true);
+      updateSelectAllCheckboxState();
+      setSelection(row, fp);
+      syncResultsRowCheckboxStates();
+    }
+
+    /** No list row selected (all checkboxes cleared): clear highlight + props to scope fallback. */
+    function clearResultsRowSelection() {
+      selectedRow = null;
+      selectedFullPath = null;
+      renderScopeBreadcrumbIfScopeChanged();
+      syncResultsSelectionHighlight();
+      refreshPropsPanelQuick();
+      schedulePropsPreviewHeavy();
+      focusResultsWrapAfterListSelection();
+    }
+
+    /** Plain click on a row that is already checked: uncheck it; focus next checked row or clear selection. */
+    function resultsPlainClickUncheckRow(fp) {
+      toggleCheckPath(fp, false);
+      resultsShiftRangeAnchorIdx = null;
+      updateSelectAllCheckboxState();
+      syncResultsRowCheckboxStates();
+      for (const r of listRowsForUi()) {
+        const p = fullPathForRow(r);
+        if (isCheckedPath(p)) {
+          setSelection(r, p);
+          return;
+        }
+      }
+      clearResultsRowSelection();
     }
 
     function updateSelectAllCheckboxState() {
@@ -6280,6 +9955,8 @@
       if (!name) return dir;
       if (!dir) return name;
       const sep = dir.includes('/') ? '/' : '\\';
+      /* Synthetic grouping: always join; never treat parent tail === name as “full path already in path”. */
+      if (row.__pathGroupingSynthetic) return dir + sep + name;
       const endsWithFile =
         dir.length >= name.length &&
         dir.slice(-name.length).toLowerCase() === name.toLowerCase() &&
@@ -6302,6 +9979,275 @@
         parsedTags: parsed.tags,
         rowKeys: Object.keys(row).slice(0, 16),
       };
+    }
+
+    function searchDebugPathLooksLikeShortcutTargets(fullPath) {
+      return /[\\/]\.(shortcut-targets-by-id|shortcuts-by-id)([\\/]|$)/i.test(String(fullPath || '').trim());
+    }
+
+    function isGoogleDriveSharedDrivesPath(fullPath) {
+      const s = normalizeFolderPathForEverything(String(fullPath || '').trim()).replace(/\//g, '\\');
+      return /^[a-zA-Z]:\\shared drives(?:\\|$)/i.test(s);
+    }
+
+    function isGoogleDriveCloudBrowseFallbackPath(fullPath) {
+      if (searchDebugPathLooksLikeShortcutTargets(fullPath)) return true;
+      if (isGoogleDriveSharedDrivesPath(fullPath)) return true;
+      // Bare Filestream root (G:\, H:\): Everything's NTFS index misses the virtual "Shared drives" entry.
+      const s = String(fullPath || '').trim().replace(/\//g, '\\').replace(/\\+$/, '');
+      if (/^[a-zA-Z]:$/.test(s) && googleDriveDebugRootLetter(s + '\\')) return true;
+      return false;
+    }
+
+    function googleDriveDebugRootLetter(fullPath) {
+      const s = normalizeFolderPathForEverything(String(fullPath || '').trim());
+      const m = /^([a-zA-Z]):\\/.exec(s);
+      if (!m) return '';
+      const L = String(m[1] || '').toUpperCase();
+      return L === 'G' || L === 'H' ? L : '';
+    }
+
+    function googleDriveDebugSharedDrivesPathForScope(fullPath) {
+      const L = googleDriveDebugRootLetter(fullPath);
+      if (!L) return '';
+      return `${L}:\\Shared drives`;
+    }
+
+    async function maybeBuildLocalCloudBrowseFallbackRows({ runId, rootFolder, query, recursive }) {
+      const normRoot = normalizeFolderPathForEverything(String(rootFolder || '').trim());
+      const plainBrowseOnly = !String(query || '').trim() && activeTagKeys.size === 0 && recencyFilterMode() === 'all';
+      if (!normRoot || !plainBrowseOnly) return null;
+      /* Google Drive virtual entries (shared drives owned by others, un-hydrated shortcuts) are invisible to
+         Everything's NTFS index — fs.readdir via the Cloud Files API sees them all. Always prefer the local
+         listing for these paths in plain browse, even when Everything returned a partial set. */
+      if (!isGoogleDriveCloudBrowseFallbackPath(normRoot)) return null;
+      if (!window.tagBrowser || typeof window.tagBrowser.listFolderEntries !== 'function') {
+        searchDebugLog('runSearch.localFolderFallback.skip', { runId, reason: 'noBridge', rootFolder: normRoot });
+        return null;
+      }
+      let res;
+      try {
+        res = await window.tagBrowser.listFolderEntries({ parentPath: normRoot });
+      } catch (e) {
+        if (runId !== searchRunSeq) return null;
+        searchDebugLog('runSearch.localFolderFallback.throw', {
+          runId,
+          rootFolder: normRoot,
+          err: String(e && e.message ? e.message : e),
+        });
+        return null;
+      }
+      if (runId !== searchRunSeq) return null;
+      if (!res || !res.ok) {
+        searchDebugLog('runSearch.localFolderFallback.error', {
+          runId,
+          rootFolder: normRoot,
+          err: (res && res.error) || 'local listing failed',
+        });
+        return null;
+      }
+      const rows = Array.isArray(res.entries) ? res.entries : [];
+      searchDebugLog(rows.length ? 'runSearch.localFolderFallback.use' : 'runSearch.localFolderFallback.empty', {
+        runId,
+        rootFolder: normRoot,
+        recursiveRequested: !!recursive,
+        immediateOnly: true,
+        kind: isGoogleDriveSharedDrivesPath(normRoot) ? 'shared-drives' : 'shortcut-targets',
+        rows: rows.length,
+        first: rows.slice(0, 5).map((r) => fullPathForRow(r)),
+      });
+      return rows;
+    }
+
+    function searchDebugQuotedTreeToken(normPath, withTrailingSlash) {
+      const p = normalizeFolderPathForEverything(String(normPath || '').trim()).replace(/[/\\]+$/, '');
+      if (!p) return '';
+      return '"' + p.replace(/"/g, '') + (withTrailingSlash ? '\\' : '') + '"';
+    }
+
+    function searchDebugModeSuffix(foldersOnly, fileOnly) {
+      if (foldersOnly) return ' folder:';
+      if (fileOnly) return ' file: sort-mix:';
+      return ' sort-mix:';
+    }
+
+    async function runSearchDebugScopeProbe({
+      runId,
+      baseUrl,
+      httpUser,
+      httpPassword,
+      rootFolder,
+      query,
+      recursive,
+      foldersOnly,
+      filesOnly,
+      currentSearchText,
+      currentOptions,
+      currentRowsLen,
+      resultSource,
+    }) {
+      if (!isSearchDebugOn()) return;
+      const oneShot = !!searchDebugNextScopedProbe;
+      searchDebugNextScopedProbe = false;
+      const normRoot = normalizeFolderPathForEverything(String(rootFolder || '').trim());
+      const gdRootLetter = googleDriveDebugRootLetter(normRoot);
+      const sharedDrivesPath = googleDriveDebugSharedDrivesPathForScope(normRoot);
+      if (!normRoot) {
+        if (oneShot) searchDebugLog('scope.debug.skip', { runId, reason: 'noRootFolder' });
+        return;
+      }
+      const shortcutPath = searchDebugPathLooksLikeShortcutTargets(normRoot);
+      if (!oneShot && !shortcutPath && currentRowsLen > 0) return;
+      const plainBrowseOnly = !String(query || '').trim() && activeTagKeys.size === 0 && recencyFilterMode() === 'all';
+      searchDebugLog('scope.debug.begin', {
+        runId,
+        oneShot,
+        normRoot,
+        shortcutPath,
+        recursive,
+        foldersOnly: !!foldersOnly,
+        filesOnly: !!filesOnly,
+        currentRows: currentRowsLen,
+        resultSource: String(resultSource || 'everything'),
+        googleDriveRootLetter: gdRootLetter || undefined,
+        query: String(query || ''),
+        plainBrowseOnly,
+        currentSearchText,
+        currentOptions,
+      });
+      if (window.tagBrowser && typeof window.tagBrowser.debugFolderSnapshot === 'function') {
+        try {
+          const snap = await window.tagBrowser.debugFolderSnapshot({ folderPath: normRoot });
+          if (runId !== searchRunSeq) return;
+          searchDebugLog('scope.debug.folderSnapshot', snap);
+        } catch (e) {
+          if (runId !== searchRunSeq) return;
+          searchDebugLog('scope.debug.folderSnapshotError', { err: String(e && e.message ? e.message : e) });
+        }
+      } else {
+        searchDebugLog('scope.debug.folderSnapshotSkip', { reason: 'noBridge' });
+      }
+      if (oneShot && sharedDrivesPath && window.tagBrowser && typeof window.tagBrowser.debugFolderSnapshot === 'function') {
+        try {
+          const sharedSnap = await window.tagBrowser.debugFolderSnapshot({ folderPath: sharedDrivesPath });
+          if (runId !== searchRunSeq) return;
+          searchDebugLog('scope.debug.sharedDrivesSnapshot', sharedSnap);
+        } catch (e) {
+          if (runId !== searchRunSeq) return;
+          searchDebugLog('scope.debug.sharedDrivesSnapshotError', { err: String(e && e.message ? e.message : e) });
+        }
+      }
+      if (!plainBrowseOnly) {
+        searchDebugLog('scope.debug.httpProbeSkip', { runId, reason: 'queryTagsOrRecencyActive' });
+        return;
+      }
+      const suffix = searchDebugModeSuffix(foldersOnly, filesOnly);
+      const cleanRoot = normalizeFolderPathForEverything(normRoot).replace(/[/\\]+$/, '');
+      const safeRoot = cleanRoot.replace(/"/g, '');
+      const variants = [
+        {
+          label: 'treeQuotedTrailingSlash_p1',
+          searchText: (searchDebugQuotedTreeToken(cleanRoot, true) + suffix).trim(),
+          options: { ...currentOptions, pathSearch: true, offset: 0 },
+        },
+        {
+          label: 'treeQuotedNoTrailingSlash_p1',
+          searchText: (searchDebugQuotedTreeToken(cleanRoot, false) + suffix).trim(),
+          options: { ...currentOptions, pathSearch: true, offset: 0 },
+        },
+        {
+          label: 'treeQuotedNoTrailingSlash_p0',
+          searchText: (searchDebugQuotedTreeToken(cleanRoot, false) + suffix).trim(),
+          options: { ...currentOptions, pathSearch: false, offset: 0 },
+        },
+        {
+          label: 'parentImmediate_p1',
+          searchText: ('parent:"' + safeRoot + '"' + suffix).trim(),
+          options: { ...currentOptions, pathSearch: true, offset: 0 },
+        },
+      ];
+      for (const variant of variants) {
+        let res;
+        try {
+          res = await window.tagBrowser.search({
+            baseUrl,
+            searchText: variant.searchText,
+            count: '20',
+            httpUser,
+            httpPassword,
+            options: variant.options,
+          });
+        } catch (e) {
+          if (runId !== searchRunSeq) return;
+          searchDebugLog('scope.debug.httpProbeThrow', {
+            runId,
+            label: variant.label,
+            err: String(e && e.message ? e.message : e),
+          });
+          continue;
+        }
+        if (runId !== searchRunSeq) return;
+        const rows = Array.isArray(res && res.rows) ? res.rows : [];
+        searchDebugLog('scope.debug.httpProbe', {
+          runId,
+          label: variant.label,
+          searchText: variant.searchText,
+          pathSearch: !!variant.options.pathSearch,
+          ok: !!(res && res.ok),
+          rows: rows.length,
+          first: rows.slice(0, 3).map((r) => fullPathForRow(r)),
+          err: res && res.ok ? '' : (res && res.error) || 'unknown',
+          ...(res && res.debug ? { debug: res.debug } : {}),
+        });
+      }
+      if (oneShot && sharedDrivesPath && pathNormKey(sharedDrivesPath) !== pathNormKey(cleanRoot)) {
+        const sharedVariants = [
+          {
+            label: 'sharedDrives_treeQuotedTrailingSlash_p1',
+            searchText: (searchDebugQuotedTreeToken(sharedDrivesPath, true) + suffix).trim(),
+            options: { ...currentOptions, pathSearch: true, offset: 0 },
+          },
+          {
+            label: 'sharedDrives_treeQuotedNoTrailingSlash_p1',
+            searchText: (searchDebugQuotedTreeToken(sharedDrivesPath, false) + suffix).trim(),
+            options: { ...currentOptions, pathSearch: true, offset: 0 },
+          },
+        ];
+        for (const variant of sharedVariants) {
+          let res;
+          try {
+            res = await window.tagBrowser.search({
+              baseUrl,
+              searchText: variant.searchText,
+              count: '20',
+              httpUser,
+              httpPassword,
+              options: variant.options,
+            });
+          } catch (e) {
+            if (runId !== searchRunSeq) return;
+            searchDebugLog('scope.debug.httpProbeThrow', {
+              runId,
+              label: variant.label,
+              err: String(e && e.message ? e.message : e),
+            });
+            continue;
+          }
+          if (runId !== searchRunSeq) return;
+          const rows = Array.isArray(res && res.rows) ? res.rows : [];
+          searchDebugLog('scope.debug.httpProbe', {
+            runId,
+            label: variant.label,
+            searchText: variant.searchText,
+            pathSearch: !!variant.options.pathSearch,
+            ok: !!(res && res.ok),
+            rows: rows.length,
+            first: rows.slice(0, 3).map((r) => fullPathForRow(r)),
+            err: res && res.ok ? '' : (res && res.error) || 'unknown',
+            ...(res && res.debug ? { debug: res.debug } : {}),
+          });
+        }
+      }
     }
 
     /** Everything index can lag after many renames; align lastRows / tagDiscoveryRows + check map with paths we just wrote. */
@@ -6358,6 +10304,16 @@
         out.push(row);
       }
       lastRows = out;
+    }
+
+    /** After tag renames, scheduled search retries replace lastRows without this — stale index shows old+new until pruned. */
+    function applyTagRenamePendingToLastRows() {
+      const pairs = tagRenamePendingPairs;
+      if (!pairs || !pairs.length) return;
+      patchResultRowsAfterRenames(pairs);
+      pruneLastRowsRenamedSources(pairs);
+      dedupeLastRowsByPathKey();
+      sortLastRowsForDisplay(true);
     }
 
     /** Numeric modified time for client-side sort (same shapes as formatModified). */
@@ -6628,6 +10584,13 @@
       return v && ['all', '1h', '1d', '1w', '1m', '1y'].includes(v) ? v : 'all';
     }
 
+    /** Muted red tray on the recency control when a bucket other than All is selected. */
+    function syncRecencyFilterActiveHighlight() {
+      const wrap = document.querySelector('.tagfox-recency-filter-wrap');
+      if (!wrap) return;
+      wrap.classList.toggle('tagfox-recency-filter-wrap--active', recencyFilterMode() !== 'all');
+    }
+
     function setRecencyFilterMode(mode) {
       const id =
         {
@@ -6641,6 +10604,15 @@
       const r = document.getElementById(id);
       if (!r || r.name !== 'tagFoxRecencyFilter') return;
       r.checked = true;
+      syncRecencyFilterActiveHighlight();
+    }
+
+    /** Keyboard quick toggle: recent hour window vs no recency filter. */
+    function toggleRecencyAllVsHour() {
+      const next = recencyFilterMode() === '1h' ? 'all' : '1h';
+      setRecencyFilterMode(next);
+      const nextEl = document.querySelector(`input[name="tagFoxRecencyFilter"][value="${next}"]`);
+      nextEl?.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
     /** Settings → global shortcut capture: require modifiers (Electron globalShortcut). */
@@ -6762,10 +10734,9 @@
       }
       loadSearchScopeMaxFromStorage();
       renderSearchScopeMaxUi();
-      syncSearchScopeRootsTipVisibility();
       clampRootFolderUnderSearchScopeMax();
       document.getElementById('maxResults').value =
-        localStorage.getItem(LS.maxResults) || '200';
+        localStorage.getItem(LS.maxResults) || '60';
       document.getElementById('httpUser').value = localStorage.getItem(LS.httpUser) || '';
       document.getElementById('optCase').checked = localStorage.getItem(LS.optCase) === '1';
       document.getElementById('optWholeWord').checked = localStorage.getItem(LS.optWholeWord) === '1';
@@ -6773,7 +10744,6 @@
       document.getElementById('optDiacritics').checked = localStorage.getItem(LS.optDiacritics) === '1';
       document.getElementById('optHideSpecial').checked = localStorage.getItem(LS.optHideSpecial) === '1';
       document.getElementById('optHideTilde').checked = localStorage.getItem(LS.optHideTilde) === '1';
-      syncAdvancedBtnWarning();
       {
         const showSubs = localStorage.getItem(LS.showSubfolders) !== '0';
         let layout = localStorage.getItem(LS.resultsLayout);
@@ -6809,7 +10779,12 @@
       applyNaturalSortWhenTreeViewOn();
       document.getElementById('optTreeFolding').checked = localStorage.getItem(LS.treeFolding) !== '0';
       document.getElementById('optTreeGroupHL').checked = localStorage.getItem(LS.treeGroupHighlight) !== '0';
-      document.getElementById('optSearchDebug').checked = localStorage.getItem(LS.searchDebug) === '1';
+      {
+        const hm = document.getElementById('optHighlightMatchedNames');
+        if (hm) hm.checked = localStorage.getItem(LS.highlightMatchedNames) !== '0';
+      }
+      /* Default on; only stays off when user saved off ('0'). */
+      document.getElementById('optSearchDebug').checked = localStorage.getItem(LS.searchDebug) !== '0';
       {
         collapsedFolderPaths.clear();
         try {
@@ -6833,11 +10808,13 @@
           sel.value = allowed.has(String(v)) ? String(v) : '0';
         }
       }
+      syncGlobalViewerBasenamesInputFromStorage();
       syncAutoRefreshTimer();
       searchDebugRender();
       void refreshGlobalToggleHotkeyFromMain();
       void refreshQuickTodoHotkeyFromMain();
       renderQuickTodoFolderUi();
+      syncAdvancedSearchIconFilledState();
     }
 
     function saveSettings() {
@@ -6870,6 +10847,10 @@
       localStorage.setItem(LS.optAsc, sortAsc ? '1' : '0');
       localStorage.setItem(LS.treeFolding, document.getElementById('optTreeFolding').checked ? '1' : '0');
       localStorage.setItem(LS.treeGroupHighlight, document.getElementById('optTreeGroupHL').checked ? '1' : '0');
+      {
+        const hm = document.getElementById('optHighlightMatchedNames');
+        if (hm) localStorage.setItem(LS.highlightMatchedNames, hm.checked ? '1' : '0');
+      }
       localStorage.setItem(LS.searchDebug, document.getElementById('optSearchDebug').checked ? '1' : '0');
       localStorage.setItem(LS.tagFilterCombineOr, tagFilterCombineOr ? '1' : '0');
       localStorage.setItem(LS.collapsedFolders, JSON.stringify([...collapsedFolderPaths]));
@@ -6926,6 +10907,44 @@
       searchDebugRender();
     }
 
+    /** Append one line and trim buffer (shared by searchDebugLog + console mirror). */
+    function searchDebugAppend(line) {
+      searchDebugLines.push(line);
+      if (searchDebugLines.length > SEARCH_DEBUG_MAX) {
+        searchDebugLines = searchDebugLines.slice(searchDebugLines.length - SEARCH_DEBUG_MAX);
+      }
+      searchDebugRender();
+    }
+
+    function syncSearchDebugTestCycleBtn() {
+      const b = document.getElementById('btnSearchDebugTestCycle');
+      if (!b) return;
+      b.textContent = searchDebugTestAwaitingCopy ? 'Copy dbg' : 'New dbg';
+      b.title = searchDebugTestAwaitingCopy
+        ? 'Step 2: copy search debug log to the clipboard'
+        : 'Step 1: turn on logging if needed, clear log, then capture — same as Clear log';
+    }
+
+    /** System clipboard as plain text — prefer main process (Electron). */
+    async function copyPlainTextToClipboard(text) {
+      if (window.tagBrowser && typeof window.tagBrowser.clipboardWriteText === 'function') {
+        const r = await window.tagBrowser.clipboardWriteText(text);
+        if (r && r.ok) return true;
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    /** Brief status hint for longer copy/paste work so large transfers do not look stuck. */
+    function setBusyStatusHint(text) {
+      setStatusMain(text);
+      pulseStatusBarBrief();
+    }
+
     function searchDebugLog(eventName, payload) {
       if (!isSearchDebugOn()) return;
       let detail = '';
@@ -6935,15 +10954,73 @@
         detail = ' [unserializable payload]';
       }
       const line = `[${searchDebugStamp()}] ${eventName}${detail}`;
-      searchDebugLines.push(line);
-      if (searchDebugLines.length > SEARCH_DEBUG_MAX) {
-        searchDebugLines = searchDebugLines.slice(searchDebugLines.length - SEARCH_DEBUG_MAX);
-      }
-      searchDebugRender();
+      searchDebugAppend(line);
       try {
-        console.debug(line);
+        nativeConsole.debug(line);
       } catch (_) {}
     }
+
+    function searchDebugFormatConsoleArgs(args) {
+      const parts = [];
+      for (let i = 0; i < args.length; i++) {
+        const x = args[i];
+        if (x === undefined) {
+          parts.push('undefined');
+          continue;
+        }
+        if (x === null) {
+          parts.push('null');
+          continue;
+        }
+        const typ = typeof x;
+        if (typ === 'string') {
+          parts.push(x);
+          continue;
+        }
+        if (typ === 'number' || typ === 'boolean' || typ === 'bigint') {
+          parts.push(String(x));
+          continue;
+        }
+        try {
+          parts.push(JSON.stringify(x));
+        } catch {
+          parts.push(Object.prototype.toString.call(x));
+        }
+      }
+      return parts.join(' ');
+    }
+
+    /** Copy browser console into the search debug textarea when “Log search details” is on (Copy log btn). */
+    function installSearchDebugConsoleMirror() {
+      const mirror = (level, args) => {
+        if (!isSearchDebugOn()) return;
+        searchDebugAppend(
+          '[' + searchDebugStamp() + '] console.' + level + ' ' + searchDebugFormatConsoleArgs(args)
+        );
+      };
+      console.log = (...args) => {
+        nativeConsole.log(...args);
+        mirror('log', args);
+      };
+      console.debug = (...args) => {
+        nativeConsole.debug(...args);
+        mirror('debug', args);
+      };
+      console.info = (...args) => {
+        nativeConsole.info(...args);
+        mirror('info', args);
+      };
+      console.warn = (...args) => {
+        nativeConsole.warn(...args);
+        mirror('warn', args);
+      };
+      console.error = (...args) => {
+        nativeConsole.error(...args);
+        mirror('error', args);
+      };
+    }
+
+    installSearchDebugConsoleMirror();
 
     /** Search-debug only: DOM + Bootstrap overlay flags for “keyboard dead until alt-tab” / focus bugs. */
     function searchDebugFocusSnapshot(reason, extra) {
@@ -7069,11 +11146,9 @@
       if (Object.prototype.hasOwnProperty.call(s, 'searchScopeMax')) {
         setSearchScopeMaxFolderFromString(s.searchScopeMax);
         renderSearchScopeMaxUi();
-        syncSearchScopeRootsTipVisibility();
       } else if (Array.isArray(s.searchScopeCeilings) && s.searchScopeCeilings.length) {
         setSearchScopeMaxFolderFromString(s.searchScopeCeilings[0]);
         renderSearchScopeMaxUi();
-        syncSearchScopeRootsTipVisibility();
       }
       clampRootFolderUnderSearchScopeMax();
       if (Array.isArray(s.activeTagKeys)) {
@@ -7115,7 +11190,6 @@
       document.getElementById('optDiacritics').checked = !!s.optDiacritics;
       document.getElementById('optHideSpecial').checked = !!s.optHideSpecial;
       document.getElementById('optHideTilde').checked = !!s.optHideTilde;
-      syncAdvancedBtnWarning();
       setRecencyFilterMode(
         s.recencyFilter && ['all', '1h', '1d', '1w', '1m', '1y'].includes(s.recencyFilter) ? s.recencyFilter : 'all'
       );
@@ -7131,7 +11205,7 @@
         if (open) panel.removeAttribute('hidden');
         else panel.setAttribute('hidden', '');
         advBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-        advBtn.classList.toggle('active', open);
+        syncAdvancedSearchIconFilledState();
       }
     }
 
@@ -7189,10 +11263,13 @@
       return holder;
     }
 
-    /** FA class per file “kind” from extension map (plain file / lines / code / video). */
+    /** FA class per file “kind” from extension map (plain file / lines / code / office / video). */
     const FILE_ICON_FA = {
       base: 'fa-file',
-      text: 'fa-file-lines',
+      text: 'fa-file-lines', // .md / .txt — lines icon, not Office-style glyphs
+      word: 'fa-file-word',
+      sheet: 'fa-file-excel',
+      slides: 'fa-file-powerpoint',
       code: 'fa-file-code',
       media: 'fa-file-video',
       pdf: 'fa-file-pdf',
@@ -7205,9 +11282,10 @@
       };
       add(['md', 'markdown', 'mdown'], 'text', '#0969da', 'Markdown');
       add(['txt', 'log'], 'text', '#6c757d', 'Text');
-      add(['doc', 'docx', 'rtf', 'odt'], 'base', '#2b579a', 'Word');
-      add(['xls', 'xlsx', 'csv', 'ods'], 'base', '#217346', 'Spreadsheet');
-      add(['ppt', 'pptx', 'odp'], 'base', '#c43e1c', 'Slides');
+      add(['doc', 'docx', 'rtf', 'odt'], 'word', '#2b579a', 'Word');
+      add(['msg'], 'text', '#0078d4', 'Outlook');
+      add(['xls', 'xlsx', 'csv', 'ods'], 'sheet', '#217346', 'Spreadsheet');
+      add(['ppt', 'pptx', 'odp'], 'slides', '#c43e1c', 'Slides');
       add(['pdf'], 'pdf', '#dc3545', 'PDF');
       add(['html', 'htm', 'css', 'js', 'ts', 'mjs', 'cjs', 'jsx', 'tsx', 'json', 'xml', 'vue', 'svelte'], 'code', '#6f42c1', 'Code');
       add(['yml', 'yaml', 'toml', 'ini', 'sql', 'py', 'r', 'cpp', 'h', 'hpp', 'c', 'cs', 'go', 'rs', 'java', 'php', 'rb', 'sh', 'ps1'], 'code', '#7952b3', 'Code');
@@ -7238,22 +11316,26 @@
       return holder;
     }
 
-    function renderNameCell(row, preParsed, queryHit) {
+    function renderNameCell(row, preParsed, queryNeedle) {
       const fp = fullPathForRow(row);
       const base = T.baseName(fp);
       const parsed = preParsed || T.parseSegmentTags(base);
-      const hit = queryHit && queryHit.low && queryHit.len > 0 ? queryHit : null;
+      const hit = queryNeedle ? String(queryNeedle) : null;
       const wrap = document.createElement('div');
       wrap.className = 'name-badges d-flex flex-nowrap align-items-center gap-1 min-w-0';
       const lead = document.createElement('span');
       lead.className = 'name-badges-lead';
       if (rowIsFolder(row)) lead.appendChild(folderIconEl());
       else lead.appendChild(fileIconEl(fileExtFromPretty(parsed.pretty)));
+      const blob = document.createElement('span');
+      blob.className = recencyBlobClassForRow(row);
+      blob.title = 'Recency (modified time)';
+      lead.appendChild(blob);
       for (const tag of parsed.tags) appendTagPillWithRemove(lead, tag, fp);
       const title = document.createElement('span');
       title.className = 'name-badges-title text-truncate';
       function setTitleText(str) {
-        if (hit) appendHighlightedTextInto(title, str, hit.low, hit.len);
+        if (hit) appendHighlightedTextInto(title, str, hit);
         else title.textContent = str;
       }
       setTitleText(parsed.pretty);
@@ -7285,8 +11367,8 @@
       return wrap;
     }
 
-    /** Same pipeline as filteredRows but before Hide special / Hide ~ (for status hints). */
-    function filteredRowsBeforeAdvancedPathHides() {
+    /** Tag pills only (no recency / no Hide special / ~); base row set for “did recency remove anything?”. */
+    function filteredRowsAfterTagsOnly() {
       let rows = lastRows.slice();
       if (activeTagKeys.size) {
         if (tagFilterCombineOr && activeTagKeys.size > 1) {
@@ -7305,6 +11387,12 @@
           });
         }
       }
+      return rows;
+    }
+
+    /** Same pipeline as filteredRows but before Hide special / Hide ~ (for status hints). */
+    function filteredRowsBeforeAdvancedPathHides() {
+      let rows = filteredRowsAfterTagsOnly();
       const cut = recencyFilterCutoffMs();
       if (cut != null) {
         const recencyInEverything = recencyFilterMode() !== 'all';
@@ -7321,8 +11409,9 @@
       return rows;
     }
 
-    function filteredRows() {
-      let rows = filteredRowsBeforeAdvancedPathHides();
+    /** Advanced path hides at node level (used for both raw rows and tree display rows). */
+    function applyAdvancedPathHides(rowsIn) {
+      let rows = Array.isArray(rowsIn) ? rowsIn : [];
       if (isHideSpecialPaths()) {
         rows = rows.filter((r) => !pathUnderHideSpecialSegments(fullPathForRow(r)));
       }
@@ -7332,9 +11421,87 @@
       return rows;
     }
 
+    function filteredRows() {
+      const baseRows = filteredRowsBeforeAdvancedPathHides();
+      return applyAdvancedPathHides(baseRows);
+    }
+
+    /** Smart + tree + path A→Z: custom display order only — lastRows stays path-sorted (grouping + selection need that). */
+    function shouldReorderRowsForSmartViewTree() {
+      return isSmartView() && !isFlatView() && sortColumn === 'path' && sortAsc;
+    }
+
+    /**
+     * Preorder DFS: folders A→Z, then files by modified desc. Input must be the same row set as lastRows (filtered);
+     * never mutates lastRows — only reorders refs for buildPathGroupedDisplayRows so synthetics stay consistent.
+     */
+    function orderRowsForSmartViewTreeDisplay(rows) {
+      const arr = Array.isArray(rows) ? rows : [];
+      if (!arr.length || !shouldReorderRowsForSmartViewTree()) return arr;
+      const byParent = new Map();
+      for (const r of arr) {
+        const fp = fullPathForRow(r);
+        const par = normalizeFolderPathForEverything(String(T.parentDir(fp) || '').trim());
+        const pk = pathNormKey(par);
+        if (!byParent.has(pk)) byParent.set(pk, []);
+        byParent.get(pk).push(r);
+      }
+      function cmpSibling(a, b) {
+        const fa = rowIsFolder(a);
+        const fb = rowIsFolder(b);
+        if (fa !== fb) return fa ? -1 : 1;
+        if (fa) {
+          const na = String(T.baseName(fullPathForRow(a)) || '');
+          const nb = String(T.baseName(fullPathForRow(b)) || '');
+          const c = na.localeCompare(nb, undefined, { numeric: true, sensitivity: 'base' });
+          if (c !== 0) return c;
+          return pathSortKey(a).localeCompare(pathSortKey(b));
+        }
+        const da = rowModifiedSortKey(a);
+        const db = rowModifiedSortKey(b);
+        if (db !== da) return db - da;
+        return pathSortKey(a).localeCompare(pathSortKey(b));
+      }
+      for (const kids of byParent.values()) kids.sort(cmpSibling);
+      const out = [];
+      const visited = new Set();
+      function walk(parentKey) {
+        const kids = byParent.get(parentKey) || [];
+        for (const r of kids) {
+          const k = pathNormKey(fullPathForRow(r));
+          if (!k || visited.has(k)) continue;
+          visited.add(k);
+          out.push(r);
+          if (rowIsFolder(r)) walk(k);
+        }
+      }
+      const scope = currentScopeFolderPath();
+      const scopeKey = scope ? pathNormKey(normalizeFolderPathForEverything(scope)) : '';
+      const pathKeys = new Set(arr.map((r) => pathNormKey(fullPathForRow(r))).filter(Boolean));
+      if (scopeKey) {
+        walk(scopeKey);
+      } else {
+        const roots = [];
+        for (const pk of byParent.keys()) {
+          if (!pathKeys.has(pk)) roots.push(pk);
+        }
+        roots.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+        for (const pk of roots) walk(pk);
+      }
+      if (out.length < arr.length) {
+        const rest = arr.filter((r) => !visited.has(pathNormKey(fullPathForRow(r))));
+        rest.sort((a, b) => pathSortKey(a).localeCompare(pathSortKey(b)));
+        out.push(...rest);
+      }
+      return out;
+    }
+
     /** Visible rows in the table UI (includes synthetic folder rows in path-group mode). */
     function listRowsForUi() {
-      return buildPathGroupedDisplayRows(filteredRows());
+      const baseRows = filteredRowsBeforeAdvancedPathHides();
+      const forTree = orderRowsForSmartViewTreeDisplay(baseRows);
+      const treeRows = buildPathGroupedDisplayRows(forTree);
+      return applyAdvancedPathHides(treeRows);
     }
 
     /** True when any Advanced toggle (case / path / whole-word / diacritics / hide special / hide ~) is checked. */
@@ -7344,13 +11511,13 @@
       );
     }
 
-    /** Toggle outline highlight on Advanced when any switch is ON (green via styles.css). */
-    function syncAdvancedBtnWarning() {
+    /** Filled chip on Advanced (eye) when popover open and/or any advanced checkbox is on. */
+    function syncAdvancedSearchIconFilledState() {
       const btn = document.getElementById('btnToggleSearchOptsAdvanced');
-      if (!btn) return;
-      const on = anyAdvancedSwitchOn();
-      btn.classList.toggle('btn-outline-secondary', !on);
-      btn.classList.toggle('btn-outline-primary', on);
+      const panel = document.getElementById('searchOptsAdvancedPanel');
+      if (!btn || !panel) return;
+      const open = !panel.hasAttribute('hidden');
+      btn.classList.toggle('tagfox-advanced-filled', open || anyAdvancedSwitchOn());
     }
 
     /** Recency segmented control (tag toolbar, RHS); target for zero-row pulse when a bucket other than All is active. */
@@ -7599,8 +11766,7 @@
       }
       function appendTagFilterCombineToggle(barEl) {
         const g = document.createElement('div');
-        g.className = 'btn-group btn-group-sm';
-        if (!activeTagKeys.size) g.classList.add('tag-combine-toggle-idle');
+        g.className = 'btn-group btn-group-sm tagfox-tag-combine-toggle';
         g.setAttribute('role', 'group');
         g.title =
           'Combine multiple tag filters: match ALL (AND) or ANY (OR). Used in the Everything query and in the result table filter.';
@@ -7653,13 +11819,6 @@
         b.className = 'btn btn-sm tag-bar-pill' + (on ? ' tag-bar-pill-active' : '');
         applyTagBarPillStyle(b, key);
         b.textContent = info.count > 0 ? info.display + ' (' + info.count + ')' : info.display;
-        b.title =
-          'Toggle [(…)] tag filter (multi-tag: ' +
-          (tagFilterCombineOr ? 'OR = any selected tag' : 'AND = all selected tags') +
-          '). Adds an Everything regex: clause for the tag. ' +
-          (info.count > 0
-            ? 'Number = rows in the current result list with this tag (after filters; grows when you load more pages).'
-            : 'No rows with this tag in the current list—try Rescan or broaden search.');
         b.addEventListener('click', () => {
           void (async () => {
             if (activeTagKeys.has(key)) activeTagKeys.delete(key);
@@ -7749,6 +11908,16 @@
       document.addEventListener(
         'pointerdown',
         (e) => {
+          if (e.target.closest?.('[data-bs-toggle="tooltip"]')) return;
+          if (e.target.closest?.('.tooltip')) return;
+          tagfoxHideAllBootstrapTooltips(null, true);
+        },
+        true
+      );
+      document.addEventListener(
+        'pointermove',
+        (e) => {
+          if (!document.querySelector('body > .tooltip.show')) return;
           if (e.target.closest?.('[data-bs-toggle="tooltip"]')) return;
           if (e.target.closest?.('.tooltip')) return;
           tagfoxHideAllBootstrapTooltips(null, true);
@@ -7913,7 +12082,13 @@
         const parentForNew =
           row && rowIsFolder(row) ? normalizeFolderPathForEverything(fullPathForRow(row)) : null;
         void createNewFolderInScopeInteractive(parentForNew);
+      } else if (res && res.action === 'editTags') openTagModal(fp);
+      else if (res && res.action === 'setCurrentFolder') {
+        const target =
+          row && rowIsFolder(row) ? normalizeFolderPathForEverything(fullPathForRow(row)) : null;
+        if (target) await applySearchScopeAndRefresh(target);
       } else if (res && res.action === 'rename') void renameItemInteractive(fp);
+      else if (res && res.action === 'bulkRename') openBulkRenameModal();
       else if (res && res.action === 'trash') void refreshAfterDiskMutation();
     }
 
@@ -7929,7 +12104,7 @@
       tbody.innerHTML = '';
       pruneCheckedPaths();
       const rows = filteredRows();
-      const rowsForDisplay = buildPathGroupedDisplayRows(rows);
+      const rowsForDisplay = listRowsForUi();
       const rawN = lastRows.length;
       /* Display rows: path-tree may inject ancestor folders not in lastRows (visN > rawN), or filters may hide rows (visN < rawN). */
       const visN = rowsForDisplay.length;
@@ -7952,6 +12127,7 @@
         return s;
       }
       const someRowsHidden = visN < rawN;
+      const afterTagsOnlyRows = filteredRowsAfterTagsOnly();
       const beforePathHides = filteredRowsBeforeAdvancedPathHides();
       const hideSpecialDrops = isHideSpecialPaths()
         ? beforePathHides.filter((r) => pathUnderHideSpecialSegments(fullPathForRow(r))).length
@@ -7959,16 +12135,63 @@
       const hideTildeDrops = isHideTildePaths()
         ? beforePathHides.filter((r) => pathUnderTildeSegment(fullPathForRow(r))).length
         : 0;
+      const recencyDrop =
+        recencyFilterMode() !== 'all'
+          ? Math.max(0, afterTagsOnlyRows.length - beforePathHides.length)
+          : 0;
+      let afterSpecial = beforePathHides;
+      if (isHideSpecialPaths()) {
+        afterSpecial = beforePathHides.filter((r) => !pathUnderHideSpecialSegments(fullPathForRow(r)));
+      }
+      const specialDrop = isHideSpecialPaths() ? beforePathHides.length - afterSpecial.length : 0;
+      let afterTilde = afterSpecial;
+      if (isHideTildePaths()) {
+        afterTilde = afterSpecial.filter((r) => !pathUnderTildeSegment(fullPathForRow(r)));
+      }
+      const tildeDrop = isHideTildePaths() ? afterSpecial.length - afterTilde.length : 0;
+      /* Recency status chip only when client pipeline drops rows (Everything-only window may drop 0 here). */
+      const recencyNarrows = recencyDrop > 0;
       if (status) {
+        let hiddenDueHtml = '';
+        if (someRowsHidden) {
+          const hiddenN = rawN - visN;
+          const parts = [];
+          const tagDrop = activeTagKeys.size > 0 ? rawN - afterTagsOnlyRows.length : 0;
+          if (tagDrop > 0) parts.push({ icon: 'fa-tags', label: 'Tag filters' });
+          if (recencyDrop > 0) parts.push({ icon: 'fa-clock', label: 'Recency' });
+          if (specialDrop > 0) parts.push({ icon: 'fa-eye-slash', label: 'Hiding special files/folders' });
+          if (tildeDrop > 0) parts.push({ icon: 'fa-eye-slash', label: 'Hiding paths with ~ segment' });
+          if (parts.length) hiddenDueHtml = hiddenDueToStatusHtml(hiddenN, parts);
+          else {
+            hiddenDueHtml =
+              '<span class="tagfox-status-hidden-hint">' +
+              escStatusHtmlForStatus(hiddenN + ' hidden') +
+              '</span>';
+          }
+        }
+        /* Omit “Smart view, …” when #statusSmartNote will say it (pending/cap chip) or chip already visible — avoids “Smart view… · Big folder! Smart View is hiding…”. */
+        const smartNoteEl = document.getElementById('statusSmartNote');
+        const smartNoteVisible =
+          smartNoteEl &&
+          !smartNoteEl.classList.contains('d-none') &&
+          String(smartNoteEl.textContent || '').trim().length > 0;
+        const capStressOmitsViewSuffix =
+          isSmartView() &&
+          resultsPagingCtx &&
+          resultsPagingCtx.mode === 'single' &&
+          !!resultsPagingCtx.hasMore &&
+          !shouldSuppressCapOnlyBigFolderChip();
         status.innerHTML = formatResultsStatusMainHtml({
           visN,
           rawN,
           tagRecencyHintPlain: !someRowsHidden
-            ? tagRecencyStatusFilterHintPlain(activeTagKeys, recencyFilterMode())
+            ? tagRecencyStatusFilterHintPlain(activeTagKeys, recencyFilterMode(), recencyNarrows)
             : '',
+          hiddenDueHtml,
           showHideSpecialHint: hideSpecialDrops > 0,
           showHideTildeHint: hideTildeDrops > 0,
-          omitViewSuffix: !!pendingSmartStatusNote,
+          omitViewSuffix:
+            !!pendingSmartStatusNote || smartNoteVisible || capStressOmitsViewSuffix,
           viewModeSentence: viewModeStatusSentence(),
         });
       }
@@ -7977,9 +12200,9 @@
       const pathTreeDepths = rowsForDisplay.map((r) => pathTreeUiDepth(r, showPathFolderGrouping));
       const pathTreeGutters = showPathTreeGutter ? pathTreeGutterStringsForDepths(pathTreeDepths) : null;
       const treeFoldUi = isTreeFoldUiActive();
-      /* Highlight #query substring in name/path cells (case-insensitive); cheap vs full row build. */
+      /* Highlight #query in name/path when enabled (Settings). */
       const qTrim = (document.getElementById('query')?.value || '').trim();
-      const queryHit = qTrim ? { low: qTrim.toLowerCase(), len: qTrim.length } : null;
+      const queryNeedle = isHighlightMatchedNamesOn() && qTrim ? qTrim : null;
       for (let rowIdx = 0; rowIdx < rowsForDisplay.length; rowIdx++) {
         const row = rowsForDisplay[rowIdx];
         const fp = fullPathForRow(row);
@@ -8005,7 +12228,7 @@
         chk.className = 'form-check-input m-0 results-cb';
         chk.autocomplete = 'off';
         chk.checked = isCheckedPath(fp);
-        chk.title = 'Select for bulk Explorer copy, delete, Tags';
+        chk.title = 'Multi-select: plain row click checks one; Ctrl/Shift for more; bulk actions use checked rows only.';
         chk.setAttribute('aria-label', 'Select row');
         chk.addEventListener('click', (e) => e.stopPropagation());
         chk.addEventListener('change', () => {
@@ -8016,10 +12239,6 @@
           else renderTable();
         });
         cbWrap.appendChild(chk);
-        const blob = document.createElement('span');
-        blob.className = recencyBlobClassForRow(row);
-        blob.title = 'Recency (modified time)';
-        cbWrap.appendChild(blob);
         tdCb.appendChild(cbWrap);
 
         const baseName = T.baseName(fp);
@@ -8027,7 +12246,7 @@
         const tdName = document.createElement('td');
         tdName.className = 'min-w-0';
         {
-          const nameInner = renderNameCell(row, parsedName, queryHit);
+          const nameInner = renderNameCell(row, parsedName, queryNeedle);
           if (showPathTreeGutter) {
             const g = (pathTreeGutters && pathTreeGutters[rowIdx]) || '';
             const outer = document.createElement('div');
@@ -8073,11 +12292,16 @@
             tdName.appendChild(outer);
           } else tdName.appendChild(nameInner);
         }
-        const nameTip =
-          parsedName.pretty +
-          (parsedName.tags.length ? '\nTags: ' + parsedName.tags.join(', ') : '') +
-          '\n—\n' +
-          baseName;
+        const nameTipLines = [parsedName.pretty];
+        if (parsedName.tags.length) {
+          nameTipLines.push(
+            (parsedName.tags.length === 1 ? 'Tag: ' : 'Tags: ') + parsedName.tags.join(', ')
+          );
+        }
+        if (parsedName.pretty !== baseName) {
+          nameTipLines.push('—', baseName);
+        }
+        const nameTip = nameTipLines.join('\n');
 
         const tdPath = document.createElement('td');
         tdPath.className = 'col-path text-muted small';
@@ -8086,7 +12310,7 @@
         fillPathCellBox(
           pathBox,
           collapseGDriveShortcutDisplay(pathColumnDisplayForRow(fp, rowIsFolder(row))),
-          queryHit
+          queryNeedle
         );
         tdPath.title = fp;
         tdPath.appendChild(pathBox);
@@ -8110,9 +12334,9 @@
         btnScopeParent.type = 'button';
         btnScopeParent.className =
           'btn btn-sm btn-outline-secondary tagfox-scope-bar-icon-btn d-inline-flex align-items-center justify-content-center';
-        btnScopeParent.title = 'Parent folder (Ctrl+↑ or Backspace)';
+        btnScopeParent.title = 'Parent folder (Ctrl+↑)';
         btnScopeParent.setAttribute('aria-label', 'Open parent folder');
-        btnScopeParent.innerHTML = '<i class="fa-solid fa-chevron-up" aria-hidden="true"></i>';
+        btnScopeParent.innerHTML = '<i class="fa-solid fa-arrow-up" aria-hidden="true"></i>';
         btnScopeParent.disabled = !parentForScope;
         btnScopeParent.addEventListener('click', async (e) => {
           e.stopPropagation();
@@ -8148,6 +12372,37 @@
           const r = await window.tagBrowser.copyExplorerPaste([fp]);
           if (!r || !r.ok) setStatusMain((r && r.error) || 'Copy for Explorer failed');
         });
+        const btnTerminal = document.createElement('button');
+        btnTerminal.type = 'button';
+        btnTerminal.className =
+          'btn btn-sm btn-outline-secondary tagfox-scope-bar-icon-btn d-inline-flex align-items-center justify-content-center';
+        btnTerminal.title = rowIsFolder(row)
+          ? 'Open Terminal in this folder'
+          : 'Open Terminal in parent folder';
+        btnTerminal.setAttribute('aria-label', 'Open in Terminal');
+        btnTerminal.innerHTML = '<i class="fa-solid fa-terminal" aria-hidden="true"></i>';
+        btnTerminal.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const cwd = rowIsFolder(row) ? fp : T.parentDir(fp);
+          if (!cwd) {
+            setStatusMain('Open Terminal: no folder for this row.');
+            return;
+          }
+          const r = await window.tagBrowser.openTerminalAt(cwd);
+          if (!r || !r.ok) setStatusMain((r && r.error) || 'Open in Terminal failed');
+        });
+        const btnCopyQuoted = document.createElement('button');
+        btnCopyQuoted.type = 'button';
+        btnCopyQuoted.className =
+          'btn btn-sm btn-outline-secondary tagfox-scope-bar-icon-btn d-inline-flex align-items-center justify-content-center';
+        btnCopyQuoted.title = 'Copy full path (quoted)';
+        btnCopyQuoted.setAttribute('aria-label', 'Copy full path quoted');
+        btnCopyQuoted.innerHTML = '<i class="fa-solid fa-quote-right" aria-hidden="true"></i>';
+        btnCopyQuoted.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const r = await window.tagBrowser.clipboardWriteText('"' + fp + '"');
+          if (!r || !r.ok) setStatusMain((r && r.error) || 'Copy quoted path failed');
+        });
         const btnMore = document.createElement('button');
         btnMore.type = 'button';
         btnMore.className =
@@ -8179,6 +12434,8 @@
         tdActInner.appendChild(btnScopeParent);
         tdActInner.appendChild(btnClip);
         tdActInner.appendChild(btnTags);
+        tdActInner.appendChild(btnTerminal);
+        tdActInner.appendChild(btnCopyQuoted);
         tdActInner.appendChild(btnMore);
         tdAct.appendChild(tdActInner);
 
@@ -8194,9 +12451,9 @@
         tr.appendChild(tdCb);
         tr.appendChild(tdName);
         tr.appendChild(tdPath);
+        tr.appendChild(tdAct);
         tr.appendChild(tdSize);
         tr.appendChild(tdDate);
-        tr.appendChild(tdAct);
 
         tr.dataset.rowPath = fp;
         if (showPathTreeGutter) tr.dataset.treeDepth = String(pathTreeDepths[rowIdx]);
@@ -8224,19 +12481,41 @@
           }
           if (tagBrowserNextOsFileDrag) tagBrowserNextOsFileDrag = false;
           setDataTransferTagBrowserHtml5Paths(e.dataTransfer, paths);
+          const favFolderDragPath =
+            rowIsFolder(row) && paths.length === 1 && pathNormKey(paths[0]) === pathNormKey(fp)
+              ? normalizeFolderPathForEverything(fp)
+              : '';
+          if (favFolderDragPath) e.dataTransfer.setData(TAG_BROWSER_FAV_FOLDER_DRAG_TYPE, favFolderDragPath);
           tr.classList.add('tagfox-results-row--drag-source');
           setInternalPathDragDropTargetHints(true);
         });
         tr.addEventListener('contextmenu', (e) => {
           e.preventDefault();
+          // Keep row highlight + checkbox in sync: same as plain click (exclusive) unless row is already part of multi-check.
+          if (!isCheckedPath(fp)) resultsExclusiveSelectRow(row, fp);
+          else {
+            setSelection(row, fp);
+            syncResultsRowCheckboxStates();
+          }
           void openResultsRowItemActionsMenu(fp, e.clientX, e.clientY, row);
         });
         tr.addEventListener('click', (e) => {
           if (e.target.closest('button')) return;
           if (e.target.closest('input[type="checkbox"]')) return;
+          /* Clicking another row cancels a pending plain-click uncheck on a checked row. */
+          if (resultsRowUncheckTimer && resultsRowUncheckPendingFp !== fp) clearResultsRowUncheckPending();
+          /* Second click of a double-click: activate like Enter (dblclick alone is unreliable after pullWebContents on first click). */
+          if (e.detail === 2 && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+            clearResultsRowUncheckPending();
+            e.preventDefault();
+            resultsExclusiveSelectRow(row, fp);
+            void keyboardActivateSelection();
+            return;
+          }
           // Folders: select only (rename, bulk, props) — do not change scope; Enter still scopes/opens like before.
           const rows = listRowsForUi();
           if (e.shiftKey) {
+            clearResultsRowUncheckPending();
             e.preventDefault();
             let anchorIdx = navFocusIndexInFilteredRows(rows);
             const clickedIdx = rows.findIndex((r) => fullPathForRow(r) === fp);
@@ -8254,11 +12533,8 @@
             return;
           }
           if (e.ctrlKey || e.metaKey) {
+            clearResultsRowUncheckPending();
             e.preventDefault();
-            const prevSel = selectedFullPath;
-            if (!isCheckedPath(fp) && prevSel && prevSel !== fp && !isCheckedPath(prevSel)) {
-              toggleCheckPath(prevSel, true);
-            }
             toggleCheckPath(fp, !isCheckedPath(fp));
             resultsShiftRangeAnchorIdx = null;
             updateSelectAllCheckboxState();
@@ -8266,17 +12542,18 @@
             setSelection(row, fp);
             return;
           }
-          resultsShiftRangeAnchorIdx = null;
-          setSelection(row, fp);
-        });
-        // File: dblclick → open (same as Enter). Folder: dblclick → scope/focus that folder (same as Enter).
-        tr.addEventListener('dblclick', (e) => {
-          if (e.target.closest('button')) return;
-          if (e.target.closest('input[type="checkbox"]')) return;
-          e.preventDefault();
-          resultsShiftRangeAnchorIdx = null;
-          setSelection(row, fp);
-          void keyboardActivateSelection();
+          if (isCheckedPath(fp)) {
+            /* Defer uncheck: immediate uncheck breaks the second click of double-click (detail 2). */
+            clearResultsRowUncheckPending();
+            resultsRowUncheckPendingFp = fp;
+            resultsRowUncheckTimer = setTimeout(() => {
+              resultsRowUncheckTimer = null;
+              resultsRowUncheckPendingFp = null;
+              resultsPlainClickUncheckRow(fp);
+            }, 280);
+            return;
+          }
+          resultsExclusiveSelectRow(row, fp);
         });
 
         tbody.appendChild(tr);
@@ -8304,6 +12581,7 @@
       updateEmptyResultsPulseHints(rowsForDisplay.length);
       updateResultsLoadMoreUi();
       scheduleFolderChildCountsForVisibleResultsRows();
+      runAfterNextLayoutPaint(() => maybeAutoFillResultsUntilScrollable(25));
     }
 
     function rebuildModalTagsUnion() {
@@ -8322,6 +12600,10 @@
       if (!el) return;
       if (tagModalIsNewTodoDraft()) {
         el.textContent = 'New file from Add TODO (tags only; no path yet)';
+        return;
+      }
+      if (tagModalIsFolderDocDraft()) {
+        el.textContent = 'Folder doc file name (tags only until you save the folder doc)';
         return;
       }
       if (modalTargetPaths.length > 1) el.textContent = modalTargetPaths.length + ' items selected';
@@ -8346,7 +12628,7 @@
         x.addEventListener('click', async () => {
           if (tagRenameBusy) return;
           const removed = modalTags[idx];
-          if (tagModalIsNewTodoDraft()) {
+          if (tagModalIsNameDraft()) {
             modalTags.splice(idx, 1);
             renderModalChips();
             refreshTagModalDatalist();
@@ -8409,6 +12691,22 @@
       tagModalInst.show();
     }
 
+    function openTagModalFolderDocDraft() {
+      tagModalMode = 'folderDocDraft';
+      syncTagModalHintsAndTitle();
+      modalTargetPaths = [];
+      document.getElementById('tagModalBulkHint').classList.add('d-none');
+      setTagApplyFeedback('');
+      modalTags = folderDocMdTags.slice();
+      updateTagModalPathLabel();
+      renderModalChips();
+      refreshTagModalDatalist();
+      if (!tagModalInst) {
+        tagModalInst = new bootstrap.Modal(document.getElementById('tagModal'), { focus: false });
+      }
+      tagModalInst.show();
+    }
+
     function openTagModalBulk(paths) {
       const uniq = [];
       const seen = new Set();
@@ -8441,7 +12739,7 @@
       document.getElementById('tagModal')?.classList.add('tag-renaming');
       setTagApplyFeedback('Updating ' + modalTargetPaths.length + ' item(s)…');
       try {
-        const rootPrefix = T.normalizeRootPrefix(document.getElementById('rootFolder').value);
+        const rootPrefix = rootPrefixValue();
         const pathPairs = [];
         for (let i = 0; i < modalTargetPaths.length; i++) {
           let fp = modalTargetPaths[i];
@@ -8492,7 +12790,7 @@
       setTagApplyFeedback('Adding tag to ' + modalTargetPaths.length + ' item(s)…');
       let any = false;
       try {
-        const rootPrefix = T.normalizeRootPrefix(document.getElementById('rootFolder').value);
+        const rootPrefix = rootPrefixValue();
         const pathPairs = [];
         for (let i = 0; i < modalTargetPaths.length; i++) {
           let fp = modalTargetPaths[i];
@@ -8555,7 +12853,7 @@
       const raw = String(v || '').trim();
       if (!raw) return;
       const low = raw.toLowerCase();
-      if (tagModalIsNewTodoDraft()) {
+      if (tagModalIsNameDraft()) {
         if (modalTags.some((t) => t.toLowerCase() === low)) return;
         modalTags.push(raw);
         renderModalChips();
@@ -8615,7 +12913,7 @@
       document.getElementById('tagModal')?.classList.add('tag-renaming');
       setTagApplyFeedback(hint || 'Renaming…');
       try {
-        const rootPrefix = T.normalizeRootPrefix(document.getElementById('rootFolder').value);
+        const rootPrefix = rootPrefixValue();
         const fromPath = modalPath;
         const res = await window.tagBrowser.renamePath({
           fromPath,
@@ -8689,6 +12987,8 @@
       const countLooksWrongForDirection = (rowsLen) =>
         cap > 40 && rowsLen >= 0 && rowsLen < Math.max(3, Math.floor(cap * 0.2));
       const shouldSwitchDirection = (baseRowsLen, altRowsLen) => altRowsLen >= Math.max(baseRowsLen + 5, baseRowsLen * 2);
+      // Non-empty partial page ⇒ this query likely has exactly that many hits; skip alt fetch (still try alt when 0 rows — sort quirk).
+      const skipAltBecausePartialPageIsComplete = (n) => n > 0 && n < cap;
 
       let options = { ...(seedOptions || {}), offset: Math.max(0, Number(offset) || 0) };
       const runOnce = (opts) =>
@@ -8701,25 +13001,37 @@
           searchText,
         });
       const t0 = performance.now();
-      searchDebugLog('search.request.base', { runId, searchText, options });
+      searchDebugLog('search.request.base', { runId, baseUrl, searchText, options });
       const baseRes = await runOnce(options);
       if (runId !== searchRunSeq) return null;
       const baseRows = pickRows(baseRes);
       searchDebugLog('search.response.base', {
         runId,
+        baseUrl,
         searchText,
         ok: !!(baseRes && baseRes.ok),
         rows: baseRows.length,
         ms: Math.round(performance.now() - t0),
         err: baseRes && baseRes.ok ? '' : (baseRes && baseRes.error) || 'unknown',
+        ...(baseRes && baseRes.debug ? { debug: baseRes.debug } : {}),
       });
       if (!baseRes || !baseRes.ok) {
         if (runId !== searchRunSeq) return null;
-        return { ok: false, error: (baseRes && baseRes.error) || 'Search failed', rows: [], optionsUsed: options };
+        return {
+          ok: false,
+          error: (baseRes && baseRes.error) || 'Search failed',
+          rows: [],
+          optionsUsed: options,
+          ...(baseRes && baseRes.debug ? { debug: baseRes.debug } : {}),
+        };
       }
       let rows = baseRows;
       let usedFallbackSort = false;
-      if (directionCanMisbehave(options) && countLooksWrongForDirection(rows.length)) {
+      if (
+        directionCanMisbehave(options) &&
+        countLooksWrongForDirection(rows.length) &&
+        !skipAltBecausePartialPageIsComplete(rows.length)
+      ) {
         const altOptions = { ...options, ascending: !options.ascending };
         const t1 = performance.now();
         searchDebugLog('search.request.alt', { runId, searchText, altOptions });
@@ -8747,8 +13059,10 @@
         } else {
           searchDebugLog('search.response.altError', {
             runId,
+            baseUrl,
             searchText,
             err: (altRes && altRes.error) || 'alt failed',
+            ...(altRes && altRes.debug ? { debug: altRes.debug } : {}),
           });
         }
       }
@@ -8803,6 +13117,27 @@
       }, 200);
     }
 
+    /**
+     * Hide filters (and other client-side drops) can leave too few tbody rows to fill #resultsScroll — no scrollbar, so scroll paging never fires.
+     * After layout, if more ES pages exist and the list is still “short” or already at virtual bottom, fetch again (capped).
+     */
+    function maybeAutoFillResultsUntilScrollable(chainLeft) {
+      const left = typeof chainLeft === 'number' ? chainLeft : 25;
+      if (left <= 0) return;
+      if (!resultsPagingCtx?.hasMore || resultsLoadMoreBusy || searchInFlight) return;
+      const wrap = document.getElementById('resultsScroll');
+      if (!wrap) return;
+      const fillsViewport = wrap.scrollHeight > wrap.clientHeight + 8;
+      const atBottom = resultsScrollNearBottom(140);
+      if (fillsViewport && !atBottom) return;
+      const offsetBefore = resultsPagingCtx.singleOffset;
+      void (async () => {
+        await loadMoreResults();
+        if (!resultsPagingCtx || resultsPagingCtx.singleOffset === offsetBefore) return;
+        runAfterNextLayoutPaint(() => maybeAutoFillResultsUntilScrollable(left - 1));
+      })();
+    }
+
     /** Next Everything offset page; same query/sort as resultsPagingCtx. */
     async function loadMoreResults() {
       if (!resultsPagingCtx || !resultsPagingCtx.hasMore || resultsLoadMoreBusy) return;
@@ -8831,6 +13166,9 @@
         if (runId !== searchRunSeq) return;
         if (!res || !res.ok) {
           resultsPagingCtx = { ...ctx, hasMore: false };
+          if (res && res.debug) {
+            searchDebugLog('loadMore.httpError', { err: res.error, debug: res.debug, baseUrl: ctx.baseUrl });
+          }
           if (status) setStatusMain((res && res.error) || 'Load more failed');
           maybeShowEverythingHttpHelpBanner(res && res.error);
           renderTable();
@@ -8839,6 +13177,7 @@
           return;
         }
         hideEverythingHttpHelpBanner();
+        setEverythingConnectionBadgeOk();
         let add = res.rows || [];
         const addRawLen = add.length;
         if (isFoldersOnly()) add = add.filter(rowIsFolder);
@@ -8848,6 +13187,7 @@
         } else {
           lastRows = mergeSearchRowsDedupe(lastRows, add);
           sortLastRowsForDisplay(!!res.usedFallbackSort);
+          applyTagRenamePendingToLastRows();
           const hasMore = addRawLen === ctx.pageSize;
           resultsPagingCtx = {
             ...ctx,
@@ -8886,8 +13226,153 @@
       document.getElementById('everythingHttpHelpAlert')?.classList.add('d-none');
     }
 
+    /** Settings header: last-known Everything HTTP status (updated by searches + connection probe). */
+    let everythingConnectionBadgeProbeSeq = 0;
+
+    function updateSettingsConnectionChevronFromExpanded(isExpanded) {
+      const btn = document.getElementById('btnSettingsConnectionToggle');
+      if (!btn) return;
+      const i = btn.querySelector('.tagfox-settings-connection-chevron');
+      if (i) {
+        i.classList.toggle('fa-chevron-down', isExpanded);
+        i.classList.toggle('fa-chevron-right', !isExpanded);
+      }
+      btn.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+    }
+
+    /** When badge is Connected, collapse URL/auth fields; otherwise expand so the user can fix settings. */
+    function syncEverythingConnectionSectionCollapse() {
+      const wrap = document.getElementById('settingsConnectionDetails');
+      const badge = document.getElementById('everythingConnectionBadge');
+      if (!wrap || !badge || typeof bootstrap === 'undefined' || !bootstrap.Collapse) return;
+      const connected = badge.textContent.trim() === 'Connected';
+      const inst = bootstrap.Collapse.getOrCreateInstance(wrap, { toggle: false });
+      if (connected) {
+        inst.hide();
+      } else {
+        inst.show();
+        updateSettingsConnectionChevronFromExpanded(true);
+      }
+    }
+
+    function wireEverythingConnectionSectionCollapseOnce() {
+      const wrap = document.getElementById('settingsConnectionDetails');
+      if (!wrap || wrap.dataset.tagfoxConnCollapse === '1') return;
+      wrap.dataset.tagfoxConnCollapse = '1';
+      wrap.addEventListener('shown.bs.collapse', () => updateSettingsConnectionChevronFromExpanded(true));
+      wrap.addEventListener('hidden.bs.collapse', () => updateSettingsConnectionChevronFromExpanded(false));
+    }
+
+    /** Other settings sections: chevron follows Bootstrap collapse (Connection uses separate logic). */
+    function wireTagfoxSettingsSectionCollapsesOnce() {
+      const root = document.querySelector('#settingsPanel .offcanvas-body');
+      if (!root || root.dataset.tagfoxSettingsSectionsWired === '1') return;
+      root.dataset.tagfoxSettingsSectionsWired = '1';
+      for (const btn of root.querySelectorAll('[data-tagfox-settings-collapse]')) {
+        const id = btn.getAttribute('data-tagfox-settings-collapse');
+        const wrap = id ? document.getElementById(id) : null;
+        const chev = btn.querySelector('.tagfox-settings-section-chevron');
+        if (!wrap || !chev) continue;
+        const sync = () => {
+          const open = wrap.classList.contains('show');
+          chev.classList.toggle('fa-chevron-down', open);
+          chev.classList.toggle('fa-chevron-right', !open);
+          btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        };
+        wrap.addEventListener('shown.bs.collapse', sync);
+        wrap.addEventListener('hidden.bs.collapse', sync);
+        sync();
+      }
+    }
+
+    function setEverythingConnectionBadgeOk() {
+      const el = document.getElementById('everythingConnectionBadge');
+      if (!el) return;
+      el.textContent = 'Connected';
+      el.className = 'badge rounded-pill text-bg-success';
+      el.title = 'Everything answered OK at this address (last successful request).';
+      syncEverythingConnectionSectionCollapse();
+    }
+
+    function setEverythingConnectionBadgeUnknown() {
+      const el = document.getElementById('everythingConnectionBadge');
+      if (!el) return;
+      el.textContent = 'Not checked yet';
+      el.className = 'badge rounded-pill text-bg-secondary';
+      el.title = 'Open Settings to test, or run a search.';
+      syncEverythingConnectionSectionCollapse();
+    }
+
+    function setEverythingConnectionBadgeFromErr(errMsg) {
+      const el = document.getElementById('everythingConnectionBadge');
+      if (!el) return;
+      const detail = String(errMsg || '').trim();
+      if (!detail) {
+        setEverythingConnectionBadgeUnknown();
+        return;
+      }
+      const kind = everythingHttpSetupHintKind(errMsg);
+      if (!kind) {
+        el.textContent = 'Error';
+        el.className = 'badge rounded-pill text-bg-warning';
+        el.title = detail;
+      } else if (kind === 'auth') {
+        el.textContent = 'Sign-in failed';
+        el.className = 'badge rounded-pill text-bg-warning';
+        el.title = 'Match the username and password in Everything → Tools → Options → HTTP Server. ' + detail;
+      } else if (kind === 'json') {
+        el.textContent = 'Wrong address';
+        el.className = 'badge rounded-pill text-bg-danger';
+        el.title = 'Not the Everything HTTP API — check URL, port, and that HTTP Server is on. ' + detail;
+      } else if (kind === 'http') {
+        el.textContent = 'HTTP error';
+        el.className = 'badge rounded-pill text-bg-danger';
+        el.title = detail;
+      } else {
+        el.textContent = "Can't connect";
+        el.className = 'badge rounded-pill text-bg-danger';
+        el.title =
+          'Nothing reached this URL — is Everything running with HTTP enabled (and plug-in on 1.5a)? ' + detail;
+      }
+      syncEverythingConnectionSectionCollapse();
+    }
+
+    /** Tiny query using current Settings fields — runs when Settings opens. */
+    async function probeEverythingConnectionForSettingsBadge() {
+      const el = document.getElementById('everythingConnectionBadge');
+      if (!el || !window.tagBrowser || typeof window.tagBrowser.search !== 'function') return;
+      const seq = ++everythingConnectionBadgeProbeSeq;
+      el.textContent = 'Checking…';
+      el.className = 'badge rounded-pill text-bg-secondary';
+      el.title = 'Sending a one-result test to Everything…';
+      syncEverythingConnectionSectionCollapse();
+      const baseUrl = document.getElementById('baseUrl').value.trim() || 'http://127.0.0.1';
+      const httpUser = document.getElementById('httpUser').value;
+      const httpPassword = document.getElementById('httpPassword').value;
+      const opts = { ...everythingOptionsForRequest(), offset: 0 };
+      let res;
+      try {
+        res = await window.tagBrowser.search({
+          baseUrl,
+          count: '1',
+          httpUser,
+          httpPassword,
+          options: opts,
+          searchText: 'sort-mix:',
+        });
+      } catch (e) {
+        if (seq !== everythingConnectionBadgeProbeSeq) return;
+        setEverythingConnectionBadgeFromErr(e && e.message ? String(e.message) : 'Request failed');
+        return;
+      }
+      if (seq !== everythingConnectionBadgeProbeSeq) return;
+      if (res && res.ok) setEverythingConnectionBadgeOk();
+      else setEverythingConnectionBadgeFromErr(res && res.error);
+    }
+
     /** Offer Settings + Installation tab when search can’t talk to Everything HTTP. */
     function maybeShowEverythingHttpHelpBanner(errMsg) {
+      setEverythingConnectionBadgeFromErr(errMsg);
       const kind = everythingHttpSetupHintKind(errMsg);
       if (!kind) return;
       const wrap = document.getElementById('everythingHttpHelpAlert');
@@ -8960,9 +13445,8 @@
         return true;
       }
 
-      /* Identity search exceeded cap: try narrowing (subs off, then folders-only).
-       * Typed query: never auto-narrow — cap may truncate; user keeps subs + Both. */
-      if (smartEvent === 'identity' && !(document.getElementById('query')?.value || '').trim()) {
+      /* Identity + plain empty browse only: cap full page ⇒ narrow. If query, tags, or recency filter act on ES, do not impose toggles here. */
+      if (smartEvent === 'identity' && !smartSearchShouldStartBroad()) {
         const rootFolder = document.getElementById('rootFolder').value.trim();
         if (isShowSubfolders()) {
           const droppingSubsOk = !lastRows.length || smartScopeHasDirectChildHit(lastRows, rootFolder);
@@ -9025,7 +13509,7 @@
       /* manual / smart-narrow / refresh: no probe-widen below (everything fits one page). */
       if (smartEvent === 'manual' || smartEvent === 'smart-narrow' || smartEvent === 'refresh') return;
 
-      /* All results fit but view is narrowed: probe-widen to full tree. */
+      /* All results fit but view is narrowed: probe-widen back to full Smart defaults. */
       if (!isShowSubfolders() || !isAllContent()) {
         const scopeJustChanged = smartRevertFP == null;
         if (!smartSearchShouldStartBroad() && !scopeJustChanged) return;
@@ -9052,6 +13536,18 @@
     }
 
     async function runSearch(eventKind = 'identity', opts = {}) {
+      const isNested = topLevelSearchDepth > 0;
+      let releaseSearchMutex = null;
+      if (!isNested) {
+        const prev = searchMutex;
+        const next = new Promise((r) => {
+          releaseSearchMutex = r;
+        });
+        searchMutex = next;
+        await prev;
+      }
+      topLevelSearchDepth++;
+      try {
       const keepPendingSmartNote = !!opts.keepPendingSmartNote;
       searchInFlight = true;
       const runId = ++searchRunSeq;
@@ -9071,7 +13567,9 @@
         const q = (document.getElementById('query')?.value || '').trim();
         const broadForNonSmart = !smart && (q || activeTagKeys.size);
         if (broadForSmart || broadForNonSmart) {
-          applyResultsViewRadiosToDom(resultsLayoutFromUi(), true, 'all');
+          const cm = resultsContentMode();
+          const keepNarrow = cm === 'files' || cm === 'folders';
+          applyResultsViewRadiosToDom(resultsLayoutFromUi(), true, keepNarrow ? cm : 'all');
           syncViewRadioActiveFromDom();
         }
       }
@@ -9102,7 +13600,7 @@
       else searchText = (String(searchText).trim() + ' sort-mix:').trim();
       searchText = appendRecencyToEverythingQuery(searchText);
       const maxResultsRaw = document.getElementById('maxResults').value;
-      const cap = Math.min(5000, Math.max(1, parseInt(String(maxResultsRaw).trim(), 10) || 200));
+      const cap = Math.min(5000, Math.max(1, parseInt(String(maxResultsRaw).trim(), 10) || 60));
       const countStr = String(cap);
       const httpUser = document.getElementById('httpUser').value;
       const httpPassword = document.getElementById('httpPassword').value;
@@ -9115,6 +13613,7 @@
       };
       searchDebugLog('runSearch.start', {
         runId,
+        eventKind,
         flat: isFlatView(),
         smart: isSmartView(),
         showSubfolders: showSub,
@@ -9129,7 +13628,7 @@
         options,
       });
 
-      setStatusMain('Searching…');
+      setStatusMain(opts && opts.uiHint === 'f5' ? 'F5 — searching…' : 'Searching…');
 
       searchDebugLog('runSearch.branch', {
         runId,
@@ -9160,7 +13659,11 @@
       if (!res.ok) {
         lastRows = [];
         resultsPagingCtx = null;
-        searchDebugLog('runSearch.error', { runId, err: res.error || 'Search failed' });
+        searchDebugLog('runSearch.error', {
+          runId,
+          err: res.error || 'Search failed',
+          ...(res.debug ? { debug: res.debug } : {}),
+        });
         setStatusMain(res.error || 'Search failed');
         maybeShowEverythingHttpHelpBanner(res.error);
         await syncSelectionAfterSearch();
@@ -9169,13 +13672,34 @@
         return;
       }
       hideEverythingHttpHelpBanner();
+      setEverythingConnectionBadgeOk();
       let got = Array.isArray(res.rows) ? res.rows : [];
+      let usedLocalFolderFallback = false;
+      const localFallbackRows = await maybeBuildLocalCloudBrowseFallbackRows({
+        runId,
+        rootFolder,
+        query,
+        recursive,
+      });
+      if (localFallbackRows == null && runId !== searchRunSeq) return;
+      if (Array.isArray(localFallbackRows) && localFallbackRows.length) {
+        got = localFallbackRows;
+        usedLocalFolderFallback = true;
+      }
+      searchDebugLog('runSearch.resultSource', {
+        runId,
+        source: usedLocalFolderFallback ? 'localFolderFallback' : 'everything',
+        rootFolder: normalizeFolderPathForEverything(String(rootFolder || '').trim()),
+        rowsBeforeUiFilters: got.length,
+      });
       /* Everything offset is in raw API rows — never use client-filtered count (e.g. folders-only). */
       const rawPageLen = got.length;
       if (fo) got = got.filter(rowIsFolder);
       else if (fileOnly) got = got.filter((r) => !rowIsFolder(r));
       lastRows = got;
+      dedupeLastRowsByPathKey(); // Everything can repeat the same path in one page — breaks tree (duplicate siblings).
       sortLastRowsForDisplay(!!res.usedFallbackSort);
+      applyTagRenamePendingToLastRows();
       searchDebugLog('runSearch.single.final', {
         runId,
         usedFallbackSort: !!res.usedFallbackSort,
@@ -9183,11 +13707,26 @@
         first: lastRows.slice(0, 3).map((r) => fullPathForRow(r)),
         last: lastRows.slice(-3).map((r) => fullPathForRow(r)),
       });
+      await runSearchDebugScopeProbe({
+        runId,
+        baseUrl,
+        httpUser,
+        httpPassword,
+        rootFolder,
+        query,
+        recursive,
+        foldersOnly: fo,
+        filesOnly: fileOnly,
+        currentSearchText: searchText,
+        currentOptions: stripOffsetFromOpts(res.optionsUsed),
+        currentRowsLen: lastRows.length,
+        resultSource: usedLocalFolderFallback ? 'localFolderFallback' : 'everything',
+      });
       resultsPagingCtx = {
         mode: 'single',
         pageSize: cap,
         singleOffset: rawPageLen,
-        hasMore: rawPageLen === cap,
+        hasMore: !usedLocalFolderFallback && rawPageLen === cap,
         baseUrl,
         httpUser,
         httpPassword,
@@ -9216,35 +13755,83 @@
             text = 'Big folder!';
           }
           setStatusSmartNote(text, pending ? pending.kind : 'warn');
+        } else if (opts && opts.uiHint === 'f5') {
+          setStatusMain('Refreshed (F5) — ' + lastRows.length + ' row(s).');
         }
       }
       } finally {
         if (runId === searchRunSeq) searchInFlight = false;
       }
+    } finally {
+      topLevelSearchDepth--;
+      if (!isNested && releaseSearchMutex) releaseSearchMutex();
+    }
     }
 
-    const resultsTableScrollEl = document.getElementById('resultsScroll');
-    if (resultsTableScrollEl) resultsTableScrollEl.addEventListener('scroll', onResultsWrapScrollForPaging, { passive: true });
-    document.getElementById('btnLoadMoreResults')?.addEventListener('click', () => void loadMoreResults());
+    function bindResultsDomListeners() {
+      const resultsTableScrollEl = document.getElementById('resultsScroll');
+      if (resultsTableScrollEl && resultsTableScrollEl.dataset.resultsScrollBound !== '1') {
+        resultsTableScrollEl.dataset.resultsScrollBound = '1';
+        resultsTableScrollEl.addEventListener('scroll', onResultsWrapScrollForPaging, { passive: true });
+      }
+      const loadMoreBtn = document.getElementById('btnLoadMoreResults');
+      if (loadMoreBtn && loadMoreBtn.dataset.resultsLoadMoreBound !== '1') {
+        loadMoreBtn.dataset.resultsLoadMoreBound = '1';
+        loadMoreBtn.addEventListener('click', () => void loadMoreResults());
+      }
+      const resultsThead = document.getElementById('resultsTable')?.querySelector('thead');
+      if (resultsThead && resultsThead.dataset.resultsHeadBound !== '1') {
+        resultsThead.dataset.resultsHeadBound = '1';
+        resultsThead.addEventListener('pointerdown', (e) => {
+          const h = e.target.closest('.th-resize');
+          if (!h) return;
+          if (h.style.display === 'none') return;
+          const left = +h.dataset.resizeLeft;
+          const right = +h.dataset.resizeRight;
+          if (!Number.isFinite(left) || !Number.isFinite(right)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          startTableColResize(e, h, left, right);
+        });
+        resultsThead.addEventListener('click', (e) => {
+          if (e.target.closest('.th-resize')) return;
+          if (e.target.closest('#chkSelectAllResults')) return;
+          const th = e.target.closest('th[data-sort]');
+          if (!th) return;
+          const sk = th.dataset.sort;
+          const note =
+            ['size', 'date_modified', 'name'].includes(String(sk || '')) ? flatViewOnIfTreeForColumnSort() : '';
+          applySortColumnKey(sk, note || undefined);
+        });
+      }
+      const selectAll = document.getElementById('chkSelectAllResults');
+      if (selectAll && selectAll.dataset.resultsSelectAllBound !== '1') {
+        selectAll.dataset.resultsSelectAllBound = '1';
+        selectAll.addEventListener('change', (e) => {
+          resultsShiftRangeAnchorIdx = null;
+          const on = e.target.checked;
+          const vis = listRowsForUi();
+          for (const row of vis) {
+            toggleCheckPath(fullPathForRow(row), on);
+          }
+          updateSelectAllCheckboxState();
+          if (on && vis.length) {
+            syncResultsRowCheckboxStates();
+            setSelection(vis[vis.length - 1], fullPathForRow(vis[vis.length - 1]));
+          } else renderTable();
+        });
+      }
+    }
 
-    const resultsThead = document.getElementById('resultsTable').querySelector('thead');
-    resultsThead.addEventListener('mousedown', (e) => {
-      const h = e.target.closest('.th-resize');
-      if (!h) return;
-      e.preventDefault();
-      e.stopPropagation();
-      startTableColResize(e, +h.dataset.resizeIdx);
-    });
-    resultsThead.addEventListener('click', (e) => {
-      if (e.target.closest('.th-resize')) return;
-      if (e.target.closest('#chkSelectAllResults')) return;
-      const th = e.target.closest('th[data-sort]');
-      if (!th) return;
-      const sk = th.dataset.sort;
-      const note =
-        ['size', 'date_modified', 'name'].includes(String(sk || '')) ? flatViewOnIfTreeForColumnSort() : '';
-      applySortColumnKey(sk, note || undefined);
-    });
+    /* Bulk float bar: fresh coords on click + move so updateBulkBar can sync without wiggling the mouse. */
+    const recordLastPointerClient = (e) => {
+      lastPointerClientX = e.clientX;
+      lastPointerClientY = e.clientY;
+    };
+    document.addEventListener('pointermove', recordLastPointerClient, { passive: true, capture: true });
+    document.addEventListener('pointerdown', recordLastPointerClient, { passive: true, capture: true });
+
+    bindResultsDomListeners();
 
     document.getElementById('query').addEventListener('input', () => {
       syncQueryGhostUi();
@@ -9314,7 +13901,15 @@
     });
 
     document.getElementById('btnNewTodoMdTags').addEventListener('click', () => openTagModalNewTodoDraft());
+    document.getElementById('btnReadmeFolderDocTags').addEventListener('click', () => openTagModalFolderDocDraft());
+    document.getElementById('readmeFolderDocStemInput').addEventListener('input', () => folderDocOnFilenameUiChanged());
     document.getElementById('btnCreateTodoMd').addEventListener('click', () => void createTodoMdInScope());
+    document.getElementById('btnCancelTodoMd').addEventListener('click', () => {
+      const inp = document.getElementById('newMdTitleInput');
+      if (!inp) return;
+      inp.value = '';
+      inp.focus();
+    });
     document.getElementById('newMdTitleInput').addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
       e.preventDefault();
@@ -9323,6 +13918,7 @@
 
     document.querySelectorAll('input[name="tagFoxRecencyFilter"]').forEach((el) => {
       el.addEventListener('change', () => {
+        syncRecencyFilterActiveHighlight();
         saveSettings();
         commitSearchHistoryNow();
         /* dm: is baked into the HTTP search — must re-run Everything or lastRows stays stale. */
@@ -9332,7 +13928,6 @@
     ['optCase', 'optWholeWord', 'optPath', 'optDiacritics', 'optHideSpecial', 'optHideTilde'].forEach((id) => {
       document.getElementById(id).addEventListener('change', () => {
         saveSettings();
-        syncAdvancedBtnWarning();
         if (id === 'optCase' && document.getElementById('bulkRenameModal')?.classList.contains('show')) {
           updateBulkRenamePreview();
         }
@@ -9347,6 +13942,7 @@
           scheduleSearch();
         }
         commitSearchHistoryNow();
+        syncAdvancedSearchIconFilledState();
       });
     });
 
@@ -9357,7 +13953,7 @@
       if (open) panel.removeAttribute('hidden');
       else panel.setAttribute('hidden', '');
       btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-      btn.classList.toggle('active', open);
+      syncAdvancedSearchIconFilledState();
     });
     document.addEventListener('pointerdown', (e) => {
       const panel = document.getElementById('searchOptsAdvancedPanel');
@@ -9367,7 +13963,7 @@
         panel.setAttribute('hidden', '');
         const btn = document.getElementById('btnToggleSearchOptsAdvanced');
         btn?.setAttribute('aria-expanded', 'false');
-        btn?.classList.remove('active');
+        syncAdvancedSearchIconFilledState();
       }
     });
 
@@ -9413,6 +14009,20 @@
       if (!raw) return;
       openTagModal(normalizeFolderPathForEverything(raw));
     });
+    document.getElementById('btnScopeBarTerminal')?.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const raw = document.getElementById('rootFolder').value.trim();
+      if (!raw) return;
+      const r = await window.tagBrowser.openTerminalAt(normalizeFolderPathForEverything(raw));
+      if (!r || !r.ok) setStatusMain((r && r.error) || 'Open in Terminal failed');
+    });
+    document.getElementById('btnScopeBarCopyQuoted')?.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const raw = document.getElementById('rootFolder').value.trim();
+      if (!raw) return;
+      const r = await window.tagBrowser.clipboardWriteText('"' + normalizeFolderPathForEverything(raw) + '"');
+      if (!r || !r.ok) setStatusMain((r && r.error) || 'Copy quoted path failed');
+    });
     document.getElementById('btnScopeBarMore')?.addEventListener('click', async (e) => {
       e.preventDefault();
       const raw = document.getElementById('rootFolder').value.trim();
@@ -9421,11 +14031,12 @@
       const rect = e.currentTarget.getBoundingClientRect();
       await openResultsRowItemActionsMenu(fp, rect.left, rect.bottom, null);
     });
-    /* Re-click active segment cycles (Smart→Tree→Flat; all→folders→files); subs on↔off. */
+    /* Re-click active segment cycles, except Smart which reapplies Smart defaults for this context. */
     const viewLayoutTrioIds = ['optRvSmart', 'optRvTree', 'optRvFlat'];
     const contentTrioIds = ['optRvAll', 'optRvDirsOnly', 'optRvFilesOnly'];
     const viewPairs = [['optRvSubsOn', 'optRvSubsOff']];
     const viewRadioActive = {};
+    let pendingSmartViewReset = false;
     /** Mirror checked state for toggle-on-reclick (loadSettings, setResultsViewRadios, column-sort flat switch). */
     function syncViewRadioActiveFromDom() {
       for (const id of [...viewLayoutTrioIds, ...contentTrioIds]) {
@@ -9454,6 +14065,14 @@
         const el = document.getElementById(id);
         if (!el) continue;
         el.addEventListener('click', () => {
+          if (id === 'optRvSmart') {
+            if (viewRadioActive[id]) {
+              reimposeSmartViewDefaults();
+            } else {
+              pendingSmartViewReset = true;
+            }
+            return;
+          }
           if (viewRadioActive[id]) {
             const idx = ids.indexOf(id);
             const nextId = ids[(idx + 1) % ids.length];
@@ -9468,6 +14087,12 @@
           }
         });
         el.addEventListener('change', () => {
+          if (id === 'optRvSmart' && pendingSmartViewReset) {
+            pendingSmartViewReset = false;
+            syncViewRadioActiveFromDom();
+            reimposeSmartViewDefaults();
+            return;
+          }
           syncViewRadioActiveFromDom();
           bindResultsViewRadiosChanged(isNonLayout);
         });
@@ -9566,40 +14191,62 @@
       if (quickTodoHotkeyRecording) setQuickTodoHotkeyRecording(false);
       else setQuickTodoHotkeyRecording(true);
     });
+    document.getElementById('optHighlightMatchedNames')?.addEventListener('change', () => {
+      saveSettings();
+      renderTable();
+    });
     document.getElementById('optSearchDebug').addEventListener('change', () => {
       saveSettings();
       if (isSearchDebugOn()) searchDebugLog('debug.enabled', { on: true });
+      else {
+        searchDebugNextScopedProbe = false;
+        searchDebugTestAwaitingCopy = false;
+        syncSearchDebugTestCycleBtn();
+      }
     });
     document.getElementById('btnClearSearchDebug').addEventListener('click', () => {
+      searchDebugNextScopedProbe = false;
+      searchDebugTestAwaitingCopy = false;
+      syncSearchDebugTestCycleBtn();
       searchDebugClear();
       searchDebugLog('debug.cleared', {});
     });
     document.getElementById('btnCopySearchDebug').addEventListener('click', async () => {
       const text = searchDebugLines.join('\n');
       if (!text) return;
-      try {
-        await navigator.clipboard.writeText(text);
-        const status = document.getElementById('statusMain');
+      const ok = await copyPlainTextToClipboard(text);
+      const status = document.getElementById('statusMain');
+      if (ok) {
+        searchDebugTestAwaitingCopy = false;
+        syncSearchDebugTestCycleBtn();
         if (status) setStatusMain('Debug log copied.');
-      } catch (_) {
-        const status = document.getElementById('statusMain');
-        if (status) setStatusMain('Could not copy debug log.');
+      } else if (status) {
+        setStatusMain('Could not copy debug log.');
       }
+    });
+    syncSearchDebugTestCycleBtn();
+    document.getElementById('btnSearchDebugTestCycle')?.addEventListener('click', () => {
+      if (searchDebugTestAwaitingCopy) {
+        searchDebugTestAwaitingCopy = false;
+        syncSearchDebugTestCycleBtn();
+        document.getElementById('btnCopySearchDebug')?.click();
+        return;
+      }
+      const opt = document.getElementById('optSearchDebug');
+      const wasOff = !!(opt && !opt.checked);
+      if (wasOff) {
+        opt.checked = true;
+        saveSettings();
+      }
+      searchDebugClear();
+      if (wasOff) searchDebugLog('debug.enabled', { on: true });
+      searchDebugLog('debug.cleared', {});
+      searchDebugNextScopedProbe = true;
+      searchDebugLog('debug.captureArmed', { nextScopedProbe: true });
+      searchDebugTestAwaitingCopy = true;
+      syncSearchDebugTestCycleBtn();
     });
 
-    document.getElementById('chkSelectAllResults').addEventListener('change', (e) => {
-      resultsShiftRangeAnchorIdx = null;
-      const on = e.target.checked;
-      const vis = listRowsForUi();
-      for (const row of vis) {
-        toggleCheckPath(fullPathForRow(row), on);
-      }
-      updateSelectAllCheckboxState();
-      if (on && vis.length) {
-        syncResultsRowCheckboxStates();
-        setSelection(vis[vis.length - 1], fullPathForRow(vis[vis.length - 1]));
-      } else renderTable();
-    });
     document.getElementById('btnBulkClip').addEventListener('click', async () => {
       const status = document.getElementById('statusMain');
       const p = getCheckedPathsArr();
@@ -9610,15 +14257,27 @@
     document.getElementById('btnBulkTrash').addEventListener('click', async () => {
       const status = document.getElementById('statusMain');
       const p = getCheckedPathsArr();
-      if (!p.length) return;
-      if (!confirm(recycleBinConfirmMessage(p))) return;
+      searchDebugLog('recycle.ui', { source: 'bulkBar', phase: 'click', checked: p.length });
+      if (!p.length) {
+        searchDebugLog('recycle.ui', { source: 'bulkBar', phase: 'noopNoSelection' });
+        return;
+      }
+      if (!confirm(recycleBinConfirmMessage(p))) {
+        searchDebugLog('recycle.ui', { source: 'bulkBar', phase: 'confirmCancel', count: p.length });
+        return;
+      }
       detachViewerEditorsForTrashedPaths(p);
-      const r = await window.tagBrowser.trashPaths(p);
+      setDeletingStatus(p.length);
+      const { r, threw } = await trashPathsInvokeWithSearchDebug(p, 'bulkBar');
+      if (threw) {
+        setStatusMain('Delete failed');
+        return;
+      }
       if (!r || !r.ok) setStatusMain((r && r.error) || 'Delete failed');
       else {
         checkedPathsMap.clear();
         updateBulkBar();
-        void refreshAfterDiskMutation(); // + paths-mutated from main; retries help Everything catch up
+        void refreshAfterDiskMutation({ paths: p }); // + paths-mutated from main; retries help Everything catch up
       }
     });
     document.getElementById('btnBulkTags').addEventListener('click', () => {
@@ -9627,9 +14286,7 @@
       openTagModalBulk(p);
     });
     document.getElementById('btnBulkClearSel').addEventListener('click', () => {
-      checkedPathsMap.clear();
-      updateBulkBar();
-      renderTable();
+      clearResultsCheckedSelection();
     });
 
     document.getElementById('tagModal').addEventListener('shown.bs.modal', () => {
@@ -9637,9 +14294,15 @@
       requestAnimationFrame(() => document.getElementById('tagModalInput')?.focus());
     });
     document.getElementById('tagModal').addEventListener('hidden.bs.modal', () => {
+      const wasFolderDocDraft = tagModalMode === 'folderDocDraft';
       if (tagModalMode === 'newTodo') newTodoMdTags = modalTags.slice();
+      else if (tagModalMode === 'folderDocDraft') folderDocMdTags = modalTags.slice();
       tagModalMode = 'rename';
       syncTagModalHintsAndTitle();
+      if (wasFolderDocDraft) {
+        syncFolderDocTagPillsDisplay();
+        folderDocOnFilenameUiChanged();
+      }
     });
     document.getElementById('bulkRenameModal').addEventListener('shown.bs.modal', () => {
       requestAnimationFrame(() => {
@@ -9676,23 +14339,185 @@
       }
     });
 
-    document.getElementById('readmeEditor').addEventListener('input', () => {
-      document.getElementById('readmePreview').innerHTML = mdPreviewHtml(document.getElementById('readmeEditor').value);
+    /** Clipboard image in folder-doc / file markdown editors → `.images/paste-<ts>.png` + link at caret. */
+    async function onMarkdownViewerPasteImage(e, which) {
+      const cd = e.clipboardData;
+      if (!cd || !cd.items) return;
+      let imageItem = null;
+      for (let i = 0; i < cd.items.length; i++) {
+        const it = cd.items[i];
+        if (it.kind === 'file' && String(it.type || '').startsWith('image/')) {
+          imageItem = it;
+          break;
+        }
+        if (String(it.type || '').startsWith('image/')) {
+          imageItem = it;
+          break;
+        }
+      }
+      if (!imageItem) return;
+      let mdPath = null;
+      if (which === 'mdFile') {
+        const wrap = document.getElementById('mdFileEditorWrap');
+        if (!wrap || wrap.classList.contains('d-none')) return;
+        mdPath = mdAutosaveTargetPath;
+      } else {
+        if (globalNestedReadmeView) return;
+        const wrap = document.getElementById('readmeEditorWrap');
+        if (!wrap || wrap.classList.contains('d-none')) return;
+        mdPath = activeReadmePath;
+      }
+      if (!mdPath || !window.tagBrowser.writeImageFilePng) return;
+      e.preventDefault();
+      const blob = imageItem.getAsFile();
+      if (!blob) return;
+      const ab = await blob.arrayBuffer();
+      const b64 = arrayBufferToBase64(ab);
+      const parent = T.parentDir(mdPath);
+      if (!parent) {
+        setStatusMain('Could not resolve folder for image.');
+        return;
+      }
+      const imagesDir = joinFolderAndFileName(parent, '.images');
+      const fileName = 'paste-' + Date.now() + '.png';
+      const fullImagePath = joinFolderAndFileName(imagesDir, fileName);
+      const r = await window.tagBrowser.writeImageFilePng({ fullPath: fullImagePath, base64: b64 });
+      if (!r.ok) {
+        setStatusMain(r.error || 'Could not save pasted image.');
+        return;
+      }
+      const rel = '.images/' + fileName;
+      const insert = '![](' + rel + ')';
+      const prevId = which === 'mdFile' ? 'mdFilePreview' : 'readmePreview';
+      const value = replaceViewerMdSelection(which, insert);
+      if (which === 'mdFile') {
+        document.getElementById(prevId).innerHTML = editableTextPreviewHtml(value, mdAutosaveTargetPath);
+        scheduleMdFileAutosave();
+        syncViewerCopyButton();
+      } else {
+        document.getElementById(prevId).innerHTML = mdPreviewHtml(value, { mdSourcePath: activeReadmePath });
+        syncReadmePreviewChrome({ pulse: false });
+      }
+      void refreshAfterDiskMutation();
+      setStatusMain('Image saved next to document.');
+    }
+
+    const readmeEditor = ensureViewerMdEditor('readme');
+    const mdFileEditor = ensureViewerMdEditor('mdFile');
+    const readmeTextarea = getViewerMdTextarea('readme');
+    const mdFileTextarea = getViewerMdTextarea('mdFile');
+    const onReadmeEditorInput = () => {
+      if (globalNestedReadmeView) return;
+      document.getElementById('readmePreview').innerHTML = mdPreviewHtml(getViewerMdValue('readme'), {
+        mdSourcePath: activeReadmePath,
+      });
       syncReadmePreviewChrome({ pulse: false });
-    });
-    document.getElementById('mdFileEditor').addEventListener('input', () => {
-      document.getElementById('mdFilePreview').innerHTML = mdPreviewHtml(document.getElementById('mdFileEditor').value);
+    };
+    const onMdFileEditorInput = () => {
+      document.getElementById('mdFilePreview').innerHTML = editableTextPreviewHtml(
+        getViewerMdValue('mdFile'),
+        mdAutosaveTargetPath
+      );
       scheduleMdFileAutosave();
-    });
-    document.getElementById('mdFileEditor').addEventListener('blur', () => void flushMdFileAutosave());
+      syncViewerCopyButton();
+    };
+    const onReadmeEditorKeydown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'Enter') {
+        e.preventDefault();
+        void closeReadmeEditorWithSave();
+      }
+    };
+    const onMdFileEditorKeydown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'Enter') {
+        e.preventDefault();
+        toggleViewerDocEditor('mdFile');
+      }
+    };
+    if (readmeEditor) {
+      readmeEditor.on('paste', (cm, e) => void onMarkdownViewerPasteImage(e, 'readme'));
+      readmeEditor.on('changes', onReadmeEditorInput);
+      readmeEditor.on('keydown', (cm, e) => onReadmeEditorKeydown(e));
+    } else {
+      readmeTextarea?.addEventListener('paste', (e) => void onMarkdownViewerPasteImage(e, 'readme'));
+      readmeTextarea?.addEventListener('input', onReadmeEditorInput);
+      readmeTextarea?.addEventListener('keydown', onReadmeEditorKeydown);
+    }
+    if (mdFileEditor) {
+      mdFileEditor.on('paste', (cm, e) => void onMarkdownViewerPasteImage(e, 'mdFile'));
+      mdFileEditor.on('changes', onMdFileEditorInput);
+      mdFileEditor.on('blur', () => void flushMdFileAutosave());
+      mdFileEditor.on('keydown', (cm, e) => onMdFileEditorKeydown(e));
+    } else {
+      mdFileTextarea?.addEventListener('paste', (e) => void onMarkdownViewerPasteImage(e, 'mdFile'));
+      mdFileTextarea?.addEventListener('input', onMdFileEditorInput);
+      mdFileTextarea?.addEventListener('blur', () => void flushMdFileAutosave());
+      mdFileTextarea?.addEventListener('keydown', onMdFileEditorKeydown);
+    }
     document.getElementById('btnReadmeEdit').addEventListener('click', () => toggleViewerDocEditor('readme'));
+    document.getElementById('btnReadmeCancel').addEventListener('click', () => void cancelReadmeEditor());
+    document.getElementById('inpGlobalViewerBasenames')?.addEventListener('blur', () => {
+      const inp = document.getElementById('inpGlobalViewerBasenames');
+      if (!inp) return;
+      const list = normalizeGlobalViewerBasenamesList(inp.value);
+      localStorage.setItem(LS.globalViewerBasenames, list.join(', '));
+      inp.value = list.join(', ');
+      if (!globalNestedReadmeView) return;
+      const selPath = propsTargetPath();
+      const row = propsTargetRowForDisplay();
+      const root = readmeAggregateRootFolderFromSelection(selPath, row);
+      if (root) void loadReadmeForFolder(root, selPath);
+    });
+    function onViewerDocModeChanged(wantNested) {
+      const want = !!wantNested;
+      if (want) {
+        const rw = document.getElementById('readmeEditorWrap');
+        if (rw && !rw.classList.contains('d-none')) {
+          const single = document.getElementById('optViewerDocSingle');
+          const nested = document.getElementById('optViewerDocNested');
+          if (single) single.checked = true;
+          if (nested) nested.checked = false;
+          setStatusMain('Finish editing folder doc first.');
+          return;
+        }
+      }
+      const selPath = propsTargetPath();
+      const row = propsTargetRowForDisplay();
+      const root = readmeAggregateRootFolderFromSelection(selPath, row);
+      if (!root || !row) {
+        const single = document.getElementById('optViewerDocSingle');
+        const nested = document.getElementById('optViewerDocNested');
+        if (single) single.checked = true;
+        if (nested) nested.checked = false;
+        globalNestedReadmeView = false;
+        return;
+      }
+      globalNestedReadmeView = want;
+      void loadReadmeForFolder(root, selPath);
+    }
+    document.getElementById('optViewerDocSingle')?.addEventListener('change', (e) => {
+      const t = e.target;
+      if (!t || t.id !== 'optViewerDocSingle' || !t.checked) return;
+      onViewerDocModeChanged(false);
+    });
+    document.getElementById('optViewerDocNested')?.addEventListener('change', (e) => {
+      const t = e.target;
+      if (!t || t.id !== 'optViewerDocNested' || !t.checked) return;
+      onViewerDocModeChanged(true);
+    });
+    document.getElementById('btnMdFileCopyText')?.addEventListener('click', () => void copyMdFileViewerText());
+    document.getElementById('btnMdFileRefresh')?.addEventListener('click', () => void refreshMdFileViewerFromDisk());
+    document.getElementById('btnPdfRefresh')?.addEventListener('click', () => void refreshPdfViewerFromDisk());
     document.getElementById('btnMdFileEdit').addEventListener('click', () => toggleViewerDocEditor('mdFile'));
     (function bindViewerDocPreviewActivators() {
       function bind(prevId, which) {
         const el = document.getElementById(prevId);
         if (!el) return;
-        el.addEventListener('dblclick', () => setViewerDocEditorOpen(which, true));
+        el.addEventListener('dblclick', () => {
+          if (which === 'readme' && globalNestedReadmeView) return;
+          setViewerDocEditorOpen(which, true);
+        });
         el.addEventListener('keydown', (e) => {
+          if (which === 'readme' && globalNestedReadmeView) return;
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
             setViewerDocEditorOpen(which, true);
@@ -9712,21 +14537,67 @@
       if (status) setStatusMain(r.ok ? 'Opened in app window.' : (r.error || 'Open failed'));
     });
 
-    window.tagBrowser.setPathsMutatedHandler(() => void refreshAfterDiskMutation());
+    window.tagBrowser.setPathsMutatedHandler((payload) => void refreshAfterDiskMutation(payload));
     window.tagBrowser.setShellActionErrorHandler((msg) => {
       setStatusMain(String(msg || 'Action failed'));
     });
+    if (typeof window.tagBrowser.setSearchDebugFromMainHandler === 'function') {
+      window.tagBrowser.setSearchDebugFromMainHandler((eventName, data) => {
+        searchDebugLog(eventName, data);
+      });
+    }
+    if (typeof window.tagBrowser.setPlainF5SearchRefreshHandler === 'function') {
+      window.tagBrowser.setPlainF5SearchRefreshHandler(() => {
+        searchDebugLog('searchRefresh.f5.renderer', { step: 'beforeRunSearchNow', eventKind: 'refresh' });
+        void runSearchNow('refresh', { uiHint: 'f5' });
+      });
+    }
+    if (typeof window.tagBrowser.setAppRestartHintHandler === 'function') {
+      window.tagBrowser.setAppRestartHintHandler((payload) => {
+        const src = payload && payload.source;
+        if (src === 'menu') setStatusMain('Restarting TagFox (menu)…');
+        else setStatusMain('Restarting TagFox (Ctrl+F5)…');
+      });
+    }
     if (typeof window.tagBrowser.setQuickTodoOpenHandler === 'function') {
       window.tagBrowser.setQuickTodoOpenHandler(() => showQuickTodoPop());
     }
     document.getElementById('btnQuickTodoPopClose')?.addEventListener('click', () => hideQuickTodoPop());
+    document.getElementById('btnQuickTodoPopCancel')?.addEventListener('click', () => {
+      const inp = document.getElementById('quickTodoTitleInput');
+      const bodyInp = document.getElementById('quickTodoBodyInput');
+      if (inp) inp.value = '';
+      if (bodyInp) bodyInp.value = '';
+      hideQuickTodoPop();
+    });
     document.getElementById('btnQuickTodoPopSave')?.addEventListener('click', () => void createQuickTodoFromPop());
-    document.getElementById('btnQuickTodoPopTags')?.addEventListener('click', () => openTagModalNewTodoDraft());
+    document.getElementById('btnQuickTodoPopTags')?.addEventListener('click', () => toggleQuickTodoTagsPanel());
+    document.getElementById('btnQuickTodoPopBody')?.addEventListener('click', () => toggleQuickTodoBodyPanel());
+    document.getElementById('btnQuickTodoTagAddBtn')?.addEventListener('click', () => {
+      const inp = document.getElementById('quickTodoTagInput');
+      const value = inp ? inp.value : '';
+      if (inp) inp.value = '';
+      addQuickTodoTag(value);
+    });
+    document.getElementById('quickTodoTagInput')?.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const inp = document.getElementById('quickTodoTagInput');
+      const value = inp ? inp.value : '';
+      if (inp) inp.value = '';
+      addQuickTodoTag(value);
+    });
     document.getElementById('quickTodoTitleInput')?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
         void createQuickTodoFromPop();
       }
+    });
+    document.getElementById('btnPropsCopyText')?.addEventListener('click', async () => {
+      const text = currentViewerCopyText();
+      if (!text) return;
+      const ok = await copyPlainTextToClipboard(text);
+      setStatusMain(ok ? 'Copied viewer text.' : 'Could not copy viewer text.');
     });
 
     /** Electron: webContents can stop receiving keys after button clicks until main focuses it again. */
@@ -9745,9 +14616,14 @@
       } catch (_) {}
     }
 
+    /** Bootstrap: body gets `modal-open` with backdrop — treat as modal even if `.show` query lags one frame. */
+    function tagfoxModalBlocksWorkAreaFocus() {
+      return document.body.classList.contains('modal-open') || !!document.querySelector('.modal.show');
+    }
+
     /** Focus search input; select all text when true. Skips if a dialog is open. */
     function focusQueryBox(selectAll) {
-      if (document.querySelector('.modal.show')) return;
+      if (tagfoxModalBlocksWorkAreaFocus()) return;
       pullWebContentsKeyboardFocus();
       const q = document.getElementById('query');
       if (!q) return;
@@ -9762,17 +14638,20 @@
 
     /** After programmatic list selection: move keyboard focus off stray buttons onto the results region. */
     function focusResultsWrapAfterListSelection() {
-      if (document.querySelector('.modal.show')) return;
-      pullWebContentsKeyboardFocus();
+      if (tagfoxModalBlocksWorkAreaFocus()) return;
+      const wrap = document.getElementById('resultsWrap');
       const ae = document.activeElement;
       if (ae && ae.id === 'query') return;
       if (ae && isTypingTarget(ae)) return;
-      document.getElementById('resultsWrap')?.focus({ preventScroll: true });
+      /* Already in the list: skip refocus — was every ↑/↓ and felt jerky. */
+      if (wrap && (ae === wrap || (ae.nodeType === Node.ELEMENT_NODE && wrap.contains(ae)))) return;
+      /* No pullWebContents: window keydown uses capture:true — arrows work even when focus is on a header button; IPC was jerky. */
+      wrap?.focus({ preventScroll: true });
     }
 
     /** After toolbar/chrome control click: query if no rows, else results region (for ↑/↓ etc.). */
     function focusMainWorkingArea() {
-      if (document.querySelector('.modal.show')) return;
+      if (tagfoxModalBlocksWorkAreaFocus()) return;
       if (isTypingTarget(document.activeElement)) return;
       pullWebContentsKeyboardFocus();
       const rows = listRowsForUi();
@@ -9815,7 +14694,7 @@
 
     /** App shortcuts run in #query too; still block in Settings / modals / multiline fields. (Ctrl+C/X/V keep isTypingTarget for native copy/paste in the box.) */
     function blockAppShortcutInTextField(el) {
-      return isTypingTarget(el) && !(el && el.id === 'query');
+      return (isTypingTarget(el) || isInMarkdownEditSurface(el)) && !(el && el.id === 'query');
     }
 
     /** Breadcrumb ▾ menus + fixed flyouts: skip global ↑/↓ table navigation (would re-render breadcrumb and kill focus). */
@@ -9823,7 +14702,12 @@
       if (!el || !el.closest) return false;
       if (el.closest('ul.breadcrumb-folder-flyout')) return true;
       if (el.closest('#breadcrumbBar .dropdown-menu')) return true;
-      if (el.closest('#favFoldersBar .dropdown-menu')) return true;
+      if (
+        el.closest('#favFoldersBar .dropdown-menu') ||
+        el.closest('#favRecentFoldersBar .dropdown-menu') ||
+        el.closest('#favRecentFilesBar .dropdown-menu')
+      )
+        return true;
       return false;
     }
 
@@ -9841,6 +14725,15 @@
       return maxChk;
     }
 
+    function scrollActiveResultsRowIntoViewNearest() {
+      if (resultsActiveRowScrollRaf != null) cancelAnimationFrame(resultsActiveRowScrollRaf);
+      resultsActiveRowScrollRaf = requestAnimationFrame(() => {
+        resultsActiveRowScrollRaf = null;
+        const tr = document.querySelector('#resultsTable tbody tr.table-active');
+        if (tr) tr.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+      });
+    }
+
     function moveResultsSelection(delta) {
       resultsShiftRangeAnchorIdx = null;
       const rows = listRowsForUi();
@@ -9856,11 +14749,8 @@
       }
       if (idx < 0 || idx >= rows.length) return;
       const row = rows[idx];
-      setSelection(row, fullPathForRow(row));
-      requestAnimationFrame(() => {
-        const tr = document.querySelector('#resultsTable tbody tr.table-active');
-        if (tr) tr.scrollIntoView({ block: 'nearest' });
-      });
+      resultsExclusiveSelectRow(row, fullPathForRow(row));
+      scrollActiveResultsRowIntoViewNearest();
     }
 
     /** Shift+↑/↓: check every visible row between anchor and new focus (inclusive). */
@@ -9886,23 +14776,16 @@
       syncResultsRowCheckboxStates();
       const row = rows[newIdx];
       setSelection(row, fullPathForRow(row));
-      requestAnimationFrame(() => {
-        const tr = document.querySelector('#resultsTable tbody tr.table-active');
-        if (tr) tr.scrollIntoView({ block: 'nearest' });
-      });
+      scrollActiveResultsRowIntoViewNearest();
     }
 
     /** Jump selection to first (false) or last (true) visible row. */
     function moveResultsSelectionToEdge(isEnd) {
-      resultsShiftRangeAnchorIdx = null;
       const rows = listRowsForUi();
       if (!rows.length) return;
       const row = rows[isEnd ? rows.length - 1 : 0];
-      setSelection(row, fullPathForRow(row));
-      requestAnimationFrame(() => {
-        const tr = document.querySelector('#resultsTable tbody tr.table-active');
-        if (tr) tr.scrollIntoView({ block: 'nearest' });
-      });
+      resultsExclusiveSelectRow(row, fullPathForRow(row));
+      scrollActiveResultsRowIntoViewNearest();
     }
 
     /** True when tbody row i is hidden by tree collapse (display:none). */
@@ -10011,7 +14894,7 @@
         const next = indexOfNextFolderSharingParent(rows, cur, dir, parentNorm);
         if (next >= 0) {
           const row = rows[next];
-          setSelection(row, fullPathForRow(row));
+          resultsExclusiveSelectRow(row, fullPathForRow(row));
           const token = ++siblingNavScrollToken;
           requestAnimationFrame(() => void finishSiblingNavScrollAfterLoadMaybe(token));
           return;
@@ -10031,6 +14914,14 @@
       const target = a.checked ? b : a;
       target.checked = true;
       target.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    /** Advanced → Whole word: flip + schedule search (same as clicking the checkbox). */
+    function toggleWholeWordMatch() {
+      const el = document.getElementById('optWholeWord');
+      if (!el) return;
+      el.checked = !el.checked;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
     /** True when scope has a parent path we can navigate to. */
@@ -10054,7 +14945,7 @@
       const canUp = canGoToParentScopeFolder();
       const b = document.getElementById('btnStatusScopeParent');
       if (b) b.disabled = !canUp;
-      for (const id of ['btnScopeBarOpen', 'btnScopeBarClip', 'btnScopeBarTags', 'btnScopeBarMore']) {
+      for (const id of ['btnScopeBarOpen', 'btnScopeBarClip', 'btnScopeBarTags', 'btnScopeBarTerminal', 'btnScopeBarCopyQuoted', 'btnScopeBarMore']) {
         const el = document.getElementById(id);
         if (el) el.disabled = !hasScope;
       }
@@ -10070,7 +14961,7 @@
       if (!par) return [];
       const baseUrl = document.getElementById('baseUrl').value.trim() || 'http://127.0.0.1';
       const maxResultsRaw = document.getElementById('maxResults').value;
-      const cap = Math.min(5000, Math.max(1, parseInt(String(maxResultsRaw).trim(), 10) || 200));
+      const cap = Math.min(5000, Math.max(1, parseInt(String(maxResultsRaw).trim(), 10) || 60));
       const httpUser = document.getElementById('httpUser').value;
       const httpPassword = document.getElementById('httpPassword').value;
       let searchText = composeScopedEverythingSearch(getSearchScopeCeilingFoldersNorms(), par, '', true).trim() + ' folder:';
@@ -10089,7 +14980,8 @@
       rows = rows.filter(rowIsFolder);
       const parKey = pathNormKey(par);
       rows = rows.filter((r) => pathNormKey(normalizeFolderPathForEverything(T.parentDir(fullPathForRow(r)))) === parKey);
-      sortRowsForDisplay(rows, sortColumn, sortAsc);
+      if (shouldReorderRowsForSmartViewTree()) sortRowsForDisplay(rows, 'name', true);
+      else sortRowsForDisplay(rows, sortColumn, sortAsc);
       return rows;
     }
 
@@ -10168,6 +15060,9 @@
         const folderFp = normalizeFolderPathForEverything(fp);
         selectedRow = row;
         selectedFullPath = fp;
+        if (String(document.getElementById('query')?.value || '').trim()) {
+          clearSearchQueryInputOnly();
+        }
         await applySearchScopeAndRefresh(folderFp);
         return;
       }
@@ -10186,7 +15081,7 @@
 
     /**
      * ← on a results row: always moves the current folder.
-     * - Item is a direct child of the current folder → parent of current folder (same idea as Backspace).
+     * - Item is a direct child of the current folder → parent of current folder.
      * - Item lies deeper → scope to the first subfolder under the current folder on the path to the item.
      * - No current folder set → same as Ctrl+Enter (scope to parent of the row). No selection → parent of current folder only.
      */
@@ -10226,12 +15121,110 @@
       await applySearchScopeAndRefresh(sub);
     }
 
-    /** t / Ctrl+T: tags for checked rows or current row. */
+    /** t / Ctrl+T: tags for checked rows only. */
     function keyboardOpenTagsModal() {
       const bulk = getCheckedPathsArr();
       if (bulk.length > 1) openTagModalBulk(bulk);
       else if (bulk.length === 1) openTagModal(bulk[0]);
-      else if (selectedFullPath) openTagModal(selectedFullPath);
+    }
+
+    /** Replace tags on checked rows exactly (file renames). */
+    async function keyboardReplaceCheckedTagsExact(nextTags, busyHint, doneHint) {
+      if (tagRenameBusy) return false;
+      const paths = getCheckedPathsArr();
+      if (!paths.length) return false;
+      const dedupedTags = [];
+      const seenTags = new Set();
+      for (const raw of nextTags || []) {
+        const display = String(raw || '').trim();
+        if (!display) continue;
+        const key = display.toLowerCase();
+        if (seenTags.has(key)) continue;
+        seenTags.add(key);
+        dedupedTags.push(display);
+      }
+      tagRenameBusy = true;
+      setStatusMain(busyHint || 'Updating tags...');
+      try {
+        const rootPrefix = rootPrefixValue();
+        const pathPairs = [];
+        let any = false;
+        for (const fp of paths) {
+          const base = T.baseName(fp);
+          const parent = T.parentDir(fp);
+          const sep = fp.includes('/') ? '/' : '\\';
+          const toPath = parent ? parent + sep + T.buildTaggedComponent(base, dedupedTags) : T.buildTaggedComponent(base, dedupedTags);
+          const fromN = fp.replace(/[/\\]+$/, '').toLowerCase();
+          const toN = toPath.replace(/[/\\]+$/, '').toLowerCase();
+          if (fromN === toN) continue;
+          any = true;
+          const res = await window.tagBrowser.renamePath({ fromPath: fp, toPath, rootPrefix });
+          if (!res || !res.ok) {
+            setStatusMain((res && res.error) || 'Rename failed on ' + fp);
+            return false;
+          }
+          pathPairs.push({ from: fp, to: toPath });
+          if (selectedFullPath && selectedFullPath.replace(/[/\\]+$/, '').toLowerCase() === fromN) {
+            selectedFullPath = toPath;
+            renderScopeBreadcrumb();
+          }
+        }
+        if (!any) {
+          setStatusMain('No change.');
+          return true;
+        }
+        await refreshAfterTagsSaved(pathPairs);
+        setStatusMain(doneHint || 'Tags updated.');
+        return true;
+      } catch (e) {
+        setStatusMain(String(e.message || e));
+        return false;
+      } finally {
+        tagRenameBusy = false;
+      }
+    }
+
+    async function keyboardRemoveCheckedTags() {
+      return keyboardReplaceCheckedTagsExact([], 'Removing tags...', 'Tags removed.');
+    }
+
+    /** Ctrl+Shift+T: clear active tag filters (save snapshot) or restore last snapshot. */
+    async function keyboardToggleTagFilterClearRestore() {
+      if (activeTagKeys.size) {
+        tagFilterSelectionRestoreSnapshot = {
+          keys: [...activeTagKeys].sort(),
+          combineOr: tagFilterCombineOr,
+        };
+        activeTagKeys.clear();
+        persistActiveTagFilter();
+        await runSearchNow();
+        commitSearchHistoryNow();
+        renderTagBar();
+        updateEmptyResultsPulseHints(listRowsForUi().length);
+        setStatusMain('Tag filter cleared (Ctrl+Shift+T to restore).');
+        return;
+      }
+      if (tagFilterSelectionRestoreSnapshot && tagFilterSelectionRestoreSnapshot.keys.length) {
+        const snap = tagFilterSelectionRestoreSnapshot;
+        activeTagKeys = new Set();
+        for (const k of snap.keys) {
+          const k2 = String(k).trim().toLowerCase();
+          if (!k2) continue;
+          activeTagKeys.add(k2);
+          const kn = knownBracketTagsList.find((t) => t.key === k2);
+          rememberTag(k2, kn ? kn.display : k2);
+        }
+        tagFilterCombineOr = !!snap.combineOr;
+        persistActiveTagFilter();
+        saveSettings();
+        await runSearchNow();
+        commitSearchHistoryNow();
+        renderTagBar();
+        updateEmptyResultsPulseHints(listRowsForUi().length);
+        setStatusMain('Tag filter restored.');
+        return;
+      }
+      setStatusMain('No tag filter to restore.');
     }
 
     function toggleKeyboardRowCheckbox() {
@@ -10248,30 +15241,34 @@
     async function keyboardRecycleConfirm() {
       if (tagRenameBusy) return;
       const status = document.getElementById('statusMain');
-      let p = getCheckedPathsArr();
-      if (!p.length && selectedFullPath) {
-        const row = selectedRowForActions();
-        if (row) p = [fullPathForRow(row)];
+      const p = getCheckedPathsArr();
+      searchDebugLog('recycle.ui', { source: 'deleteKey', phase: 'click', checked: p.length });
+      if (!p.length) {
+        searchDebugLog('recycle.ui', { source: 'deleteKey', phase: 'noopNoSelection' });
+        return;
       }
-      if (!p.length) return;
-      if (!confirm(recycleBinConfirmMessage(p))) return;
+      if (!confirm(recycleBinConfirmMessage(p))) {
+        searchDebugLog('recycle.ui', { source: 'deleteKey', phase: 'confirmCancel', count: p.length });
+        return;
+      }
       detachViewerEditorsForTrashedPaths(p);
-      const r = await window.tagBrowser.trashPaths(p);
+      setDeletingStatus(p.length);
+      const { r, threw } = await trashPathsInvokeWithSearchDebug(p, 'deleteKey');
+      if (threw) {
+        setStatusMain('Delete failed');
+        return;
+      }
       if (!r || !r.ok) setStatusMain((r && r.error) || 'Delete failed');
       else {
         checkedPathsMap.clear();
         updateBulkBar();
-        void refreshAfterDiskMutation();
+        void refreshAfterDiskMutation({ paths: p });
       }
     }
 
     async function copyShortcutExplorerFiles() {
       const status = document.getElementById('statusMain');
-      let paths = getCheckedPathsArr();
-      if (!paths.length && selectedFullPath) {
-        const row = selectedRowForActions();
-        if (row) paths = [fullPathForRow(row)];
-      }
+      const paths = getCheckedPathsArr();
       if (!paths.length) return;
       const r = await window.tagBrowser.copyExplorerPaste(paths);
       if (!r || !r.ok) setStatusMain((r && r.error) || 'Copy for Explorer failed');
@@ -10286,11 +15283,7 @@
     /** Ctrl+Shift+C / ⌘+Shift+C: plain-text full paths (same strings as ⋯ → Full path); multiple checked → newline-separated. */
     async function keyboardCopyFullPathsText() {
       const status = document.getElementById('statusMain');
-      let paths = getCheckedPathsArr();
-      if (!paths.length && selectedFullPath) {
-        const row = selectedRowForActions();
-        if (row) paths = [fullPathForRow(row)];
-      }
+      const paths = getCheckedPathsArr();
       if (!paths.length) return;
       const text = paths.join('\n');
       try {
@@ -10303,11 +15296,7 @@
 
     async function cutShortcutExplorerFiles() {
       const status = document.getElementById('statusMain');
-      let paths = getCheckedPathsArr();
-      if (!paths.length && selectedFullPath) {
-        const row = selectedRowForActions();
-        if (row) paths = [fullPathForRow(row)];
-      }
+      const paths = getCheckedPathsArr();
       if (!paths.length) return;
       if (!window.tagBrowser.cutExplorerPaste) {
         setStatusMain('Cut not available.');
@@ -10325,15 +15314,24 @@
 
     async function pasteShortcutClipboardIntoScope() {
       const status = document.getElementById('statusMain');
-      const dest = currentScopeFolderPath();
-      if (!dest) {
+      const currentFolder = currentScopeFolderPath();
+      if (!currentFolder) {
         setStatusMain('Set the current folder (breadcrumb or path editor) to paste into.');
         return;
       }
-      const rootPrefix = T.normalizeRootPrefix(document.getElementById('rootFolder').value);
+      const dest = await chooseTargetFolderFromCheckedRows(currentFolder);
+      if (!dest) {
+        setStatusMain('Paste cancelled.');
+        return;
+      }
+      const rootPrefix = rootPrefixValue();
+      setBusyStatusHint('Pasting clipboard into folder...');
       const r = await pasteClipboardIntoScopeWithConflictPrompt(dest, rootPrefix);
       if (!r || !r.ok) setStatusMain((r && r.error) || 'Paste failed');
-      else void refreshAfterDiskMutation(); // + paths-mutated from main (defense in depth)
+      else {
+        setStatusMain('Pasted into folder.');
+        void refreshAfterDiskMutation({ paths: [dest] }); // + paths-mutated from main
+      }
     }
 
     /* capture: true — run before focused <button> or other controls eat the key (Electron + Chromium). */
@@ -10368,6 +15366,18 @@
         return;
       }
 
+      /* Esc: checked result rows → clear checks (before query/scope Esc). No modal / open dropdown. */
+      if (
+        e.key === 'Escape' &&
+        !document.querySelector('.modal.show') &&
+        !document.querySelector('.dropdown-menu.show') &&
+        checkedPathsMap.size
+      ) {
+        e.preventDefault();
+        clearResultsCheckedSelection();
+        return;
+      }
+
       /* Esc: non-empty query → clear query (from #query or non-text focus). Empty query + focus in #query → clear current folder (whole index). No modal / open dropdown. */
       if (
         e.key === 'Escape' &&
@@ -10395,20 +15405,25 @@
       }
 
       const modC = (e.ctrlKey || e.metaKey) && !e.altKey;
-      /* Clear current folder from any focus (steals Ctrl/Cmd+Backspace from “delete word” in fields when scope is set). */
-      if (modC && !e.shiftKey && e.key === 'Backspace') {
-        if (document.querySelector('.modal.show')) return;
-        if (!String(document.getElementById('rootFolder').value || '').trim()) return;
-        e.preventDefault();
-        clearSearchScope();
-        return;
-      }
+      const isPlainSearchFocusToggleKey =
+        e.key === '/' ||
+        e.code === 'NumpadDivide' ||
+        (e.code === 'Slash' && !e.shiftKey);
       if (modC && !e.shiftKey && (e.key === '/' || e.code === 'Slash')) {
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
         e.preventDefault();
         const hm = document.getElementById('helpModal');
         if (hm) bootstrap.Modal.getOrCreateInstance(hm).show();
+        return;
+      }
+      if (modC && !e.shiftKey && (e.key === 'u' || e.key === 'U')) {
+        if (document.querySelector('.modal.show')) return;
+        const q = document.getElementById('query');
+        if (e.target === q) { e.preventDefault(); q.blur(); return; }
+        if (isTypingTarget(e.target)) return;
+        e.preventDefault();
+        focusQueryBox(true);
         return;
       }
       if (modC && !e.shiftKey && (e.key === ',' || e.code === 'Comma')) {
@@ -10478,19 +15493,126 @@
         void goToParentScopeFolder();
         return;
       }
-      if (modC && (e.key === 'r' || e.key === 'R')) {
+      if (modC && e.shiftKey && e.key === 'Home') {
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
         e.preventDefault();
-        void runSearchNow('refresh');
+        clearSearchScopeAndTagRecencyFilters();
         return;
       }
-      if (modC && (e.key === 'f' || e.key === 'F')) {
+      if (modC && e.key === 'Home') {
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
         e.preventDefault();
-        if (e.repeat) return;
-        focusQueryBox(true);
+        clearSearchScope();
+        return;
+      }
+      if (modC && !e.shiftKey && (e.key === 'f' || e.key === 'F')) {
+        if (document.querySelector('.modal.show')) return;
+        if (blockAppShortcutInTextField(e.target)) return;
+        e.preventDefault();
+        const cl = ['optRvAll', 'optRvDirsOnly', 'optRvFilesOnly'];
+        const ci = cl.findIndex((id) => document.getElementById(id)?.checked);
+        const nextId = cl[(ci >= 0 ? ci : 0) + 1 >= cl.length ? 0 : ci + 1];
+        const t = document.getElementById(nextId);
+        if (t) {
+          t.checked = true;
+          syncViewRadioActiveFromDom();
+          t.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        return;
+      }
+      if (modC && e.shiftKey && (e.key === ' ' || e.code === 'Space')) {
+        if (document.querySelector('.modal.show')) return;
+        if (blockAppShortcutInTextField(e.target)) return;
+        e.preventDefault();
+        reimposeSmartViewDefaults({ clearFilters: true });
+        return;
+      }
+      if (modC && !e.shiftKey && (e.key === 'w' || e.key === 'W')) {
+        if (document.querySelector('.modal.show')) return;
+        if (blockAppShortcutInTextField(e.target)) return;
+        e.preventDefault();
+        toggleWholeWordMatch();
+        return;
+      }
+      if (modC && !e.shiftKey && (e.key === 'i' || e.key === 'I')) {
+        if (document.querySelector('.modal.show')) return;
+        if (blockAppShortcutInTextField(e.target)) return;
+        e.preventDefault();
+        const vl = ['optRvSmart', 'optRvTree', 'optRvFlat'];
+        const ci = vl.findIndex((id) => document.getElementById(id)?.checked);
+        const nextId = vl[(ci >= 0 ? ci : 0) + 1 >= vl.length ? 0 : ci + 1];
+        const t = document.getElementById(nextId);
+        if (t) {
+          t.checked = true;
+          syncViewRadioActiveFromDom();
+          t.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        return;
+      }
+      if (modC && !e.shiftKey && (e.key === 'j' || e.key === 'J')) {
+        if (document.querySelector('.modal.show')) return;
+        if (blockAppShortcutInTextField(e.target)) return;
+        e.preventDefault();
+        moveResultsSiblingFolder(1);
+        return;
+      }
+      if (modC && !e.shiftKey && (e.key === 'k' || e.key === 'K')) {
+        if (document.querySelector('.modal.show')) return;
+        if (blockAppShortcutInTextField(e.target)) return;
+        e.preventDefault();
+        moveResultsSiblingFolder(-1);
+        return;
+      }
+      if (modC && !e.shiftKey && (e.key === 'm' || e.key === 'M')) {
+        if (document.querySelector('.modal.show')) return;
+        if (blockAppShortcutInTextField(e.target)) return;
+        e.preventDefault();
+        const note = flatViewOnIfTreeForColumnSort();
+        applySortColumnKey('date_modified', note || undefined);
+        return;
+      }
+      if (modC && !e.shiftKey && (e.key === 'n' || e.key === 'N')) {
+        if (document.querySelector('.modal.show')) return;
+        if (blockAppShortcutInTextField(e.target)) return;
+        e.preventDefault();
+        const note = flatViewOnIfTreeForColumnSort();
+        applySortColumnKey('name', note || undefined);
+        return;
+      }
+      if (modC && !e.shiftKey && (e.key === 'r' || e.key === 'R')) {
+        if (document.querySelector('.modal.show')) return;
+        if (blockAppShortcutInTextField(e.target)) return;
+        e.preventDefault();
+        const order = ['1h', '1d', '1w', '1m', '1y', 'all'];
+        const cur = recencyFilterMode();
+        const next = order[(order.indexOf(cur) + 1) % order.length];
+        setRecencyFilterMode(next);
+        const nextEl = document.querySelector(`input[name="tagFoxRecencyFilter"][value="${next}"]`);
+        nextEl?.dispatchEvent(new Event('change', { bubbles: true }));
+        return;
+      }
+      if (modC && e.shiftKey && (e.key === 'r' || e.key === 'R')) {
+        if (document.querySelector('.modal.show')) return;
+        if (blockAppShortcutInTextField(e.target)) return;
+        e.preventDefault();
+        toggleRecencyAllVsHour();
+        return;
+      }
+      if (modC && !e.shiftKey && (e.key === 's' || e.key === 'S')) {
+        if (document.querySelector('.modal.show')) return;
+        if (blockAppShortcutInTextField(e.target)) return;
+        e.preventDefault();
+        toggleViewRadioPair('optRvSubsOn', 'optRvSubsOff');
+        return;
+      }
+      if (modC && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+        if (document.querySelector('.modal.show')) return;
+        if (blockAppShortcutInTextField(e.target)) return;
+        e.preventDefault();
+        const note = flatViewOnIfTreeForColumnSort();
+        applySortColumnKey('size', note || undefined);
         return;
       }
       if (modC && (e.key === 'l' || e.key === 'L')) {
@@ -10502,7 +15624,14 @@
         bootstrap.Dropdown.getOrCreateInstance(hb).show();
         return;
       }
-      if (modC && (e.key === 't' || e.key === 'T')) {
+      if (modC && e.shiftKey && (e.key === 't' || e.key === 'T')) {
+        if (document.querySelector('.modal.show')) return;
+        if (blockAppShortcutInTextField(e.target)) return;
+        e.preventDefault();
+        void keyboardToggleTagFilterClearRestore();
+        return;
+      }
+      if (modC && !e.shiftKey && (e.key === 't' || e.key === 'T')) {
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
         e.preventDefault();
@@ -10578,10 +15707,8 @@
         return;
       }
 
-      /* Plain / must run before the Ctrl/Meta/Alt bail-out: AltGr (many layouts) sets ctrl+alt and would block it. Ctrl+/ opens help above. */
-      const isSlashFocusSearch =
-        e.key === '/' || e.code === 'NumpadDivide' || (e.code === 'Slash' && !e.shiftKey);
-      if (isSlashFocusSearch) {
+      /* Plain / must run before the Ctrl/Meta/Alt bail-out: AltGr (many layouts) sets ctrl+alt and would block /. */
+      if (isPlainSearchFocusToggleKey) {
         if (document.querySelector('.modal.show')) return;
         const q = document.getElementById('query');
         if (e.target === q) { e.preventDefault(); q.blur(); return; }
@@ -10624,11 +15751,7 @@
         }
       }
 
-      if (e.key === 'Backspace') {
-        e.preventDefault();
-        void goToParentScopeFolder();
-        return;
-      }
+      if (isInMarkdownEditSurface(e.target) || isInMarkdownEditSurface(document.activeElement)) return;
 
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -10722,19 +15845,8 @@
         return;
       }
 
-      /* x: Smart view; l cycles Smart → Tree → Flat. */
-      if (e.key === 'x') {
-        e.preventDefault();
-        const t = document.getElementById('optRvSmart');
-        if (t && !t.checked) {
-          t.checked = true;
-          syncViewRadioActiveFromDom();
-          t.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-        return;
-      }
-      /* l / f / s: toggle View / Content / Subfolders radio pairs */
-      if (e.key === 'l') {
+      /* i / f / s: toggle view / content / subfolders radio pairs */
+      if (e.key === 'i') {
         e.preventDefault();
         const vl = ['optRvSmart', 'optRvTree', 'optRvFlat'];
         const ci = vl.findIndex((id) => document.getElementById(id)?.checked);
@@ -10761,6 +15873,21 @@
         return;
       }
       if (e.key === 's') { e.preventDefault(); toggleViewRadioPair('optRvSubsOn', 'optRvSubsOff'); return; }
+      if (e.key === 'w' || e.key === 'W') {
+        e.preventDefault();
+        toggleWholeWordMatch();
+        return;
+      }
+      if (e.key === 'r') {
+        e.preventDefault();
+        const order = ['1h', '1d', '1w', '1m', '1y', 'all'];
+        const cur = recencyFilterMode();
+        const next = order[(order.indexOf(cur) + 1) % order.length];
+        setRecencyFilterMode(next);
+        const nextEl = document.querySelector(`input[name="tagFoxRecencyFilter"][value="${next}"]`);
+        nextEl?.dispatchEvent(new Event('change', { bubbles: true }));
+        return;
+      }
       /* z / m / n: sort by size / modified / name (in Tree, switches to Flat first — see status bar). */
       if (e.key === 'z') {
         e.preventDefault();
@@ -10780,6 +15907,7 @@
         applySortColumnKey('name', note || undefined);
         return;
       }
+      if (e.key === 'T') { e.preventDefault(); void keyboardRemoveCheckedTags(); return; }
       if (e.key === 't') { e.preventDefault(); keyboardOpenTagsModal(); return; }
       if (e.key === 'Delete') {
         e.preventDefault();
@@ -10794,7 +15922,7 @@
       'dragstart',
       (e) => {
         const root =
-          e.target.closest?.('#resultsTable tbody tr') || e.target.closest?.('.shelf-chip');
+          e.target.closest?.('.results-pane tbody tr') || e.target.closest?.('.shelf-chip');
         if (!root) return;
         root.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {
           const tip = bootstrap.Tooltip.getInstance(el);
@@ -10807,14 +15935,19 @@
     document.addEventListener(
       'dragend',
       () => {
-        document.querySelectorAll('#resultsTable tbody tr.results-drag-over').forEach((tr) =>
+        document.querySelectorAll('.results-pane tbody tr.results-drag-over').forEach((tr) =>
           tr.classList.remove('results-drag-over')
         );
-        document.getElementById('resultsWrap')?.classList.remove('results-scope-drop-over');
+        document.querySelectorAll('.results-pane.results-scope-drop-over').forEach((el) =>
+          el.classList.remove('results-scope-drop-over')
+        );
         document
-          .querySelectorAll('#breadcrumbBar [data-drop-path].results-drag-over, #favFoldersBar [data-drop-path].results-drag-over')
+          .querySelectorAll(
+            '#breadcrumbBar [data-drop-path].results-drag-over, #favFoldersBar [data-drop-path].results-drag-over, #favRecentFoldersBar [data-drop-path].results-drag-over, #favRecentFilesBar [data-drop-path].results-drag-over'
+          )
           .forEach((n) => n.classList.remove('results-drag-over'));
         document.getElementById('appShelf')?.classList.remove('shelf-aside-drag-over');
+        setFavColumnDragPeek(false);
         clearInternalPathDragDropTargetHints();
         /* Defer clearing native paths: sync clear on dragend ran before dragover/drop (capture listener) and blocked drops. */
         const pathsRef = tagBrowserActiveNativeDragPaths;
@@ -10831,13 +15964,6 @@
       if (!panel || panel.dataset.tagfoxSearchScopeUi === '1') return;
       panel.dataset.tagfoxSearchScopeUi = '1';
       panel.addEventListener('click', (e) => {
-        const dismiss = e.target.closest('#btnDismissSearchScopeTip');
-        if (dismiss) {
-          e.preventDefault();
-          localStorage.setItem(LS.scopeRootsTipDismissed, '1');
-          syncSearchScopeRootsTipVisibility();
-          return;
-        }
         const clearMax = e.target.closest('#btnSearchScopeClearMax');
         if (clearMax) {
           e.preventDefault();
@@ -10953,10 +16079,16 @@
     }
 
     const treeViewDefaultsFreshProfile = localStorage.getItem(LS.sortBy) === null;
+    wireEverythingConnectionSectionCollapseOnce();
+    wireTagfoxSettingsSectionCollapsesOnce();
     loadSettings();
+    setEverythingConnectionBadgeUnknown();
     void refreshDriveRootsPickerGate();
     wireSearchScopeSettingsUiOnce();
     wireQuickTodoSettingsUiOnce();
+    document.getElementById('settingsPanel')?.addEventListener('shown.bs.offcanvas', () => {
+      void probeEverythingConnectionForSettingsBadge();
+    });
     document.getElementById('autoRefreshSec')?.addEventListener('change', () => {
       saveSettings();
       syncAutoRefreshTimer();
@@ -10993,7 +16125,9 @@
           t.closest &&
           (t.closest('ul.breadcrumb-folder-flyout') ||
             t.closest('#breadcrumbBar .dropdown-menu') ||
-            t.closest('#favFoldersBar .dropdown-menu'))
+            t.closest('#favFoldersBar .dropdown-menu') ||
+            t.closest('#favRecentFoldersBar .dropdown-menu') ||
+            t.closest('#favRecentFilesBar .dropdown-menu'))
         )
           return;
         hideBreadcrumbSubfolderFlyout();
@@ -11005,7 +16139,7 @@
     function scheduleRestoreFocusAfterControlClick() {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          if (document.querySelector('.modal.show')) return;
+          if (tagfoxModalBlocksWorkAreaFocus()) return;
           if (document.querySelector('.dropdown-menu.show')) return;
           if (document.activeElement?.closest?.('ul.breadcrumb-folder-flyout.is-open')) return;
           if (isTypingTarget(document.activeElement)) return;
@@ -11058,7 +16192,9 @@
         tagfoxHideAllBootstrapTooltips();
         hideBreadcrumbSubfolderFlyout();
         document
-          .querySelectorAll('#breadcrumbBar [data-bs-toggle="dropdown"], #favFoldersBar [data-bs-toggle="dropdown"]')
+          .querySelectorAll(
+            '#breadcrumbBar [data-bs-toggle="dropdown"], #favFoldersBar [data-bs-toggle="dropdown"], #favRecentFoldersBar [data-bs-toggle="dropdown"], #favRecentFilesBar [data-bs-toggle="dropdown"]'
+          )
           .forEach((btn) => {
             const inst = bootstrap.Dropdown.getInstance(btn);
             if (inst) inst.hide();
@@ -11101,7 +16237,11 @@
       // On success, main sends paths-mutated → refreshAfterDiskMutation (shelf strip + search retries).
     });
     loadPaneWidthsFromStorage();
+    loadViewerDocSplitFromStorage();
+    loadFavFoldersColFromStorage();
+    loadResultsSplitLayoutFromStorage();
     loadColWidthsFromStorage();
+    applyResultsTablePathColumnVisibility();
     if (treeViewDefaultsFreshProfile) {
       if (localStorage.getItem(LS.flatView) === null && localStorage.getItem(LS.resultsViewMode) === null) {
         setResultsViewRadios('smart', true, 'all');
@@ -11131,16 +16271,59 @@
 
     seedSearchHistoryFromCurrent();
     bindVerticalSplitters();
+    bindResultsHorizontalSplitter();
+    bindViewerDocSplitters();
+    bindResultsPaneActivation();
+    bindFavFoldersSplitter();
+    bindFavFoldersCollapseButton();
+    bindFavColumnCollapsedHoverExit();
     document.getElementById('propsTheaterBackdrop').addEventListener('click', () => setPropsTheaterMode(false));
     document.getElementById('btnPropsTheaterToggle').addEventListener('click', () => togglePropsTheaterMode());
+    syncViewerDocDividerOrientation();
     updateSortHeaders();
     bindFavouriteBarsDragReorderOnce();
+    bindFavFoldersPointerReorderOnce();
+    (function wireDeleteSavedSearchModal() {
+      const modalEl = document.getElementById('deleteSavedSearchModal');
+      const btn = document.getElementById('deleteSavedSearchModalConfirm');
+      if (!modalEl || !btn) return;
+      const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+      modalEl.addEventListener('hidden.bs.modal', () => {
+        pendingRemoveFavSearchIdx = null;
+      });
+      btn.addEventListener('click', () => {
+        const idx = pendingRemoveFavSearchIdx;
+        pendingRemoveFavSearchIdx = null;
+        if (idx != null && idx >= 0) {
+          const next = loadFavouriteSearches();
+          if (idx < next.length) {
+            next.splice(idx, 1);
+            saveFavouriteSearches(next);
+            renderFavSearchesBar();
+          }
+        }
+        modal.hide();
+      });
+    })();
     bindFolderPathDropTargetBarsOnce();
+    bindScopeFolderDropdownDragCaptureOnce();
     renderFavFoldersBar();
     renderFavSearchesBar();
     renderTagBar();
     renderTable();
+    saveActivePaneStateFromUi();
+    /* Restore pane B's saved searchState (filter / scope / view) from last session; fall back to mirroring A on first run. lastRows + resultsPagingCtx are stale after restart, so seed them from A and let the init refresh dance below repopulate B with a fresh search using its own state. */
+    {
+      const savedB = loadPaneBSearchStateFromStorage();
+      resultsPaneState.B.searchState = savedB || resultsPaneState.B.searchState || resultsPaneState.A.searchState;
+      resultsPaneState.B.lastRows = Array.isArray(resultsPaneState.A.lastRows) ? resultsPaneState.A.lastRows.slice() : [];
+      resultsPaneState.B.resultsPagingCtx = cloneResultsPagingCtx(resultsPaneState.A.resultsPagingCtx);
+    }
+    void refreshInactiveResultsPane('identity', { singlePaneOnly: true });
     scheduleSearch();
+    startDidYouKnowTips();
+    /** Drive API hello-world (navbar tick after New dbg). */
+    setTimeout(() => void refreshGoogleDriveApiPingSegment(), 1200);
     void renderShelf().then(() => refreshTagFoxChromeTooltips(document.body));
     requestAnimationFrame(() => requestAnimationFrame(focusSearchBox));
     window.addEventListener('blur', () => searchDebugFocusSnapshot('window.blur'));

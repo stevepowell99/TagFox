@@ -12,16 +12,71 @@ const {
   globalShortcut,
   screen,
 } = require('electron');
+
+// Dev: reload renderer / restart main when project files change (no manual npm start).
+if (!app.isPackaged) {
+  // Windows + OneDrive (and some editors): native fs.watch often never fires — chokidar must poll.
+  if (process.platform === 'win32') process.env.CHOKIDAR_USEPOLLING = 'true';
+  try {
+    require('electron-reloader')(module);
+  } catch (_) {}
+}
+
 const { spawn, spawnSync, execFileSync } = require('child_process');
 const { pathToFileURL } = require('url');
+const http = require('http');
 const fs = require('fs').promises;
 const fssync = require('fs');
 const os = require('os');
 const path = require('path');
+const { drive: createDriveClient } = require('@googleapis/drive');
+const { OAuth2Client } = require('google-auth-library');
+const MsgReader = require('@kenjiuno/msgreader').default;
 
 // Populates globalThis.TagBrowserTags (same bracket-tag rules as the renderer).
 require(path.join(__dirname, 'tags.js'));
 const TagBrowserTags = globalThis.TagBrowserTags;
+
+// Flatten MsgReader fields → plain-text preview for the props panel.
+function msgFileDataToPreviewText(data) {
+  if (!data) return { ok: false, error: 'No data' };
+  if (data.dataType === null || data.error) {
+    return { ok: false, error: String(data.error || 'Unsupported file type') };
+  }
+  const lines = [];
+  if (data.subject) lines.push('Subject: ' + String(data.subject));
+  const fromParts = [data.senderName, data.senderEmail || data.senderSmtpAddress].filter(Boolean);
+  if (fromParts.length) lines.push('From: ' + fromParts.join(' '));
+  if (Array.isArray(data.recipients) && data.recipients.length) {
+    const names = data.recipients
+      .map((r) => (r && (r.name || r.email || r.smtpAddress)) || '')
+      .filter(Boolean)
+      .slice(0, 16);
+    if (names.length) lines.push('To: ' + names.join(', '));
+  }
+  const dt = data.clientSubmitTime || data.messageDeliveryTime;
+  if (dt) lines.push('Date: ' + String(dt));
+  lines.push('');
+  let body = '';
+  if (data.body && String(data.body).trim()) {
+    body = String(data.body);
+  } else if (data.bodyHtml && String(data.bodyHtml).trim()) {
+    body = String(data.bodyHtml)
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&')
+      .trim();
+  } else if (data.preview) {
+    body = String(data.preview);
+  }
+  if (!body) body = '(no body text in message)';
+  return { ok: true, text: lines.join('\n') + body };
+}
 
 /** Open Drive web UI search — best-effort; matches names as stored on disk (pretty = tags stripped). */
 function googleDriveSearchUrlForPath(fullPath) {
@@ -43,6 +98,417 @@ function driveFolderUrlFromShortcutTargetsPath(fullPath) {
   const id = m && String(m[1] || '').trim();
   if (!id) return null;
   return { driveFolderId: id, driveFolderUrl: `https://drive.google.com/drive/folders/${id}` };
+}
+
+/** Office files that Google Drive can open/convert in-browser. */
+function isGoogleWorkspaceOfficeFilePath(fullPath) {
+  const ext = path.extname(String(fullPath || '')).toLowerCase();
+  return ext === '.docx' || ext === '.xlsx' || ext === '.pptx';
+}
+
+/** Best-effort Drive file id from local path (Windows Drive-for-desktop). */
+function googleDriveFileIdForLocalPath(fullPath) {
+  if (process.platform !== 'win32') return null;
+  return tryReadGoogleDriveVirtualFileIdWindowsSync(fullPath, null);
+}
+
+/** Extract Google Drive file id from common Docs/Drive URL shapes. */
+function googleDriveFileIdFromUrl(u) {
+  try {
+    const url = new URL(String(u || '').trim());
+    const p = url.pathname || '';
+    let m = /^\/document\/d\/([^/]+)/i.exec(p);
+    if (m && m[1]) return decodeURIComponent(String(m[1]).trim());
+    m = /^\/spreadsheets\/d\/([^/]+)/i.exec(p);
+    if (m && m[1]) return decodeURIComponent(String(m[1]).trim());
+    m = /^\/presentation\/d\/([^/]+)/i.exec(p);
+    if (m && m[1]) return decodeURIComponent(String(m[1]).trim());
+    m = /^\/file\/d\/([^/]+)/i.exec(p);
+    if (m && m[1]) return decodeURIComponent(String(m[1]).trim());
+    const qId = url.searchParams.get('id');
+    if (qId) return decodeURIComponent(String(qId).trim());
+  } catch (_) {}
+  return null;
+}
+
+/** Best-effort file-id resolver for a local row path. */
+async function resolveGoogleDriveFileIdForPath(fullPath) {
+  const id = googleDriveFileIdForLocalPath(fullPath);
+  if (id) return id;
+  const ext = path.extname(String(fullPath || '')).toLowerCase();
+  if (!['.gdoc', '.gsheet', '.gslides'].includes(ext)) return null;
+  const body = await readGoogleWorkspaceShortcutText(fullPath);
+  if (!body || !body.ok) return null;
+  const u = targetUrlFromGoogleDriveShortcut(fullPath, body.raw);
+  return googleDriveFileIdFromUrl(u);
+}
+
+/** Infer a folder id by taking any child item with id and asking Drive for that item's parent. */
+async function inferGoogleDriveFolderIdFromChildItems(folderPath, drive) {
+  let names = [];
+  try {
+    names = await fs.readdir(folderPath);
+  } catch (_) {
+    names = [];
+  }
+  if (!names.length) return { ok: false, reason: 'folder-empty-or-unreadable' };
+  let sawChildId = false;
+  for (const name of names.slice(0, 80)) {
+    const childPath = path.join(folderPath, name);
+    const childId = await resolveGoogleDriveFileIdForPath(childPath);
+    if (!childId) continue;
+    sawChildId = true;
+    try {
+      const rr = await drive.files.get({
+        fileId: childId,
+        fields: 'id,parents',
+        supportsAllDrives: true,
+      });
+      const parents = (rr && rr.data && rr.data.parents) || [];
+      const parentId = Array.isArray(parents) && parents.length ? String(parents[0] || '').trim() : '';
+      if (parentId) return { ok: true, folderId: parentId, reason: 'child-parent-lookup' };
+    } catch (_) {}
+  }
+  if (!sawChildId) return { ok: false, reason: 'folder-no-child-id-streams' };
+  return { ok: false, reason: 'folder-child-parent-missing' };
+}
+
+/** Escape a literal for Drive API `q` (names use single-quoted strings). */
+function escapeDriveQueryNameLiteral(s) {
+  return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+/** Non-trashed Drive files whose name equals this row’s basename (exact match). */
+async function driveFilesListExactBasename(drive, filePath) {
+  const base = path.basename(String(filePath || ''));
+  if (!base) return null;
+  const q = `name = '${escapeDriveQueryNameLiteral(base)}' and trashed = false`;
+  try {
+    const res = await drive.files.list({
+      q,
+      pageSize: 25,
+      fields: 'files(id,parents)',
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+    });
+    return (res && res.data && res.data.files) || [];
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * When local :user.drive.id is missing, find the file in Drive by exact name and use its parent folder.
+ * Only succeeds if exactly one non-trashed file matches (duplicate names → ambiguous).
+ */
+async function tryResolveSingleDriveFileViaDriveNameSearch(drive, filePath) {
+  const files = await driveFilesListExactBasename(drive, filePath);
+  if (files === null) return null;
+  if (files.length === 0) return null;
+  if (files.length > 1) return { ok: false, reason: 'drive-name-ambiguous' };
+  return { ok: true, file: files[0], reason: 'drive-file-name-unique-match' };
+}
+
+async function tryResolveFolderIdViaDriveNameSearch(drive, filePath) {
+  const resolved = await tryResolveSingleDriveFileViaDriveNameSearch(drive, filePath);
+  if (resolved === null) return null;
+  if (!resolved.ok) return resolved;
+  const parents = resolved.file.parents || [];
+  const parentId = Array.isArray(parents) && parents.length ? String(parents[0] || '').trim() : '';
+  if (!parentId) return null;
+  return { ok: true, folderId: parentId, reason: resolved.reason };
+}
+
+/** Same name search, but return the file id (for Open in Workspace when ADS has no id). */
+async function tryResolveDriveFileIdViaDriveNameSearch(drive, filePath) {
+  const resolved = await tryResolveSingleDriveFileViaDriveNameSearch(drive, filePath);
+  if (resolved === null) return null;
+  if (!resolved.ok) return resolved;
+  const id = resolved.file && resolved.file.id ? String(resolved.file.id).trim() : '';
+  if (!id) return null;
+  return { ok: true, fileId: id, reason: resolved.reason };
+}
+
+/** Build Docs/Sheets/Slides editor URL from a Drive file id + local extension. */
+function googleWorkspaceEditorUrlFromDriveId(fullPath, id) {
+  if (!id) return null;
+  const ext = path.extname(String(fullPath || '')).toLowerCase();
+  if (ext === '.docx') return `https://docs.google.com/document/d/${encodeURIComponent(id)}/edit`;
+  if (ext === '.xlsx') return `https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/edit`;
+  if (ext === '.pptx') return `https://docs.google.com/presentation/d/${encodeURIComponent(id)}/edit`;
+  return `https://drive.google.com/file/d/${encodeURIComponent(id)}/view`;
+}
+
+/** Prefer direct Docs/Sheets/Slides editor URLs for Office files already in Drive. */
+function googleWorkspaceEditorUrlForOfficePath(fullPath) {
+  const id = googleDriveFileIdForLocalPath(fullPath);
+  return googleWorkspaceEditorUrlFromDriveId(fullPath, id);
+}
+
+/** Summarize :user.drive.id probe for status line + search-debug (paths truncated). */
+function compactDriveVirtualStreamDiag(stream) {
+  if (!stream) return { state: 'no_probe' };
+  if (stream.ok) return { state: 'ok', idLen: stream.idLen, via: stream.via };
+  const attempts = stream.attempts || [];
+  let anyLocalPlaceholder = false;
+  let anyEnoent = false;
+  for (const a of attempts) {
+    if (a && a.note === 'empty_or_local_placeholder') anyLocalPlaceholder = true;
+    const m = String((a && a.msg) || '');
+    if (/ENOENT|no such file|cannot find/i.test(m)) anyEnoent = true;
+  }
+  const slim = attempts.slice(0, 8).map((a) => {
+    const o = { m: a.label };
+    if (a.note) o.note = a.note;
+    if (a.code) o.code = a.code;
+    if (a.adsPath) {
+      const s = String(a.adsPath);
+      o.adsTail = s.length > 100 ? '…' + s.slice(-100) : s;
+    }
+    if (a.msg) o.err = String(a.msg).slice(0, 140);
+    if (a.psErr) o.psErr = String(a.psErr).slice(0, 400);
+    return o;
+  });
+  return { state: 'fail', anyLocalPlaceholder, anyEnoent, attempts: slim };
+}
+
+/** Short user-facing hint when Office→Workspace URL cannot be built from local streams only. */
+function gwsOfficeNoDriveIdUserMessage(fileDiag, parentDiag) {
+  const parts = [];
+  if (fileDiag.anyLocalPlaceholder) {
+    parts.push('file `:user.drive.id` empty or still `local…` (Drive not materialized)');
+  } else if (fileDiag.anyEnoent) {
+    parts.push('no `:user.drive.id` alternate stream on file');
+  } else if (fileDiag.state === 'fail') {
+    parts.push('file stream had no valid id');
+  } else {
+    parts.push('file has no usable Drive id from local metadata');
+  }
+  if (parentDiag.state === 'ok') {
+    parts.push('parent folder has an id; this command still needs the file id');
+  } else if (parentDiag.anyLocalPlaceholder) {
+    parts.push('parent folder id also placeholder');
+  } else if (parentDiag.state === 'fail') {
+    parts.push('parent folder has no id stream either');
+  }
+  return `Could not resolve Google Drive file ID. ${parts.join(' — ')} Try Open, or make the file available offline in Drive for Desktop. With Search debug on, see gws.office.noDriveId for :user.drive.id details.`;
+}
+
+/** Read metadata (parents, list) + create Google Docs in folders the user can access. */
+const GOOGLE_DRIVE_SCOPES = [
+  'https://www.googleapis.com/auth/drive.metadata.readonly',
+  'https://www.googleapis.com/auth/drive.file',
+];
+let googleDriveMetadataClientPromise = null;
+
+function googleOAuthClientConfigPath() {
+  return path.join(__dirname, 'google-oauth-client.json');
+}
+
+function googleOAuthTokenPath() {
+  return path.join(app.getPath('userData'), 'tagfox-google-oauth-token.json');
+}
+
+/**
+ * Accept either:
+ * 1) { clientId, clientSecret, redirectUri }
+ * 2) Google installed-app JSON: { installed: { client_id, client_secret, redirect_uris: [] } }
+ */
+function readGoogleOAuthClientConfigSync() {
+  const p = googleOAuthClientConfigPath();
+  if (!fssync.existsSync(p)) return null;
+  try {
+    const raw = JSON.parse(fssync.readFileSync(p, 'utf8'));
+    if (raw && raw.clientId && raw.clientSecret && raw.redirectUri) {
+      return {
+        clientId: String(raw.clientId).trim(),
+        clientSecret: String(raw.clientSecret).trim(),
+        redirectUri: String(raw.redirectUri).trim(),
+      };
+    }
+    const i = raw && raw.installed;
+    if (i && i.client_id && i.client_secret && Array.isArray(i.redirect_uris) && i.redirect_uris.length) {
+      return {
+        clientId: String(i.client_id).trim(),
+        clientSecret: String(i.client_secret).trim(),
+        redirectUri: String(i.redirect_uris[0] || '').trim(),
+      };
+    }
+  } catch (_) {}
+  return null;
+}
+
+function readGoogleOAuthTokenSync() {
+  const p = googleOAuthTokenPath();
+  if (!fssync.existsSync(p)) return null;
+  try {
+    return JSON.parse(fssync.readFileSync(p, 'utf8'));
+  } catch (_) {
+    return null;
+  }
+}
+
+function writeGoogleOAuthTokenSync(token) {
+  const p = googleOAuthTokenPath();
+  const dir = path.dirname(p);
+  if (!fssync.existsSync(dir)) fssync.mkdirSync(dir, { recursive: true });
+  fssync.writeFileSync(p, JSON.stringify(token || {}, null, 2), 'utf8');
+}
+
+async function runGoogleOAuthDesktopFlowAndPersistToken(oauth2, redirectUri) {
+  const ru = new URL(redirectUri);
+  if (ru.protocol !== 'http:' && ru.protocol !== 'https:') throw new Error('Google redirectUri must be http(s).');
+  const expectedPath = ru.pathname || '/';
+  const state = `tagfox-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const authUrl = oauth2.generateAuthUrl({
+    access_type: 'offline',
+    prompt: 'consent',
+    scope: GOOGLE_DRIVE_SCOPES,
+    state,
+  });
+  // OAuth URLs are long and include many query params; openExternal is more reliable here.
+  await shell.openExternal(authUrl);
+  const result = await new Promise((resolve, reject) => {
+    let done = false;
+    const finish = (err, val) => {
+      if (done) return;
+      done = true;
+      if (err) reject(err);
+      else resolve(val);
+    };
+    const server = http.createServer((req, res) => {
+      try {
+        const urlObj = new URL(req.url || '/', redirectUri);
+        if (urlObj.pathname !== expectedPath) {
+          res.statusCode = 404;
+          res.end('Not found');
+          return;
+        }
+        const gotState = urlObj.searchParams.get('state') || '';
+        const code = urlObj.searchParams.get('code') || '';
+        const err = urlObj.searchParams.get('error') || '';
+        if (err) {
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'text/html; charset=utf-8');
+          res.end('<h3>TagFox Google auth cancelled.</h3>You can close this tab.');
+          server.close(() => finish(new Error(`Google auth error: ${err}`)));
+          return;
+        }
+        if (!code || gotState !== state) {
+          res.statusCode = 400;
+          res.end('Invalid auth callback');
+          return;
+        }
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.end('<h3>TagFox Google auth complete.</h3>You can close this tab and return to TagFox.');
+        server.close(() => finish(null, { code }));
+      } catch (e) {
+        try {
+          res.statusCode = 500;
+          res.end('Callback parse failed');
+        } catch (_) {}
+      }
+    });
+    const host = ru.hostname || '127.0.0.1';
+    const port = Number(ru.port || (ru.protocol === 'https:' ? 443 : 80));
+    server.listen(port, host, () => {});
+    server.on('error', (e) => finish(new Error(`Google auth callback server failed: ${String(e.message || e)}`)));
+    setTimeout(() => {
+      try {
+        server.close(() => finish(new Error('Google auth timed out.')));
+      } catch (_) {
+        finish(new Error('Google auth timed out.'));
+      }
+    }, 180000);
+  });
+  const tr = await oauth2.getToken(result.code);
+  if (!tr || !tr.tokens) throw new Error('Google token exchange failed.');
+  oauth2.setCredentials(tr.tokens);
+  writeGoogleOAuthTokenSync(tr.tokens);
+}
+
+async function getGoogleDriveMetadataClientSingleAccount() {
+  if (googleDriveMetadataClientPromise) return googleDriveMetadataClientPromise;
+  googleDriveMetadataClientPromise = (async () => {
+    const cfg = readGoogleOAuthClientConfigSync();
+    if (!cfg) {
+      throw new Error(
+        'Missing google-oauth-client.json. Add OAuth desktop credentials (client_id/client_secret/redirect_uri) at app root.'
+      );
+    }
+    const oauth2 = new OAuth2Client(cfg.clientId, cfg.clientSecret, cfg.redirectUri);
+    const tok = readGoogleOAuthTokenSync();
+    if (tok) oauth2.setCredentials(tok);
+    let drive = createDriveClient({ version: 'v3', auth: oauth2 });
+    try {
+      await drive.about.get({ fields: 'user(displayName,emailAddress)' });
+      return drive;
+    } catch (e) {
+      const code = e && (e.code || (e.response && e.response.status));
+      if (code && Number(code) !== 401) throw e;
+    }
+    await runGoogleOAuthDesktopFlowAndPersistToken(oauth2, cfg.redirectUri);
+    drive = createDriveClient({ version: 'v3', auth: oauth2 });
+    await drive.about.get({ fields: 'user(displayName,emailAddress)' });
+    return drive;
+  })();
+  try {
+    return await googleDriveMetadataClientPromise;
+  } catch (e) {
+    googleDriveMetadataClientPromise = null;
+    throw e;
+  }
+}
+
+/** Create an empty Google Doc in Drive folder via API (needs drive.file scope). */
+async function createGoogleDocumentInFolderViaDriveApi(folderId) {
+  const drive = await getGoogleDriveMetadataClientSingleAccount();
+  const res = await drive.files.create({
+    requestBody: {
+      name: 'Untitled document',
+      mimeType: 'application/vnd.google-apps.document',
+      parents: [folderId],
+    },
+    fields: 'id',
+    supportsAllDrives: true,
+  });
+  const id = res && res.data && res.data.id ? String(res.data.id).trim() : '';
+  if (!id) throw new Error('Drive API did not return a new document id.');
+  return { id, url: `https://docs.google.com/document/d/${encodeURIComponent(id)}/edit` };
+}
+
+/** Resolve Drive folder id for "create here" from local path in single-account mode. */
+async function resolveGoogleDriveFolderIdForCreateHere(targetPath, targetIsDir) {
+  const fromShortcutPath = driveFolderUrlFromShortcutTargetsPath(targetPath);
+  if (fromShortcutPath && fromShortcutPath.driveFolderId) {
+    return { ok: true, folderId: fromShortcutPath.driveFolderId, reason: 'shortcut-targets-by-id' };
+  }
+  const targetId = await resolveGoogleDriveFileIdForPath(targetPath);
+  // Folder rows often have no ADS id stream even when children do; infer via first child id.
+  if (targetIsDir) {
+    if (targetId) return { ok: true, folderId: targetId, reason: 'folder-local-id' };
+    const drive = await getGoogleDriveMetadataClientSingleAccount();
+    return inferGoogleDriveFolderIdFromChildItems(targetPath, drive);
+  }
+  if (!targetId) {
+    const drive = await getGoogleDriveMetadataClientSingleAccount();
+    const parentDir = path.dirname(String(targetPath || ''));
+    const inferred = await inferGoogleDriveFolderIdFromChildItems(parentDir, drive);
+    if (inferred && inferred.ok && inferred.folderId) return inferred;
+    const byName = await tryResolveFolderIdViaDriveNameSearch(drive, targetPath);
+    if (byName && byName.ok && byName.folderId) return byName;
+    if (byName && byName.ok === false && byName.reason === 'drive-name-ambiguous') {
+      return { ok: false, reason: 'drive-name-ambiguous' };
+    }
+    return { ok: false, reason: 'file-no-local-id-or-shortcut-id' };
+  }
+  const drive = await getGoogleDriveMetadataClientSingleAccount();
+  const r = await drive.files.get({ fileId: targetId, fields: 'id,parents', supportsAllDrives: true });
+  const parents = (r && r.data && r.data.parents) || [];
+  const parentId = Array.isArray(parents) && parents.length ? String(parents[0] || '').trim() : '';
+  if (!parentId) return { ok: false, reason: 'file-parent-missing' };
+  return { ok: true, folderId: parentId, reason: 'file-parent-lookup' };
 }
 
 /** Normalize Everything HTTP JSON (shape varies slightly by version) into an array of row objects. */
@@ -80,28 +546,6 @@ function runPowershellScriptFileWithArg(ps1Body, argForScript, failMsgPrefix) {
     });
     if (r.status !== 0) {
       const msg = [r.stderr, r.stdout].filter(Boolean).join(' ').trim();
-      // #region agent log
-      const __psf = (globalThis.__tagfoxDbgPsFail = (globalThis.__tagfoxDbgPsFail || 0) + 1);
-      if (__psf <= 20) {
-        fetch('http://127.0.0.1:7460/ingest/0dfbb0a0-7bdd-458e-8476-39dae77fc97d', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0677d7' },
-          body: JSON.stringify({
-            sessionId: '0677d7',
-            location: 'main.js:runPowershellScriptFileWithArg',
-            message: 'PowerShell script non-zero',
-            data: {
-              hypothesisId: 'H2',
-              status: r.status,
-              msgSnippet: String(msg).slice(0, 220),
-              argSnippet: String(argForScript || '').slice(0, 180),
-            },
-            timestamp: Date.now(),
-            runId: 'pre',
-          }),
-        }).catch(() => {});
-      }
-      // #endregion
       return msg || failMsgPrefix + ' (exit ' + r.status + ').';
     }
   } catch (e) {
@@ -203,12 +647,18 @@ function createExplorerShortcutLnkWin(targetPathRaw) {
   return { ok: true, lnkPath };
 }
 
-/** Windows Explorer “Properties” dialog (shell verb). */
+/** Explorer "Properties" dialog (shell verb). */
 function openShellPropertiesWin(targetPathRaw) {
-  if (process.platform !== 'win32') return 'Only available on Windows.';
   const targetPath = path.normalize(String(targetPathRaw || '').trim());
-  if (!targetPath) return 'No path.';
   const psExe = windowsPowerShellExe();
+  const diag = {
+    method: 'powershell-shell-application-invokeverb',
+    verb: 'properties',
+    targetPath,
+    psExe,
+  };
+  if (process.platform !== 'win32') return { ok: false, error: 'Only available on Windows.', ...diag };
+  if (!targetPath) return { ok: false, error: 'No path.', ...diag };
   const r = spawnSync(
     psExe,
     [
@@ -217,7 +667,7 @@ function openShellPropertiesWin(targetPathRaw) {
       '-ExecutionPolicy',
       'Bypass',
       '-Command',
-      '$ErrorActionPreference="Stop"; Start-Process -LiteralPath $env:TAGFOX_PROP -Verb properties',
+      '$ErrorActionPreference="Stop"; $p=$env:TAGFOX_PROP; $dir=[System.IO.Path]::GetDirectoryName($p); $leaf=[System.IO.Path]::GetFileName($p); $sh=New-Object -ComObject Shell.Application; $ns=$sh.NameSpace($dir); if (-not $ns) { throw "Shell namespace failed." }; $item=$ns.ParseName($leaf); if (-not $item) { throw "Shell item not found." }; $item.InvokeVerb("Properties")',
     ],
     {
       windowsHide: true,
@@ -225,11 +675,68 @@ function openShellPropertiesWin(targetPathRaw) {
       env: { ...process.env, TAGFOX_PROP: targetPath },
     }
   );
+  const stdout = String(r.stdout || '').trim();
+  const stderr = String(r.stderr || '').trim();
+  diag.status = typeof r.status === 'number' ? r.status : null;
+  diag.signal = r.signal || null;
+  diag.stdout = stdout;
+  diag.stderr = stderr;
+  diag.spawnError = r.error ? String(r.error.message || r.error) : '';
   if (r.status !== 0) {
-    const msg = [r.stderr, r.stdout].filter(Boolean).join(' ').trim();
-    return msg || 'Properties failed.';
+    const msg = [stderr, stdout, diag.spawnError].filter(Boolean).join(' ').trim();
+    return { ok: false, error: msg || 'Properties failed.', ...diag };
   }
-  return null;
+  return { ok: true, error: '', ...diag };
+}
+
+/** Extract a .zip to a sibling folder (`name`, `name (2)`, ...). Windows only. */
+function extractZipToSiblingFolderWin(zipPathRaw) {
+  if (process.platform !== 'win32') return { ok: false, error: 'Only available on Windows.' };
+  const zipPath = path.normalize(String(zipPathRaw || '').trim());
+  if (!zipPath) return { ok: false, error: 'No path.' };
+  if (path.extname(zipPath).toLowerCase() !== '.zip') return { ok: false, error: 'Not a .zip file.' };
+  let st;
+  try {
+    st = fssync.statSync(zipPath);
+  } catch {
+    return { ok: false, error: 'Path not found.' };
+  }
+  if (!st.isFile()) return { ok: false, error: 'Not a file.' };
+  const parent = path.dirname(zipPath);
+  const stem = path.basename(zipPath, '.zip');
+  let destDir = path.join(parent, stem || 'Extracted');
+  for (let n = 2; fssync.existsSync(destDir); n++) {
+    destDir = path.join(parent, `${stem || 'Extracted'} (${n})`);
+  }
+  const ps1 = `param([Parameter(Mandatory)][string]$JsonPath)
+try {
+  $raw = Get-Content -LiteralPath $JsonPath -Raw -Encoding UTF8
+  $j = $raw | ConvertFrom-Json
+  $zipPath = [string]$j.zipPath
+  $destDir = [string]$j.destDir
+  if (-not $zipPath -or -not $destDir) { throw 'Missing zipPath or destDir' }
+  if (-not (Test-Path -LiteralPath $zipPath -PathType Leaf)) { throw 'ZIP not found' }
+  if (Test-Path -LiteralPath $destDir) { throw 'Destination already exists' }
+  New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+  Expand-Archive -LiteralPath $zipPath -DestinationPath $destDir -ErrorAction Stop
+  exit 0
+} catch {
+  [Console]::Error.WriteLine($_.Exception.Message)
+  exit 1
+}`;
+  const tmpJson = path.join(os.tmpdir(), `tagfox-unzip-${process.pid}-${Date.now()}.json`);
+  try {
+    fssync.writeFileSync(tmpJson, JSON.stringify({ zipPath, destDir }), 'utf8');
+    const err = runPowershellScriptFileWithArg(ps1, tmpJson, 'ZIP extract failed');
+    if (err) return { ok: false, error: err };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) };
+  } finally {
+    try {
+      fssync.unlinkSync(tmpJson);
+    } catch (_) {}
+  }
+  return { ok: true, destDir };
 }
 
 /**
@@ -368,32 +875,6 @@ function renameSameDirViaCmdRen(fromRaw, toRaw) {
     });
     if (r.status === 0) return null;
     const tail = [r.stderr, r.stdout].filter(Boolean).join(' ').trim();
-    // #region agent log
-    if (/syntax is incorrect|filename, directory name/i.test(tail)) {
-      const __rn = (globalThis.__tagfoxDbgRenFail = (globalThis.__tagfoxDbgRenFail || 0) + 1);
-      if (__rn <= 15) {
-        fetch('http://127.0.0.1:7460/ingest/0dfbb0a0-7bdd-458e-8476-39dae77fc97d', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0677d7' },
-          body: JSON.stringify({
-            sessionId: '0677d7',
-            location: 'main.js:renameSameDirViaCmdRen',
-            message: 'cmd ren stderr',
-            data: {
-              hypothesisId: 'H4',
-              n: __rn,
-              tail: String(tail).slice(0, 220),
-              dir: String(dir).slice(0, 180),
-              oldLeaf,
-              newLeaf,
-            },
-            timestamp: Date.now(),
-            runId: 'pre',
-          }),
-        }).catch(() => {});
-      }
-    }
-    // #endregion
     return tail || 'cmd ren failed (exit ' + r.status + ').';
   } catch (e) {
     return String(e.message || e);
@@ -463,6 +944,13 @@ function normalizeSourcePathsList(sourcePaths) {
     .filter(Boolean);
 }
 
+/** After moving/copying a folder, children paths no longer exist — drop descendants when a parent is also selected (same geometry as recycle). */
+function collapseNestedSourcePathsForBulkOp(sourcePaths) {
+  const listRaw = normalizeSourcePathsList(sourcePaths);
+  const collapsed = collapseNestedTrashPaths(listRaw);
+  return collapsed.length ? collapsed : listRaw;
+}
+
 function wouldNestDestInsideSrc(srcResolved, destResolved) {
   const rel = path.relative(srcResolved, destResolved);
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
@@ -521,7 +1009,7 @@ async function copySourcesIntoScopeFolder(sourcePaths, destDirRaw, rootPrefix, r
   if (!v.ok) return v;
   const destDir = v.destDir;
 
-  const list = normalizeSourcePathsList(sourcePaths);
+  const list = collapseNestedSourcePathsForBulkOp(sourcePaths);
   if (!list.length) return { ok: false, error: 'Nothing to paste.' };
 
   for (const srcRaw of list) {
@@ -563,6 +1051,42 @@ async function copySourcesIntoScopeFolder(sourcePaths, destDirRaw, rootPrefix, r
   return { ok: true };
 }
 
+/**
+ * Clipboard screenshot / copied image → PNG in scope folder (`Clipboard image.png`, then `(1)`, …).
+ * `image` must be a non-empty NativeImage from clipboard.readImage().
+ */
+async function saveClipboardImagePngToScopeFolder(destDirRaw, rootPrefix, image, replaceExisting = false) {
+  const v = await validateScopePasteDestination(destDirRaw, rootPrefix, {
+    noDest: 'No destination folder.',
+    destNotUnderRoot: 'Destination must stay under the configured root folder.',
+    destMissing: 'Current folder does not exist or is not reachable.',
+    destNotDir: 'Current folder path is not a folder.',
+  });
+  if (!v.ok) return v;
+  const destDir = v.destDir;
+
+  const baseName = 'Clipboard image.png';
+  let destResolved;
+  if (replaceExisting) {
+    destResolved = path.resolve(path.join(destDir, baseName));
+  } else {
+    const u = await uniqueDestPathInDir(destDir, baseName);
+    if (!u.ok) return u;
+    destResolved = u.destResolved;
+  }
+
+  if (!isPathUnderRoot(destResolved, rootPrefix)) {
+    return { ok: false, error: 'Paste would place files outside the configured root folder.' };
+  }
+
+  try {
+    await fs.writeFile(destResolved, image.toPNG());
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) };
+  }
+  return { ok: true };
+}
+
 /** Move files/folders into destDir (rename); same scope / nesting rules as copySourcesIntoScopeFolder. */
 async function moveSourcesIntoFolder(sourcePaths, destDirRaw, rootPrefix, replaceExisting = false) {
   const v = await validateScopePasteDestination(destDirRaw, rootPrefix, {
@@ -574,7 +1098,7 @@ async function moveSourcesIntoFolder(sourcePaths, destDirRaw, rootPrefix, replac
   if (!v.ok) return v;
   const destDir = v.destDir;
 
-  const list = normalizeSourcePathsList(sourcePaths);
+  const list = collapseNestedSourcePathsForBulkOp(sourcePaths);
   if (!list.length) return { ok: false, error: 'Nothing to move.' };
 
   for (const srcRaw of list) {
@@ -642,6 +1166,20 @@ function normalizePathForShellOpen(p) {
   if (!s) return '';
   if (process.platform === 'win32') s = stripWinLongPath(s);
   return path.normalize(s);
+}
+
+/** Trailing slashes off, for Recycle bulk ancestor checks (files unchanged). */
+function trashPathComparable(p) {
+  const n = normalizePathForShellOpen(p);
+  return n ? n.replace(/[/\\]+$/, '') : '';
+}
+
+/** Recycle: Explorer-style path + drive resolve — Electron trashItem rejects POSIX/`\\?\` mixes as “Failed to parse path”. */
+function normalizePathForRecycleBin(p) {
+  const n = normalizePathForShellOpen(p);
+  if (!n) return '';
+  if (process.platform === 'win32' && /^[a-zA-Z]:/.test(n)) return path.resolve(n);
+  return n;
 }
 
 function getCmdExe() {
@@ -902,8 +1440,10 @@ async function openUrlInSystemDefaultBrowser(url) {
   if (process.platform === 'win32') {
     const regErr = await openUrlViaRegisteredHandlerWindows(u);
     if (!regErr) return;
+    // Quote URL for cmd/start so '&' in query strings is not treated as a command separator.
+    const uQuotedForCmd = `"${u.replace(/"/g, '""')}"`;
     await new Promise((resolve, reject) => {
-      const child = spawn(getCmdExe(), ['/d', '/c', 'start', '', u], {
+      const child = spawn(getCmdExe(), ['/d', '/c', 'start', '', uQuotedForCmd], {
         detached: true,
         stdio: 'ignore',
         windowsHide: true,
@@ -964,6 +1504,51 @@ function openPathViaPowershellInvokeItem(absNormPath) {
       resolve(err);
     };
     const child = spawn(ps, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-Command', script], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    child.on('error', (e) => finish(String(e.message || e)));
+    child.unref();
+    setImmediate(() => finish(null));
+  });
+}
+
+/** Open Terminal in the target folder via the shell, so app aliases resolve. */
+function openTerminalAtPath(targetPathRaw) {
+  const targetPath = path.normalize(String(targetPathRaw || '').trim());
+  const comSpec = getCmdExe();
+  const args = ['/d', '/c', 'start', '', 'wt', '-d', targetPath];
+  if (!targetPath) {
+    return Promise.resolve({
+      ok: false,
+      error: 'No path.',
+      method: 'cmd-start-wt',
+      targetPath,
+      comSpec,
+      args,
+    });
+  }
+  return new Promise((resolve) => {
+    const diag = {
+      ok: true,
+      error: '',
+      method: 'cmd-start-wt',
+      targetPath,
+      comSpec,
+      args,
+    };
+    let settled = false;
+    const finish = (err) => {
+      if (settled) return;
+      settled = true;
+      if (err) {
+        diag.ok = false;
+        diag.error = String(err);
+      }
+      resolve(diag);
+    };
+    const child = spawn(comSpec, args, {
       detached: true,
       stdio: 'ignore',
       windowsHide: true,
@@ -1095,6 +1680,20 @@ function isPathUnderShelf(absPathRaw) {
   }
 }
 
+/** Delete-from-Shelf: logical path under staging dir only (no realpath — avoids false “not on Shelf” for junctions / reparse points). */
+function isStrictChildOfShelfStagingDir(absPathRaw) {
+  try {
+    const shelf = path.resolve(getShelfDirResolved());
+    const f = path.resolve(String(absPathRaw || '').trim());
+    if (!f || !shelf) return false;
+    if (f.toLowerCase() === shelf.toLowerCase()) return false;
+    const rel = path.relative(shelf, f);
+    return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
+  } catch (_) {
+    return false;
+  }
+}
+
 /** Build GET URL for Everything HTTP server (json + path/size/date + optional flags). */
 function everythingSearchUrl(baseUrl, searchText, count, options) {
   const o = options || {};
@@ -1121,6 +1720,77 @@ function everythingSearchUrl(baseUrl, searchText, count, options) {
   return u.toString();
 }
 
+/** Undici/fetch often sets message to "fetch failed"; real errno is on error.cause (and sometimes AggregateError.errors). */
+function everythingHttpErrorChain(err) {
+  const parts = [];
+  const visit = (e, depth) => {
+    if (!e || depth > 12) return;
+    if (Array.isArray(e.errors) && e.errors.length) {
+      parts.push({
+        layer: e.name || 'AggregateError',
+        message: String(e.message || '').slice(0, 400),
+        nestedErrors: e.errors.length,
+      });
+      for (const sub of e.errors) visit(sub, depth + 1);
+      if (e.cause) visit(e.cause, depth + 1);
+      return;
+    }
+    parts.push({
+      layer: e.name || 'Error',
+      message: String(e.message || e).slice(0, 600),
+      code: e.code,
+      errno: e.errno,
+      syscall: e.syscall,
+      address: e.address,
+      port: e.port,
+    });
+    if (e.cause) visit(e.cause, depth + 1);
+  };
+  visit(err, 0);
+  return parts;
+}
+
+function everythingHttpTargetFromUrl(urlString) {
+  try {
+    const u = new URL(urlString);
+    return {
+      href: u.href.length > 2500 ? u.href.slice(0, 2500) + '…' : u.href,
+      protocol: u.protocol,
+      hostname: u.hostname,
+      port: u.port || (u.protocol === 'https:' ? '443' : '80'),
+      pathname: u.pathname,
+    };
+  } catch (e) {
+    return { href: String(urlString).slice(0, 800), parseError: String(e.message || e) };
+  }
+}
+
+function everythingSearchFailureFromFetch(baseUrlSetting, requestUrl, err) {
+  const target = everythingHttpTargetFromUrl(requestUrl);
+  const chain = everythingHttpErrorChain(err);
+  const codes = [...new Set(chain.map((p) => p.code).filter(Boolean))];
+  const msg = String(err.message || err);
+  const errorLine =
+    codes.length > 0
+      ? `${msg} [${codes.join(', ')}] · ${target.hostname}:${target.port}`
+      : `${msg} · ${target.hostname}:${target.port}`;
+  return {
+    ok: false,
+    error: errorLine,
+    rows: [],
+    debug: {
+      everythingHttp: 'fetch',
+      settingsBaseUrl: String(baseUrlSetting || '').trim().slice(0, 500),
+      requestUrl: target.href,
+      target,
+      chain,
+      node: process.version,
+      electron: process.versions && process.versions.electron,
+      platform: process.platform,
+    },
+  };
+}
+
 /** Target webContents for View-menu actions (focused BrowserWindow). */
 function focusedMenuWebContents(focusedWindow) {
   const w = focusedWindow || BrowserWindow.getFocusedWindow();
@@ -1144,12 +1814,33 @@ function pageZoomOut(wc) {
   wc.setZoomFactor(Math.max(0.25, Math.round((z / 1.1) * 100) / 100));
 }
 
-/** Windows/Linux: without an app menu, Electron does not bind reload / hard-reload accelerators. */
+/** Full app restart: relaunch Electron so main/preload/renderer/CSS/JS all reload. */
+function restartAppWithUiFeedback(wc, source) {
+  if (!wc || wc.isDestroyed()) return;
+  sendSearchDebugLine(wc, 'appRestart.apply', {
+    via: source,
+    urlBefore: wc.getURL(),
+    webContentsId: typeof wc.id === 'number' ? wc.id : undefined,
+  });
+  wc.send('tagfox-app-restart-imminent', {
+    source: source === 'menu' ? 'menu' : 'shortcut',
+  });
+  setTimeout(() => {
+    app.relaunch();
+    app.quit();
+  }, 350);
+}
+
+/** View menu: do not put F5 on “Reload” — on Windows the accelerator is registered and steals F5 from the page (TagFox uses F5 = refresh search). */
 function installApplicationMenu() {
   const isMac = process.platform === 'darwin';
-  const hardReload = (_item, focusedWindow) => {
+  const reloadWindow = (_item, focusedWindow) => {
     const w = focusedWindow || BrowserWindow.getFocusedWindow();
-    if (w && !w.isDestroyed()) w.webContents.reloadIgnoringCache();
+    if (w && !w.isDestroyed()) w.webContents.reload();
+  };
+  const restartApp = (_item, focusedWindow) => {
+    const w = focusedWindow || BrowserWindow.getFocusedWindow();
+    if (w && !w.isDestroyed()) restartAppWithUiFeedback(w.webContents, 'menu');
   };
   // Show shortcuts in the menu; real key handling is attachPageZoomShortcuts (Windows/Linux:
   // registerAccelerator: false avoids double-zoom). macOS cannot disable registration, so no accelerators there.
@@ -1188,11 +1879,10 @@ function installApplicationMenu() {
         },
       ];
   const viewSubmenu /** @type {Electron.MenuItemConstructorOptions[]} */ = [
-    { role: 'reload' },
-    { role: 'forceReload' },
-    { label: 'Hard reload', accelerator: 'CmdOrCtrl+F5', click: hardReload },
-    // Same action; second accelerator (no extra row — hidden item still registers the shortcut).
-    { label: 'Hard reload', accelerator: 'CmdOrCtrl+Shift+F5', visible: false, click: hardReload },
+    /* No F5 accelerator: Windows always registers it and the renderer never gets F5 (refresh search). Use menu click for full reload(). */
+    { label: 'Reload', click: reloadWindow },
+    /* No role:forceReload — Ctrl+F5 restarts the whole app instead. */
+    { label: 'Restart TagFox', accelerator: 'CmdOrCtrl+F5', click: restartApp },
     { type: 'separator' },
     { role: 'toggleDevTools' },
     { type: 'separator' },
@@ -1225,16 +1915,61 @@ function installApplicationMenu() {
 }
 
 /**
- * Ctrl/Cmd +/-/0 on page zoom. Menu `zoomIn`/`zoomOut` accelerators often do not run when the
- * webContents has focus on Windows; `before-input-event` applies zoom in the main process.
+ * Ctrl/Cmd +/-/0 zoom; plain F5 = refresh search (Chromium default F5 reloads the page — must preventDefault + IPC);
+ * Ctrl/Cmd+F5 = full app restart so main/preload/renderer all reload.
  */
 function attachPageZoomShortcuts(wc) {
   wc.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
+
+    /* Plain F5: default is full window reload — we want same as in-app “refresh results”. */
+    if (input.code === 'F5') {
+      const mod = process.platform === 'darwin' ? input.meta : input.control;
+      if (!mod && !input.alt) {
+        event.preventDefault();
+        sendSearchDebugLine(wc, 'searchRefresh.f5', {
+          step: 'main',
+          shift: !!input.shift,
+          url: wc.getURL(),
+          webContentsId: typeof wc.id === 'number' ? wc.id : undefined,
+        });
+        if (!wc.isDestroyed()) wc.send('tagfox-plain-f5-refresh');
+        return;
+      }
+    }
+
+    /* Search-debug: Ctrl+F5 restart only. */
+    if (
+      input.code === 'F5' &&
+      ((process.platform === 'darwin' ? input.meta : input.control) || input.alt)
+    ) {
+      sendSearchDebugLine(wc, 'appRestart.beforeInput', {
+        control: !!input.control,
+        meta: !!input.meta,
+        alt: !!input.alt,
+        key: input.key,
+        code: input.code,
+        isAutoRepeat: !!input.isAutoRepeat,
+      });
+    }
+
     const mod = process.platform === 'darwin' ? input.meta : input.control;
-    if (!mod || input.alt) return;
+
+    if (!mod || input.alt) {
+      if (input.code === 'F5' && input.alt) {
+        sendSearchDebugLine(wc, 'appRestart.skip', { reason: 'altKeyBlocksRestartPath' });
+      }
+      return;
+    }
 
     const { code } = input;
+
+    /* Same issue as zoom: Ctrl+F5 should restart the whole app even when the page has focus. */
+    if (code === 'F5') {
+      event.preventDefault();
+      restartAppWithUiFeedback(wc, 'shortcut');
+      return;
+    }
 
     if (code === 'Digit0' || code === 'Numpad0') {
       if (input.shift) return;
@@ -1262,7 +1997,7 @@ let globalToggleRegistered = '';
 /** Quick TODO floating panel (separate global shortcut). */
 let quickTodoHotkeyRegistered = '';
 
-const DEFAULT_GLOBAL_TOGGLE_ACCEL = 'Control+Space';
+const DEFAULT_GLOBAL_TOGGLE_ACCEL = 'Control+Alt+Space';
 const DEFAULT_QUICK_TODO_ACCEL = 'Alt+Shift+N';
 
 function globalTogglePrefsPath() {
@@ -1488,9 +2223,205 @@ function registerSearchScopeFolderIpc() {
   });
 }
 
+/** Shelf staging IPC — registered before first window loads (same lifecycle as search-scope handlers). */
+function registerShelfIpc() {
+  try {
+    ipcMain.removeHandler('shelf-state');
+  } catch (_) {}
+  try {
+    ipcMain.removeHandler('clear-shelf');
+  } catch (_) {}
+  try {
+    ipcMain.removeHandler('remove-shelf-paths');
+  } catch (_) {}
+  ipcMain.handle('shelf-state', async () => {
+    const dir = getShelfDirResolved();
+    try {
+      const ents = await fs.readdir(dir, { withFileTypes: true });
+      const entries = ents
+        .map((e) => ({
+          name: e.name,
+          fullPath: path.join(dir, e.name),
+          isDirectory: e.isDirectory(),
+        }))
+        .sort((a, b) => compareShelfEntryNames(a.name, b.name));
+      return { ok: true, path: dir, entries };
+    } catch (e) {
+      return { ok: false, error: String(e.message || e), path: dir, entries: [] };
+    }
+  });
+  ipcMain.handle('clear-shelf', async (event) => {
+    const dir = getShelfDirResolved();
+    let names;
+    try {
+      names = await fs.readdir(dir);
+    } catch (e) {
+      return { ok: false, error: String(e.message || e) };
+    }
+    const errs = [];
+    let anyOk = false;
+    for (const n of names) {
+      try {
+        await rmShelfTreeOrThrow(path.join(dir, n));
+        anyOk = true;
+      } catch (e) {
+        errs.push(n + ': ' + String(e.message || e));
+      }
+    }
+    if (anyOk) event.sender.send('paths-mutated');
+    // Empty dir ⇒ success even if Node reported EPERM after PS/async cleanup removed the tree.
+    try {
+      names = await fs.readdir(dir);
+    } catch (_) {
+      return errs.length ? { ok: false, error: errs.join('; ') } : { ok: true };
+    }
+    if (!names.length) return { ok: true };
+    return errs.length ? { ok: false, error: errs.join('; ') } : { ok: true };
+  });
+  ipcMain.handle('remove-shelf-paths', async (event, paths) => {
+    const list = Array.isArray(paths) ? paths : [];
+    const errs = [];
+    let anyOk = false;
+    for (const raw of list) {
+      const fp = path.resolve(String(raw || '').trim());
+      if (!fp) continue;
+      if (!isStrictChildOfShelfStagingDir(fp)) {
+        errs.push(fp + ': not on Shelf');
+        continue;
+      }
+      try {
+        await rmShelfTreeOrThrow(fp);
+        anyOk = true;
+      } catch (e) {
+        errs.push(fp + ': ' + String(e.message || e));
+      }
+    }
+    if (anyOk) event.sender.send('paths-mutated');
+    if (!list.length) return { ok: false, error: 'Nothing to remove' };
+    const allGone = list.every((raw) => {
+      const fp = path.resolve(String(raw || '').trim());
+      if (!fp) return true;
+      if (!isStrictChildOfShelfStagingDir(fp)) return false;
+      return !fssync.existsSync(fp);
+    });
+    if (allGone) return { ok: true };
+    return errs.length ? { ok: false, error: errs.join('; ') } : { ok: true };
+  });
+}
+
+/** Nested aggregate: stop adding files after this (non–mission-critical cap). */
+const GLOBAL_VIEWER_AGGREGATE_MAX_FILES = 50;
+
+/** Viewer docs: shared basename order for both single folder-doc pick and nested aggregate. */
+const VIEWER_DOC_BASENAMES_DEFAULT = [
+  '-readme.md',
+  '-readme.txt',
+  'readme.md',
+  'readme.txt',
+  'claude.md',
+  'agents.md',
+  'about.md',
+  'about.txt',
+  'context.md',
+  'context.txt',
+  'index.md',
+  'index.txt',
+];
+
+/** Nested folder-doc aggregate — register with app ready (matches scope/shelf IPC lifecycle). */
+function registerGlobalViewerDocsIpc() {
+  try {
+    ipcMain.removeHandler('collect-global-viewer-docs');
+  } catch (_) {}
+  ipcMain.handle('collect-global-viewer-docs', async (_event, { folderPath, basenames }) => {
+    const root = path.normalize(String(folderPath || '').trim().replace(/[/\\]+$/, ''));
+    if (!root) return { ok: false, error: 'Missing folder', sections: [] };
+
+    const rawNames = Array.isArray(basenames) ? basenames : [];
+    const nameList =
+      rawNames.length > 0
+        ? [...new Set(rawNames.map((x) => String(x || '').trim().toLowerCase()).filter(Boolean))]
+        : VIEWER_DOC_BASENAMES_DEFAULT.slice();
+    const rankMap = new Map(nameList.map((n, i) => [n, i]));
+
+    const sections = [];
+    const visited = new Set();
+    let truncated = false;
+
+    async function walk(dir, depth, isRoot) {
+      if (sections.length >= GLOBAL_VIEWER_AGGREGATE_MAX_FILES) return;
+      const key = pathKeyForGlobalViewerWalk(dir);
+      if (!key || visited.has(key)) return;
+      visited.add(key);
+
+      let entries;
+      try {
+        entries = await fs.readdir(dir, { withFileTypes: true });
+      } catch (e) {
+        if (isRoot) throw e;
+        return;
+      }
+
+      const files = [];
+      const dirs = [];
+      for (const d of entries) {
+        const name = d.name;
+        if (d.isDirectory()) dirs.push(name);
+        else if (d.isFile()) {
+          const pretty =
+            TagBrowserTags && typeof TagBrowserTags.parseSegmentTags === 'function'
+              ? String(TagBrowserTags.parseSegmentTags(name).pretty || '').toLowerCase()
+              : String(name).toLowerCase();
+          const rank = rankMap.get(pretty);
+          if (rank !== undefined) files.push({ name, rank });
+        }
+      }
+      files.sort((a, b) => a.rank - b.rank);
+      dirs.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
+
+      for (const { name: fname } of files) {
+        if (sections.length >= GLOBAL_VIEWER_AGGREGATE_MAX_FILES) {
+          truncated = true;
+          break;
+        }
+        const fullPath = path.join(dir, fname);
+        const relPath = path.relative(root, fullPath).replace(/\//g, '\\');
+        let text;
+        try {
+          text = await fs.readFile(fullPath, 'utf8');
+        } catch (err) {
+          text = '/* read error: ' + String(err.message || err) + ' */';
+        }
+        sections.push({ fullPath, relPath, depth, baseName: fname, text });
+      }
+
+      if (sections.length >= GLOBAL_VIEWER_AGGREGATE_MAX_FILES) {
+        truncated = true;
+        return;
+      }
+      for (const dname of dirs) {
+        if (sections.length >= GLOBAL_VIEWER_AGGREGATE_MAX_FILES) {
+          truncated = true;
+          break;
+        }
+        await walk(path.join(dir, dname), depth + 1, false);
+      }
+    }
+
+    try {
+      await walk(root, 0, true);
+    } catch (e) {
+      return { ok: false, error: String(e.message || e), sections: [] };
+    }
+    return { ok: true, sections, truncated };
+  });
+}
+
 app.whenReady().then(() => {
   installApplicationMenu();
   registerSearchScopeFolderIpc();
+  registerShelfIpc();
+  registerGlobalViewerDocsIpc();
   const gt = registerGlobalToggleShortcut(loadGlobalToggleAccelFromDisk());
   if (!gt.ok) console.warn('[TagFox] Global toggle shortcut:', gt.error);
   const qt = registerQuickTodoShortcut(loadQuickTodoAccelFromDisk());
@@ -1552,6 +2483,7 @@ ipcMain.handle('tag-prefs-write', async (_e, payload) => {
 
 ipcMain.handle('everything-search', async (_event, payload) => {
   const { baseUrl, searchText, httpUser, httpPassword, count, options } = payload;
+  const settingsBase = String(baseUrl || '').trim();
   const url = everythingSearchUrl(baseUrl, searchText, count, options);
   const headers = {};
   const user = (httpUser || '').trim();
@@ -1564,19 +2496,48 @@ ipcMain.handle('everything-search', async (_event, payload) => {
   try {
     res = await fetch(url, { headers });
   } catch (e) {
-    return { ok: false, error: String(e.message || e), rows: [] };
+    return everythingSearchFailureFromFetch(settingsBase, url, e);
   }
   if (!res.ok) {
-    return { ok: false, error: `HTTP ${res.status} ${res.statusText}`, rows: [] };
-  }
-  let data;
-  try {
-    data = await res.json();
-  } catch {
+    let bodyPreview = '';
+    try {
+      bodyPreview = (await res.text()).slice(0, 600);
+    } catch (te) {
+      bodyPreview = String(te.message || te);
+    }
     return {
       ok: false,
-      error: 'Response was not JSON — check base URL/port and that the Everything HTTP server is enabled.',
+      error: `HTTP ${res.status} ${res.statusText || ''}`.trim(),
       rows: [],
+      debug: {
+        everythingHttp: 'httpStatus',
+        settingsBaseUrl: settingsBase.slice(0, 500),
+        requestUrl: everythingHttpTargetFromUrl(url).href,
+        target: everythingHttpTargetFromUrl(url),
+        status: res.status,
+        statusText: res.statusText,
+        bodyPreview,
+      },
+    };
+  }
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (pe) {
+    return {
+      ok: false,
+      error:
+        'Response was not JSON — check base URL/port and that the Everything HTTP server is enabled.',
+      rows: [],
+      debug: {
+        everythingHttp: 'jsonParse',
+        settingsBaseUrl: settingsBase.slice(0, 500),
+        requestUrl: everythingHttpTargetFromUrl(url).href,
+        target: everythingHttpTargetFromUrl(url),
+        bodyPreview: text.slice(0, 800),
+        parseError: String(pe.message || pe),
+      },
     };
   }
   return { ok: true, rows: rowsFromEverythingJson(data) };
@@ -1588,6 +2549,13 @@ ipcMain.handle('open-path', async (_event, fullPath) => {
 
 ipcMain.handle('show-in-folder', async (_event, fullPath) => {
   shell.showItemInFolder(fullPath);
+});
+
+ipcMain.handle('open-terminal-at', async (event, cwdPath) => {
+  if (process.platform !== 'win32') return { ok: false, error: 'Open in Terminal: Windows only.' };
+  const diag = await openTerminalAtPath(cwdPath);
+  sendSearchDebugLine(event.sender, 'shell.terminal', { source: 'rowButton', ...diag });
+  return diag;
 });
 
 /** ─── Google Drive “.gdoc / .gsheet / .gslides” shortcuts → child window(s) (docs.google.com); each open gets its own window ─── */
@@ -1706,21 +2674,57 @@ function targetUrlFromGoogleDriveShortcut(fullPath, rawText) {
     .replace(/^\uFEFF/, '')
     .trim();
   if (!text) return null;
+  /** If JSON is malformed, still recover a Google URL substring (Drive desktop sometimes writes odd bytes). */
+  function urlFromRegex(s) {
+    const m =
+      /https:\/\/docs\.google\.com\/(?:document|spreadsheets|presentation)\/d\/[a-zA-Z0-9_-]+(?:\/[^\s"'<>]*)?/i.exec(s);
+    return m ? m[0].split(/[\s"'<>]/)[0] : null;
+  }
   let data;
   try {
     data = JSON.parse(text);
   } catch {
-    return null;
+    return urlFromRegex(text);
   }
-  if (!data || typeof data !== 'object') return null;
+  if (!data || typeof data !== 'object') return urlFromRegex(text);
   const u = typeof data.url === 'string' ? data.url.trim() : '';
   if (u && /^https?:\/\//i.test(u)) return u;
-  const id = typeof data.doc_id === 'string' ? data.doc_id.trim() : '';
-  if (!id) return null;
+  const id =
+    (typeof data.doc_id === 'string' && data.doc_id.trim()) ||
+    (typeof data.docId === 'string' && data.docId.trim()) ||
+    (typeof data.id === 'string' && /^[a-zA-Z0-9_-]{10,}$/.test(data.id.trim()) && data.id.trim()) ||
+    '';
+  if (!id) return urlFromRegex(text);
   const ext = path.extname(String(fullPath || '')).toLowerCase();
   if (ext === '.gsheet') return `https://docs.google.com/spreadsheets/d/${id}/edit`;
   if (ext === '.gslides') return `https://docs.google.com/presentation/d/${id}/edit`;
   return `https://docs.google.com/document/d/${id}/edit`;
+}
+
+/**
+ * PowerShell Get-Content on `path:user.drive.id`. Uses -EncodedCommand (UTF-16LE base64) so long paths with spaces
+ * are not truncated or mis-parsed by the Win32 command line (unlike -Command with a huge inline script).
+ */
+function tryReadAdsStreamPowerShellGetContentEncoded(psExe, adsPath) {
+  const lit = String(adsPath).replace(/'/g, "''");
+  const script = `
+$ProgressPreference = 'SilentlyContinue'
+$ErrorActionPreference = 'Stop'
+try {
+  $v = Get-Content -LiteralPath '${lit}' -Raw
+  [Console]::Out.Write(([string]$v).Trim())
+  exit 0
+} catch {
+  [Console]::Error.Write(($_.Exception.Message))
+  exit 1
+}`.trim();
+  const encoded = Buffer.from(script, 'utf16le').toString('base64');
+  return execFileSync(psExe, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
+    encoding: 'utf8',
+    windowsHide: true,
+    maxBuffer: 4096,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
 }
 
 /**
@@ -1741,56 +2745,36 @@ function tryReadGoogleDriveVirtualFileIdWindowsSync(fullPathRaw, diag) {
     if (longBase !== resolved) candidates.push(`${longBase}${stream}`);
   } catch (_) {}
   const comspec = process.env.ComSpec || (process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32', 'cmd.exe') : 'cmd.exe');
+  const psExe =
+    process.env.SystemRoot && fssync.existsSync(path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'))
+      ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+      : 'powershell.exe';
   const attempts = [];
-  // #region agent log
-  const __dvEnter = (globalThis.__tagfoxDbgDriveVirtEnter = (globalThis.__tagfoxDbgDriveVirtEnter || 0) + 1);
-  if (__dvEnter <= 25) {
-    fetch('http://127.0.0.1:7460/ingest/0dfbb0a0-7bdd-458e-8476-39dae77fc97d', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0677d7' },
-      body: JSON.stringify({
-        sessionId: '0677d7',
-        location: 'main.js:tryReadGoogleDriveVirtualFileIdWindowsSync:enter',
-        message: 'virtual id probe',
-        data: { hypothesisId: 'H1', n: __dvEnter, back, candidates },
-        timestamp: Date.now(),
-        runId: 'pre',
-      }),
-    }).catch(() => {});
-  }
-  // #endregion
   for (const adsPath of candidates) {
-    for (const label of ['fs.readFileSync', 'cmd.type']) {
-      try {
-        let raw;
-        if (label === 'fs.readFileSync') {
-          raw = fssync.readFileSync(adsPath, 'utf8');
-        } else {
-          // #region agent log
-          const __ct = (globalThis.__tagfoxDbgCmdType = (globalThis.__tagfoxDbgCmdType || 0) + 1);
-          if (__ct <= 30) {
-            fetch('http://127.0.0.1:7460/ingest/0dfbb0a0-7bdd-458e-8476-39dae77fc97d', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0677d7' },
-              body: JSON.stringify({
-                sessionId: '0677d7',
-                location: 'main.js:tryReadGoogleDriveVirtualFileIdWindowsSync:cmdType',
-                message: 'before execFileSync type',
-                data: { hypothesisId: 'H1', n: __ct, adsPath },
-                timestamp: Date.now(),
-                runId: 'pre',
-              }),
-            }).catch(() => {});
-          }
-          // #endregion
-          // Drop cmd stderr (invalid ADS / path) — default pipes can still surface "filename… syntax is incorrect" on the npm/electron parent console on Windows.
-          raw = execFileSync(comspec, ['/d', '/s', '/c', 'type', adsPath], {
+    // GDrive mirrored paths: Node/cmd often ENOENT on `file:user.drive.id` even when the stream exists; PS Get-Content usually works.
+    const readers = [
+      {
+        label: 'fs.readFileSync',
+        run: () => fssync.readFileSync(adsPath, 'utf8'),
+      },
+      {
+        label: 'cmd.type',
+        run: () =>
+          execFileSync(comspec, ['/d', '/s', '/c', 'type', adsPath], {
             encoding: 'utf8',
             windowsHide: true,
             maxBuffer: 4096,
             stdio: ['ignore', 'pipe', 'ignore'],
-          });
-        }
+          }),
+      },
+      {
+        label: 'powershell.GetContent',
+        run: () => tryReadAdsStreamPowerShellGetContentEncoded(psExe, adsPath),
+      },
+    ];
+    for (const { label, run } of readers) {
+      try {
+        const raw = run();
         const id = String(raw || '')
           .replace(/^\uFEFF/, '')
           .trim()
@@ -1810,26 +2794,10 @@ function tryReadGoogleDriveVirtualFileIdWindowsSync(fullPathRaw, diag) {
         return id;
       } catch (e) {
         const emsg = String(e.message || e);
-        attempts.push({ label, adsPath, code: e.code || null, msg: emsg });
-        // #region agent log
-        if (/syntax is incorrect|filename, directory name/i.test(emsg)) {
-          const __ce = (globalThis.__tagfoxDbgCmdTypeErr = (globalThis.__tagfoxDbgCmdTypeErr || 0) + 1);
-          if (__ce <= 25) {
-            fetch('http://127.0.0.1:7460/ingest/0dfbb0a0-7bdd-458e-8476-39dae77fc97d', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0677d7' },
-              body: JSON.stringify({
-                sessionId: '0677d7',
-                location: 'main.js:tryReadGoogleDriveVirtualFileIdWindowsSync:catch',
-                message: 'read virtual id failed',
-                data: { hypothesisId: 'H1', label, adsPath, emsg: emsg.slice(0, 220) },
-                timestamp: Date.now(),
-                runId: 'pre',
-              }),
-            }).catch(() => {});
-          }
-        }
-        // #endregion
+        const row = { label, adsPath, code: e.code || null, msg: emsg };
+        const se = e && e.stderr;
+        if (se) row.psErr = Buffer.isBuffer(se) ? se.toString('utf8').trim() : String(se).trim();
+        attempts.push(row);
       }
     }
   }
@@ -2017,27 +2985,6 @@ async function readGoogleWorkspaceShortcutText(fullPathRaw) {
 
   const fullPath = normalizePathForShellOpen(fullPathRaw);
   diag.path = fullPath;
-  // #region agent log
-  const __gws = (globalThis.__tagfoxDbgGwsRead = (globalThis.__tagfoxDbgGwsRead || 0) + 1);
-  if (__gws <= 20 && /\.gdoc$/i.test(fullPath)) {
-    fetch('http://127.0.0.1:7460/ingest/0dfbb0a0-7bdd-458e-8476-39dae77fc97d', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0677d7' },
-      body: JSON.stringify({
-        sessionId: '0677d7',
-        location: 'main.js:readGoogleWorkspaceShortcutText',
-        message: 'shortcut read enter',
-        data: {
-          hypothesisId: 'H3',
-          n: __gws,
-          pathSample: fullPath.length > 240 ? fullPath.slice(0, 240) + '…' : fullPath,
-        },
-        timestamp: Date.now(),
-        runId: 'pre',
-      }),
-    }).catch(() => {});
-  }
-  // #endregion
   if (!fullPath) {
     diag.outcome = 'empty_path';
     return { ok: false, error: 'Empty path.', diag };
@@ -2171,22 +3118,18 @@ async function readGoogleWorkspaceShortcutText(fullPathRaw) {
     return { ok: false, error: 'Shortcut file unexpectedly large.', diag };
   }
 
-  const virtualId = tryReadGoogleDriveVirtualFileIdWindowsSync(fullPath, diag);
-  if (virtualId) {
-    const raw = JSON.stringify({ doc_id: virtualId });
-    diag.source = 'driveVirtualIdStream';
-    diag.outcome = 'ok_virtualIdStream';
-    return { ok: true, raw, diag };
-  }
-
+  // Prefer real shortcut JSON (url / doc_id) over :user.drive.id — the ADS stream can disagree and breaks docs.google.com/…/d/<id>/edit.
   diag.readFile = { attempted: fullPath, expectedSize: st.size };
   try {
     const raw = await fs.readFile(fullPath, 'utf8');
     diag.readFile.ok = true;
     diag.readFile.bytesRead = Buffer.byteLength(raw, 'utf8');
-    diag.source = 'file';
-    diag.outcome = 'ok_file';
-    return { ok: true, raw, diag };
+    if (targetUrlFromGoogleDriveShortcut(fullPath, raw)) {
+      diag.source = 'file';
+      diag.outcome = 'ok_file';
+      return { ok: true, raw, diag };
+    }
+    diag.fileParseNote = 'read ok but JSON did not yield url/doc_id';
   } catch (e) {
     diag.readFile.ok = false;
     diag.readFile.code = e.code || null;
@@ -2228,10 +3171,21 @@ async function readGoogleWorkspaceShortcutText(fullPathRaw) {
       return { ok: false, error: 'File not found.', code: 'ENOENT', diag };
     } else {
       diag.outcome = 'readfile_failed';
+      console.warn('[TagFox google-shortcut]', diag.outcome, diag);
+      return { ok: false, error: String(e.message || e), diag };
     }
-    console.warn('[TagFox google-shortcut]', diag.outcome, diag);
-    return { ok: false, error: String(e.message || e), diag };
   }
+
+  const virtualId = tryReadGoogleDriveVirtualFileIdWindowsSync(fullPath, diag);
+  if (virtualId) {
+    const raw = JSON.stringify({ doc_id: virtualId });
+    diag.source = 'driveVirtualIdStream';
+    diag.outcome = 'ok_virtualIdStream';
+    return { ok: true, raw, diag };
+  }
+
+  console.warn('[TagFox google-shortcut]', 'shortcut_unresolved_after_file_and_virtual', diag);
+  return { ok: false, error: 'Could not read Google link from shortcut.', diag };
 }
 
 function isAllowedGoogleWorkspaceUrl(u) {
@@ -2562,7 +3516,247 @@ ipcMain.handle('open-url-default-browser', async (_event, { url }) => {
   }
 });
 
+/** Read-only sign-of-life: proves OAuth token works with Drive API (does not open browser or run consent). */
+ipcMain.handle('google-drive-api-ping', async () => {
+  const cfg = readGoogleOAuthClientConfigSync();
+  if (!cfg) return { ok: false, skipped: true, reason: 'no_config' };
+  const tok = readGoogleOAuthTokenSync();
+  if (!tok || (!tok.access_token && !tok.refresh_token)) {
+    return { ok: false, error: 'No saved OAuth token yet.' };
+  }
+  try {
+    const oauth2 = new OAuth2Client(cfg.clientId, cfg.clientSecret, cfg.redirectUri);
+    oauth2.setCredentials(tok);
+    const drive = createDriveClient({ version: 'v3', auth: oauth2 });
+    const about = await drive.about.get({ fields: 'user(displayName,emailAddress)' });
+    let sampleFileName = '';
+    try {
+      const list = await drive.files.list({
+        pageSize: 1,
+        fields: 'files(name)',
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+      });
+      const f = list.data.files && list.data.files[0];
+      if (f && f.name) sampleFileName = String(f.name);
+    } catch (_) {}
+    const u = about.data && about.data.user;
+    return {
+      ok: true,
+      email: (u && u.emailAddress) || '',
+      displayName: (u && u.displayName) || '',
+      sampleFileName,
+    };
+  } catch (e) {
+    const body = e && e.response && e.response.data;
+    const msg =
+      (body && (body.error_description || body.error?.message || body.error)) ||
+      String(e.message || e);
+    return { ok: false, error: typeof msg === 'string' ? msg : String(msg) };
+  }
+});
+
 ipcMain.handle('resolve-shell-shortcut', async (_event, { fullPath }) => resolveShellShortcutLnkWin(fullPath));
+
+/**
+ * Windows shell Recent: newest .lnk files in %AppData%\...\Recent, resolve to directory targets (one PS run).
+ */
+ipcMain.handle('windows-recent-folders', async () => {
+  if (process.platform !== 'win32') return { ok: true, folders: [] };
+  const recentDir = path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Recent');
+  let names;
+  try {
+    names = await fs.readdir(recentDir);
+  } catch (e) {
+    return { ok: false, error: String(e.message || e), folders: [] };
+  }
+  const lnks = names.filter((n) => n.toLowerCase().endsWith('.lnk'));
+  const withStat = await Promise.all(
+    lnks.map(async (n) => {
+      const full = path.join(recentDir, n);
+      try {
+        const st = await fs.stat(full);
+        return { full, mtimeMs: st.mtimeMs };
+      } catch {
+        return null;
+      }
+    })
+  );
+  const valid = withStat.filter(Boolean).sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 28);
+  if (!valid.length) return { ok: true, folders: [] };
+  const jsonIn = path.join(os.tmpdir(), `tagfox-winrecent-in-${process.pid}-${Date.now()}.json`);
+  const tmpPs1 = path.join(os.tmpdir(), `tagfox-winrecent-${process.pid}-${Date.now()}.ps1`);
+  const psExe = windowsPowerShellExe();
+  const ps1Body = `param([Parameter(Mandatory)][string]$JsonPath)
+$ErrorActionPreference = 'Stop'
+$raw = Get-Content -LiteralPath $JsonPath -Raw -Encoding UTF8
+$j = $raw | ConvertFrom-Json
+$items = $j.items
+if (-not $items) { Write-Output '[]'; exit 0 }
+if ($items -isnot [System.Array]) { $items = @($items) }
+$sh = New-Object -ComObject WScript.Shell
+$out = @()
+foreach ($it in $items) {
+  $f = [string]$it.full
+  $mt = [double]$it.mtimeMs
+  if (-not $f -or -not (Test-Path -LiteralPath $f)) { continue }
+  try {
+    $s = $sh.CreateShortcut($f)
+    $t = [string]$s.TargetPath
+    if ([string]::IsNullOrWhiteSpace($t)) { continue }
+    $t = $t.Trim()
+    if (Test-Path -LiteralPath $t -PathType Container) {
+      $out += @{ path = $t; mtimeMs = $mt }
+    }
+  } catch {}
+}
+if ($out.Count -lt 1) { Write-Output '[]' } else { $out | ConvertTo-Json -Compress -Depth 4 }
+`;
+  try {
+    await fs.writeFile(jsonIn, JSON.stringify({ items: valid }), 'utf8');
+    fssync.writeFileSync(tmpPs1, ps1Body, 'utf8');
+    const r = spawnSync(psExe, ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', tmpPs1, jsonIn], {
+      windowsHide: true,
+      encoding: 'utf8',
+    });
+    if (r.status !== 0) {
+      const msg = [r.stderr, r.stdout].filter(Boolean).join(' ').trim();
+      return { ok: false, error: msg || 'Recent folders script failed', folders: [] };
+    }
+    let arr;
+    try {
+      arr = JSON.parse(String(r.stdout || '').trim());
+    } catch {
+      return { ok: false, error: 'Invalid JSON from recent folders script', folders: [] };
+    }
+    if (!Array.isArray(arr)) {
+      if (arr && typeof arr === 'object' && arr.path != null) arr = [arr];
+      else arr = [];
+    }
+    const folders = [];
+    const seen = new Set();
+    for (const row of arr) {
+      if (!row || typeof row !== 'object') continue;
+      const p = path.normalize(String(row.path || '').trim());
+      if (!p) continue;
+      const low = p.toLowerCase();
+      if (seen.has(low)) continue;
+      seen.add(low);
+      const mtimeMs = typeof row.mtimeMs === 'number' ? row.mtimeMs : 0;
+      folders.push({ path: p, mtimeMs });
+    }
+    return { ok: true, folders };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e), folders: [] };
+  } finally {
+    try {
+      fssync.unlinkSync(jsonIn);
+    } catch (_) {}
+    try {
+      fssync.unlinkSync(tmpPs1);
+    } catch (_) {}
+  }
+});
+
+/**
+ * Windows shell Recent: same .lnk scan as folders, but keep file targets only (not directories).
+ */
+ipcMain.handle('windows-recent-files', async () => {
+  if (process.platform !== 'win32') return { ok: true, files: [] };
+  const recentDir = path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Recent');
+  let names;
+  try {
+    names = await fs.readdir(recentDir);
+  } catch (e) {
+    return { ok: false, error: String(e.message || e), files: [] };
+  }
+  const lnks = names.filter((n) => n.toLowerCase().endsWith('.lnk'));
+  const withStat = await Promise.all(
+    lnks.map(async (n) => {
+      const full = path.join(recentDir, n);
+      try {
+        const st = await fs.stat(full);
+        return { full, mtimeMs: st.mtimeMs };
+      } catch {
+        return null;
+      }
+    })
+  );
+  const valid = withStat.filter(Boolean).sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 28);
+  if (!valid.length) return { ok: true, files: [] };
+  const jsonIn = path.join(os.tmpdir(), `tagfox-winrecent-files-in-${process.pid}-${Date.now()}.json`);
+  const tmpPs1 = path.join(os.tmpdir(), `tagfox-winrecent-files-${process.pid}-${Date.now()}.ps1`);
+  const psExe = windowsPowerShellExe();
+  const ps1Body = `param([Parameter(Mandatory)][string]$JsonPath)
+$ErrorActionPreference = 'Stop'
+$raw = Get-Content -LiteralPath $JsonPath -Raw -Encoding UTF8
+$j = $raw | ConvertFrom-Json
+$items = $j.items
+if (-not $items) { Write-Output '[]'; exit 0 }
+if ($items -isnot [System.Array]) { $items = @($items) }
+$sh = New-Object -ComObject WScript.Shell
+$out = @()
+foreach ($it in $items) {
+  $f = [string]$it.full
+  $mt = [double]$it.mtimeMs
+  if (-not $f -or -not (Test-Path -LiteralPath $f)) { continue }
+  try {
+    $s = $sh.CreateShortcut($f)
+    $t = [string]$s.TargetPath
+    if ([string]::IsNullOrWhiteSpace($t)) { continue }
+    $t = $t.Trim()
+    if (Test-Path -LiteralPath $t -PathType Leaf) {
+      $out += @{ path = $t; mtimeMs = $mt }
+    }
+  } catch {}
+}
+if ($out.Count -lt 1) { Write-Output '[]' } else { $out | ConvertTo-Json -Compress -Depth 4 }
+`;
+  try {
+    await fs.writeFile(jsonIn, JSON.stringify({ items: valid }), 'utf8');
+    fssync.writeFileSync(tmpPs1, ps1Body, 'utf8');
+    const r = spawnSync(psExe, ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', tmpPs1, jsonIn], {
+      windowsHide: true,
+      encoding: 'utf8',
+    });
+    if (r.status !== 0) {
+      const msg = [r.stderr, r.stdout].filter(Boolean).join(' ').trim();
+      return { ok: false, error: msg || 'Recent files script failed', files: [] };
+    }
+    let arr;
+    try {
+      arr = JSON.parse(String(r.stdout || '').trim());
+    } catch {
+      return { ok: false, error: 'Invalid JSON from recent files script', files: [] };
+    }
+    if (!Array.isArray(arr)) {
+      if (arr && typeof arr === 'object' && arr.path != null) arr = [arr];
+      else arr = [];
+    }
+    const files = [];
+    const seen = new Set();
+    for (const row of arr) {
+      if (!row || typeof row !== 'object') continue;
+      const p = path.normalize(String(row.path || '').trim());
+      if (!p) continue;
+      const low = p.toLowerCase();
+      if (seen.has(low)) continue;
+      seen.add(low);
+      const mtimeMs = typeof row.mtimeMs === 'number' ? row.mtimeMs : 0;
+      files.push({ path: p, mtimeMs });
+    }
+    return { ok: true, files };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e), files: [] };
+  } finally {
+    try {
+      fssync.unlinkSync(jsonIn);
+    } catch (_) {}
+    try {
+      fssync.unlinkSync(tmpPs1);
+    } catch (_) {}
+  }
+});
 
 /**
  * Shell item menu: standard Electron pattern (Menu + shell + clipboard in main).
@@ -2587,6 +3781,7 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
   const pathFwdSlashes = fpPlain.replace(/\\/g, '/');
   const shortcutExt = path.extname(fp).toLowerCase();
   const isGoogleShortcutFile = !isDir && ['.gdoc', '.gsheet', '.gslides'].includes(shortcutExt);
+  const canOpenInGoogleWorkspace = !isDir && isGoogleWorkspaceOfficeFilePath(fp);
   let fileUrl = '';
   try {
     fileUrl = pathToFileURL(fpPlain).href;
@@ -2604,7 +3799,7 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
 
     /** One tall menu: disabled rows = section titles (Electron has no native section headers). */
     /** @type {Electron.MenuItemConstructorOptions[]} */
-    const template = [{ label: 'Clipboard', enabled: false }];
+    const template = [{ label: '--- CLIPBOARD ---', enabled: false }];
     if (process.platform === 'win32') {
       template.push(
         {
@@ -2676,6 +3871,7 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
     }
     template.push(
       { label: 'Copy full path', click: () => { clipboard.writeText(fp); done({ ok: true, action: 'copyPath' }); } },
+      { label: 'Copy full path (quoted)', click: () => { clipboard.writeText('"' + fp + '"'); done({ ok: true, action: 'copyPathQuoted' }); } },
       { label: 'Copy parent folder path', click: () => { clipboard.writeText(par); done({ ok: true, action: 'copyParent' }); } },
       { label: 'Copy name only', click: () => { clipboard.writeText(baseName); done({ ok: true, action: 'copyName' }); } },
       { label: 'Copy path with forward slashes', click: () => { clipboard.writeText(pathFwdSlashes); done({ ok: true, action: 'copyFwd' }); } },
@@ -2691,7 +3887,7 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
     }
     template.push(
       { type: 'separator' },
-      { label: 'Open and explore', enabled: false },
+      { label: '--- OPEN AND EXPLORE ---', enabled: false },
       {
         label: isGoogleShortcutFile ? 'Open in app window' : 'Open',
         click: () => {
@@ -2702,6 +3898,115 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
           void openPathOrGoogleWorkspaceShortcut(event.sender, fp).then((err) => {
             if (err) event.sender.send('shell-action-error', err);
             done({ ok: true, action: 'open' });
+          });
+        },
+      },
+      {
+        label: 'Open in Google Workspace',
+        enabled: canOpenInGoogleWorkspace,
+        click: () => {
+          void (async () => {
+            const dFile = {};
+            let id = tryReadGoogleDriveVirtualFileIdWindowsSync(fp, dFile);
+            let u = googleWorkspaceEditorUrlFromDriveId(fp, id);
+            // Local :user.drive.id is often missing outside .shortcut-targets-by-id; resolve file id via Drive API (OAuth account).
+            if (!u) {
+              try {
+                const drive = await getGoogleDriveMetadataClientSingleAccount();
+                const byName = await tryResolveDriveFileIdViaDriveNameSearch(drive, fp);
+                if (byName && byName.ok && byName.fileId) {
+                  u = googleWorkspaceEditorUrlFromDriveId(fp, byName.fileId);
+                } else if (byName && byName.ok === false && byName.reason === 'drive-name-ambiguous') {
+                  event.sender.send(
+                    'shell-action-error',
+                    'Open in Google Workspace: several Drive files share this name; rename one or open from drive.google.com.'
+                  );
+                  done({ ok: false, action: 'openGoogleWorkspace', error: 'drive-name-ambiguous' });
+                  return;
+                }
+              } catch (e) {
+                const msg = String((e && e.message) || e || '');
+                if (!/Missing google-oauth-client\.json/i.test(msg)) {
+                  event.sender.send('shell-action-error', msg);
+                  done({ ok: false, action: 'openGoogleWorkspace', error: msg });
+                  return;
+                }
+              }
+            }
+            if (!u) {
+              const dPar = {};
+              tryReadGoogleDriveVirtualFileIdWindowsSync(path.dirname(fp), dPar);
+              const fileDiag = compactDriveVirtualStreamDiag(dFile.driveVirtualIdStream);
+              const parentDiag = compactDriveVirtualStreamDiag(dPar.driveVirtualIdStream);
+              sendSearchDebugLine(event.sender, 'gws.office.noDriveId', {
+                path: fp,
+                file: fileDiag,
+                parent: parentDiag,
+              });
+              let hint = gwsOfficeNoDriveIdUserMessage(fileDiag, parentDiag);
+              if (!readGoogleOAuthClientConfigSync()) {
+                hint += ' Add google-oauth-client.json and sign in once to open by file name when local Drive id is missing.';
+              }
+              event.sender.send('shell-action-error', hint);
+              done({ ok: false, action: 'openGoogleWorkspace', error: 'Could not resolve Drive file ID.' });
+              return;
+            }
+            const parent = BrowserWindow.fromWebContents(event.sender);
+            const r = openGoogleWorkspaceEditorWindow(parent, u);
+            if (!r.ok) {
+              event.sender.send('shell-action-error', r.error || 'Could not open Google Workspace window.');
+              done({ ok: false, action: 'openGoogleWorkspace', error: r.error || 'Open failed' });
+              return;
+            }
+            done({ ok: true, action: 'openGoogleWorkspace' });
+          })().catch((e) => {
+            event.sender.send('shell-action-error', String((e && e.message) || e || 'Open in Google Workspace failed.'));
+            done({ ok: false, action: 'openGoogleWorkspace', error: String(e && e.message) });
+          });
+        },
+      },
+      {
+        label: 'Create new Google Doc here',
+        enabled: true,
+        click: () => {
+          void (async () => {
+            // For files, resolve parent folder via file id (Drive API). For folders, resolve folder id directly.
+            const rr = await resolveGoogleDriveFolderIdForCreateHere(fp, isDir);
+            if (!rr || !rr.ok || !rr.folderId) {
+              const reason = rr && rr.reason ? ` (${rr.reason})` : '';
+              event.sender.send('shell-action-error', `Could not resolve Google Drive folder ID from this path${reason}.`);
+              done({ ok: false, action: 'createGoogleDocHere', error: 'Could not resolve Drive folder ID.' });
+              return;
+            }
+            let u;
+            try {
+              const created = await createGoogleDocumentInFolderViaDriveApi(rr.folderId);
+              u = created.url;
+            } catch (apiErr) {
+              const code = apiErr && (apiErr.code || (apiErr.response && apiErr.response.status));
+              const hint =
+                Number(code) === 403 || Number(code) === 401
+                  ? ' Re-consent: delete tagfox-google-oauth-token.json in app userData, add drive.file scope in Cloud Console OAuth consent, sign in again.'
+                  : '';
+              event.sender.send(
+                'shell-action-error',
+                String((apiErr && apiErr.message) || apiErr || 'Drive API create failed.') + hint
+              );
+              done({ ok: false, action: 'createGoogleDocHere', error: String(apiErr.message || apiErr) });
+              return;
+            }
+            const parent = BrowserWindow.fromWebContents(event.sender);
+            const winR = openGoogleWorkspaceEditorWindow(parent, u);
+            if (!winR.ok) {
+              event.sender.send('shell-action-error', winR.error || 'Could not open Google Workspace window.');
+              done({ ok: false, action: 'createGoogleDocHere', error: winR.error || 'Open failed' });
+              return;
+            }
+            done({ ok: true, action: 'createGoogleDocHere' });
+          })().catch((e) => {
+            const msg = String((e && e.message) || e || 'Create Google Doc failed.');
+            event.sender.send('shell-action-error', msg);
+            done({ ok: false, action: 'createGoogleDocHere', error: msg });
           });
         },
       },
@@ -2725,20 +4030,39 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
         {
           label: 'Properties',
           click: () => {
-            const err = openShellPropertiesWin(fp);
-            if (err) {
-              event.sender.send('shell-action-error', err);
-              done({ ok: false, action: 'properties', error: err });
+            const diag = openShellPropertiesWin(fp);
+            sendSearchDebugLine(event.sender, 'shell.properties', {
+              source: 'contextMenu',
+              ...diag,
+            });
+            if (!diag.ok) {
+              event.sender.send('shell-action-error', diag.error);
+              done({ ok: false, action: 'properties', error: diag.error });
               return;
             }
             done({ ok: true, action: 'properties' });
           },
         }
       );
+      if (!isDir && path.extname(fp).toLowerCase() === '.zip') {
+        template.push({
+          label: 'Extract ZIP here',
+          click: () => {
+            const xr = extractZipToSiblingFolderWin(fp);
+            if (!xr.ok) {
+              event.sender.send('shell-action-error', xr.error);
+              done({ ok: false, action: 'extractZipHere', error: xr.error });
+              return;
+            }
+            event.sender.send('paths-mutated');
+            done({ ok: true, action: 'extractZipHere', destDir: xr.destDir });
+          },
+        });
+      }
     }
     template.push(
       { type: 'separator' },
-      { label: 'Search', enabled: false },
+      { label: '--- SEARCH ---', enabled: false },
       {
         label: 'Google Drive for filename…',
         click: () => {
@@ -2754,24 +4078,34 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
         },
       },
       { type: 'separator' },
-      { label: 'Edit', enabled: false },
+      { label: '--- EDIT ---', enabled: false },
+      { label: 'Edit tags…', click: () => done({ ok: true, action: 'editTags' }) },
+      { label: 'Set as current folder', enabled: isDir, click: () => done({ ok: true, action: 'setCurrentFolder' }) },
       { label: 'Rename…', click: () => done({ ok: true, action: 'rename' }) },
+      { label: 'Bulk rename', click: () => done({ ok: true, action: 'bulkRename' }) },
     );
     if (process.platform === 'win32') {
       template.push(
         { type: 'separator' },
-        { label: 'Windows', enabled: false },
+        { label: '--- TOOLS ---', enabled: false },
         {
-          label: 'Open in Windows Terminal',
+          label: 'Open in Terminal',
           click: () => {
             done({ ok: true, action: 'wt' });
-            const c = spawn('wt.exe', ['-d', terminalCwd], {
-              detached: true,
-              stdio: 'ignore',
-              windowsHide: true,
+            sendSearchDebugLine(event.sender, 'shell.terminal', {
+              source: 'contextMenu',
+              phase: 'launch',
+              method: 'cmd-start-wt',
+              targetPath: terminalCwd,
             });
-            c.on('error', () => event.sender.send('shell-action-error', 'Windows Terminal (wt.exe) not available.'));
-            c.unref();
+            void openTerminalAtPath(terminalCwd).then((diag) => {
+              sendSearchDebugLine(event.sender, 'shell.terminal', {
+                source: 'contextMenu',
+                phase: 'result',
+                ...diag,
+              });
+              if (!diag.ok) event.sender.send('shell-action-error', String(diag.error || 'Open in Terminal failed.'));
+            });
           },
         },
       );
@@ -2793,7 +4127,7 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
     }
     template.push(
       { type: 'separator' },
-      { label: 'Folder', enabled: false },
+      { label: '--- FOLDER ---', enabled: false },
       {
         label: 'New folder in current folder…',
         enabled: scopeAvail,
@@ -2802,15 +4136,25 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
         },
       },
       { type: 'separator' },
-      { label: 'Delete', enabled: false },
+      { label: '--- DELETE ---', enabled: false },
       {
         label: 'Move to Recycle Bin',
         click: () => {
           done({ ok: true, action: 'trash' });
-          void shell.trashItem(fp).then(
-            () => event.sender.send('paths-mutated'),
-            (e) => event.sender.send('shell-action-error', String(e.message || e))
-          );
+          void recycleOnePathNormalized(fp).then((r) => {
+            const norm = normalizePathForRecycleBin(fp);
+            sendSearchDebugLine(event.sender, 'recycle.batch', {
+              source: 'contextMenu',
+              requested: 1,
+              collapsedCount: 1,
+              paths: norm ? [norm] : [],
+              truncated: false,
+              ok: r.ok,
+              err: r.ok ? '' : String(r.error || ''),
+            });
+            if (r.ok) event.sender.send('paths-mutated');
+            else event.sender.send('shell-action-error', String(r.error || 'Recycle failed'));
+          });
         },
       },
     );
@@ -2823,6 +4167,16 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
       callback: () => done({ ok: true, dismissed: true }),
     });
   });
+});
+
+/** Plain UTF-16 text (renderer debug log, etc.) — avoids navigator.clipboard failures in Electron. */
+ipcMain.handle('clipboard-write-text', (_event, text) => {
+  try {
+    clipboard.writeText(String(text ?? ''));
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message ? e.message : e) };
+  }
 });
 
 ipcMain.handle('copy-explorer-paste', async (_event, paths) => {
@@ -2845,27 +4199,224 @@ ipcMain.handle('paste-clipboard-into-folder', async (event, { destFolder, rootPr
   } catch (e) {
     return { ok: false, error: String(e.message || e) };
   }
-  if (!sources.length) return { ok: false, error: 'No files or folders in clipboard.' };
-  const r = await copySourcesIntoScopeFolder(sources, destFolder, rootPrefix, !!replaceExisting);
-  if (r.ok) event.sender.send('paths-mutated');
-  return r;
+  if (sources.length) {
+    const r = await copySourcesIntoScopeFolder(sources, destFolder, rootPrefix, !!replaceExisting);
+    if (r.ok) event.sender.send('paths-mutated', { paths: sources, destFolder });
+    return r;
+  }
+  const clipImg = clipboard.readImage();
+  if (!clipImg.isEmpty()) {
+    const r = await saveClipboardImagePngToScopeFolder(destFolder, rootPrefix, clipImg, !!replaceExisting);
+    if (r.ok) event.sender.send('paths-mutated', { paths: [destFolder] });
+    return r;
+  }
+  return { ok: false, error: 'No files, folders, or image in clipboard.' };
 });
 
-ipcMain.handle('trash-paths', async (event, paths) => {
-  const list = Array.isArray(paths) ? paths : [];
-  const errs = [];
-  for (const raw of list) {
-    const fp = path.normalize(String(raw || '').trim());
-    if (!fp) continue;
-    try {
-      await shell.trashItem(fp);
-    } catch (e) {
-      errs.push(fp + ': ' + String(e.message || e));
+/* ========== Recycle Bin: IPC trash-paths, nested-path collapse, Drive PS (VB FileIO) ========== */
+
+/** JSON `{ "path": "C:\\\\full" }` — VB FileIO SendToRecycleBin via C# Add-Type (PS cannot bind DeleteDirectory overloads reliably). */
+const PS1_RECYCLE_TO_BIN = `param([Parameter(Mandatory)][string]$JsonPath)
+try {
+  $raw = Get-Content -LiteralPath $JsonPath -Raw -Encoding UTF8
+  $j = $raw | ConvertFrom-Json
+  $p = [string]$j.path
+  if (-not $p) { throw 'Missing path' }
+  if (-not (Test-Path -LiteralPath $p)) { throw 'Path not found' }
+  Add-Type -Language CSharp -ReferencedAssemblies Microsoft.VisualBasic -ErrorAction Stop -TypeDefinition @'
+using Microsoft.VisualBasic.FileIO;
+public static class TagFoxSendToRecycle {
+  public static void ToBin(string path, bool isDirectory) {
+    if (isDirectory) {
+      /* .NET Framework exposes (path, UIOption, RecycleOption, UICancelOption) — not DeleteDirectoryOption overload for this host. */
+      FileSystem.DeleteDirectory(path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin, UICancelOption.DoNothing);
+    } else {
+      FileSystem.DeleteFile(path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
     }
   }
-  if (errs.length) return { ok: false, error: errs.join('; ') };
-  event.sender.send('paths-mutated');
-  return { ok: true };
+}
+'@
+  $item = Get-Item -LiteralPath $p -Force
+  [TagFoxSendToRecycle]::ToBin($p, $item.PSIsContainer)
+  exit 0
+} catch {
+  [Console]::Error.WriteLine($_.Exception.Message)
+  exit 1
+}`;
+
+/** JSON `{ "path": "C:\\\\full" }` — clear RO then Remove-Item (Node fs.rm often EPERM on Windows shelf trees). */
+const PS1_REMOVE_ITEM_RECURSE = `param([Parameter(Mandatory)][string]$JsonPath)
+try {
+  $raw = Get-Content -LiteralPath $JsonPath -Raw -Encoding UTF8
+  $j = $raw | ConvertFrom-Json
+  $p = [string]$j.path
+  if (-not $p) { throw 'Missing path' }
+  if (-not (Test-Path -LiteralPath $p)) { exit 0 }
+  $item = Get-Item -LiteralPath $p -Force
+  if ($item.Attributes -band [System.IO.FileAttributes]::ReadOnly) {
+    $item.Attributes = $item.Attributes -band (-bnot [System.IO.FileAttributes]::ReadOnly)
+  }
+  if ($item.PSIsContainer) {
+    Get-ChildItem -LiteralPath $p -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
+      if ($_.Attributes -band [System.IO.FileAttributes]::ReadOnly) {
+        $_.Attributes = $_.Attributes -band (-bnot [System.IO.FileAttributes]::ReadOnly)
+      }
+    }
+  }
+  Remove-Item -LiteralPath $p -Recurse -Force -ErrorAction Stop
+  exit 0
+} catch {
+  [Console]::Error.WriteLine($_.Exception.Message)
+  exit 1
+}`;
+
+/** Only for paths already vetted (Shelf delete). Returns null on success. */
+function removeItemRecurseViaPowershell(absPathRaw) {
+  if (process.platform !== 'win32') return 'Not Windows.';
+  const fp = path.resolve(String(absPathRaw || '').trim());
+  if (!fp) return 'Missing path.';
+  const tmpJson = path.join(os.tmpdir(), `tagbrowser-rmrecurse-${process.pid}-${Date.now()}.json`);
+  try {
+    fssync.writeFileSync(tmpJson, JSON.stringify({ path: fp }), 'utf8');
+    return runPowershellScriptFileWithArg(PS1_REMOVE_ITEM_RECURSE, tmpJson, 'Remove-Item');
+  } catch (e) {
+    return String(e.message || e);
+  } finally {
+    try {
+      fssync.unlinkSync(tmpJson);
+    } catch (_) {}
+  }
+}
+
+function trashPathViaPowershellRecycle(absPathRaw) {
+  if (process.platform !== 'win32') return 'Not Windows.';
+  const fp = normalizePathForRecycleBin(String(absPathRaw || ''));
+  if (!fp) return 'Missing path.';
+  const tmpJson = path.join(os.tmpdir(), `tagbrowser-recycle-${process.pid}-${Date.now()}.json`);
+  try {
+    fssync.writeFileSync(tmpJson, JSON.stringify({ path: fp }), 'utf8');
+    return runPowershellScriptFileWithArg(PS1_RECYCLE_TO_BIN, tmpJson, 'Recycle');
+  } catch (e) {
+    return String(e.message || e);
+  } finally {
+    try {
+      fssync.unlinkSync(tmpJson);
+    } catch (_) {}
+  }
+}
+
+/**
+ * True if `childPath` is strictly inside folder `maybeAncestor`.
+ * Uses path.relative (same idea as wouldNestDestInsideSrc) — avoids startsWith edge cases with spaces/parens segments.
+ */
+function winPathIsStrictDescendantOf(maybeAncestor, childPath) {
+  const a = String(normalizePathForRecycleBin(maybeAncestor) || '').replace(/[/\\]+$/, '');
+  const c = String(normalizePathForRecycleBin(childPath) || '').replace(/[/\\]+$/, '');
+  if (!a || !c || a.toLowerCase() === c.toLowerCase()) return false;
+  try {
+    const rel = path.relative(a, c);
+    if (!rel) return false;
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return false;
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/** One Recycle on a folder covers its subtree — drop selected children when a parent is also selected. */
+function collapseNestedTrashPaths(rawList) {
+  const list = [];
+  const seen = new Set();
+  for (const raw of rawList || []) {
+    const n = normalizePathForRecycleBin(raw);
+    if (!n) continue;
+    const kl = trashPathComparable(n).toLowerCase();
+    if (seen.has(kl)) continue;
+    seen.add(kl);
+    list.push(n);
+  }
+  if (list.length <= 1) return list.filter(Boolean);
+  const out = list.filter((p) => {
+    const pk = trashPathComparable(p);
+    for (const q of list) {
+      if (trashPathComparable(q) === pk) continue;
+      if (winPathIsStrictDescendantOf(q, p)) return false;
+    }
+    return true;
+  });
+  return out;
+}
+
+/** Search-debug log in renderer (no-op there when debug off). */
+function sendSearchDebugLine(sender, eventName, data) {
+  try {
+    if (!sender || (typeof sender.isDestroyed === 'function' && sender.isDestroyed())) return;
+    sender.send('search-debug-line', { event: String(eventName || ''), data: data || {} });
+  } catch (_) {}
+}
+
+/** Electron shell.trashItem often fails on Google Drive / OneDrive (“Failed to parse path”); same cloud heuristic as rename. */
+async function recycleOnePathNormalized(fpNorm) {
+  const fp = normalizePathForRecycleBin(fpNorm);
+  if (!fp) return { ok: false, error: 'Missing path.' };
+  if (process.platform === 'win32' && preferShellRenameFirstForPath(fp)) {
+    const psErr = trashPathViaPowershellRecycle(fp);
+    return psErr ? { ok: false, error: psErr } : { ok: true };
+  }
+  try {
+    await shell.trashItem(fp);
+    return { ok: true };
+  } catch (e) {
+    const msg = String(e.message || e);
+    /* Mapped/network volumes: IFileOperation recycle often fails (“Failed to perform delete operation”); VB FileIO matches Explorer. */
+    if (process.platform === 'win32') {
+      const psErr = trashPathViaPowershellRecycle(fp);
+      if (!psErr) return { ok: true };
+      return { ok: false, error: msg + ' | ' + psErr };
+    }
+    return { ok: false, error: msg };
+  }
+}
+
+ipcMain.handle('trash-paths', async (event, payload) => {
+  let raw;
+  let debugSource = 'trashPaths';
+  if (Array.isArray(payload)) raw = payload;
+  else if (payload && typeof payload === 'object' && Array.isArray(payload.paths)) {
+    raw = payload.paths;
+    if (payload.debugSource) debugSource = String(payload.debugSource);
+  } else raw = [];
+  const requested = raw.length;
+  const list = collapseNestedTrashPaths(raw);
+  // Deepest first: if a parent+child both slip through, recycling the child avoids a bogus path on the next call.
+  list.sort((a, b) => trashPathComparable(b).length - trashPathComparable(a).length);
+  const errs = [];
+  for (const fp of list) {
+    if (!fp) continue;
+    const r = await recycleOnePathNormalized(fp);
+    if (!r.ok) errs.push(fp + ': ' + String(r.error || 'Recycle failed'));
+  }
+  const ok = errs.length === 0;
+  const cap = 8;
+  const requestedSample = raw
+    .slice(0, cap)
+    .map((x) => normalizePathForRecycleBin(String(x || '')))
+    .filter(Boolean);
+  const recycleLog = {
+    source: debugSource,
+    requested,
+    requestedSample,
+    requestedTruncated: raw.length > cap,
+    collapsedCount: list.length,
+    paths: list.slice(0, cap),
+    truncated: list.length > cap,
+    ok,
+    err: ok ? '' : errs.join('; '),
+  };
+  /* Context menu uses sendSearchDebugLine only; bulk/delete use recycleLog on invoke return (send can miss the log). */
+  if (errs.length) return { ok: false, error: errs.join('; '), recycleLog };
+  event.sender.send('paths-mutated', { paths: list });
+  return { ok: true, recycleLog };
 });
 
 /** True if folder segment sorts “tilde-prefixed” for flyouts: ASCII ~, fullwidth ～ (common on Drive/sync). */
@@ -2910,6 +4461,77 @@ ipcMain.handle('list-child-folders', async (_event, { parentPath }) => {
   }
   folders.sort((a, b) => compareChildFolderDisplayName(a.name, b.name));
   return { ok: true, folders };
+});
+
+/** Direct local listing for cloud browse fallback (immediate children only). */
+ipcMain.handle('list-folder-entries', async (_event, { parentPath }) => {
+  let p = path.normalize(String(parentPath || '').trim());
+  if (!p) return { ok: false, error: 'No folder', entries: [] };
+  if (/^[a-zA-Z]:$/i.test(p)) p += '\\';
+  let entries;
+  try {
+    entries = await fs.readdir(p, { withFileTypes: true });
+  } catch (e) {
+    return { ok: false, error: String(e.message || e), entries: [] };
+  }
+  const out = [];
+  for (const d of entries) {
+    const name = String((d && d.name) || '');
+    if (!name || name === '.' || name === '..') continue;
+    if (d.isDirectory()) out.push({ name, type: 'folder', path: p });
+    else if (d.isFile()) out.push({ name, type: 'file', path: p });
+  }
+  return { ok: true, entries: out };
+});
+
+/** Debug-only folder snapshot: local filesystem view for one scope path. */
+ipcMain.handle('debug-folder-snapshot', async (_event, { folderPath }) => {
+  let p = path.normalize(String(folderPath || '').trim());
+  if (!p) return { ok: false, error: 'No folder' };
+  if (/^[a-zA-Z]:$/i.test(p)) p += '\\';
+  const out = {
+    ok: true,
+    fullPath: p,
+    exists: false,
+    isDirectory: false,
+    isShortcutTargetsPath: /\\\.(shortcut-targets-by-id|shortcuts-by-id)(\\|$)/i.test(p),
+    isSharedDrivesPath: /^[a-zA-Z]:\\Shared drives(?:\\|$)/i.test(p),
+    childCount: 0,
+    folderCount: 0,
+    fileCount: 0,
+    otherCount: 0,
+    foldersSample: [],
+    filesSample: [],
+    otherSample: [],
+  };
+  try {
+    const st = await fs.stat(p);
+    out.exists = true;
+    out.isDirectory = !!st.isDirectory();
+  } catch (e) {
+    return { ...out, ok: false, error: String(e.message || e) };
+  }
+  let entries;
+  try {
+    entries = await fs.readdir(p, { withFileTypes: true });
+  } catch (e) {
+    return { ...out, ok: false, error: String(e.message || e) };
+  }
+  out.childCount = entries.length;
+  for (const d of entries) {
+    const name = String((d && d.name) || '');
+    if (d.isDirectory()) {
+      out.folderCount++;
+      if (out.foldersSample.length < 12) out.foldersSample.push(name);
+    } else if (d.isFile()) {
+      out.fileCount++;
+      if (out.filesSample.length < 12) out.filesSample.push(name);
+    } else {
+      out.otherCount++;
+      if (out.otherSample.length < 12) out.otherSample.push(name);
+    }
+  }
+  return out;
 });
 
 /**
@@ -3019,7 +4641,14 @@ ipcMain.handle('create-empty-folder', async (event, { parentFolder, nameSegment,
 /** Native Explorer drag: startDrag is synchronous on Windows (blocks until drop) — renderer uses sendSync; keep for Alt+drag only so normal HTML5 DnD still runs. */
 /** Renderer lost keyboard to OS/chrome after some button clicks — pull focus back into the page. */
 ipcMain.on('tagbrowser-focus-web-contents', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win && !win.isDestroyed()) win.focus();
   event.sender.focus();
+});
+
+/** Preload had no F5 refresh callback (should not happen after init). */
+ipcMain.on('tagfox-plain-f5-missed', (event) => {
+  sendSearchDebugLine(event.sender, 'searchRefresh.f5.missed', { reason: 'preloadHandlerMissing' });
 });
 
 /** 1×1 PNG — Windows startDrag with empty icon often fails; use on all platforms. */
@@ -3038,11 +4667,14 @@ ipcMain.on('start-drag-files', (event, paths) => {
       console.warn('start-drag-files: no absolute paths', raw);
       return;
     }
+    /* Same collapse as recycle: folder + inner file checked → HDROP with both breaks Explorer/Drive. */
+    const collapsed = collapseNestedTrashPaths(list);
+    const dragList = collapsed.length ? collapsed : list;
     /* Single-file API is more reliable on some Windows targets; `files` for multi. */
     const payload =
-      list.length === 1
-        ? { file: list[0], icon: START_DRAG_ICON }
-        : { files: list, icon: START_DRAG_ICON };
+      dragList.length === 1
+        ? { file: dragList[0], icon: START_DRAG_ICON }
+        : { files: dragList, icon: START_DRAG_ICON };
     event.sender.startDrag(payload);
   } catch (e) {
     console.error('startDrag', e);
@@ -3077,6 +4709,19 @@ function isRenameRetryableError(e) {
   if (e.code === 'EBUSY') return true;
   if (process.platform === 'win32' && (e.code === 'EPERM' || e.code === 'EACCES')) return true;
   return /EBUSY|resource busy|locked|EPERM/i.test(String(e.message || e));
+}
+
+/** Recursive delete for Shelf entries — fs.rm then Windows PS on any failure (Node often omits err.code on EPERM). */
+async function rmShelfTreeOrThrow(absPath) {
+  const target = path.resolve(String(absPath || '').trim());
+  if (!target) throw new Error('Missing path');
+  try {
+    await fs.rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 120 });
+  } catch (e) {
+    if (process.platform !== 'win32') throw e;
+    const psErr = removeItemRecurseViaPowershell(target);
+    if (psErr) throw new Error(psErr);
+  }
 }
 
 async function delay(ms) {
@@ -3179,32 +4824,34 @@ async function renameWithBusyRetry(fromRaw, toRaw) {
 }
 
 // Rename file or folder on disk; both paths must be under rootPrefix when that is set.
-ipcMain.handle('rename-path', async (_event, { fromPath, toPath, rootPrefix }) => {
+ipcMain.handle('rename-path', async (event, { fromPath, toPath, rootPrefix }) => {
   const from = normalizeRenameOperand(String(fromPath || ''));
   const to = normalizeRenameOperand(String(toPath || ''));
   if (!from || !to) return { ok: false, error: 'Missing path' };
   if (!isPathUnderRoot(from, rootPrefix) || !isPathUnderRoot(to, rootPrefix)) {
     return { ok: false, error: 'Path must stay under the configured root folder.' };
   }
-  return renameWithBusyRetry(from, to);
+  const r = await renameWithBusyRetry(from, to);
+  if (r.ok) event.sender.send('paths-mutated', { paths: [from, to] });
+  return r;
 });
 
 ipcMain.handle('move-paths-into-folder', async (event, { sourcePaths, destFolder, rootPrefix, replaceExisting }) => {
   const r = await moveSourcesIntoFolder(sourcePaths, destFolder, rootPrefix, !!replaceExisting);
-  if (r.ok) event.sender.send('paths-mutated');
+  if (r.ok) event.sender.send('paths-mutated', { paths: sourcePaths, destFolder });
   return r;
 });
 
 ipcMain.handle('copy-paths-into-folder', async (event, { sourcePaths, destFolder, rootPrefix, replaceExisting }) => {
   const r = await copySourcesIntoScopeFolder(sourcePaths, destFolder, rootPrefix, !!replaceExisting);
-  if (r.ok) event.sender.send('paths-mutated');
+  if (r.ok) event.sender.send('paths-mutated', { paths: sourcePaths, destFolder });
   return r;
 });
 
 /** Move files into staging shelf (userData); bypasses scope root — used for “shortcut on shelf”. */
 async function movePathsToShelf(sourcePaths) {
   const shelf = getShelfDirResolved();
-  const list = normalizeSourcePathsList(sourcePaths);
+  const list = collapseNestedSourcePathsForBulkOp(sourcePaths);
   if (!list.length) return { ok: false, error: 'Nothing to move.' };
   let st;
   try {
@@ -3267,37 +4914,6 @@ function compareShelfEntryNames(a, b) {
   return na.ext.localeCompare(nb.ext, undefined, { sensitivity: 'base', numeric: true });
 }
 
-ipcMain.handle('shelf-state', async () => {
-  const dir = getShelfDirResolved();
-  try {
-    const ents = await fs.readdir(dir, { withFileTypes: true });
-    const entries = ents
-      .map((e) => ({
-        name: e.name,
-        fullPath: path.join(dir, e.name),
-        isDirectory: e.isDirectory(),
-      }))
-      .sort((a, b) => compareShelfEntryNames(a.name, b.name));
-    return { ok: true, path: dir, entries };
-  } catch (e) {
-    return { ok: false, error: String(e.message || e), path: dir, entries: [] };
-  }
-});
-
-ipcMain.handle('clear-shelf', async (event) => {
-  const dir = getShelfDirResolved();
-  try {
-    const names = await fs.readdir(dir);
-    for (const n of names) {
-      await fs.rm(path.join(dir, n), { recursive: true, force: true });
-    }
-    event.sender.send('paths-mutated');
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: String(e.message || e) };
-  }
-});
-
 // Read/write readme and markdown: no root check — results can sit outside “Limit to folder” (e.g. parent: scope); renames stay guarded.
 ipcMain.handle('read-text-file', async (_event, { fullPath }) => {
   const fp = path.normalize(String(fullPath || ''));
@@ -3339,6 +4955,36 @@ ipcMain.handle('read-file-buffer', async (_event, { fullPath }) => {
   }
 });
 
+/** Outlook .msg — parse in main (npm msg reader); renderer shows plain text in the text preview panel. */
+ipcMain.handle('read-msg-preview', async (_event, { fullPath }) => {
+  const fp = path.normalize(String(fullPath || ''));
+  if (!fp) return { ok: false, error: 'Missing path' };
+  const maxBytes = 50 * 1024 * 1024;
+  async function readBuf() {
+    const buf = await fs.readFile(fp);
+    const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length);
+    const reader = new MsgReader(ab);
+    const data = reader.getFileData();
+    return msgFileDataToPreviewText(data);
+  }
+  try {
+    const st = await fs.stat(fp);
+    if (st.isDirectory()) return { ok: false, error: 'Not a file' };
+    if (st.size > maxBytes) return { ok: false, error: 'File too large for preview (max 50 MB).' };
+    return await readBuf();
+  } catch (e) {
+    const code = e && e.code;
+    if (code === 'EPERM' || code === 'EACCES') {
+      try {
+        return await readBuf();
+      } catch (e2) {
+        return { ok: false, error: String(e2.message || e2) };
+      }
+    }
+    return { ok: false, error: String(e.message || e) };
+  }
+});
+
 ipcMain.handle('write-text-file', async (_event, { fullPath, text }) => {
   const fp = path.normalize(String(fullPath || ''));
   if (!fp) return { ok: false, error: 'Missing path' };
@@ -3350,23 +4996,39 @@ ipcMain.handle('write-text-file', async (_event, { fullPath, text }) => {
   }
 });
 
-/** Folder Viewer: fixed “description” basenames, in order (case-insensitive on disk). */
-const FOLDER_VIEWER_DOC_NAMES = [
-  'readme.md',
-  'readme.txt',
-  'claude.md',
-  'agents.md',
-  'about.md',
-  'about.txt',
-  'context.md',
-  'context.txt',
-  'index.md',
-  'index.txt',
-];
+/** Clipboard image → PNG on disk (creates parent dirs). Renderer sends raw image bytes as base64. */
+ipcMain.handle('write-image-file-png', async (_event, { fullPath, base64 }) => {
+  const fp = path.normalize(String(fullPath || ''));
+  if (!fp) return { ok: false, error: 'Missing path' };
+  const maxB64 = 40 * 1024 * 1024;
+  const b64 = String(base64 || '');
+  if (b64.length > maxB64) return { ok: false, error: 'Image too large to paste.' };
+  try {
+    const buf = Buffer.from(b64, 'base64');
+    if (!buf.length) return { ok: false, error: 'Empty image data.' };
+    const image = nativeImage.createFromBuffer(buf);
+    if (image.isEmpty()) return { ok: false, error: 'Could not read image from clipboard.' };
+    const png = image.toPNG();
+    await fs.mkdir(path.dirname(fp), { recursive: true });
+    await fs.writeFile(fp, png);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) };
+  }
+});
 
-ipcMain.handle('resolve-folder-viewer-doc', async (_event, { folderPath }) => {
+function pathKeyForGlobalViewerWalk(p) {
+  return path.normalize(String(p || '')).replace(/[/\\]+$/, '').replace(/\//g, '\\').toLowerCase();
+}
+
+ipcMain.handle('resolve-folder-viewer-doc', async (_event, { folderPath, basenames }) => {
   const dir = path.normalize(String(folderPath || '').trim().replace(/[/\\]+$/, ''));
   if (!dir) return { ok: false, error: 'Missing folder', fullPath: null };
+  const rawNames = Array.isArray(basenames) ? basenames : [];
+  const nameList =
+    rawNames.length > 0
+      ? [...new Set(rawNames.map((x) => String(x || '').trim().toLowerCase()).filter(Boolean))]
+      : VIEWER_DOC_BASENAMES_DEFAULT.slice();
   let entries;
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
@@ -3384,7 +5046,7 @@ ipcMain.handle('resolve-folder-viewer-doc', async (_event, { folderPath }) => {
     return hit ? path.join(dir, hit) : null;
   };
   let fullPath = null;
-  for (const name of FOLDER_VIEWER_DOC_NAMES) {
+  for (const name of nameList) {
     fullPath = pickCi(name);
     if (fullPath) break;
   }

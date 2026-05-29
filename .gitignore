@@ -1,2 +1,14 @@
 node_modules/
 dist/
+google-oauth-client.json
+dist-build/
+vendor/
+
+# logs, scratch and editor cruft
+*.log
+.cursor/
+_write_test.txt
+recording.txt
+
+# timestamped screenshots
+20??-??-??-*.png

@@ -29,12 +29,8 @@ html, body { height: 100%; margin: 0; }
   --tagfox-folder-row-bg-current: rgba(217, 119, 6, 0.18);
   /* Visible on bg-body-secondary strips (grey): light “ridge” under each toolbar row. */
   --tagfox-toolbar-row-rule: rgba(255, 255, 255, 0.82);
-  /* Advanced launcher: same green family as size heat .tagfox-size-heat-kb100 (#4d7c0f). */
-  --tagfox-advanced-accent-rgb: 77, 124, 15;
-  --tagfox-advanced-accent: #4d7c0f;
-  --tagfox-advanced-bg-subtle: rgba(77, 124, 15, 0.12);
-  --tagfox-advanced-border-subtle: rgba(77, 124, 15, 0.38);
-  --tagfox-advanced-text-emphasis: #3d6210;
+  /* fa-tags glyphs: muted green (see .fa-solid.fa-tags rules below). */
+  --tagfox-tags-icon: #5c7a5c;
 }
 body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 /* Indigo-to-coral gradient strip at top of window */
@@ -67,8 +63,7 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   background-color: var(--bs-btn-active-bg);
   border-color: var(--bs-btn-active-border-color);
 }
-/* Vertical gap between fav / tags / breadcrumb / search rows; whiteish rule shows on grey secondary bg. */
-.tagfox-fav-toolbar-row,
+/* Vertical gap between tags / breadcrumb / search rows; whiteish rule shows on grey secondary bg. */
 .tag-toolbar-row,
 .scope-breadcrumb-row,
 .tagfox-search-toolbar-row {
@@ -97,59 +92,26 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
     min-width: 0;
   }
 }
-/* Smart view status chip + active Smart layout button (purple family). */
-.tagfox-status-smart-note {
-  border: 1px solid #7c3aed;
-  background-color: rgba(124, 58, 237, 0.12);
-  color: #5b21b6;
-  border-radius: var(--bs-border-radius-sm);
-  padding: 0.12rem 0.45rem;
-  line-height: 1.25;
-  max-width: 100%;
-}
-.tagfox-status-smart-note--warn {
-  border-color: #9333ea;
-  background-color: rgba(147, 51, 234, 0.16);
-  color: #6b21a8;
-}
-[data-bs-theme="dark"] .tagfox-status-smart-note {
-  border-color: #a78bfa;
-  background-color: rgba(167, 139, 250, 0.18);
-  color: #e9d5ff;
-}
-[data-bs-theme="dark"] .tagfox-status-smart-note--warn {
-  border-color: #c4b5fd;
-  background-color: rgba(196, 181, 253, 0.14);
-  color: #f5f3ff;
-}
-/* Status filter/hidden pills: theme indigo (tag/recency); green when Advanced path hides apply (see --tagfox-advanced-*). */
+/* Status filter / hidden / smart-note chips: theme indigo; wand = Smart; hide reasons use clock / eye-slash (not gear). */
 .tagfox-status-hidden-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
   background-color: var(--bs-primary-bg-subtle);
   color: var(--bs-primary-text-emphasis);
   border-radius: 0.25rem;
   padding: 0.05rem 0.35rem;
   white-space: nowrap;
+  max-width: 100%;
 }
-.tagfox-status-hidden-hint--advanced {
-  background-color: var(--tagfox-advanced-bg-subtle);
-  color: var(--tagfox-advanced-text-emphasis);
+/* Smart status chip (#statusSmartNote): same violet as active Smart view — not danger red. */
+.tagfox-status-hidden-hint--warn {
+  background-color: rgba(124, 58, 237, 0.22);
+  color: #5b21b6;
 }
-/* Advanced launcher: green accent (see syncAdvancedBtnWarning → btn-outline-primary for “on” state). */
-.tagfox-advanced-hide-accent.btn {
-  background-color: var(--tagfox-advanced-bg-subtle) !important;
-  border-color: var(--tagfox-advanced-border-subtle) !important;
-  color: var(--tagfox-advanced-text-emphasis) !important;
-}
-#btnToggleSearchOptsAdvanced.tagfox-advanced-hide-accent.btn-outline-primary {
-  background-color: rgba(var(--tagfox-advanced-accent-rgb), 0.28) !important;
-  border-color: var(--tagfox-advanced-accent) !important;
-  color: var(--tagfox-advanced-text-emphasis) !important;
-}
-#btnToggleSearchOptsAdvanced.tagfox-advanced-hide-accent.btn-outline-primary:hover,
-#btnToggleSearchOptsAdvanced.tagfox-advanced-hide-accent.btn-outline-primary:focus-visible {
-  background-color: transparent !important;
-  color: var(--tagfox-advanced-accent) !important;
-  border-color: var(--tagfox-advanced-accent) !important;
+[data-bs-theme="dark"] .tagfox-status-hidden-hint--warn {
+  background-color: rgba(167, 139, 250, 0.2);
+  color: #ede9fe;
 }
 #optRvSmart:checked + .btn {
   background-color: rgba(124, 58, 237, 0.22);
@@ -162,10 +124,44 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   color: #ede9fe;
 }
 
-/* Gaps between control groups (view mode on #statusBar; recency + Advanced on tag row). */
+/* Gaps between control groups (view mode on .tagfox-search-toolbar-row; recency + Advanced on tag row). */
 .tagfox-search-opts-rhs {
   column-gap: 0.65rem;
   row-gap: 0.35rem;
+}
+/* Recency ≠ All: quiet red tray so the time bucket is visibly “on”. */
+.tagfox-recency-filter-wrap--active {
+  background-color: rgba(185, 28, 28, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(185, 28, 28, 0.28);
+}
+.tagfox-recency-filter-wrap--active .tagfox-recency-lead {
+  color: rgba(153, 27, 27, 0.85) !important;
+}
+[data-bs-theme="dark"] .tagfox-recency-filter-wrap--active {
+  background-color: rgba(248, 113, 113, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.32);
+}
+[data-bs-theme="dark"] .tagfox-recency-filter-wrap--active .tagfox-recency-lead {
+  color: rgba(252, 165, 165, 0.9) !important;
+}
+/* Recency = All: quieter until a time bucket is chosen (clock + buttons). */
+.tagfox-recency-filter-wrap {
+  transition: opacity 0.15s ease;
+}
+.tagfox-recency-filter-wrap:not(.tagfox-recency-filter-wrap--active) {
+  opacity: 0.55;
+}
+/* Tag row: no filter active — quieter tag lead, pills, and AND/OR (meaningful once ≥1 pill on). */
+.tag-toolbar-row:not(:has(#tagBar .tag-bar-pill-active)) .tagfox-toolbar-lead:has(> .fa-solid.fa-tags) {
+  opacity: 0.45;
+}
+.tag-toolbar-row #tagBar .tag-bar-pill,
+.tag-toolbar-row #tagBar .tagfox-tag-combine-toggle {
+  transition: opacity 0.15s ease;
+}
+.tag-toolbar-row #tagBar:not(:has(.tag-bar-pill-active)) .tag-bar-pill,
+.tag-toolbar-row #tagBar:not(:has(.tag-bar-pill-active)) .tagfox-tag-combine-toggle {
+  opacity: 0.55;
 }
 /* Scope strip after breadcrumb: pills on folder-tint tray; row gutter matches body surface */
 .tagfox-scope-bar-row-actions {
@@ -173,7 +169,8 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   column-gap: 0.08rem;
 }
 .scope-breadcrumb-row .tagfox-scope-bar-row-actions {
-  background-color: var(--tagfox-folder-row-bg-current); /* same as current breadcrumb pill */
+  /* Match path-sorted folder row cells (not the stronger “current segment” tint — reads muddy vs action glyphs). */
+  background-color: var(--tagfox-folder-row-bg);
   border-radius: var(--bs-border-radius);
   padding: 0.15rem 0.35rem;
 }
@@ -182,8 +179,24 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   opacity: 0.52;
   transition: opacity 0.15s ease;
 }
+/* Tag filters lead only: slightly brighter idle than heart / fav leads */
+.tagfox-soft-icon-lead:has(> .fa-solid.fa-tags) {
+  opacity: 0.68;
+}
 .tagfox-soft-icon-lead:hover,
 .tagfox-soft-icon-lead:focus-within {
+  opacity: 1;
+}
+/* All “tags” stack icons: muted green; compact tag buttons dim the glyph until hover/focus (scope bar uses row opacity instead). */
+.fa-solid.fa-tags {
+  color: var(--tagfox-tags-icon);
+}
+.btn:not(.tagfox-scope-bar-icon-btn) .fa-solid.fa-tags {
+  opacity: 0.72;
+  transition: opacity 0.15s ease;
+}
+.btn:not(.tagfox-scope-bar-icon-btn):hover:not(:disabled) .fa-solid.fa-tags,
+.btn:not(.tagfox-scope-bar-icon-btn):focus-visible .fa-solid.fa-tags {
   opacity: 1;
 }
 /* Icon-only: breadcrumb scope strip + results row actions — no ring; calm default, full contrast on hover */
@@ -201,15 +214,30 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
     background-color 0.12s ease,
     color 0.12s ease;
 }
+/* Tray hover (parked or in-bar): same “row hover” lift as #resultsTable tr:hover */
+.scope-breadcrumb-row .tagfox-scope-bar-row-actions:hover .tagfox-scope-bar-icon-btn:not(:disabled) {
+  opacity: 0.62;
+}
 /* Hover anywhere on last-crumb pill (folder name + actions + ▾): icons readable before targeting one */
 #breadcrumbBar .tagfox-breadcrumb-folder-chip:hover .tagfox-scope-bar-row-actions .tagfox-scope-bar-icon-btn:not(:disabled) {
   opacity: 0.62;
 }
-#resultsTable tbody .results-td-actions .tagfox-scope-bar-icon-btn {
+/* Chip-hover rule uses #breadcrumbBar — beats plain .scope-breadcrumb-row :hover; need explicit btn:hover to reach full contrast. */
+#breadcrumbBar .tagfox-breadcrumb-folder-chip:hover .tagfox-scope-bar-row-actions .tagfox-scope-bar-icon-btn:hover:not(:disabled) {
+  opacity: 1;
+  background-color: color-mix(in srgb, var(--bs-body-color) 9%, transparent);
+  color: var(--bs-body-color);
+}
+#breadcrumbBar .tagfox-breadcrumb-folder-chip:hover .tagfox-scope-bar-row-actions .tagfox-scope-bar-icon-btn.btn-outline-primary:hover:not(:disabled) {
+  opacity: 1;
+  color: var(--bs-primary);
+  background-color: color-mix(in srgb, var(--bs-primary) 14%, transparent);
+}
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody .results-td-actions .tagfox-scope-bar-icon-btn {
   background-color: transparent;
   border: none;
   box-shadow: none;
-  padding: 0.1rem 0.2rem;
+  padding: 0.15rem 0.4rem;
   min-width: 0;
   line-height: 1;
   color: var(--bs-secondary-color);
@@ -222,7 +250,7 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 .scope-breadcrumb-row .tagfox-scope-bar-row-actions .tagfox-scope-bar-icon-btn.btn-outline-primary {
   color: var(--bs-primary);
 }
-#resultsTable tbody .results-td-actions .tagfox-scope-bar-icon-btn.btn-outline-primary {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody .results-td-actions .tagfox-scope-bar-icon-btn.btn-outline-primary {
   color: var(--bs-primary);
 }
 .scope-breadcrumb-row .tagfox-scope-bar-row-actions .tagfox-scope-bar-icon-btn:hover:not(:disabled) {
@@ -230,10 +258,10 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   background-color: color-mix(in srgb, var(--bs-body-color) 9%, transparent);
   color: var(--bs-body-color);
 }
-#resultsTable tbody tr:hover .results-td-actions .tagfox-scope-bar-icon-btn:not(:disabled) {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr:hover .results-td-actions .tagfox-scope-bar-icon-btn:not(:disabled) {
   opacity: 0.62;
 }
-#resultsTable tbody .results-td-actions .tagfox-scope-bar-icon-btn:hover:not(:disabled) {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody .results-td-actions .tagfox-scope-bar-icon-btn:hover:not(:disabled) {
   opacity: 1;
   background-color: color-mix(in srgb, var(--bs-body-color) 9%, transparent);
   color: var(--bs-body-color);
@@ -243,7 +271,7 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   color: var(--bs-primary);
   background-color: color-mix(in srgb, var(--bs-primary) 14%, transparent);
 }
-#resultsTable tbody .results-td-actions .tagfox-scope-bar-icon-btn.btn-outline-primary:hover:not(:disabled) {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody .results-td-actions .tagfox-scope-bar-icon-btn.btn-outline-primary:hover:not(:disabled) {
   opacity: 1;
   color: var(--bs-primary);
   background-color: color-mix(in srgb, var(--bs-primary) 14%, transparent);
@@ -251,30 +279,30 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 .scope-breadcrumb-row .tagfox-scope-bar-row-actions .tagfox-scope-bar-icon-btn:disabled {
   opacity: 0.18;
 }
-#resultsTable tbody .results-td-actions .tagfox-scope-bar-icon-btn:disabled {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody .results-td-actions .tagfox-scope-bar-icon-btn:disabled {
   opacity: 0.18;
 }
 .scope-breadcrumb-row .tagfox-scope-bar-row-actions .tagfox-scope-bar-icon-btn:focus-visible {
   opacity: 1;
 }
-#resultsTable tbody .results-td-actions .tagfox-scope-bar-icon-btn:focus-visible {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody .results-td-actions .tagfox-scope-bar-icon-btn:focus-visible {
   opacity: 1;
 }
 /* Flex lives on inner div — display:flex on <td> caused partial-width white hairlines between rows (Chrome). */
-#resultsTable tbody .results-td-actions-inner {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody .results-td-actions-inner {
   display: flex;
   align-items: center;
   flex-wrap: nowrap;
-  column-gap: 0.08rem;
+  column-gap: 0.4rem;
   min-width: 0;
 }
 /* Path-sorted folder tint: row rule was #f0f0f3 — reads as bright gaps vs orange cells */
-#resultsTable.results-sort-path tbody tr.results-folder-row {
+:is(#resultsTable, #resultsTableA, #resultsTableB).results-sort-path tbody tr.results-folder-row {
   border-bottom-color: rgba(217, 119, 6, 0.22);
 }
 /* Last-crumb pill: open / ◀ ▲ ▶ / clip / tags / ⋯ between folder label and ▾ (same scope as that folder). */
 #breadcrumbBar .tagfox-breadcrumb-folder-chip > .tagfox-scope-bar-row-actions {
-  background-color: var(--tagfox-folder-row-bg-current);
+  background-color: var(--tagfox-folder-row-bg);
   border-radius: 0;
   /* Left padding = former margin gap vs folder cap; kept inside strip so bgcolor fills it (no white gutter). */
   padding: 0 0.12rem 0 0.65rem;
@@ -285,26 +313,22 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   z-index: 0;
 }
 .tagfox-search-toolbar-row .tagfox-segmented > .btn-check + .btn,
-.tag-toolbar-row .tagfox-segmented > .btn-check + .btn,
-.results-status-bar .tagfox-segmented > .btn-check + .btn {
+.tag-toolbar-row .tagfox-segmented > .btn-check + .btn {
   border-radius: 0;
 }
 .tagfox-search-toolbar-row .tagfox-segmented > .btn-check:first-child + .btn,
-.tag-toolbar-row .tagfox-segmented > .btn-check:first-child + .btn,
-.results-status-bar .tagfox-segmented > .btn-check:first-child + .btn {
+.tag-toolbar-row .tagfox-segmented > .btn-check:first-child + .btn {
   border-top-left-radius: var(--bs-border-radius-sm);
   border-bottom-left-radius: var(--bs-border-radius-sm);
 }
 .tagfox-search-toolbar-row .tagfox-segmented > .btn-check:last-of-type + .btn,
-.tag-toolbar-row .tagfox-segmented > .btn-check:last-of-type + .btn,
-.results-status-bar .tagfox-segmented > .btn-check:last-of-type + .btn {
+.tag-toolbar-row .tagfox-segmented > .btn-check:last-of-type + .btn {
   border-top-right-radius: var(--bs-border-radius-sm);
   border-bottom-right-radius: var(--bs-border-radius-sm);
 }
 /* View radio pairs: icon-only (titles on labels). */
 .tagfox-search-toolbar-row .tagfox-results-view-mode > .btn-check + .btn.tagfox-results-view-icon,
-.tag-toolbar-row .tagfox-results-view-mode > .btn-check + .btn.tagfox-results-view-icon,
-.results-status-bar .tagfox-results-view-mode > .btn-check + .btn.tagfox-results-view-icon {
+.tag-toolbar-row .tagfox-results-view-mode > .btn-check + .btn.tagfox-results-view-icon {
   width: 2rem;
   min-width: 2rem;
   padding-left: 0;
@@ -312,12 +336,22 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   line-height: 1;
 }
 .tagfox-search-toolbar-row .tagfox-results-view-mode > .btn-check + .btn .fa-fw,
-.tag-toolbar-row .tagfox-results-view-mode > .btn-check + .btn .fa-fw,
-.results-status-bar .tagfox-results-view-mode > .btn-check + .btn .fa-fw {
+.tag-toolbar-row .tagfox-results-view-mode > .btn-check + .btn .fa-fw {
   margin: 0;
 }
 .tag-toolbar-row .tagfox-advanced-icon-btn .fa-fw {
   margin: 0;
+}
+/* Eye / Advanced: same filled chip as segmented `.btn-check:checked + .outline` (plain `.active` had no theme rules). */
+.tagfox-advanced-icon-btn.btn-outline-secondary.tagfox-advanced-filled {
+  color: var(--bs-btn-active-color);
+  background-color: var(--bs-btn-active-bg);
+  border-color: var(--bs-btn-active-border-color);
+}
+.tagfox-advanced-icon-btn.btn-outline-secondary.tagfox-advanced-filled:hover {
+  color: var(--bs-btn-active-color);
+  background-color: var(--bs-btn-active-bg);
+  border-color: var(--bs-btn-active-border-color);
 }
 /* Tinted background to visually group each icon pair. */
 .tagfox-view-pair {
@@ -327,8 +361,7 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   gap: 0;
 }
 .tagfox-search-toolbar-row .tagfox-view-pair + .tagfox-view-pair,
-.tag-toolbar-row .tagfox-view-pair + .tagfox-view-pair,
-.results-status-bar .tagfox-view-pair + .tagfox-view-pair {
+.tag-toolbar-row .tagfox-view-pair + .tagfox-view-pair {
   margin-left: 0.25rem;
 }
 /* Smart view on: visually quiet the other layout modes + subs/content (still fully clickable). */
@@ -343,15 +376,13 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 }
 /* Subfolders + content: lighter selected chip than view-mode row (Tree/Smart/Flat stay full contrast). */
 .tagfox-search-toolbar-row .tagfox-rv-smart-secondary > .btn-check:checked + .btn.btn-outline-secondary,
-.tag-toolbar-row .tagfox-rv-smart-secondary > .btn-check:checked + .btn.btn-outline-secondary,
-.results-status-bar .tagfox-rv-smart-secondary > .btn-check:checked + .btn.btn-outline-secondary {
+.tag-toolbar-row .tagfox-rv-smart-secondary > .btn-check:checked + .btn.btn-outline-secondary {
   background-color: color-mix(in srgb, var(--bs-secondary) 26%, var(--bs-body-bg));
   color: var(--bs-body-color);
   border-color: color-mix(in srgb, var(--bs-secondary) 35%, var(--bs-border-color));
 }
 .tagfox-search-toolbar-row .tagfox-rv-smart-secondary > .btn-check:checked + .btn.btn-outline-secondary:hover,
-.tag-toolbar-row .tagfox-rv-smart-secondary > .btn-check:checked + .btn.btn-outline-secondary:hover,
-.results-status-bar .tagfox-rv-smart-secondary > .btn-check:checked + .btn.btn-outline-secondary:hover {
+.tag-toolbar-row .tagfox-rv-smart-secondary > .btn-check:checked + .btn.btn-outline-secondary:hover {
   background-color: color-mix(in srgb, var(--bs-secondary) 34%, var(--bs-body-bg));
   color: var(--bs-body-color);
   border-color: color-mix(in srgb, var(--bs-secondary) 42%, var(--bs-border-color));
@@ -396,9 +427,9 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 .form-check-input:checked { background-color: var(--tb-accent); border-color: var(--tb-accent); }
 /* Widths from <colgroup> only — auto layout re-measures every cell on each pane resize (splitter jank). */
 /* separate + 0 spacing: sticky th works; collapse breaks sticky in Chromium */
-#resultsTable { table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+:is(#resultsTable, #resultsTableA, #resultsTableB) { table-layout: fixed; border-collapse: separate; border-spacing: 0; }
 /* Sticky per th (thead sticky is flaky); scroll is #resultsScroll so top:0 clears “toolbar” clipping */
-#resultsTable thead th {
+:is(#resultsTable, #resultsTableA, #resultsTableB) thead th {
   position: sticky;
   top: 0;
   /* Above tbody rows / buttons so header labels aren’t covered when sticky */
@@ -409,66 +440,66 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   padding-bottom: 0.15rem;
   box-shadow: 0 1px 0 var(--bs-border-color);
 }
-#resultsTable tbody tr { border-bottom-color: #f0f0f3; }
+/* Vertical column lines in header (table border-collapse: separate — row borders don’t divide cols). */
+:is(#resultsTable, #resultsTableA, #resultsTableB) thead th:not(:first-child) {
+  border-left: 1px solid var(--bs-border-color);
+}
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr { border-bottom-color: #f0f0f3; }
 /* Folder rows: light orange tint only while Path is the active sort (path/tree cues). */
-#resultsTable.results-sort-path tbody tr.results-folder-row td {
+:is(#resultsTable, #resultsTableA, #resultsTableB).results-sort-path tbody tr.results-folder-row td {
   background-color: var(--tagfox-folder-row-bg);
 }
 /* Size column heat: ≥1 GB .text-danger; ≥100 MB orange; ≥10 MB amber; ≥1 MB teal; ≥100 KB lime (renderer.js). */
-#resultsTable tbody td.results-td-size.tagfox-size-heat-orange,
-#propSize.tagfox-size-heat-orange {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody td.results-td-size.tagfox-size-heat-orange {
   color: #ea580c;
 }
-#resultsTable tbody td.results-td-size.tagfox-size-heat-amber,
-#propSize.tagfox-size-heat-amber {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody td.results-td-size.tagfox-size-heat-amber {
   color: #d97706;
 }
-#resultsTable tbody td.results-td-size.tagfox-size-heat-mb1,
-#propSize.tagfox-size-heat-mb1 {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody td.results-td-size.tagfox-size-heat-mb1 {
   color: #0e7490;
 }
-#resultsTable tbody td.results-td-size.tagfox-size-heat-kb100,
-#propSize.tagfox-size-heat-kb100 {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody td.results-td-size.tagfox-size-heat-kb100 {
   color: #4d7c0f;
 }
 /* no hover highlight — selection: row tint + left bar + dotted ring (clearer than pale bg alone) */
-#resultsTable tbody tr.table-active {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active {
   --bs-table-bg-state: var(--bs-primary-bg-subtle);
   box-shadow: inset 3px 0 0 var(--tb-accent);
   outline: 2px dotted var(--bs-primary);
   outline-offset: -2px;
 }
 /* Focused folder + descendants: one solid outer box (see syncResultsSelectionHighlight group classes). */
-#resultsTable tbody tr.table-active.table-active-group-member {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active.table-active-group-member {
   outline: none;
 }
-#resultsTable tbody tr.table-active-group-member td:first-child {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active-group-member td:first-child {
   border-left: 2px solid rgba(var(--bs-primary-rgb), 0.75);
 }
-#resultsTable tbody tr.table-active-group-member td:last-child {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active-group-member td:last-child {
   border-right: 2px solid rgba(var(--bs-primary-rgb), 0.75);
 }
-#resultsTable tbody tr.table-active-group-top td {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active-group-top td {
   border-top: 2px solid rgba(var(--bs-primary-rgb), 0.75);
 }
-#resultsTable tbody tr.table-active-group-bottom td {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active-group-bottom td {
   border-bottom: 2px solid rgba(var(--bs-primary-rgb), 0.75);
 }
-#resultsTable tbody tr.table-active-group-top td:first-child {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active-group-top td:first-child {
   border-top-left-radius: var(--bs-border-radius-sm);
 }
-#resultsTable tbody tr.table-active-group-top td:last-child {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active-group-top td:last-child {
   border-top-right-radius: var(--bs-border-radius-sm);
 }
-#resultsTable tbody tr.table-active-group-bottom td:first-child {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active-group-bottom td:first-child {
   border-bottom-left-radius: var(--bs-border-radius-sm);
 }
-#resultsTable tbody tr.table-active-group-bottom td:last-child {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active-group-bottom td:last-child {
   border-bottom-right-radius: var(--bs-border-radius-sm);
 }
 /* Stronger fill inside the group frame (folder row uses .table-active; descendants .table-active-child). */
-#resultsTable tbody tr.table-active-group-member.table-active td,
-#resultsTable tbody tr.table-active-child td {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active-group-member.table-active td,
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active-child td {
   background-color: rgba(var(--bs-primary-rgb), 0.11);
 }
 .results-wrap.card {
@@ -523,16 +554,103 @@ body > .offcanvas-backdrop.show {
 .tagfox-settings-offcanvas .offcanvas-body {
   overflow-y: auto;
 }
+/* Settings: consistent gap above every section heading (first block is flush after offcanvas padding). */
+.tagfox-settings-offcanvas .tagfox-settings-section-title {
+  margin-top: 1.75rem;
+}
+.tagfox-settings-offcanvas .tagfox-settings-section-title--first {
+  margin-top: 0;
+}
 .app-shell { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 .app-main { flex: 1; display: flex; min-height: 0; }
-.center-wrap { flex: 1; min-width: 12rem; display: flex; flex-direction: column; min-height: 0; }
+/* Row: favourite folders | split | main panel (+ shelf beside results) */
+.center-wrap { flex: 1; min-width: 0; display: flex; flex-direction: row; align-items: stretch; min-height: 0; }
 .center-panel {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 0.5rem 0.5rem 0.5rem 1rem;
+  padding: 0.5rem 1rem;
+}
+/* LHS favourite folders: width set in JS (localStorage); heart + save + chip stacks */
+.tagfox-fav-column {
+  position: relative;
+  z-index: 1090;
+  width: var(--tagfox-fav-expanded-w, 220px);
+  min-width: 0;
+  overflow: hidden;
+  padding: 0.5rem 0.35rem;
+  background-color: var(--bs-body-bg);
+  transition: width 0.225s ease, padding 0.225s ease;
+}
+.tagfox-fav-column-inner {
+  min-width: 0;
+}
+/* Collapsed state: keep the rail-toggle button visible; heart/save/body return on hover/focus. */
+.tagfox-fav-column.tagfox-fav-column--collapsed {
+  width: 28px;
+  padding: 0.25rem 0.1rem;
+}
+.tagfox-fav-column.tagfox-fav-column--collapsed .tagfox-fav-column-inner {
+  display: none !important;
+}
+/* Rail hover/focus peek: reopen to the last saved full width (capped by viewport), not a separate fixed peek width. */
+.tagfox-fav-column.tagfox-fav-column--collapsed:not(.tagfox-fav-column--peek-suppressed):hover,
+.tagfox-fav-column.tagfox-fav-column--collapsed:not(.tagfox-fav-column--peek-suppressed):focus-within,
+.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--drag-peek,
+.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--split-peek,
+.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--flyout-peek {
+  width: min(var(--tagfox-fav-expanded-w, 220px), calc(100vw - 3rem));
+  padding: 0.5rem 0.35rem;
+}
+.tagfox-fav-column-head {
+  min-width: 0;
+}
+.tagfox-fav-head-btn {
+  flex: 0 0 2rem;
+  min-width: 2rem;
+}
+/* Keep justify-content-between (from HTML): single visible control stays left like full mode — no center jump */
+.tagfox-fav-column.tagfox-fav-column--collapsed .tagfox-fav-column-head {
+  margin-bottom: 0 !important;
+}
+.tagfox-fav-column.tagfox-fav-column--collapsed .tagfox-toolbar-lead,
+.tagfox-fav-column.tagfox-fav-column--collapsed #btnSaveFavouriteFolder {
+  display: none !important;
+}
+.tagfox-fav-column.tagfox-fav-column--collapsed:not(.tagfox-fav-column--peek-suppressed):hover .tagfox-toolbar-lead,
+.tagfox-fav-column.tagfox-fav-column--collapsed:not(.tagfox-fav-column--peek-suppressed):hover #btnSaveFavouriteFolder,
+.tagfox-fav-column.tagfox-fav-column--collapsed:not(.tagfox-fav-column--peek-suppressed):focus-within .tagfox-toolbar-lead,
+.tagfox-fav-column.tagfox-fav-column--collapsed:not(.tagfox-fav-column--peek-suppressed):focus-within #btnSaveFavouriteFolder,
+.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--drag-peek .tagfox-toolbar-lead,
+.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--drag-peek #btnSaveFavouriteFolder,
+.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--split-peek .tagfox-toolbar-lead,
+.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--split-peek #btnSaveFavouriteFolder,
+.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--flyout-peek .tagfox-toolbar-lead,
+.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--flyout-peek #btnSaveFavouriteFolder,
+.tagfox-fav-column.tagfox-fav-column--collapsed:not(.tagfox-fav-column--peek-suppressed):hover .tagfox-fav-column-inner,
+.tagfox-fav-column.tagfox-fav-column--collapsed:not(.tagfox-fav-column--peek-suppressed):focus-within .tagfox-fav-column-inner,
+.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--drag-peek .tagfox-fav-column-inner,
+.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--split-peek .tagfox-fav-column-inner,
+.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--flyout-peek .tagfox-fav-column-inner {
+  display: flex !important;
+}
+.tagfox-fav-column.tagfox-fav-column--collapsed .tagfox-fav-head-btn[aria-pressed="true"] {
+  background-color: rgba(var(--bs-primary-rgb), 0.12);
+  border-color: rgba(var(--bs-primary-rgb), 0.45);
+  color: var(--bs-emphasis-color);
+  box-shadow: inset 0 0 0 1px rgba(var(--bs-primary-rgb), 0.1);
+}
+/* Rail toggle: icon = current mode (full column vs narrow strip); fa-table-columns is free-solid */
+#btnToggleFavFoldersCollapse .tagfox-fav-rail-icon--narrow {
+  display: none;
+}
+#favFoldersColumn.tagfox-fav-column--collapsed #btnToggleFavFoldersCollapse .tagfox-fav-rail-icon--full {
+  display: none;
+}
+#favFoldersColumn.tagfox-fav-column--collapsed #btnToggleFavFoldersCollapse .tagfox-fav-rail-icon--narrow {
+  display: inline;
 }
 /* Fixed-width first column so favourite icons, clears, and tag icon stack; content after lines up. */
 .tagfox-toolbar-lead {
@@ -614,11 +732,16 @@ body > .offcanvas-backdrop.show {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Lighter than .text-muted — reads as placeholder, not body text */
+  color: #c4c4ce;
+}
+.tagfox-query-ghost-hint .text-muted {
+  color: inherit !important;
 }
 .tagfox-query-ghost-folder {
   flex-shrink: 0;
   font-weight: 600;
-  color: var(--bs-secondary-color);
+  color: #b6b6c0;
 }
 #queryInputGroup #query.form-control {
   border: 0;
@@ -663,11 +786,14 @@ body > .offcanvas-backdrop.show {
   opacity: 0.55;
 }
 /* While dragging: strip Bootstrap gap so spacer “slots” sit between chips; highlight slots only (not pills). */
-#favFoldersBar.tagfox-fav-bar--dnd,
 #favSearchesBar.tagfox-fav-bar--dnd {
   gap: 0 !important;
   column-gap: 0 !important;
   row-gap: 0.25rem !important;
+}
+#favFoldersBar.tagfox-fav-bar--vertical.tagfox-fav-bar--dnd {
+  gap: 0 !important;
+  row-gap: 0 !important;
 }
 .tagfox-fav-drop-gap {
   flex: 0 0 14px;
@@ -681,26 +807,99 @@ body > .offcanvas-backdrop.show {
   background: transparent;
   pointer-events: auto;
 }
+/* Vertical fav column: full-width horizontal gap strips between chip rows */
+#favFoldersBar.tagfox-fav-bar--vertical .tagfox-fav-drop-gap {
+  flex: 0 0 14px;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  min-height: 14px;
+  height: 14px;
+  max-height: 14px;
+  align-self: stretch;
+}
+#favFoldersBar.tagfox-fav-bar--vertical.tagfox-fav-bar--dnd > .tagfox-fav-drop-gap:last-child {
+  flex: 1 1 14px;
+  max-height: none;
+  min-height: 14px;
+}
+/* After last chip: grow so “drop at end” hits gap n, not dead flex space past a 14px slot */
+#favFoldersBar.tagfox-fav-bar--vertical.tagfox-fav-bar--dnd > .tagfox-fav-drop-gap:last-child,
+#favSearchesBar.tagfox-fav-bar--dnd > .tagfox-fav-drop-gap:last-child {
+  flex: 1 1 14px;
+  max-width: none;
+}
 .tagfox-fav-drop-gap.tagfox-fav-drop-gap--active {
   background: rgba(var(--bs-primary-rgb), 0.35);
   box-shadow: inset 0 0 0 2px var(--tb-accent);
 }
 .props-panel { flex-shrink: 0; min-height: 0; min-width: 200px; max-width: 90vw; }
+/* Results + Viewer wrapper: row on desktop, stacks to column on narrow screens (see @media below). */
+.results-viewer-wrap {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+}
+/* Narrow screens: Viewer drops below results panel, splitter hidden, JS-set inline width overridden. */
+@media (max-width: 768px) {
+  .results-viewer-wrap {
+    flex-direction: column;
+  }
+  .results-viewer-wrap > .center-panel {
+    flex: 1 1 0;
+    min-height: 0;
+    width: 100%;
+  }
+  .results-viewer-wrap > #splitProps {
+    display: none;
+  }
+  .results-viewer-wrap > #propsAside {
+    flex: 1 1 0;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0;
+    min-height: 0;
+    border-left: 0 !important;
+    border-top: 1px solid var(--bs-border-color);
+  }
+}
 /* Draggable vertical panes */
 .split-v {
+  position: relative;
   width: 4px;
   flex-shrink: 0;
   cursor: col-resize;
   align-self: stretch;
   background: var(--bs-border-color);
   touch-action: none;
-  transition: background 0.15s ease;
+  transform-origin: center;
+  transition: background 0.15s ease, transform 0.15s ease;
 }
-.split-v:hover { background: var(--tb-accent); }
+.split-v::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -6px;
+  right: -6px;
+}
+.split-v:hover {
+  background: var(--tb-accent);
+  transform: scaleX(2.3);
+}
 .split-v.d-none { display: none !important; width: 0 !important; }
 /* Splitter drag: pairs with rAF in bindVerticalSplitters — isolates viewer compositing while width changes. */
 body.tagfox-props-split-drag #propsAside {
   isolation: isolate;
+}
+body.tagfox-viewer-doc-split-drag {
+  cursor: row-resize;
+}
+body.tagfox-viewer-doc-split-drag #propsAside.props-theater {
+  cursor: col-resize;
 }
 #resultsTable tbody tr { cursor: pointer; }
 /* In-app row drag: folder rows only as row drop targets (file rows still have data-drop-path = parent) */
@@ -721,12 +920,17 @@ body.tagfox-internal-path-drag #resultsTable tbody tr:not(.results-folder-row).r
   outline: none;
   outline-offset: 0;
 }
-/* In-app row drag: possible drop zones (weaker than .results-drag-over hover on pills below) */
-body.tagfox-internal-path-drag #breadcrumbBar [data-drop-path],
-body.tagfox-internal-path-drag #favFoldersBar [data-drop-path] {
+/* In-app row drag: possible drop zones (breadcrumb only — fav pills use hover highlight so flex gaps don’t read as targets) */
+body.tagfox-internal-path-drag #breadcrumbBar [data-drop-path] {
   outline: 2px dashed rgba(var(--bs-primary-rgb), 0.45);
   outline-offset: 2px;
   border-radius: 0.2rem;
+}
+/* Favourites gap-insert drag: show the gap slots, not the pills' folder-drop outlines. */
+body.tagfox-internal-path-drag #favFoldersBar.tagfox-fav-bar--dnd [data-drop-path],
+body.tagfox-internal-path-drag #favFoldersBar.tagfox-fav-bar--dnd [data-drop-path].results-drag-over {
+  outline: none;
+  box-shadow: none;
 }
 body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   outline: 2px dashed rgba(var(--bs-primary-rgb), 0.4);
@@ -734,10 +938,35 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   box-shadow: inset 0 0 0 1px rgba(var(--bs-primary-rgb), 0.2);
 }
 #breadcrumbBar [data-drop-path].results-drag-over,
-#favFoldersBar [data-drop-path].results-drag-over {
+#favFoldersBar [data-drop-path].results-drag-over,
+#favRecentFoldersBar [data-drop-path].results-drag-over,
+#favRecentFilesBar [data-drop-path].results-drag-over {
   outline: 2px dashed var(--bs-primary);
   outline-offset: 2px;
   border-radius: 0.2rem;
+}
+@keyframes folder-drop-success-flash {
+  0% {
+    outline: 2px solid rgba(var(--bs-success-rgb), 0.95);
+    outline-offset: 2px;
+    box-shadow:
+      0 0 0 2px rgba(var(--bs-success-rgb), 0.16),
+      0 0 14px rgba(var(--bs-success-rgb), 0.24);
+  }
+  100% {
+    outline: 2px solid rgba(var(--bs-success-rgb), 0);
+    outline-offset: 2px;
+    box-shadow:
+      0 0 0 0 rgba(var(--bs-success-rgb), 0),
+      0 0 0 rgba(var(--bs-success-rgb), 0);
+  }
+}
+#breadcrumbBar [data-drop-path].folder-drop-success,
+#favFoldersBar [data-drop-path].folder-drop-success,
+#favRecentFoldersBar [data-drop-path].folder-drop-success,
+#favRecentFilesBar [data-drop-path].folder-drop-success {
+  border-radius: 0.2rem;
+  animation: folder-drop-success-flash 0.75s ease-out 1;
 }
 /* Results: HTTP alert + status full width; below that, Shelf | table (see index.html). */
 .results-shelf-stack {
@@ -750,13 +979,125 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
 .results-shelf-stack > #everythingHttpHelpAlert {
   flex-shrink: 0;
 }
-/* Shelf: narrow column left of results; inner row rotated -90° (reads bottom → top along table). */
+/* Shelf: narrow column beside results (default was left; .app-shelf--rhs = right); inner row rotated ±90°. */
 .results-with-shelf {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: row;
   align-items: stretch;
+  gap: 6px; /* space between results card and shelf */
+}
+.results-split-stack {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+.results-pane {
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+  transition:
+    opacity 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    background-color 0.16s ease;
+}
+.results-pane:not(.results-pane-active) {
+  opacity: 0.74;
+  border-color: color-mix(in srgb, var(--bs-border-color) 88%, transparent);
+  background-color: color-mix(in srgb, var(--bs-tertiary-bg) 65%, var(--bs-body-bg) 35%);
+}
+.results-pane:not(.results-pane-active)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.03), rgba(0, 0, 0, 0.05));
+}
+.results-pane.results-pane-active {
+  border-color: rgba(var(--bs-primary-rgb), 0.9);
+  box-shadow:
+    0 0 0 2px rgba(var(--bs-primary-rgb), 0.95),
+    0 0 0 4px rgba(var(--bs-primary-rgb), 0.18);
+  opacity: 1;
+}
+.split-h {
+  position: relative;
+  height: 4px;
+  flex-shrink: 0;
+  align-self: stretch;
+  cursor: row-resize;
+  background: var(--bs-border-color);
+  touch-action: none;
+  transform-origin: center;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.split-h::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  left: 0;
+  right: 0;
+}
+.split-h:hover {
+  background: var(--tb-accent);
+  transform: scaleY(2.3);
+}
+.split-h.d-none { display: none !important; height: 0 !important; }
+.split-h#splitResultsH {
+  min-height: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.split-h#splitResultsH:hover {
+  transform: none;
+}
+.split-h#splitResultsH::before {
+  pointer-events: none;
+}
+.split-h-edge {
+  height: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+}
+/* Pill sits on top of the 6px edge bar; pointer-events enabled so clicks hit the button, not the drag area. */
+.split-h-edge-actions {
+  padding: 0.06rem 0.14rem;
+}
+.split-h-actions {
+  pointer-events: auto;
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.12rem 0.2rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bs-body-bg) 92%, var(--bs-border-color));
+  border: 1px solid var(--bs-border-color);
+}
+.split-h-action-btn {
+  width: 1.25rem;
+  height: 1.25rem;
+  min-width: 1.25rem;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.split-h-action-btn i {
+  font-size: 0.62rem;
 }
 .app-shelf {
   flex-shrink: 0;
@@ -767,11 +1108,11 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   overflow: visible;
 }
 /*
- * rotate(-90deg) geometry:
+ * rotate(-90deg) geometry (LHS strip):
  *   pre-rot WIDTH  = screen VERTICAL (along results column)
  *   pre-rot HEIGHT = screen HORIZONTAL (aside column width)
  * JS sets rot.style.minWidth = parent height so strip fills column vertically.
- * Height stays intrinsic (content-only) so aside stays thin.
+ * RHS strip uses +90deg (mirror) so text reads the same way along the edge.
  */
 .app-shelf-rot {
   position: absolute;
@@ -785,6 +1126,9 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   gap: 0.5rem;
   white-space: nowrap;
   box-sizing: border-box;
+}
+.app-shelf--rhs .app-shelf-rot {
+  transform: translate(-50%, -50%) rotate(90deg);
 }
 #shelfDropZone {
   flex: 1 1 auto;
@@ -812,6 +1156,11 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   box-shadow: inset 0 0 0 1px rgba(var(--bs-primary-rgb), 0.35);
 }
 .shelf-chip { cursor: grab; max-width: 10rem; overflow: hidden; text-overflow: ellipsis; }
+.shelf-chip-remove {
+  cursor: pointer;
+  position: relative;
+  z-index: 2;
+}
 /* Empty-results hints: strong pulses at first, then die down to static (no glow) over 20s. */
 @keyframes empty-hint-btn-decay {
   0% {
@@ -990,7 +1339,7 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   .pulse-hint {
     animation: none !important;
   }
-  #statusBar.status-bar--pulse-hint {
+  #tagfoxNavbarStatus.status-bar--pulse-hint {
     animation: none !important;
   }
 }
@@ -1009,7 +1358,7 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
     box-shadow: none;
   }
 }
-#statusBar.status-bar--pulse-hint {
+#tagfoxNavbarStatus.status-bar--pulse-hint {
   animation: status-bar-hint-pulse 0.85s ease-out 1;
 }
 /* Recursive + path sort: box-drawing tree gutter (├ └ ─ │) in Name column. */
@@ -1063,6 +1412,40 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
 #readmePreview.readme-preview--pulse {
   animation: readme-preview-pulse 0.75s ease-out 1;
 }
+/* Aggregated nested folder docs: nesting = cumulative left margin + border */
+.global-readme-root {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.global-readme-section {
+  margin: 0;
+  padding-left: 0.55rem;
+  border-left: 3px solid var(--bs-border-color);
+  margin-left: calc(var(--gr-depth, 0) * 0.65rem);
+}
+.global-readme-section-head {
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+  word-break: break-word;
+  cursor: pointer;
+}
+.global-readme-section.global-readme-section--collapsed .global-readme-section-head {
+  margin-bottom: 0;
+}
+.global-readme-section-body {
+  min-height: 0;
+}
+.nested-doc-editor textarea.nested-doc-ta,
+.nested-doc-editor .CodeMirror {
+  min-height: 8rem;
+}
+.nested-doc-editor textarea.nested-doc-ta {
+  resize: vertical;
+}
+#readmePreview[role='region'].viewer-doc-preview {
+  cursor: default;
+}
 /* RHS scroll column: flex so office preview can use remaining height */
 #propsScroll {
   min-height: 0;
@@ -1093,11 +1476,39 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   min-height: 0;
 }
 /* Folder doc / .md-. viewer: editor wrapped — hidden until Edit or double-click preview */
-.viewer-doc-editor-wrap {
+.viewer-doc-split {
   flex: 1 1 0;
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+  --tagfox-viewer-doc-editor-pct: 50%;
+  --tagfox-viewer-doc-editor-pct-theater: 50%;
+}
+.viewer-doc-editor-wrap {
+  flex: 0 0 var(--tagfox-viewer-doc-editor-pct);
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.viewer-doc-split-divider {
+  position: relative;
+  flex: 0 0 4px;
+  width: 100%;
+  cursor: row-resize;
+  background: var(--bs-border-color);
+  touch-action: none;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.viewer-doc-split-divider::before {
+  content: '';
+  position: absolute;
+  inset: -6px 0;
+}
+.viewer-doc-split-divider:hover {
+  background: var(--tb-accent);
+  transform: scaleY(1.8);
 }
 #readmeEditor,
 #mdFileEditor {
@@ -1105,25 +1516,81 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   min-height: 3rem;
   resize: none;
 }
+.viewer-doc-editor-wrap .CodeMirror,
+.viewer-doc-editor-wrap .viewer-md-cm {
+  flex: 1 1 0;
+  min-height: 0;
+  height: 100%;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.875rem;
+}
+.viewer-doc-editor-wrap .CodeMirror-scroll,
+.viewer-doc-editor-wrap .CodeMirror-sizer {
+  min-height: 100%;
+}
+.viewer-doc-editor-wrap .CodeMirror-focused,
+.nested-doc-editor .CodeMirror-focused {
+  outline: 0;
+}
+.nested-doc-editor .CodeMirror {
+  min-height: 8rem;
+  height: auto;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.875rem;
+}
 .viewer-doc-preview {
   cursor: pointer;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
 }
 #readmePreview.prop-md-preview,
 #mdFilePreview.prop-md-preview {
-  flex: 1 1 0;
+  flex: 1 1 auto;
   min-height: 0;
   max-height: none;
+}
+#propsAside.props-theater .viewer-doc-split {
+  flex-direction: row;
+}
+#propsAside.props-theater .viewer-doc-split > .viewer-doc-editor-wrap {
+  flex-basis: var(--tagfox-viewer-doc-editor-pct-theater);
+}
+#propsAside.props-theater .viewer-doc-split-divider {
+  width: 4px;
+  height: auto;
+  cursor: col-resize;
+}
+#propsAside.props-theater .viewer-doc-split-divider::before {
+  inset: 0 -6px;
+}
+#propsAside.props-theater .viewer-doc-split-divider:hover {
+  transform: scaleX(1.8);
+}
+/* Markdown-rendered images (e.g. pasted .images/…) — cap height; width follows aspect ratio */
+#readmePreview img,
+#mdFilePreview img,
+.global-readme-section-body img {
+  max-height: 300px;
+  width: auto;
+  height: auto;
 }
 #textPreviewPre.prop-md-preview {
   flex: 1 1 auto;
   min-height: 0;
   max-height: none;
 }
-#pdfBlock {
+#pdfBlock,
+#htmlBlock {
   flex: 1 1 auto;
   min-height: 0;
 }
-#pdfFrame {
+#pdfFrame,
+#htmlPreviewFrame {
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
@@ -1137,10 +1604,98 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   border-top-right-radius: var(--tagfox-toolbar-shell-radius);
   border-bottom-right-radius: var(--tagfox-toolbar-shell-radius);
 }
-/* Flex column: inner #resultsScroll owns vertical scroll (status lives in .results-shelf-stack). */
+/* Flex column: inner #resultsScroll owns vertical scroll. */
 .results-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-/* Below .tagfox-search-toolbar-row (1040) so query-row overlays aren’t covered; still above sticky th (4). */
-.results-status-bar { flex-shrink: 0; position: relative; z-index: 1038; }
+/* Main window chrome + bottom status: same stacking tier (dropdowns/flyouts use higher z in their rules). */
+.tagfox-app-header {
+  position: relative;
+  z-index: 1038;
+}
+/* Did-you-know strip: distinct from header chrome (Bootstrap subtle + border on the span). */
+.tagfox-navbar-dyk-wrap {
+  background-color: var(--bs-info-bg-subtle);
+  border-color: color-mix(in srgb, var(--bs-info) 28%, var(--bs-border-color)) !important;
+  color: var(--bs-body-color);
+}
+.tagfox-navbar-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+}
+/* Shortcut chips: explicit contrast (Bootstrap badge + bg-body-secondary was unreadable). */
+.tagfox-navbar-tip-kbd {
+  display: inline-block;
+  padding: 0.1em 0.48em;
+  font-size: 0.78em;
+  font-weight: 600;
+  line-height: 1.25;
+  vertical-align: baseline;
+  border-radius: 10rem;
+  border: 1px solid #adb5bd;
+  color: #212529;
+  background-color: #e9ecef;
+}
+html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
+  border-color: #6c757d;
+  color: #f8f9fa;
+  background-color: #495057;
+}
+.tagfox-navbar-tip-label,
+.tagfox-navbar-tip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tagfox-navbar-tip-text {
+  min-width: 0;
+}
+/* Classic status bar: full-width strip at bottom of the window. */
+.tagfox-app-statusbar {
+  position: relative;
+  z-index: 1038;
+  flex-shrink: 0;
+  padding: 0.28rem 0.65rem;
+  border-top: 1px solid var(--bs-border-color);
+  background-color: var(--bs-tertiary-bg);
+}
+/* Bulk selection: paler tray, icon-only actions; pulse once when the strip appears. */
+.tagfox-bulk-bar {
+  max-width: 100%;
+  gap: 0.4rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: var(--bs-border-radius);
+  background-color: color-mix(in srgb, var(--bs-body-bg) 86%, var(--bs-secondary-color) 14%);
+  border: 1px solid color-mix(in srgb, var(--bs-border-color) 75%, transparent);
+  box-sizing: border-box;
+  min-height: calc(2rem + 2 * 0.12rem);
+}
+/* Floated near cursor (see renderer.js); below Bootstrap modals (~1055). */
+#bulkBar.tagfox-bulk-bar--float {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 1040;
+  max-width: min(100vw - 8px, 28rem);
+  box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.12);
+}
+.tagfox-bulk-bar-label {
+  font-weight: 500;
+  font-size: 0.8125rem;
+}
+.tagfox-bulk-bar-actions {
+  flex-wrap: nowrap;
+}
+.tagfox-bulk-bar-icon {
+  width: 2rem;
+  min-width: 2rem;
+  height: 2rem;
+  border-radius: 0.5rem;
+}
+[data-bs-theme="dark"] .tagfox-bulk-bar {
+  background-color: color-mix(in srgb, var(--bs-body-bg) 90%, var(--bs-secondary-color) 10%);
+}
 .results-table-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
 /* Drop target when there are no rows (Shelf → current folder). */
 #resultsTable tbody:empty {
@@ -1154,10 +1709,10 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   opacity: 1;
 }
 /* ~ segments: slightly less fade so users can tell the two “special” kinds apart. */
-#resultsTable tbody tr.tagfox-row-tilde-path {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.tagfox-row-tilde-path {
   opacity: 0.78;
 }
-#resultsTable tbody tr.tagfox-row-tilde-path.table-active {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.tagfox-row-tilde-path.table-active {
   opacity: 1;
 }
 /* Current-folder drop highlight: on scroll wrapper so empty area below last row is a valid target. */
@@ -1166,47 +1721,48 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   outline-offset: -4px;
   background: rgba(var(--bs-primary-rgb), 0.06);
 }
-#resultsTable { table-layout: fixed; width: 100%; font-size: 0.875rem; }
-#resultsTable td { vertical-align: middle; }
-#resultsTable td { padding-top: 0 !important; padding-bottom: 0 !important; }
-#resultsTable td { margin-top: 0 !important; margin-bottom: 0 !important; }
+:is(#resultsTable, #resultsTableA, #resultsTableB) { table-layout: fixed; width: 100%; font-size: 0.875rem; }
+:is(#resultsTable, #resultsTableA, #resultsTableB) td { vertical-align: middle; }
+:is(#resultsTable, #resultsTableA, #resultsTableB) td { padding-top: 0 !important; padding-bottom: 0 !important; }
+:is(#resultsTable, #resultsTableA, #resultsTableB) td { margin-top: 0 !important; margin-bottom: 0 !important; }
 /* Modified: nowrap + ellipsis. Actions: no overflow:hidden (was compounding flex-td seam glitches). */
-#resultsTable tbody td:nth-child(5) {
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody td:nth-child(6) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-#resultsTable col:nth-child(4),
-#resultsTable thead th:nth-child(4),
-#resultsTable tbody td.results-td-size {
+:is(#resultsTable, #resultsTableA, #resultsTableB) col:nth-child(5),
+:is(#resultsTable, #resultsTableA, #resultsTableB) thead th:nth-child(5),
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody td.results-td-size {
   min-width: 6.75rem;
 }
-/* Five tools (chevron, Open, clip, ⋯, Tags): keep last col wide enough so % + drag resize can’t clip it */
-#resultsTable col:last-child,
-#resultsTable thead th:last-child,
-#resultsTable tbody td:last-child {
-  min-width: 11.75rem;
+/* Row icon strip (col 4): min = six compact btns; max = don’t waste horizontal space on wide windows */
+:is(#resultsTable, #resultsTableA, #resultsTableB) col:nth-child(4),
+:is(#resultsTable, #resultsTableA, #resultsTableB) thead th:nth-child(4),
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody td.results-td-actions {
+  min-width: 12rem;
+  max-width: 15rem;
 }
-/* Checkbox + recency dot: floor width so tiny % on narrow panes doesn’t spill into Name */
-#resultsTable col:first-child {
-  min-width: 3rem;
+/* Checkbox only: keep a small but stable first column so narrow panes do not crush the checkbox. */
+:is(#resultsTable, #resultsTableA, #resultsTableB) col:first-child {
+  min-width: 1.85rem;
 }
 /* Denser than Bootstrap table-sm (row height driver with middle vertical-align) */
-#resultsTable.table-sm > :not(caption) > * > * {
+:is(#resultsTable, #resultsTableA, #resultsTableB).table-sm > :not(caption) > * > * {
   padding-top: 0.02rem;
   padding-bottom: 0.02rem;
 }
 /* First col: checkbox flush left; vertical-align middle + tight line box so it lines up with name/icons */
-#resultsTable thead th:first-child,
-#resultsTable tbody td:first-child {
+:is(#resultsTable, #resultsTableA, #resultsTableB) thead th:first-child,
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody td:first-child {
   padding-left: 0.2rem;
   padding-right: 0.45rem;
   vertical-align: middle;
 }
-#resultsTable thead th.results-th-cb,
-#resultsTable tbody td.results-td-cb {
+:is(#resultsTable, #resultsTableA, #resultsTableB) thead th.results-th-cb,
+:is(#resultsTable, #resultsTableA, #resultsTableB) tbody td.results-td-cb {
   line-height: 1;
 }
-#resultsTable .results-row-cb-wrap {
+:is(#resultsTable, #resultsTableA, #resultsTableB) .results-row-cb-wrap {
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
@@ -1214,11 +1770,8 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   min-height: 1em;
   gap: 0;
 }
-#resultsTable .results-row-cb-wrap .recency-blob {
-  margin-left: 0.55rem;
-}
 /* Slightly larger, higher-contrast box so it reads clearly as a checkbox */
-#resultsTable .results-cb {
+:is(#resultsTable, #resultsTableA, #resultsTableB) .results-cb {
   width: 0.9375rem;
   height: 0.9375rem;
   flex-shrink: 0;
@@ -1227,7 +1780,7 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   border-radius: 0.22rem;
   background-color: var(--bs-body-bg, #fff);
 }
-#resultsTable .results-cb:checked {
+:is(#resultsTable, #resultsTableA, #resultsTableB) .results-cb:checked {
   border-color: var(--tb-accent, var(--bs-primary));
   background-color: var(--tb-accent, var(--bs-primary));
 }
@@ -1243,12 +1796,12 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
 }
 .path-ellip-start bdi { direction: ltr; unicode-bidi: isolate; }
 /* Path column: parent trail vs final segment (file name or immediate parent folder name). */
-#resultsTable td.col-path .path-col-tail {
+:is(#resultsTable, #resultsTableA, #resultsTableB) td.col-path .path-col-tail {
   color: var(--bs-body-color);
   font-weight: 500;
 }
 /* Search box text: faint hits in name + path (mark keeps truncation/ellipsis behavior). */
-#resultsTable mark.tagfox-query-hit {
+:is(#resultsTable, #resultsTableA, #resultsTableB) mark.tagfox-query-hit {
   padding: 0;
   margin: 0;
   background-color: rgba(var(--bs-warning-rgb), 0.38);
@@ -1268,7 +1821,7 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   display: inline-flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 0.15rem;
+  gap: 0.3rem;
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -1281,26 +1834,42 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
 .name-badges .badge { flex-shrink: 0; font-weight: normal; }
 .tag-pill-x { line-height: 1; padding: 0 !important; min-width: 1em; }
 /* Hash-based tag colours on toolbar (inline background/border also set in JS). */
-#tagBar .tag-bar-pill { font-weight: 500; border-style: solid; border-width: 1px; box-sizing: border-box; }
+#tagBar .tag-bar-pill,
+#tagModalQuickTags .tag-bar-pill { font-weight: 500; border-style: solid; border-width: 1px; box-sizing: border-box; }
 /* Thicker border must not shrink the visible fill: with border-box, extra border eats the bg unless padding is reduced. */
-#tagBar .tag-bar-pill.tag-bar-pill-active {
+#tagBar .tag-bar-pill.tag-bar-pill-active,
+#tagModalQuickTags .tag-bar-pill.tag-bar-pill-active {
   border-width: 7px;
   padding-top: calc(var(--bs-btn-padding-y) - 2px);
   padding-bottom: calc(var(--bs-btn-padding-y) - 2px);
   padding-left: calc(var(--bs-btn-padding-x) - 2px);
   padding-right: calc(var(--bs-btn-padding-x) - 2px);
 }
-#tagBar .tag-bar-pill:focus-visible { box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.35); }
-/* AND/OR only affects filtering when ≥1 tag is on — fade when idle. */
-#tagBar .tag-combine-toggle-idle { opacity: 0.5; }
+#tagBar .tag-bar-pill:focus-visible,
+#tagModalQuickTags .tag-bar-pill:focus-visible { box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.35); }
 /* sticky comes from #resultsTable thead th — don’t use position:relative here (kills sticky) */
-#resultsTable thead th.sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
-#resultsTable thead th.sortable-th:hover { background-color: var(--bs-secondary-bg); }
-#resultsTable thead th .th-resize {
-  position: absolute; top: 0; right: 0; bottom: 0; width: 8px; margin-right: -4px; z-index: 1;
+:is(#resultsTable, #resultsTableA, #resultsTableB) thead th.sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
+:is(#resultsTable, #resultsTableA, #resultsTableB) thead th.sortable-th:hover { background-color: var(--bs-secondary-bg); }
+:is(#resultsTable, #resultsTableA, #resultsTableB) thead th .th-resize {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 12px; margin-right: -6px; z-index: 2;
   cursor: col-resize; touch-action: none;
+  /* Visible strip (hover darkens) — was fully transparent so divisions looked missing. */
+  background: rgba(0, 0, 0, 0.06);
 }
-#resultsTable thead th .th-resize:hover { background: rgba(13, 110, 253, 0.15); }
+/* Actions|Size: strip on left of Size th so it isn’t painted under the next column (right-edge + negative margin was untargetable). */
+:is(#resultsTable, #resultsTableA, #resultsTableB) thead th .th-resize-leading {
+  left: 0;
+  right: auto;
+  margin-left: -6px;
+  margin-right: 0;
+}
+:is(#resultsTable, #resultsTableA, #resultsTableB) thead th .th-resize:hover { background: rgba(13, 110, 253, 0.22); }
+:is(#resultsTable, #resultsTableA, #resultsTableB) thead th .th-resize.th-resize-active { background: rgba(13, 110, 253, 0.28); }
+body.tagfox-table-col-resize-active,
+body.tagfox-table-col-resize-active * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
 /* Bootstrap tooltips on result cells: wide, wrap long paths */
 .tooltip.results-cell-tooltip .tooltip-inner {
   max-width: min(90vw, 42rem);
@@ -1308,16 +1877,13 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   white-space: pre-wrap;
   word-break: break-word;
 }
-/* Block chip/quick/Add/Close while rename IPC runs — keep #tagModalInput typable (whole .modal-content none swallows clicks on the input in Chromium). */
+/* Block tag toggles/Add/Close while rename IPC runs — keep #tagModalInput typable (whole .modal-content none swallows clicks on the input in Chromium). */
 #tagModal.tag-renaming .modal-header,
 #tagModal.tag-renaming .modal-footer,
 #tagModal.tag-renaming #tagModalPath,
 #tagModal.tag-renaming #tagModalBulkHint,
-#tagModal.tag-renaming #tagModalChips,
 #tagModal.tag-renaming #tagModalQuickTags,
 #tagModal.tag-renaming #tagModalAddBtn { pointer-events: none; opacity: 0.88; }
-/* RHS title + image preview */
-#propTitleBlock { border-bottom: 1px solid var(--bs-border-color); padding-bottom: 0.5rem; margin-bottom: 0.5rem; }
 #propDisplayName { line-height: 1.25; }
 #imageBlock img#propImagePreview { max-width: 100%; height: auto; display: block; border-radius: 0.25rem; }
 #videoBlock video#propVideoPreview { max-width: 100%; max-height: 60vh; display: block; border-radius: 0.25rem; }
@@ -1342,28 +1908,56 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   flex-shrink: 0;
 }
 /*
-  Stacking (low → high): normal chrome .results-status-bar 1038; .tagfox-search-toolbar-row 1040;
+  Stacking (low → high): .tagfox-app-header 1038; .tagfox-search-toolbar-row 1040;
   .scope-breadcrumb-row 1043 (above search row menus only — must stay below .tag-toolbar-row so Advanced panel overlaps breadcrumb);
-  .tag-toolbar-row 1045 (+ .tagfox-advanced-wrap 1041); .tagfox-fav-toolbar-row 1090;
+  .tag-toolbar-row 1045 (+ .tagfox-advanced-wrap 1041); .tagfox-fav-column 1090;
   #quickTodoPop 1098; body ul.breadcrumb-folder-flyout 1092–1099 (renderer.js; below .modal-backdrop 1100);
   .modal-backdrop 1100; .modal 1110; #propsTheater* 1990+; body > .tooltip 50000 (above all app flyouts).
 */
 #quickTodoPop {
   z-index: 1098;
 }
-.tagfox-fav-toolbar-row {
-  position: relative;
-  z-index: 1090;
-  /* Heart | wrapping chips | save — keeps lead + disk on one band vs flex-wrap isolating them */
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  column-gap: 0.35rem;
-  align-items: center;
-}
-/* Wrapping chip rows: stronger horizontal banding than gap-1 alone */
-#favFoldersBar {
+/* Favourite folder chips: horizontal pills stacked vertically in the left column; pills span full column width. */
+#favFoldersBar.tagfox-fav-bar--vertical {
+  min-width: 0;
+  width: 100%;
   row-gap: 0.45rem;
-  column-gap: 0.25rem;
+}
+/* Many favourites: scroll this block only; Recent gets the rest of the column below. */
+.tagfox-fav-bar-scroll--favourites {
+  max-height: min(42vh, 55%);
+  overflow-y: visible;
+  /* Avoid scrollbar appearing/disappearing on hover/reflow — stops Recent panel below from shifting sideways. */
+  scrollbar-gutter: stable;
+}
+.tagfox-fav-recent-block {
+  min-height: 3.5rem;
+}
+/* Split vertical space evenly between Recent folders and Recent files. */
+.tagfox-fav-recent-split {
+  flex: 1 1 0;
+  min-height: 0;
+}
+.tagfox-fav-recent-half {
+  flex: 1 1 0;
+  min-height: 0;
+}
+/* Recent list: same stable gutter so column width stays constant when vertical overflow toggles. */
+.tagfox-fav-recent-block .tagfox-fav-bar-scroll {
+  scrollbar-gutter: stable;
+}
+#favFoldersBar.tagfox-fav-bar--vertical .tagfox-fav-chip-row,
+#favRecentFoldersBar.tagfox-fav-bar--vertical .tagfox-fav-chip-row,
+#favRecentFilesBar.tagfox-fav-bar--vertical .tagfox-fav-chip-row {
+  width: 100%;
+  max-width: 100%;
+}
+/* Recent strip: same chip + ▾ geometry as favourites (renderer buildFavColumnFolderChipRowEl). */
+#favRecentFoldersBar.tagfox-fav-bar--vertical,
+#favRecentFilesBar.tagfox-fav-bar--vertical {
+  min-width: 0;
+  width: 100%;
+  row-gap: 0.45rem;
 }
 .scope-breadcrumb-row {
   position: relative;
@@ -1451,10 +2045,11 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   z-index: 1;
 }
 /* Modal open: drop back so backdrop + dimmer cover the bar (was stacking “above” the overlay). */
-body.modal-open .tagfox-fav-toolbar-row,
+body.modal-open .tagfox-app-header,
+body.modal-open .tagfox-app-statusbar,
+body.modal-open .tagfox-fav-column,
 body.modal-open .scope-breadcrumb-row,
 body.modal-open .tagfox-search-toolbar-row,
-body.modal-open .results-status-bar,
 body.modal-open .tag-toolbar-row {
   z-index: 0;
 }
@@ -1465,6 +2060,8 @@ body.modal-open .tag-toolbar-row {
 ul.breadcrumb-folder-flyout {
   position: fixed;
   max-height: min(50vh, 280px);
+  max-width: min(26rem, calc(100vw - 2rem));
+  width: max-content;
   overflow-y: auto;
   min-width: var(--bs-dropdown-min-width, 10rem);
   display: none;
@@ -1488,18 +2085,39 @@ ul.breadcrumb-folder-flyout.is-open {
 ul.breadcrumb-folder-flyout li.breadcrumb-folder-on-scope-path > button.dropdown-item {
   box-shadow: inset 4px 0 0 rgba(var(--bs-emphasis-color-rgb), 0.38);
 }
-/* Favourite chips: stacking via .tagfox-fav-toolbar-row (above breadcrumb row). */
+/* Folder flyouts: size to the longest label, but keep a viewport cap. */
+#breadcrumbBar .dropdown-menu .dropdown-item,
+ul.breadcrumb-folder-flyout .dropdown-item,
+#favFoldersBar .fav-folder-chip-group .dropdown-menu .dropdown-item,
+#favRecentFoldersBar .fav-folder-chip-group .dropdown-menu .dropdown-item,
+#favRecentFilesBar .fav-folder-chip-group .dropdown-menu .dropdown-item,
+#favFoldersBar .fav-folder-chip-group .dropdown-menu .dropdown-item-text,
+#favRecentFoldersBar .fav-folder-chip-group .dropdown-menu .dropdown-item-text,
+#favRecentFilesBar .fav-folder-chip-group .dropdown-menu .dropdown-item-text {
+  width: auto;
+  min-width: 100%;
+  white-space: nowrap;
+}
+/* Favourite chips: stacking via .tagfox-fav-column (above breadcrumb row). */
 /* Favourite “pill”: almost-white fill + dark grey text (distinct from breadcrumb link / primary). */
-#favFoldersBar .fav-folder-chip-group {
+#favFoldersBar .fav-folder-chip-group,
+#favRecentFoldersBar .fav-folder-chip-group,
+#favRecentFilesBar .fav-folder-chip-group {
   --fav-chip-fg: #3f3f46;
   --fav-chip-bg: #fafafa;
   --fav-chip-border: #e4e4e7;
+  width: 100%;
+  display: flex;
+  flex-direction: row;
   align-items: stretch;
   gap: 0; /* BS .btn-group has no gap; keep explicit for nested flex. */
 }
-/* BS sets .btn-group > .btn { flex:1 1 auto } — that flex-grow separates the two halves; pin to content width. */
-#favFoldersBar .fav-folder-chip-group > .fav-folder-chip-go {
-  flex: 0 1 auto;
+/* Go grows; ▾ stays content-sized (full-width row in vertical column). */
+#favFoldersBar .fav-folder-chip-group > .fav-folder-chip-go,
+#favRecentFoldersBar .fav-folder-chip-group > .fav-folder-chip-go,
+#favRecentFilesBar .fav-folder-chip-group > .fav-folder-chip-go {
+  flex: 1 1 0;
+  min-width: 0;
   color: var(--fav-chip-fg);
   background-color: var(--fav-chip-bg);
   border-color: var(--fav-chip-border);
@@ -1508,17 +2126,47 @@ ul.breadcrumb-folder-flyout li.breadcrumb-folder-on-scope-path > button.dropdown
   border-radius: 999px 0 0 999px;
   position: relative;
 }
+/* Fixed-width column: keep chip names on one line and ellipsize, but leave tags / × visible. */
+#favFoldersBar .fav-folder-chip-go .fav-folder-chip-lead,
+#favRecentFoldersBar .fav-folder-chip-go .fav-folder-chip-lead,
+#favRecentFilesBar .fav-folder-chip-go .fav-folder-chip-lead {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+#favFoldersBar .fav-folder-chip-go .fav-folder-chip-name,
+#favRecentFoldersBar .fav-folder-chip-go .fav-folder-chip-name,
+#favRecentFilesBar .fav-folder-chip-go .fav-folder-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Peek-open rail: show full names instead of truncating. */
+.tagfox-fav-column.tagfox-fav-column--collapsed:not(.tagfox-fav-column--peek-suppressed):hover .fav-folder-chip-go .fav-folder-chip-name,
+.tagfox-fav-column.tagfox-fav-column--collapsed:not(.tagfox-fav-column--peek-suppressed):focus-within .fav-folder-chip-go .fav-folder-chip-name,
+.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--drag-peek .fav-folder-chip-go .fav-folder-chip-name,
+.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--split-peek .fav-folder-chip-go .fav-folder-chip-name,
+.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--flyout-peek .fav-folder-chip-go .fav-folder-chip-name {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
 /* Nested .dropdown — stretch to btn-group row height; ▾ fills RHS (inline-flex alone stays content-short). */
-#favFoldersBar .fav-folder-chip-group > .dropdown {
+#favFoldersBar .fav-folder-chip-group > .dropdown,
+#favRecentFoldersBar .fav-folder-chip-group > .dropdown,
+#favRecentFilesBar .fav-folder-chip-group > .dropdown {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   align-self: stretch;
   flex: 0 0 auto;
+  flex-shrink: 0;
   margin-left: calc(-1 * var(--bs-border-width));
   min-height: 100%;
 }
-#favFoldersBar .fav-folder-chip-group > .dropdown > .fav-folder-chip-chevron.tagfox-scope-chevron {
+#favFoldersBar .fav-folder-chip-group > .dropdown > .fav-folder-chip-chevron.tagfox-scope-chevron,
+#favRecentFoldersBar .fav-folder-chip-group > .dropdown > .fav-folder-chip-chevron.tagfox-scope-chevron,
+#favRecentFilesBar .fav-folder-chip-group > .dropdown > .fav-folder-chip-chevron.tagfox-scope-chevron {
   flex: 1 1 auto;
   display: flex;
   align-items: center;
@@ -1527,12 +2175,16 @@ ul.breadcrumb-folder-flyout li.breadcrumb-folder-on-scope-path > button.dropdown
   min-height: 100%;
   box-sizing: border-box;
 }
-#favFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:hover {
+#favFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:hover,
+#favRecentFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:hover,
+#favRecentFilesBar .fav-folder-chip-group > .fav-folder-chip-go:hover {
   color: #27272a;
   background-color: #f4f4f5;
   border-color: #d4d4d8;
 }
-#favFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:active {
+#favFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:active,
+#favRecentFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:active,
+#favRecentFilesBar .fav-folder-chip-group > .fav-folder-chip-go:active {
   color: #18181b;
   background-color: #e4e4e7;
   border-color: #a1a1aa;
@@ -1562,10 +2214,24 @@ ul.breadcrumb-folder-flyout li.breadcrumb-folder-on-scope-path > button.dropdown
   position: relative;
   z-index: 1;
 }
-#favFoldersBar .fav-folder-chip-group .dropdown-menu {
+#favFoldersBar .fav-folder-chip-group .dropdown-menu,
+#favRecentFoldersBar .fav-folder-chip-group .dropdown-menu,
+#favRecentFilesBar .fav-folder-chip-group .dropdown-menu {
   z-index: 1060;
+  max-width: min(26rem, calc(100vw - 2rem));
+  width: max-content;
 }
-#favFoldersBar .fav-folder-chip-chevron {
+/* Until renderer.js fixes position:fixed, BS static/absolute menu can paint in-flow and flash “Loading…” left into the go cap. */
+#favFoldersBar .fav-folder-chip-group .dropdown .dropdown-menu.show:not(.tagfox-fav-dd-placed),
+#favRecentFoldersBar .fav-folder-chip-group .dropdown .dropdown-menu.show:not(.tagfox-fav-dd-placed),
+#favRecentFilesBar .fav-folder-chip-group .dropdown .dropdown-menu.show:not(.tagfox-fav-dd-placed) {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+#favFoldersBar .fav-folder-chip-chevron,
+#favRecentFoldersBar .fav-folder-chip-chevron,
+#favRecentFilesBar .fav-folder-chip-chevron {
   color: var(--fav-chip-fg);
   background-color: var(--fav-chip-bg);
   border-color: var(--fav-chip-border);
@@ -1575,15 +2241,27 @@ ul.breadcrumb-folder-flyout li.breadcrumb-folder-on-scope-path > button.dropdown
 #favFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:focus,
 #favFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:focus-visible,
 #favFoldersBar .fav-folder-chip-chevron:focus,
-#favFoldersBar .fav-folder-chip-chevron:focus-visible {
+#favFoldersBar .fav-folder-chip-chevron:focus-visible,
+#favRecentFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:focus,
+#favRecentFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:focus-visible,
+#favRecentFoldersBar .fav-folder-chip-chevron:focus,
+#favRecentFoldersBar .fav-folder-chip-chevron:focus-visible,
+#favRecentFilesBar .fav-folder-chip-group > .fav-folder-chip-go:focus,
+#favRecentFilesBar .fav-folder-chip-group > .fav-folder-chip-go:focus-visible,
+#favRecentFilesBar .fav-folder-chip-chevron:focus,
+#favRecentFilesBar .fav-folder-chip-chevron:focus-visible {
   z-index: 1;
 }
-#favFoldersBar .fav-folder-chip-chevron:hover {
+#favFoldersBar .fav-folder-chip-chevron:hover,
+#favRecentFoldersBar .fav-folder-chip-chevron:hover,
+#favRecentFilesBar .fav-folder-chip-chevron:hover {
   color: #27272a;
   background-color: #f4f4f5;
   border-color: #d4d4d8;
 }
-#favFoldersBar .fav-folder-chip-chevron:active {
+#favFoldersBar .fav-folder-chip-chevron:active,
+#favRecentFoldersBar .fav-folder-chip-chevron:active,
+#favRecentFilesBar .fav-folder-chip-chevron:active {
   color: #18181b;
   background-color: #e4e4e7;
   border-color: #a1a1aa;
@@ -1621,7 +2299,8 @@ ul.breadcrumb-folder-flyout li.breadcrumb-folder-on-scope-path > button.dropdown
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  margin-left: 0.05rem;
+  /* Extra gap so the × is harder to hit while aiming for the number */
+  margin-left: 0.35rem;
   padding: 0 0.15rem;
   border-radius: 0.25rem;
   color: var(--fav-search-fg);
@@ -1655,8 +2334,7 @@ ul.breadcrumb-folder-flyout li.breadcrumb-folder-on-scope-path > button.dropdown
   z-index: 1040;
 }
 .tagfox-search-toolbar-row .dropdown-menu,
-.tag-toolbar-row .dropdown-menu,
-.results-status-bar .dropdown-menu {
+.tag-toolbar-row .dropdown-menu {
   z-index: 1060;
 }
 .tagfox-advanced-wrap {
@@ -1718,7 +2396,8 @@ ul.breadcrumb-folder-flyout li.breadcrumb-folder-on-scope-path > button.dropdown
   border: 1px solid var(--bs-border-color);
 }
 /* Expanded viewer: taller PDF; MD/text readme blocks already fill column via flex */
-#propsAside.props-theater #pdfFrame {
+#propsAside.props-theater #pdfFrame,
+#propsAside.props-theater #htmlPreviewFrame {
   min-height: 72vh;
 }
 /* Bootstrap tooltips for toolbar chrome (see refreshTagFoxChromeTooltips). */
@@ -1791,6 +2470,7 @@ body > .tooltip {
 }
 /* ─── Dark theme ─── */
 [data-bs-theme="dark"] {
+  --tagfox-tags-icon: #8fad8a;
   --bs-body-color: #e4e4e7;
   --bs-body-bg: #18181b;
   --bs-secondary-bg: #27272a;
@@ -1798,11 +2478,6 @@ body > .tooltip {
   --tagfox-folder-row-bg: rgba(217, 119, 6, 0.15);
   --bs-border-color: #3f3f46;
   --tagfox-toolbar-row-rule: rgba(255, 255, 255, 0.14);
-  --tagfox-advanced-accent-rgb: 190, 242, 100;
-  --tagfox-advanced-accent: #bef264;
-  --tagfox-advanced-bg-subtle: rgba(190, 242, 100, 0.14);
-  --tagfox-advanced-border-subtle: rgba(190, 242, 100, 0.45);
-  --tagfox-advanced-text-emphasis: #d9f99d;
   --bs-primary-bg-subtle: #1e1b4b;
   --bs-primary-border-subtle: #4338ca;
   --bs-primary-text-emphasis: #a5b4fc;
@@ -1819,6 +2494,15 @@ body > .tooltip {
   --bs-btn-active-bg: #a1a1aa;
   --bs-btn-active-border-color: #a1a1aa;
 }
+[data-bs-theme="dark"] .tagfox-query-ghost-hint {
+  color: rgba(228, 228, 231, 0.42);
+}
+[data-bs-theme="dark"] .tagfox-query-ghost-hint .text-muted {
+  color: inherit !important;
+}
+[data-bs-theme="dark"] .tagfox-query-ghost-folder {
+  color: rgba(228, 228, 231, 0.5);
+}
 [data-bs-theme="dark"] .form-control,
 [data-bs-theme="dark"] .form-select {
   border-color: #52525b;
@@ -1826,32 +2510,44 @@ body > .tooltip {
   color: #e4e4e7;
 }
 [data-bs-theme="dark"] .props-panel { background: #1e1e22 !important; }
-[data-bs-theme="dark"] #resultsTable thead th {
+[data-bs-theme="dark"] .results-pane:not(.results-pane-active) {
+  opacity: 0.78;
+  background-color: color-mix(in srgb, var(--bs-tertiary-bg) 74%, var(--bs-body-bg) 26%);
+}
+[data-bs-theme="dark"] .results-pane:not(.results-pane-active)::after {
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.015), rgba(0, 0, 0, 0.1));
+}
+[data-bs-theme="dark"] :is(#resultsTable, #resultsTableA, #resultsTableB) thead th {
   background: #27272a;
   color: #a1a1aa;
 }
-[data-bs-theme="dark"] #resultsTable tbody tr { border-bottom-color: #3f3f46; }
-[data-bs-theme="dark"] #resultsTable.results-sort-path tbody tr.results-folder-row {
+[data-bs-theme="dark"] :is(#resultsTable, #resultsTableA, #resultsTableB) thead th:not(:first-child) {
+  border-left-color: #3f3f46;
+}
+[data-bs-theme="dark"] :is(#resultsTable, #resultsTableA, #resultsTableB) thead th .th-resize {
+  background: rgba(255, 255, 255, 0.08);
+}
+[data-bs-theme="dark"] :is(#resultsTable, #resultsTableA, #resultsTableB) thead th .th-resize:hover {
+  background: rgba(99, 102, 241, 0.28);
+}
+[data-bs-theme="dark"] :is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr { border-bottom-color: #3f3f46; }
+[data-bs-theme="dark"] :is(#resultsTable, #resultsTableA, #resultsTableB).results-sort-path tbody tr.results-folder-row {
   border-bottom-color: rgba(251, 146, 60, 0.3);
 }
 [data-bs-theme="dark"] .name-badges .folder-child-count.folder-child-count-over {
   background-color: rgba(248, 113, 113, 0.16);
   color: #fecdd3 !important;
 }
-[data-bs-theme="dark"] #resultsTable tbody td.results-td-size.tagfox-size-heat-orange,
-[data-bs-theme="dark"] #propSize.tagfox-size-heat-orange {
+[data-bs-theme="dark"] :is(#resultsTable, #resultsTableA, #resultsTableB) tbody td.results-td-size.tagfox-size-heat-orange {
   color: #fb923c;
 }
-[data-bs-theme="dark"] #resultsTable tbody td.results-td-size.tagfox-size-heat-amber,
-[data-bs-theme="dark"] #propSize.tagfox-size-heat-amber {
+[data-bs-theme="dark"] :is(#resultsTable, #resultsTableA, #resultsTableB) tbody td.results-td-size.tagfox-size-heat-amber {
   color: #fbbf24;
 }
-[data-bs-theme="dark"] #resultsTable tbody td.results-td-size.tagfox-size-heat-mb1,
-[data-bs-theme="dark"] #propSize.tagfox-size-heat-mb1 {
+[data-bs-theme="dark"] :is(#resultsTable, #resultsTableA, #resultsTableB) tbody td.results-td-size.tagfox-size-heat-mb1 {
   color: #2dd4bf;
 }
-[data-bs-theme="dark"] #resultsTable tbody td.results-td-size.tagfox-size-heat-kb100,
-[data-bs-theme="dark"] #propSize.tagfox-size-heat-kb100 {
+[data-bs-theme="dark"] :is(#resultsTable, #resultsTableA, #resultsTableB) tbody td.results-td-size.tagfox-size-heat-kb100 {
   color: #bef264;
 }
 [data-bs-theme="dark"] .results-wrap.card {
@@ -1885,16 +2581,23 @@ body > .tooltip {
 }
 [data-bs-theme="dark"] #readmePreview.readme-preview--filled { background-color: #2d2006; }
 [data-bs-theme="dark"] #mdFilePreview { background-color: #27272a !important; }
-[data-bs-theme="dark"] #pdfFrame { background: #27272a; }
+[data-bs-theme="dark"] #pdfFrame,
+[data-bs-theme="dark"] #htmlPreviewFrame { background: #27272a; }
 [data-bs-theme="dark"] ::-webkit-scrollbar-thumb { background: #52525b; }
 [data-bs-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #71717a; }
-[data-bs-theme="dark"] #favFoldersBar .fav-folder-chip-group {
+[data-bs-theme="dark"] #favFoldersBar .fav-folder-chip-group,
+[data-bs-theme="dark"] #favRecentFoldersBar .fav-folder-chip-group,
+[data-bs-theme="dark"] #favRecentFilesBar .fav-folder-chip-group {
   --fav-chip-fg: #d4d4d8;
   --fav-chip-bg: #27272a;
   --fav-chip-border: #3f3f46;
 }
 [data-bs-theme="dark"] #favFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:hover,
-[data-bs-theme="dark"] #favFoldersBar .fav-folder-chip-chevron:hover {
+[data-bs-theme="dark"] #favFoldersBar .fav-folder-chip-chevron:hover,
+[data-bs-theme="dark"] #favRecentFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:hover,
+[data-bs-theme="dark"] #favRecentFoldersBar .fav-folder-chip-chevron:hover,
+[data-bs-theme="dark"] #favRecentFilesBar .fav-folder-chip-group > .fav-folder-chip-go:hover,
+[data-bs-theme="dark"] #favRecentFilesBar .fav-folder-chip-chevron:hover {
   color: #e4e4e7; background-color: #3f3f46; border-color: #52525b;
 }
 [data-bs-theme="dark"] #favFoldersBar .fav-folder-chip-remove:hover {

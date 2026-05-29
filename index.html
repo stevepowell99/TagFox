@@ -4,24 +4,42 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>TagFox</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" />
-  <!-- Bootstrap CSS: jsDelivr then Cloudflare CDN (offline / blocked primary → fallback). -->
-  <link
-    rel="stylesheet"
-    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-    onerror="this.onerror=null;this.href='https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css'"
-  />
-  <!-- Icons: Font Awesome 6 (all UI glyphs). -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <!-- Offline: synced from npm (npm run vendor:sync / postinstall). -->
+  <link rel="stylesheet" href="vendor/bootstrap/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="vendor/codemirror/lib/codemirror.css" />
+  <link rel="stylesheet" href="vendor/codemirror/addon/dialog/dialog.css" />
+  <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body class="app-shell bg-body-secondary">
   <button type="button" id="propsTheaterBackdrop" class="props-theater-backdrop d-none" aria-label="Close expanded viewer" title="Close"></button>
-  <!-- Top chrome -->
-  <header class="border-bottom bg-body px-2 py-2 d-flex align-items-center justify-content-between flex-shrink-0">
-    <div class="d-flex align-items-center gap-1">
+  <!-- Bulk actions: fixed near cursor over checked rows (renderer.js pointer tracking) -->
+  <div
+    id="bulkBar"
+    class="tagfox-bulk-bar tagfox-bulk-bar--float d-none d-inline-flex flex-wrap align-items-center flex-shrink-0 small"
+    aria-label="Bulk selection actions"
+    role="toolbar"
+    aria-hidden="true"
+  >
+    <span id="bulkBarLabel" class="tagfox-bulk-bar-label text-muted flex-shrink-0"></span>
+    <div class="d-inline-flex align-items-center gap-1 tagfox-bulk-bar-actions" role="group" aria-label="Bulk actions">
+      <button type="button" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0 row-clip-btn tagfox-bulk-bar-icon" id="btnBulkClip" title="Copy selected (Windows Explorer paste) — Ctrl+C" aria-label="Copy">
+        <i class="fa-solid fa-clipboard" aria-hidden="true"></i>
+      </button>
+      <button type="button" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center p-0 tagfox-bulk-bar-icon" id="btnBulkTrash" title="Move checked or highlighted rows to the Recycle Bin (confirmation) — Del" aria-label="Delete — move to Recycle Bin">
+        <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
+      </button>
+      <button type="button" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center p-0 tagfox-bulk-bar-icon" id="btnBulkTags" title="Edit bracket-tag names for all checked rows (or the highlighted row if none checked) — Ctrl+T or t" aria-label="Edit tags">
+        <i class="fa-solid fa-tags" aria-hidden="true"></i>
+      </button>
+      <button type="button" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0 tagfox-bulk-bar-icon" id="btnBulkClearSel" title="Uncheck every row in the results list — Esc" aria-label="Clear selection — Esc">
+        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+      </button>
+    </div>
+  </div>
+  <!-- Top chrome: toolbar + title (status line is bottom footer) -->
+  <header class="tagfox-app-header border-bottom bg-body px-2 py-2 d-flex align-items-center gap-2 flex-shrink-0 flex-wrap">
+    <div class="d-flex align-items-center gap-1 flex-shrink-0">
       <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSearchHistBack" title="Previous search (Alt+←)" aria-label="Previous search state"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i></button>
       <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSearchHistFwd" title="Next search (Alt+→)" aria-label="Next search state"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
       <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#helpModal" title="Help (F1)" aria-label="Help"><i class="fa-solid fa-circle-question" aria-hidden="true"></i></button>
@@ -33,12 +51,15 @@
         data-bs-toggle="offcanvas"
         data-bs-target="#settingsPanel"
         aria-controls="settingsPanel"
-        title="Show or hide Settings — Ctrl+, (⌘+, on Mac); Everything URL, results per page, auto-refresh, HTTP auth, list options"
+        title="Show or hide Settings — Ctrl+,; Everything URL, results per page, auto-refresh, HTTP auth, list options"
       >
         Settings
       </button>
+      <button type="button" class="btn btn-sm btn-outline-warning" id="btnSearchDebugTestCycle" title="Step 1: turn on logging if needed, clear log, then capture — same as Clear log">New dbg</button>
+      <span id="navbarGoogleDrivePing" class="d-inline-flex align-items-center ms-1 small" aria-live="polite"></span>
     </div>
-    <span class="h6 mb-0">🦊 TagFox</span>
+    <span id="navbarDidYouKnow" class="tagfox-navbar-dyk-wrap min-w-0 flex-grow-1 small ms-2 rounded px-2 py-1 border" aria-live="polite"></span>
+    <span class="h6 mb-0 flex-shrink-0">🦊 TagFox</span>
   </header>
 
   <!-- Everything + app settings: offcanvas from the left (not a strip dropping under the header). -->
@@ -53,181 +74,394 @@
       <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close settings"></button>
     </div>
     <div class="offcanvas-body small pt-3 pb-4">
-      <p class="text-muted mb-3">
-        Enable <strong>Everything</strong> HTTP (Tools → Options → HTTP Server). The query updates results live; renames trigger a refresh.
-      </p>
-      <div id="searchScopeRootsTip" class="alert alert-info py-2 px-2 small mb-3 d-none" role="status">
-        <div class="d-flex align-items-start justify-content-between gap-2">
-          <span
-            ><strong>New setup:</strong> consider setting one optional <strong>search scope folder</strong> below (e.g. profile or project drive) so results stay under that tree. The breadcrumb starts there; you can narrow further.</span
-          >
-          <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0" id="btnDismissSearchScopeTip" aria-label="Dismiss this tip">
-            Dismiss
-          </button>
-        </div>
+      
+      <div
+        class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3 pb-2 border-bottom tagfox-settings-section-title tagfox-settings-section-title--first"
+      >
+        <button
+          type="button"
+          class="btn btn-link text-body text-decoration-none p-0 d-flex align-items-center gap-2 min-w-0 flex-grow-1 text-start tagfox-settings-connection-toggle"
+          id="btnSettingsConnectionToggle"
+          aria-expanded="true"
+          aria-controls="settingsConnectionDetails"
+          data-bs-toggle="collapse"
+          data-bs-target="#settingsConnectionDetails"
+          title="Show or hide connection fields"
+        >
+          <i
+            class="fa-solid fa-chevron-down tagfox-settings-connection-chevron flex-shrink-0 d-inline-flex align-items-center justify-content-center"
+            style="width: 1.5rem"
+            aria-hidden="true"
+          ></i>
+          <span class="h6 fw-semibold mb-0">Connection to Everything Search</span>
+        </button>
+        <span id="everythingConnectionBadge" class="badge rounded-pill text-bg-secondary flex-shrink-0" role="status" aria-live="polite"></span>
       </div>
-      <div class="border rounded p-2 mb-3 bg-body-tertiary">
-        <label class="form-label small mb-1">Search scope folder (optional)</label>
-        <p class="text-muted small mb-2">
-          When set, Everything only returns paths under this folder — it is the <strong>top</strong> of the breadcrumb and the hard ceiling for navigation. Your <strong>current folder</strong> narrows further inside it (or leave current folder empty to search the whole tree under the scope). Clear for no ceiling (whole index, subject to the breadcrumb).
+      <div id="settingsConnectionDetails" class="collapse show">
+        <p class="text-muted mb-3">
+          Use <strong>Everything 1.5a</strong> with the HTTP Server plugin. If Everything is not installed, get it here:
+          <a href="https://www.voidtools.com/everything-1.5a" target="_blank" rel="noopener">Everything 1.5a downloads</a>.
+          Then in Everything turn on <strong>HTTP Server</strong> under <strong>Tools → Options → HTTP Server</strong> and use the same address here. Default: <code>http://127.0.0.1:8080</code>.
         </p>
-        <div class="d-flex flex-wrap gap-1 mb-2">
-          <button type="button" class="btn btn-sm btn-outline-primary" id="btnSearchScopeAddFolder">Set folder…</button>
-          <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSearchScopeAddProfile">Set profile folder</button>
-          <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSearchScopeAddCurrent" title="Uses the breadcrumb current folder (#rootFolder)">
-            Set current folder
-          </button>
-          <button type="button" class="btn btn-sm btn-outline-danger" id="btnSearchScopeClearMax">Clear scope</button>
+        <div class="row g-3 align-items-start mb-0">
+          <div class="col-12 col-md-8">
+            <label class="form-label small mb-0" for="baseUrl">Everything address (URL)</label>
+            <input type="text" id="baseUrl" class="form-control form-control-sm" placeholder="http://127.0.0.1:8080" autocomplete="off" />
+          </div>
+          <div class="col-12 col-md-4">
+            <label class="form-label small mb-0" for="maxResults">Results per page</label>
+            <input
+              type="number"
+              id="maxResults"
+              class="form-control form-control-sm"
+              min="1"
+              max="5000"
+              value="60"
+              title="Each Everything request returns up to this many rows; scroll the results list or use Load more for the next page."
+            />
+          </div>
+          <div class="col-12 col-md-6">
+            <label class="form-label small mb-0" for="httpUser">Username (if Everything asks for one)</label>
+            <input type="text" id="httpUser" class="form-control form-control-sm" autocomplete="username" />
+          </div>
+          <div class="col-12 col-md-6">
+            <label class="form-label small mb-0" for="httpPassword">Password</label>
+            <input type="password" id="httpPassword" class="form-control form-control-sm" autocomplete="current-password" />
+          </div>
         </div>
-        <div id="searchScopeMaxDisplay" class="small border rounded px-2 py-2 bg-body font-monospace text-break"></div>
       </div>
-      <div class="row g-3 align-items-start">
-        <div class="col-12 col-md-8">
-          <label class="form-label small mb-0" for="baseUrl">Everything base URL</label>
-          <input type="text" id="baseUrl" class="form-control form-control-sm" placeholder="http://127.0.0.1:8080" autocomplete="off" />
-        </div>
-        <div class="col-12 col-md-4">
-          <label class="form-label small mb-0" for="maxResults">Results per page</label>
-          <input
-            type="number"
-            id="maxResults"
-            class="form-control form-control-sm"
-            min="1"
-            max="5000"
-            value="200"
-            title="Each Everything request returns up to this many rows; scroll the results list or use Load more for the next page."
-          />
-        </div>
-        <div class="col-12">
-          <label class="form-label small mb-0" for="autoRefreshSec">Auto-refresh results</label>
-          <select id="autoRefreshSec" class="form-select form-select-sm" autocomplete="off">
-            <option value="0" selected>Off</option>
-            <option value="3">Every 3 seconds</option>
-            <option value="5">Every 5 seconds</option>
-            <option value="10">Every 10 seconds</option>
-            <option value="30">Every 30 seconds</option>
-          </select>
-          <div class="form-text text-muted small">
-            Re-runs the current Everything query on a timer. Skips while a search is still running, a dialog is open, the tag or rename dialog is busy, or this window is in the background.
-          </div>
-        </div>
-        <div class="col-12 col-md-6">
-          <label class="form-label small mb-0" for="httpUser">HTTP user</label>
-          <input type="text" id="httpUser" class="form-control form-control-sm" autocomplete="username" />
-        </div>
-        <div class="col-12 col-md-6">
-          <label class="form-label small mb-0" for="httpPassword">HTTP password</label>
-          <input type="password" id="httpPassword" class="form-control form-control-sm" autocomplete="current-password" />
-        </div>
-        <div class="col-12 col-lg-8">
-          <label class="form-label small mb-0" for="globalToggleHotkeyDisplay">Toggle TagFox (system-wide)</label>
-          <div class="input-group input-group-sm">
-            <input
-              type="text"
-              id="globalToggleHotkeyDisplay"
-              class="form-control form-control-sm"
-              readonly
-              autocomplete="off"
-              spellcheck="false"
-              title="Current global shortcut"
-            />
-            <button type="button" class="btn btn-outline-secondary" id="btnRecordGlobalToggleHotkey" title="Click, then press a key combination (with modifiers)">
-              Record…
+
+      <div class="mb-3 pb-2 border-bottom tagfox-settings-section-title">
+        <button
+          type="button"
+          class="btn btn-link text-body text-decoration-none p-0 d-flex align-items-center gap-2 w-100 text-start"
+          aria-expanded="false"
+          aria-controls="settingsAutoRefreshDetails"
+          data-bs-toggle="collapse"
+          data-bs-target="#settingsAutoRefreshDetails"
+          data-tagfox-settings-collapse="settingsAutoRefreshDetails"
+          title="Show or hide auto-refresh options"
+        >
+          <i
+            class="fa-solid fa-chevron-right tagfox-settings-section-chevron flex-shrink-0 d-inline-flex align-items-center justify-content-center"
+            style="width: 1.5rem"
+            aria-hidden="true"
+          ></i>
+          <span class="h6 fw-semibold mb-0">Auto-refresh</span>
+        </button>
+      </div>
+      <div id="settingsAutoRefreshDetails" class="collapse">
+        <label class="form-label small mb-1" for="autoRefreshSec">Optional. Refresh results on a timer. Handy if files change outside TagFox; otherwise leave Off.</label>
+        <select id="autoRefreshSec" class="form-select form-select-sm mb-1" autocomplete="off">
+          <option value="0" selected>Off</option>
+          <option value="3">Every 3 seconds</option>
+          <option value="5">Every 5 seconds</option>
+          <option value="10">Every 10 seconds</option>
+          <option value="30">Every 30 seconds</option>
+        </select>
+      </div>
+
+      <div class="mb-3 pb-2 border-bottom tagfox-settings-section-title">
+        <button
+          type="button"
+          class="btn btn-link text-body text-decoration-none p-0 d-flex align-items-center gap-2 w-100 text-start"
+          aria-expanded="false"
+          aria-controls="settingsSearchScopeDetails"
+          data-bs-toggle="collapse"
+          data-bs-target="#settingsSearchScopeDetails"
+          data-tagfox-settings-collapse="settingsSearchScopeDetails"
+          title="Show or hide search scope limit"
+        >
+          <i
+            class="fa-solid fa-chevron-right tagfox-settings-section-chevron flex-shrink-0 d-inline-flex align-items-center justify-content-center"
+            style="width: 1.5rem"
+            aria-hidden="true"
+          ></i>
+          <span class="h6 fw-semibold mb-0">Search only inside one folder</span>
+        </button>
+      </div>
+      <div id="settingsSearchScopeDetails" class="collapse">
+        <p class="text-muted small mb-2">Optional. Useful if you want results limited to one drive or project. You can still pick a smaller folder in the bar at the top.</p>
+        <div class="border rounded p-2 mb-0 bg-body-tertiary">
+          <div class="d-flex flex-wrap gap-1 mb-2">
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btnSearchScopeAddFolder">Choose folder…</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSearchScopeAddProfile">Use my Windows profile folder</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSearchScopeAddCurrent" title="Uses the breadcrumb current folder (#rootFolder)">
+              Use current folder
             </button>
+            <button type="button" class="btn btn-sm btn-outline-danger d-none" id="btnSearchScopeClearMax">Remove limit</button>
           </div>
-          <div id="globalToggleHotkeyHelp" class="form-text text-muted small">
-            Default <kbd>Ctrl</kbd>+<kbd>Space</kbd>. Recording needs at least one modifier (e.g. Ctrl, Alt, Shift). Works while TagFox is hidden.
+          <div id="searchScopeMaxDisplay" class="small border rounded px-2 py-2 bg-body font-monospace text-break"></div>
+        </div>
+      </div>
+
+      <div class="mb-3 pb-2 border-bottom tagfox-settings-section-title">
+        <button
+          type="button"
+          class="btn btn-link text-body text-decoration-none p-0 d-flex align-items-center gap-2 w-100 text-start"
+          aria-expanded="false"
+          aria-controls="settingsShortcutsTodoDetails"
+          data-bs-toggle="collapse"
+          data-bs-target="#settingsShortcutsTodoDetails"
+          data-tagfox-settings-collapse="settingsShortcutsTodoDetails"
+          title="Show or hide shortcuts and Quick TODO folder"
+        >
+          <i
+            class="fa-solid fa-chevron-right tagfox-settings-section-chevron flex-shrink-0 d-inline-flex align-items-center justify-content-center"
+            style="width: 1.5rem"
+            aria-hidden="true"
+          ></i>
+          <span class="h6 fw-semibold mb-0">Global hotkey &amp; Quick TODO</span>
+        </button>
+      </div>
+      <div id="settingsShortcutsTodoDetails" class="collapse">
+        <p class="small fw-semibold text-body-secondary mb-2">Keyboard shortcuts</p>
+        <div class="row g-3 align-items-start mb-0">
+          <div class="col-12 col-lg-8">
+            <label class="form-label small mb-0" for="globalToggleHotkeyDisplay">Show / hide TagFox from anywhere</label>
+            <div class="input-group input-group-sm">
+              <input
+                type="text"
+                id="globalToggleHotkeyDisplay"
+                class="form-control form-control-sm"
+                readonly
+                autocomplete="off"
+                spellcheck="false"
+                title="Current global shortcut"
+              />
+              <button type="button" class="btn btn-outline-secondary" id="btnRecordGlobalToggleHotkey" title="Click, then press a key combination (with modifiers)">
+                Record…
+              </button>
+            </div>
+            <div id="globalToggleHotkeyHelp" class="form-text text-muted small">Default <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> so <kbd>Ctrl</kbd>+<kbd>Space</kbd> is free for global show/hide if you record it. Hold <kbd>Ctrl</kbd>, <kbd>Alt</kbd>, or <kbd>Shift</kbd> when recording.</div>
+          </div>
+          <div class="col-12 col-lg-8">
+            <label class="form-label small mb-0" for="quickTodoHotkeyDisplay">Quick TODO hotkey -- save notes from anywhere in Windows</label>
+            <div class="input-group input-group-sm">
+              <input
+                type="text"
+                id="quickTodoHotkeyDisplay"
+                class="form-control form-control-sm"
+                readonly
+                autocomplete="off"
+                spellcheck="false"
+                title="Current Quick TODO shortcut"
+              />
+              <button type="button" class="btn btn-outline-secondary" id="btnRecordQuickTodoHotkey" title="Click, then press a key combination (with modifiers)">
+                Record…
+              </button>
+            </div>
+            <div id="quickTodoHotkeyHelp" class="form-text text-muted small">Default <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd>. TagFox must be running.</div>
           </div>
         </div>
-        <div class="col-12 d-flex align-items-center gap-2 flex-wrap border-top pt-2 mt-2">
-          <span class="text-muted small mb-0">Shelf</span>
-          <button type="button" class="btn btn-sm btn-outline-secondary" id="btnShelfOpen" title="Open the Shelf staging folder in File Explorer">
-            Open
+        <p class="small fw-semibold text-body-secondary mb-2 mt-3">Quick TODO folder</p>
+        <p class="text-muted small mb-2">Where new Quick TODO notes (<code>.md</code> files) are saved.</p>
+        <input type="hidden" id="quickTodoFolder" autocomplete="off" />
+        <div class="d-flex flex-wrap gap-1 mb-2">
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btnQuickTodoPickFolder">Choose folder…</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="btnQuickTodoSetCurrent" title="Uses the breadcrumb current folder (#rootFolder)">
+            Use current folder
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-danger" id="btnQuickTodoClearFolder">Clear</button>
+        </div>
+        <div id="quickTodoFolderDisplay" class="small border rounded px-2 py-2 bg-body font-monospace text-break text-muted mb-0"></div>
+      </div>
+
+      <div class="mb-3 pb-2 border-bottom tagfox-settings-section-title">
+        <button
+          type="button"
+          class="btn btn-link text-body text-decoration-none p-0 d-flex align-items-center gap-2 w-100 text-start"
+          aria-expanded="false"
+          aria-controls="settingsShelfDetails"
+          data-bs-toggle="collapse"
+          data-bs-target="#settingsShelfDetails"
+          data-tagfox-settings-collapse="settingsShelfDetails"
+          title="Show or hide shelf folder action"
+        >
+          <i
+            class="fa-solid fa-chevron-right tagfox-settings-section-chevron flex-shrink-0 d-inline-flex align-items-center justify-content-center"
+            style="width: 1.5rem"
+            aria-hidden="true"
+          ></i>
+          <span class="h6 fw-semibold mb-0">Open the shelf folder in Explorer</span>
+        </button>
+      </div>
+      <div id="settingsShelfDetails" class="collapse">
+        <div class="d-flex align-items-center gap-2 flex-wrap mb-0">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="btnShelfOpen" title="Open the Shelf folder in File Explorer">
+            Open in Explorer
           </button>
         </div>
-        <div class="col-12 border-top pt-2 mt-2">
-          <label class="form-label small mb-1">Quick TODO folder (global shortcut)</label>
-          <p class="text-muted small mb-2">
-            The system-wide <strong>Quick TODO</strong> shortcut saves <code>.md</code> files here — same <code>[(…)]</code> tags as <strong>Add TODO</strong> in the Viewer.
-          </p>
-          <input type="hidden" id="quickTodoFolder" autocomplete="off" />
-          <div class="d-flex flex-wrap gap-1 mb-2">
-            <button type="button" class="btn btn-sm btn-outline-primary" id="btnQuickTodoPickFolder">Set folder…</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnQuickTodoSetCurrent" title="Uses the breadcrumb current folder (#rootFolder)">
-              Set current folder
-            </button>
-            <button type="button" class="btn btn-sm btn-outline-danger" id="btnQuickTodoClearFolder">Clear</button>
-          </div>
-          <div id="quickTodoFolderDisplay" class="small border rounded px-2 py-2 bg-body font-monospace text-break text-muted"></div>
-        </div>
-        <div class="col-12 col-lg-8">
-          <label class="form-label small mb-0" for="quickTodoHotkeyDisplay">Quick TODO (system-wide)</label>
-          <div class="input-group input-group-sm">
-            <input
-              type="text"
-              id="quickTodoHotkeyDisplay"
-              class="form-control form-control-sm"
-              readonly
-              autocomplete="off"
-              spellcheck="false"
-              title="Current Quick TODO shortcut"
-            />
-            <button type="button" class="btn btn-outline-secondary" id="btnRecordQuickTodoHotkey" title="Click, then press a key combination (with modifiers)">
-              Record…
-            </button>
-          </div>
-          <div id="quickTodoHotkeyHelp" class="form-text text-muted small">
-            Default <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd>. Needs at least one modifier. Works only while TagFox is running.
-          </div>
-        </div>
-        <div class="col-12 border-top pt-2 mt-2">
-          <span class="text-muted small mb-1 d-block">Tree view performance</span>
+      </div>
+
+      <div class="mb-3 pb-2 border-bottom tagfox-settings-section-title">
+        <button
+          type="button"
+          class="btn btn-link text-body text-decoration-none p-0 d-flex align-items-center gap-2 w-100 text-start"
+          aria-expanded="false"
+          aria-controls="settingsTreePerfDetails"
+          data-bs-toggle="collapse"
+          data-bs-target="#settingsTreePerfDetails"
+          data-tagfox-settings-collapse="settingsTreePerfDetails"
+          title="Show or hide tree view performance options"
+        >
+          <i
+            class="fa-solid fa-chevron-right tagfox-settings-section-chevron flex-shrink-0 d-inline-flex align-items-center justify-content-center"
+            style="width: 1.5rem"
+            aria-hidden="true"
+          ></i>
+          <span class="h6 fw-semibold mb-0">Improve performance if tree view is slow</span>
+        </button>
+      </div>
+      <div id="settingsTreePerfDetails" class="collapse">
+        <div class="mb-0">
           <div class="form-check mb-1">
             <input class="form-check-input" type="checkbox" id="optTreeFolding" autocomplete="off" checked />
-            <label class="form-check-label" for="optTreeFolding">Tree folding (+/- twisties)</label>
+            <label class="form-check-label" for="optTreeFolding">Show expand/collapse (<kbd>+</kbd>/<kbd>−</kbd>) in tree</label>
           </div>
           <div class="form-check mb-0">
             <input class="form-check-input" type="checkbox" id="optTreeGroupHL" autocomplete="off" checked />
-            <label class="form-check-label" for="optTreeGroupHL">Folder-contents highlight</label>
+            <label class="form-check-label" for="optTreeGroupHL">Highlight items inside the same folder</label>
           </div>
         </div>
-        <div class="col-12">
-          <div class="d-flex align-items-center gap-2 flex-wrap">
-            <div class="form-check mb-0">
-              <input class="form-check-input" type="checkbox" id="optSearchDebug" autocomplete="off" />
-              <label class="form-check-label" for="optSearchDebug">Search debug logging</label>
-            </div>
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnCopySearchDebug" title="Copy the search debug log to the clipboard">Copy debug log</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnClearSearchDebug" title="Clear the in-memory search debug log">Clear debug log</button>
-          </div>
-          <div class="form-text text-muted small">
-            Captures request params, response counts, fallback decisions, and sort output for path/date troubleshooting.
-          </div>
-          <textarea
-            id="searchDebugLog"
-            class="form-control form-control-sm font-monospace mt-1"
-            rows="8"
-            readonly
-            spellcheck="false"
-            placeholder="Search debug log appears here when enabled."
-          ></textarea>
+      </div>
+
+      <div class="mb-3 pb-2 border-bottom tagfox-settings-section-title">
+        <button
+          type="button"
+          class="btn btn-link text-body text-decoration-none p-0 d-flex align-items-center gap-2 w-100 text-start"
+          aria-expanded="false"
+          aria-controls="settingsSearchResultsDetails"
+          data-bs-toggle="collapse"
+          data-bs-target="#settingsSearchResultsDetails"
+          data-tagfox-settings-collapse="settingsSearchResultsDetails"
+          title="Show or hide search results display options"
+        >
+          <i
+            class="fa-solid fa-chevron-right tagfox-settings-section-chevron flex-shrink-0 d-inline-flex align-items-center justify-content-center"
+            style="width: 1.5rem"
+            aria-hidden="true"
+          ></i>
+          <span class="h6 fw-semibold mb-0">Search results</span>
+        </button>
+      </div>
+      <div id="settingsSearchResultsDetails" class="collapse">
+        <p class="text-muted small mb-2">
+          When the search box has text, show matching fragments in the <strong>Name</strong> and <strong>Path</strong> columns (same rules as Everything
+          <code>nopath:</code> highlighting).
+        </p>
+        <div class="d-flex align-items-center flex-wrap gap-2">
+          <input type="checkbox" class="btn-check" id="optHighlightMatchedNames" autocomplete="off" checked />
+          <label
+            class="btn btn-outline-secondary btn-sm"
+            for="optHighlightMatchedNames"
+            title="Toggle yellow highlight for search terms in each row’s name and path"
+            >Matched names</label>
         </div>
+      </div>
+
+      <div class="mb-3 pb-2 border-bottom tagfox-settings-section-title">
+        <button
+          type="button"
+          class="btn btn-link text-body text-decoration-none p-0 d-flex align-items-center gap-2 w-100 text-start"
+          aria-expanded="false"
+          aria-controls="settingsViewerDocsDetails"
+          data-bs-toggle="collapse"
+          data-bs-target="#settingsViewerDocsDetails"
+          data-tagfox-settings-collapse="settingsViewerDocsDetails"
+          title="Show or hide viewer doc matching names"
+        >
+          <i
+            class="fa-solid fa-chevron-right tagfox-settings-section-chevron flex-shrink-0 d-inline-flex align-items-center justify-content-center"
+            style="width: 1.5rem"
+            aria-hidden="true"
+          ></i>
+          <span class="h6 fw-semibold mb-0">Viewer docs</span>
+        </button>
+      </div>
+      <div id="settingsViewerDocsDetails" class="collapse">
+        <label class="form-label small mb-1" for="inpGlobalViewerBasenames">Match pretty names (comma-separated)</label>
+        <input
+          type="text"
+          id="inpGlobalViewerBasenames"
+          class="form-control form-control-sm"
+          autocomplete="off"
+          title="Used by both folder doc pick and nested docs. Default includes -readme/readme, claude, agents, about, context, index (.md/.txt)."
+        />
+        <p class="form-text text-muted small mb-0">
+          This single list controls both folder doc pick and All nested docs mode.
+        </p>
+      </div>
+
+      <div class="mb-3 pb-2 border-bottom tagfox-settings-section-title">
+        <button
+          type="button"
+          class="btn btn-link text-body text-decoration-none p-0 d-flex align-items-center gap-2 w-100 text-start"
+          aria-expanded="false"
+          aria-controls="settingsTroubleshootingDetails"
+          data-bs-toggle="collapse"
+          data-bs-target="#settingsTroubleshootingDetails"
+          data-tagfox-settings-collapse="settingsTroubleshootingDetails"
+          title="Show or hide troubleshooting options"
+        >
+          <i
+            class="fa-solid fa-chevron-right tagfox-settings-section-chevron flex-shrink-0 d-inline-flex align-items-center justify-content-center"
+            style="width: 1.5rem"
+            aria-hidden="true"
+          ></i>
+          <span class="h6 fw-semibold mb-0">Troubleshooting</span>
+        </button>
+      </div>
+      <div id="settingsTroubleshootingDetails" class="collapse">
+        <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+          <div class="form-check mb-0">
+            <input class="form-check-input" type="checkbox" id="optSearchDebug" autocomplete="off" checked />
+            <label class="form-check-label" for="optSearchDebug">Log search details (technical)</label>
+          </div>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="btnCopySearchDebug" title="Copy the search debug log to the clipboard">Copy log</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="btnClearSearchDebug" title="Clear the in-memory search debug log">Clear log</button>
+        </div>
+        <p class="form-text text-muted small mb-2">On by default (uncheck to cut noise). For diagnosing searches, recycle, focus. Paste the log if you need help.</p>
+        <textarea
+          id="searchDebugLog"
+          class="form-control form-control-sm font-monospace"
+          rows="6"
+          readonly
+          spellcheck="false"
+          placeholder="Debug lines appear here when logging is enabled (default: on)."
+        ></textarea>
       </div>
     </div>
   </div>
 
   <div class="app-main">
     <div class="center-wrap bg-body-secondary">
-    <!-- Search + results -->
-    <div class="center-panel">
-      <div class="small tagfox-fav-toolbar-row">
-        <span class="tagfox-toolbar-lead tagfox-soft-icon-lead text-muted" title="Favourites" aria-label="Favourites">
-          <i class="fa-solid fa-heart" aria-hidden="true"></i>
-        </span>
-        <div id="favFoldersBar" class="d-flex flex-wrap align-items-center min-w-0"></div>
+    <!-- LHS: favourite folders; splitter; then search + results + shelf on the right of results. -->
+    <aside id="favFoldersColumn" class="tagfox-fav-column d-flex flex-column min-h-0 flex-shrink-0 border-end" aria-label="Favourite folders">
+      <div class="tagfox-fav-column-head d-flex align-items-center justify-content-between gap-1 flex-shrink-0 mb-1">
         <button
           type="button"
-          class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
+          class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0 tagfox-fav-head-btn"
+          style="width: 2rem; height: 2rem"
+          id="btnToggleFavFoldersCollapse"
+          title="Full column — click for narrow rail (hover to peek)"
+          aria-label="Favourites column expanded — switch to narrow rail"
+          aria-expanded="true"
+        >
+          <!-- Two icons: current layout (full vs rail); CSS toggles visibility from .tagfox-fav-column--collapsed -->
+          <i class="fa-solid fa-table-columns tagfox-fav-rail-icon--full" aria-hidden="true"></i>
+          <i class="fa-solid fa-grip-lines-vertical tagfox-fav-rail-icon--narrow" aria-hidden="true"></i>
+        </button>
+        <span
+          class="tagfox-toolbar-lead tagfox-soft-icon-lead text-muted flex-shrink-0"
+          title="Favourite folders: click Save to bookmark the current folder. Drag a chip up or down to reorder. Ctrl+Shift+1…9 jumps by slot."
+          aria-label="Favourite folders"
+        >
+          <i class="fa-solid fa-heart" aria-hidden="true"></i>
+        </span>
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0 tagfox-fav-head-btn"
           style="width: 2rem; height: 2rem"
           id="btnSaveFavouriteFolder"
           title="Save current folder to favourites — slots: Ctrl+Shift+1…9"
@@ -236,31 +470,76 @@
           <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
         </button>
       </div>
+      <div id="favFoldersColumnInner" class="tagfox-fav-column-inner d-flex flex-column min-h-0 flex-grow-1 w-100">
+      <div class="tagfox-fav-bar-scroll tagfox-fav-bar-scroll--favourites flex-shrink-0 min-h-0 min-w-0 d-flex flex-column">
+        <div id="favFoldersBar" class="tagfox-fav-bar--vertical d-flex flex-column align-items-stretch min-w-0 flex-shrink-0"></div>
+      </div>
+      <div class="tagfox-fav-recent-block d-flex flex-column flex-grow-1 min-h-0 overflow-hidden border-top mt-1 pt-1">
+        <div class="tagfox-fav-recent-split d-flex flex-column flex-grow-1 min-h-0">
+          <div class="tagfox-fav-recent-half d-flex flex-column flex-grow-1 min-h-0 overflow-hidden">
+            <span
+              class="small text-muted ms-1 mb-1 flex-shrink-0"
+              title="Folders you opened in TagFox (visit count + recency) and Windows shell Recent — excludes favourites"
+            >
+              Recent folders
+            </span>
+            <div class="tagfox-fav-bar-scroll flex-grow-1 min-h-0 overflow-auto min-w-0 d-flex flex-column">
+              <div id="favRecentFoldersBar" class="tagfox-fav-bar--vertical d-flex flex-column align-items-stretch min-w-0 flex-shrink-0"></div>
+            </div>
+          </div>
+          <div class="tagfox-fav-recent-half d-flex flex-column flex-grow-1 min-h-0 overflow-hidden border-top mt-1 pt-1">
+            <span
+              class="small text-muted ms-1 mb-1 flex-shrink-0"
+              title="Files you opened in TagFox (open count + recency) and Windows shell Recent"
+            >
+              Recent files
+            </span>
+            <div class="tagfox-fav-bar-scroll flex-grow-1 min-h-0 overflow-auto min-w-0 d-flex flex-column">
+              <div id="favRecentFilesBar" class="tagfox-fav-bar--vertical d-flex flex-column align-items-stretch min-w-0 flex-shrink-0"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
+    </aside>
+    <div class="split-v" id="splitFavFolders" role="separator" aria-label="Resize favourite folders column" title="Drag"></div>
+    <!-- Wrapper: results + viewer. Row by default; stacks to column on narrow screens (see @media in styles.css). -->
+    <div class="results-viewer-wrap">
+    <div class="center-panel">
       <!-- Hidden: persisted current folder path (same id as before — loaders/savers unchanged). -->
       <input type="hidden" id="rootFolder" autocomplete="off" />
       <div class="tag-toolbar-row d-flex flex-wrap gap-1 align-items-center small">
-        <span class="tagfox-toolbar-lead text-muted flex-shrink-0" title="Tags" aria-label="Tags">
+        <span class="tagfox-toolbar-lead tagfox-soft-icon-lead text-muted flex-shrink-0" title="Tags: some names include a short label in square brackets, like Notes[Work]. This row lists those labels as buttons. Click one to only show items whose name includes that tag; click it again to turn that filter off. Your search words and folder choice still apply. At the end of this row, the circular-arrow button rescans your whole Everything index and refreshes these buttons when the list looks wrong or out of date." aria-label="Tags">
           <i class="fa-solid fa-tags" aria-hidden="true"></i>
         </span>
         <div id="tagBar" class="d-flex flex-wrap gap-1 align-items-center flex-grow-1 min-w-0"></div>
         <div class="d-flex align-items-center flex-shrink-0 flex-wrap tagfox-search-opts-rhs ms-auto">
-          <div class="btn-group tagfox-segmented flex-shrink-0" role="group" aria-label="Recency">
-            <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecency1h" value="1h" autocomplete="off" />
-            <label class="btn btn-outline-secondary btn-sm" for="optRecency1h" title="Modified within the last hour">1h</label>
-            <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecency1d" value="1d" autocomplete="off" />
-            <label class="btn btn-outline-secondary btn-sm" for="optRecency1d" title="Modified within the last 24 hours">1d</label>
-            <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecency1w" value="1w" autocomplete="off" />
-            <label class="btn btn-outline-secondary btn-sm" for="optRecency1w" title="Modified within the last 7 days">1w</label>
-            <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecency1m" value="1m" autocomplete="off" />
-            <label class="btn btn-outline-secondary btn-sm" for="optRecency1m" title="Modified within the last 30 days">1m</label>
-            <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecency1y" value="1y" autocomplete="off" />
-            <label class="btn btn-outline-secondary btn-sm" for="optRecency1y" title="Modified within the last 365 days">1y</label>
-            <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecencyAll" value="all" autocomplete="off" checked />
-            <label class="btn btn-outline-secondary btn-sm" for="optRecencyAll" title="No recency filter">All</label>
+          <div class="d-flex align-items-center flex-shrink-0 flex-wrap tagfox-recency-filter-wrap rounded px-1">
+            <span
+              class="tagfox-recency-lead text-muted flex-shrink-0 d-inline-flex align-items-center me-1"
+              title="Recency — filter by modified time (client and/or Everything)"
+              aria-hidden="true"
+            >
+              <i class="fa-solid fa-clock"></i>
+            </span>
+            <div class="btn-group tagfox-segmented flex-shrink-0" role="group" aria-label="Recency">
+              <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecency1h" value="1h" autocomplete="off" />
+              <label class="btn btn-outline-secondary btn-sm" for="optRecency1h" title="Modified within the last hour">1h</label>
+              <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecency1d" value="1d" autocomplete="off" />
+              <label class="btn btn-outline-secondary btn-sm" for="optRecency1d" title="Modified within the last 24 hours">1d</label>
+              <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecency1w" value="1w" autocomplete="off" />
+              <label class="btn btn-outline-secondary btn-sm" for="optRecency1w" title="Modified within the last 7 days">1w</label>
+              <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecency1m" value="1m" autocomplete="off" />
+              <label class="btn btn-outline-secondary btn-sm" for="optRecency1m" title="Modified within the last 30 days">1m</label>
+              <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecency1y" value="1y" autocomplete="off" />
+              <label class="btn btn-outline-secondary btn-sm" for="optRecency1y" title="Modified within the last 365 days">1y</label>
+              <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecencyAll" value="all" autocomplete="off" checked />
+              <label class="btn btn-outline-secondary btn-sm" for="optRecencyAll" title="No recency filter">All</label>
+            </div>
           </div>
           <div class="position-relative flex-shrink-0 tagfox-advanced-wrap">
-            <button type="button" class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center px-0 tagfox-advanced-icon-btn tagfox-advanced-hide-accent" style="width: 2rem; min-width: 2rem; height: 2rem" id="btnToggleSearchOptsAdvanced" aria-expanded="false" aria-controls="searchOptsAdvancedPanel" title="Match case, path, whole word, respect accents; hide special / hide ~ paths (client-side)" aria-label="Advanced search options">
-              <i class="fa-solid fa-sliders fa-fw" aria-hidden="true"></i>
+            <button type="button" class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center px-0 tagfox-advanced-icon-btn" style="width: 2rem; min-width: 2rem; height: 2rem" id="btnToggleSearchOptsAdvanced" aria-expanded="false" aria-controls="searchOptsAdvancedPanel" title="Match case, path, whole word, respect accents; hide special / hide ~ paths (client-side)" aria-label="Advanced search options">
+              <i class="fa-solid fa-eye-slash fa-fw" aria-hidden="true"></i>
             </button>
             <div id="searchOptsAdvancedPanel" class="search-opts-advanced-popover border rounded px-2 py-2 bg-body shadow-sm d-flex flex-wrap align-items-center gap-1" role="group" aria-label="Everything advanced search options" hidden>
               <input type="checkbox" class="btn-check" id="optCase" autocomplete="off" />
@@ -288,7 +567,7 @@
         <!-- no overflow-hidden here — clips scope-folder history .dropdown-menu -->
         <div id="breadcrumbShell" class="breadcrumb-center flex-grow-1 min-w-0 d-none">
           <div class="breadcrumb-shell-inner d-flex align-items-stretch w-100 min-w-0">
-            <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0 tagfox-toolbar-clear align-self-stretch" style="width: 2rem; min-width: 2rem" id="btnClearScope" disabled title="Clear current folder (search whole index) — Ctrl+Backspace" aria-label="Clear current folder">
+            <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0 tagfox-toolbar-clear align-self-stretch" style="width: 2rem; min-width: 2rem" id="btnClearScope" disabled title="Clear current folder (search whole index)" aria-label="Clear current folder">
               <i class="fa-solid fa-xmark" aria-hidden="true"></i>
             </button>
             <div id="breadcrumbShellMain" class="breadcrumb-shell-main flex-grow-1 min-w-0 d-flex align-items-center">
@@ -309,6 +588,17 @@
               </div>
             </div>
             <div class="d-flex align-items-center flex-shrink-0 gap-1 px-1 py-1 border-start tagfox-breadcrumb-shell-actions">
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
+                style="width: 2rem; height: 2rem"
+                id="btnStatusScopeParent"
+                disabled
+                title="Parent folder (Ctrl+↑)"
+                aria-label="Open parent folder"
+              >
+                <i class="fa-solid fa-arrow-up" aria-hidden="true"></i>
+              </button>
               <button
                 type="button"
                 class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
@@ -343,25 +633,28 @@
           <button type="button" class="btn btn-sm btn-outline-secondary tagfox-scope-bar-icon-btn d-inline-flex align-items-center justify-content-center" id="btnScopeBarOpen" disabled title="Show in File Explorer" aria-label="Show in File Explorer">
             <i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i>
           </button>
-          <button type="button" class="btn btn-sm btn-outline-secondary tagfox-scope-bar-icon-btn d-inline-flex align-items-center justify-content-center" id="btnStatusScopeParent" disabled title="Parent folder (Ctrl+↑ or Backspace)" aria-label="Open parent folder">
-            <i class="fa-solid fa-chevron-up" aria-hidden="true"></i>
-          </button>
-          <button type="button" class="btn btn-sm btn-outline-secondary tagfox-scope-bar-icon-btn row-clip-btn d-inline-flex align-items-center justify-content-center" id="btnScopeBarClip" disabled title="Copy (Windows Explorer paste)" aria-label="Copy">
+          <button type="button" class="btn btn-sm btn-outline-secondary tagfox-scope-bar-icon-btn row-clip-btn d-inline-flex align-items-center justify-content-center" id="btnScopeBarClip" disabled title="Copy" aria-label="Copy">
             <i class="fa-solid fa-clipboard" aria-hidden="true"></i>
           </button>
-          <button type="button" class="btn btn-sm btn-outline-primary tagfox-scope-bar-icon-btn d-inline-flex align-items-center justify-content-center" id="btnScopeBarTags" disabled title="Edit [(…)] tags in the folder name" aria-label="Edit tags">
+          <button type="button" class="btn btn-sm btn-outline-primary tagfox-scope-bar-icon-btn d-inline-flex align-items-center justify-content-center" id="btnScopeBarTags" disabled title="Edit tags in the folder name" aria-label="Edit tags">
             <i class="fa-solid fa-tags" aria-hidden="true"></i>
           </button>
-          <button type="button" class="btn btn-sm btn-outline-secondary tagfox-scope-bar-icon-btn d-inline-flex align-items-center justify-content-center" id="btnScopeBarMore" disabled title="More — full actions menu (same as row ⋯)" aria-label="More actions">
+          <button type="button" class="btn btn-sm btn-outline-secondary tagfox-scope-bar-icon-btn d-inline-flex align-items-center justify-content-center" id="btnScopeBarTerminal" disabled title="Open Terminal in this folder" aria-label="Open in Terminal">
+            <i class="fa-solid fa-terminal" aria-hidden="true"></i>
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-secondary tagfox-scope-bar-icon-btn d-inline-flex align-items-center justify-content-center" id="btnScopeBarCopyQuoted" disabled title="Copy full path (quoted)" aria-label="Copy full path quoted">
+            <i class="fa-solid fa-quote-right" aria-hidden="true"></i>
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-secondary tagfox-scope-bar-icon-btn d-inline-flex align-items-center justify-content-center" id="btnScopeBarMore" disabled title="More — full actions menu)" aria-label="More actions">
             <i class="fa-solid fa-ellipsis" aria-hidden="true"></i>
           </button>
         </div>
       </div>
 
-      <!-- Search row: saved-search chips + query; recency + Advanced on tag row RHS; Smart/Tree/… on #statusBar -->
+      <!-- Search row: saved-search chips + query + view mode (Smart/Tree/Flat, subs, content); recency + Advanced on tag row RHS -->
       <div class="tagfox-search-toolbar-row d-flex align-items-center gap-2 min-w-0 flex-wrap">
         <div class="d-flex flex-wrap gap-1 align-items-center small flex-shrink-0 min-w-0">
-          <span class="tagfox-toolbar-lead tagfox-soft-icon-lead text-muted" title="Saved searches" aria-label="Saved searches">
+          <span class="tagfox-toolbar-lead tagfox-soft-icon-lead text-muted" title="Saved searches: click Save (floppy disk) to store the current search so you can run it again later with one click. That stores your wording, folder, tag buttons, filters, sort, and view — the same setup you have right now. Saved searches show as numbered buttons on this row. Drag a button to change the order. On the keyboard, hold Ctrl and press 1–9 to open that saved search." aria-label="Saved searches">
             <i class="fa-solid fa-heart" aria-hidden="true"></i>
           </span>
           <div id="favSearchesBar" class="d-flex flex-wrap gap-1 align-items-center"></div>
@@ -385,26 +678,42 @@
             <input type="text" id="query" class="form-control tagfox-query-empty" placeholder="" autocomplete="off" />
           </div>
         </div>
-      </div>
-
-      <div id="bulkBar" class="d-none mb-1 small d-flex flex-wrap align-items-center gap-1">
-        <span id="bulkBarLabel" class="text-muted me-1"></span>
-        <button type="button" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0 row-clip-btn" style="width:2rem;height:2rem" id="btnBulkClip" title="Copy selected (Windows Explorer paste) — Ctrl+C" aria-label="Copy">
-          <i class="fa-solid fa-clipboard" aria-hidden="true"></i>
-        </button>
-        <button type="button" class="btn btn-sm btn-outline-danger" id="btnBulkTrash" title="Move checked or highlighted rows to the Recycle Bin (confirmation) — Del">
-          Delete
-        </button>
-        <button type="button" class="btn btn-sm btn-outline-primary" id="btnBulkTags" title="Edit bracket-tag names for all checked rows (or the highlighted row if none checked) — Ctrl+T or t">
-          Tags
-        </button>
-        <button type="button" class="btn btn-sm btn-link py-0" id="btnBulkClearSel" title="Uncheck every row in the results list">
-          Clear selection
-        </button>
+        <div class="d-flex align-items-center flex-shrink-0 flex-wrap gap-2 tagfox-search-opts-rhs tagfox-status-view-opts">
+          <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair tagfox-view-trio tagfox-rv-layout-trio flex-shrink-0" role="group" aria-label="View mode">
+            <input type="radio" class="btn-check" name="rvViewMode" id="optRvSmart" value="smart" autocomplete="off" checked />
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvSmart" title="Smart view — auto-adjust subfolders/content — X; L cycles layout"
+              ><i class="fa-solid fa-wand-magic-sparkles fa-fw" aria-hidden="true"></i></label>
+            <input type="radio" class="btn-check" name="rvViewMode" id="optRvTree" value="tree" autocomplete="off" />
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvTree" title="Tree view — L cycles layout"
+              ><i class="fa-solid fa-sitemap fa-fw" aria-hidden="true"></i></label>
+            <input type="radio" class="btn-check" name="rvViewMode" id="optRvFlat" value="flat" autocomplete="off" />
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvFlat" title="Flat view — L cycles layout"
+              ><i class="fa-solid fa-list fa-fw" aria-hidden="true"></i></label>
+          </div>
+          <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair tagfox-rv-smart-secondary flex-shrink-0" role="group" aria-label="Subfolders">
+            <input type="radio" class="btn-check" name="rvSubfolders" id="optRvSubsOn" value="on" autocomplete="off" checked />
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvSubsOn" title="Include subfolders — S toggles subfolders"
+              ><i class="fa-solid fa-folder-tree fa-fw" aria-hidden="true"></i></label>
+            <input type="radio" class="btn-check" name="rvSubfolders" id="optRvSubsOff" value="off" autocomplete="off" />
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvSubsOff" title="This folder only — S toggles subfolders"
+              ><i class="fa-solid fa-folder fa-fw" aria-hidden="true"></i></label>
+          </div>
+          <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair tagfox-content-trio tagfox-rv-smart-secondary flex-shrink-0" role="group" aria-label="Content filter">
+            <input type="radio" class="btn-check" name="rvContent" id="optRvAll" value="all" autocomplete="off" checked />
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvAll" title="Files and folders — F cycles files/folders"
+              ><i class="fa-solid fa-copy fa-fw" aria-hidden="true"></i></label>
+            <input type="radio" class="btn-check" name="rvContent" id="optRvDirsOnly" value="dirs" autocomplete="off" />
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvDirsOnly" title="Folders only — F cycles files/folders"
+              ><i class="fa-solid fa-folder fa-fw" aria-hidden="true"></i></label>
+            <input type="radio" class="btn-check" name="rvContent" id="optRvFilesOnly" value="files" autocomplete="off" />
+            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvFilesOnly" title="Files only — F cycles files/folders"
+              ><i class="fa-solid fa-file-lines fa-fw" aria-hidden="true"></i></label>
+          </div>
+        </div>
       </div>
 
       <div class="results-shelf-stack">
-        <!-- Above Shelf row: same width as results column (status no longer stops at Shelf). -->
+        <!-- Above Shelf row: same width as results column. -->
         <div
           id="everythingHttpHelpAlert"
           class="alert alert-warning border-0 border-bottom rounded-0 mb-0 py-2 px-3 small d-none"
@@ -417,97 +726,64 @@
               Settings
             </button>
             <button type="button" class="btn btn-sm btn-primary flex-shrink-0" id="btnEverythingHttpSetupHelp">
-              Setup help
+              Get Everything 1.5a
             </button>
             <button type="button" class="btn-close flex-shrink-0" id="btnEverythingHttpHelpDismiss" aria-label="Dismiss"></button>
           </div>
         </div>
-        <div id="statusBar" class="results-status-bar border-bottom bg-body-secondary px-2 py-1 d-flex align-items-center flex-wrap flex-shrink-0 small gap-2" role="status">
-          <span class="d-flex flex-wrap align-items-center gap-2 min-w-0 flex-grow-1" aria-live="polite">
-            <span id="statusMain" class="text-muted min-w-0"></span>
-            <span id="statusSmartNote" class="d-none tagfox-status-smart-note small flex-shrink-0"></span>
-          </span>
-          <div class="d-flex align-items-center flex-shrink-0 flex-wrap tagfox-search-opts-rhs tagfox-status-view-opts">
-            <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair tagfox-view-trio tagfox-rv-layout-trio flex-shrink-0" role="group" aria-label="View mode">
-              <input type="radio" class="btn-check" name="rvViewMode" id="optRvSmart" value="smart" autocomplete="off" checked />
-              <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvSmart" title="Smart view — auto-adjust subfolders/content — X; L cycles layout"
-                ><i class="fa-solid fa-wand-magic-sparkles fa-fw" aria-hidden="true"></i></label>
-              <input type="radio" class="btn-check" name="rvViewMode" id="optRvTree" value="tree" autocomplete="off" />
-              <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvTree" title="Tree view — L cycles layout"
-                ><i class="fa-solid fa-sitemap fa-fw" aria-hidden="true"></i></label>
-              <input type="radio" class="btn-check" name="rvViewMode" id="optRvFlat" value="flat" autocomplete="off" />
-              <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvFlat" title="Flat view — L cycles layout"
-                ><i class="fa-solid fa-list fa-fw" aria-hidden="true"></i></label>
-            </div>
-            <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair tagfox-rv-smart-secondary flex-shrink-0" role="group" aria-label="Subfolders">
-              <input type="radio" class="btn-check" name="rvSubfolders" id="optRvSubsOn" value="on" autocomplete="off" checked />
-              <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvSubsOn" title="Include subfolders — S toggles subfolders"
-                ><i class="fa-solid fa-folder-tree fa-fw" aria-hidden="true"></i></label>
-              <input type="radio" class="btn-check" name="rvSubfolders" id="optRvSubsOff" value="off" autocomplete="off" />
-              <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvSubsOff" title="This folder only — S toggles subfolders"
-                ><i class="fa-solid fa-folder fa-fw" aria-hidden="true"></i></label>
-            </div>
-            <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair tagfox-content-trio tagfox-rv-smart-secondary flex-shrink-0" role="group" aria-label="Content filter">
-              <input type="radio" class="btn-check" name="rvContent" id="optRvAll" value="all" autocomplete="off" checked />
-              <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvAll" title="Files and folders — F cycles files/folders"
-                ><i class="fa-solid fa-copy fa-fw" aria-hidden="true"></i></label>
-              <input type="radio" class="btn-check" name="rvContent" id="optRvDirsOnly" value="dirs" autocomplete="off" />
-              <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvDirsOnly" title="Folders only — F cycles files/folders"
-                ><i class="fa-solid fa-folder fa-fw" aria-hidden="true"></i></label>
-              <input type="radio" class="btn-check" name="rvContent" id="optRvFilesOnly" value="files" autocomplete="off" />
-              <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvFilesOnly" title="Files only — F cycles files/folders"
-                ><i class="fa-solid fa-file-lines fa-fw" aria-hidden="true"></i></label>
-            </div>
-          </div>
-        </div>
         <div class="results-with-shelf">
-        <aside id="appShelf" class="app-shelf border-end bg-body small" aria-label="Shelf staging area">
-          <div class="app-shelf-rot">
-            <div
-              id="shelfDropZone"
-              class="d-flex flex-wrap gap-1 rounded border border-dashed px-2 py-1 bg-body-secondary"
-            >
-              <span id="shelfEmptyHint" class="text-muted fw-semibold">Shelf</span>
-              <div id="shelfChips"></div>
-              <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0" style="width: 1.5rem; height: 1.5rem" id="btnShelfClear" title="Delete everything in Shelf">
-                <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-              </button>
-            </div>
-            <button
-              type="button"
-              class="btn btn-sm btn-outline-secondary flex-shrink-0"
-              id="btnShelfOsDrag"
-              title="Makes your next drag work like dragging a real file — you can drop it into File Explorer or any other app outside TagFox"
-            >
-              <i class="fa-solid fa-hand" aria-hidden="true"></i>
+        <div id="resultsSplitStack" class="results-split-stack flex-grow-1 min-w-0 min-h-0">
+        <div class="split-h split-h-edge d-none" id="splitResultsTop" role="separator" aria-label="Create split from top" title="Drag to split">
+          <div class="split-h-actions split-h-edge-actions" role="group" aria-label="Restore split panes">
+            <button type="button" class="btn btn-sm btn-outline-secondary split-h-action-btn" data-split-reopen="1" title="Restore split (50/50)" aria-label="Restore split (50/50)">
+              <i class="fa-solid fa-up-down" aria-hidden="true"></i>
             </button>
           </div>
-        </aside>
-        <div id="resultsWrap" class="results-wrap card shadow-sm flex-grow-1 min-w-0 min-h-0" tabindex="-1" role="region" aria-label="Search results">
-        <!-- Scroll only the table (+ load more); status bar is sibling above .results-with-shelf -->
+        </div>
+        <div
+          id="resultsWrap"
+          data-results-pane="A"
+          class="results-wrap results-pane results-pane-active card shadow-sm flex-grow-1 min-w-0 min-h-0"
+          tabindex="-1"
+          role="region"
+          aria-label="Search results pane A"
+        >
+        <!-- Scroll only the table (+ load more) -->
         <div id="resultsScroll" class="results-table-scroll flex-grow-1 min-h-0">
           <table class="table table-sm mb-0" id="resultsTable">
           <colgroup>
-            <col style="width:4%" />
-            <col style="width:36%" />
-            <col style="width:22%" />
-            <col style="width:8%" />
+            <col style="width:3%" />
+            <col style="width:43%" />
+            <col style="width:24%" />
             <col style="width:14%" />
-            <col style="width:16%" />
+            <col style="width:6%" />
+            <col style="width:10%" />
           </colgroup>
           <thead class="table-light">
             <tr>
               <!-- no position-relative: it overrides sticky (Bootstrap !important); sticky th still contains .th-resize -->
               <th class="align-middle text-start results-th-cb" title="Select rows — Space toggles row, Ctrl+A all. Drag = in-app. Shelf OS drag or Alt+drag = Explorer files.">
                 <input type="checkbox" class="form-check-input m-0 results-cb" id="chkSelectAllResults" autocomplete="off" aria-label="Select all in list" />
-                <!-- boundary N = resize between col N and N+1 (0 = chk|Name … 4 = Modified|Actions) -->
-                <span class="th-resize" data-resize-idx="0" title="Drag to resize"></span>
+                <!-- resize: data-resize-left/right = colPercent indices 0–5 (chk,name,path,actions,size,modified) -->
+                <span class="th-resize" data-resize-left="0" data-resize-right="1" data-resize-mode="always" title="Drag to resize"></span>
               </th>
-              <th class="sortable-th" data-sort="name" title="Sort by name — n"><span class="sort-label">Name</span><span class="th-resize" data-resize-idx="1"></span></th>
-              <th class="sortable-th" data-sort="path" title="Sort by path"><span class="sort-label">Path</span><span class="th-resize" data-resize-idx="2"></span></th>
-              <th class="sortable-th text-end" data-sort="size" title="Sort by size — z"><span class="sort-label">Size</span><span class="th-resize" data-resize-idx="3"></span></th>
-              <th class="sortable-th" data-sort="date_modified" title="Sort by modified — m"><span class="sort-label">Modified</span><span class="th-resize" data-resize-idx="4"></span></th>
-              <th class="align-middle"></th>
+              <th class="sortable-th" data-sort="name" title="Sort by name — n">
+                <span class="sort-label">Name</span>
+                <span class="th-resize" data-resize-left="1" data-resize-right="2" data-resize-mode="flat" title="Drag to resize"></span>
+                <span class="th-resize" data-resize-left="2" data-resize-right="3" data-resize-mode="tree" title="Drag to resize"></span>
+              </th>
+              <th class="sortable-th" data-sort="path" title="Sort by path">
+                <span class="sort-label">Path</span>
+                <span class="th-resize" data-resize-left="2" data-resize-right="3" data-resize-mode="flat" title="Drag to resize"></span>
+              </th>
+              <th class="align-middle" aria-label="Row actions"></th>
+              <th class="sortable-th text-end" data-sort="size" title="Sort by size — z">
+                <!-- 3|4 on left edge of Size th: handle was on Actions (right) and extended under this th, so hits targeted Size|Modified -->
+                <span class="th-resize th-resize-leading" data-resize-left="3" data-resize-right="4" data-resize-mode="always" title="Drag to resize"></span>
+                <span class="sort-label">Size</span>
+                <span class="th-resize" data-resize-left="4" data-resize-right="5" data-resize-mode="always" title="Drag to resize"></span>
+              </th>
+              <th class="sortable-th" data-sort="date_modified" title="Sort by modified — m"><span class="sort-label">Modified</span></th>
             </tr>
           </thead>
           <tbody id="tbody"></tbody>
@@ -520,7 +796,108 @@
           <span id="resultsLoadMoreHint" class="small text-muted ms-2" aria-live="polite"></span>
         </div>
         </div>
-      </div>
+        </div>
+        <div class="split-h" id="splitResultsH" role="separator" aria-label="Resize split results panes" title="Drag">
+          <div class="split-h-actions" role="group" aria-label="Split pane actions">
+            <button type="button" class="btn btn-sm btn-outline-secondary split-h-action-btn" id="btnSplitCopyTopToBottom" title="Make bottom pane same as top pane" aria-label="Make bottom pane same as top pane">
+              <i class="fa-solid fa-arrow-down" aria-hidden="true"></i>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary split-h-action-btn" id="btnSplitSwapPanes" title="Swap top and bottom panes" aria-label="Swap top and bottom panes">
+              <i class="fa-solid fa-right-left" aria-hidden="true"></i>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary split-h-action-btn" id="btnSplitCopyBottomToTop" title="Make top pane same as bottom pane" aria-label="Make top pane same as bottom pane">
+              <i class="fa-solid fa-arrow-up" aria-hidden="true"></i>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary split-h-action-btn" id="btnSplitClose" title="Close split (keep active pane only)" aria-label="Close split (keep active pane only)">
+              <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            </button>
+          </div>
+        </div>
+        <div
+          id="resultsWrapB"
+          data-results-pane="B"
+          class="results-wrap results-pane card shadow-sm flex-grow-1 min-w-0 min-h-0"
+          tabindex="-1"
+          role="region"
+          aria-label="Search results pane B"
+        >
+        <div id="resultsScrollB" class="results-table-scroll flex-grow-1 min-h-0">
+          <table class="table table-sm mb-0" id="resultsTableB">
+          <colgroup>
+            <col style="width:3%" />
+            <col style="width:43%" />
+            <col style="width:24%" />
+            <col style="width:14%" />
+            <col style="width:6%" />
+            <col style="width:10%" />
+          </colgroup>
+          <thead class="table-light">
+            <tr>
+              <th class="align-middle text-start results-th-cb" title="Select rows — Space toggles row, Ctrl+A all. Drag = in-app. Shelf OS drag or Alt+drag = Explorer files.">
+                <input type="checkbox" class="form-check-input m-0 results-cb" id="chkSelectAllResultsB" autocomplete="off" aria-label="Select all in list" />
+                <span class="th-resize" data-resize-left="0" data-resize-right="1" data-resize-mode="always" title="Drag to resize"></span>
+              </th>
+              <th class="sortable-th" data-sort="name" title="Sort by name — n">
+                <span class="sort-label">Name</span>
+                <span class="th-resize" data-resize-left="1" data-resize-right="2" data-resize-mode="flat" title="Drag to resize"></span>
+                <span class="th-resize" data-resize-left="2" data-resize-right="3" data-resize-mode="tree" title="Drag to resize"></span>
+              </th>
+              <th class="sortable-th" data-sort="path" title="Sort by path">
+                <span class="sort-label">Path</span>
+                <span class="th-resize" data-resize-left="2" data-resize-right="3" data-resize-mode="flat" title="Drag to resize"></span>
+              </th>
+              <th class="align-middle" aria-label="Row actions"></th>
+              <th class="sortable-th text-end" data-sort="size" title="Sort by size — z">
+                <span class="th-resize th-resize-leading" data-resize-left="3" data-resize-right="4" data-resize-mode="always" title="Drag to resize"></span>
+                <span class="sort-label">Size</span>
+                <span class="th-resize" data-resize-left="4" data-resize-right="5" data-resize-mode="always" title="Drag to resize"></span>
+              </th>
+              <th class="sortable-th" data-sort="date_modified" title="Sort by modified — m"><span class="sort-label">Modified</span></th>
+            </tr>
+          </thead>
+          <tbody id="tbodyB"></tbody>
+        </table>
+        <div
+          id="resultsLoadMoreWrapB"
+          class="results-load-more-wrap border-top px-2 py-2 bg-body-secondary d-none"
+        >
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btnLoadMoreResultsB">Load more</button>
+          <span id="resultsLoadMoreHintB" class="small text-muted ms-2" aria-live="polite"></span>
+        </div>
+        </div>
+        </div>
+        <div class="split-h split-h-edge d-none" id="splitResultsBottom" role="separator" aria-label="Create split from bottom" title="Drag to split">
+          <div class="split-h-actions split-h-edge-actions" role="group" aria-label="Restore split panes">
+            <button type="button" class="btn btn-sm btn-outline-secondary split-h-action-btn" data-split-reopen="1" title="Restore split (50/50)" aria-label="Restore split (50/50)">
+              <i class="fa-solid fa-up-down" aria-hidden="true"></i>
+            </button>
+          </div>
+        </div>
+        </div>
+        <aside id="appShelf" class="app-shelf app-shelf--rhs border-start bg-body-secondary small" aria-label="Shelf staging area">
+          <div class="app-shelf-rot">
+            <div
+              id="shelfDropZone"
+              class="d-flex flex-wrap gap-1 align-items-center rounded border border-dashed px-2 py-1 bg-body"
+            >
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-secondary flex-shrink-0"
+                id="btnShelfOsDrag"
+                title="Makes your next drag work like dragging a real file — you can drop it into File Explorer or any other app outside TagFox"
+              >
+                <i class="fa-solid fa-hand-pointer" aria-hidden="true"></i>
+              </button>
+              <div class="shelf-drop-main d-flex flex-wrap gap-1 align-items-center min-w-0 flex-grow-1">
+                <span id="shelfEmptyHint" class="text-muted fw-semibold">Shelf</span>
+                <div id="shelfChips"></div>
+                <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0" style="width: 1.5rem; height: 1.5rem" id="btnShelfClear" title="Delete everything in Shelf">
+                  <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        </aside>
       </div>
       </div>
     </div>
@@ -529,23 +906,21 @@
     <div class="split-v" id="splitProps" role="separator" aria-label="Resize viewer column" title="Drag"></div>
     <!-- Viewer: details + previews / readme -->
     <aside class="props-panel border-start bg-body d-flex flex-column" id="propsAside">
-      <div class="p-2 border-bottom small fw-semibold d-flex align-items-center justify-content-between gap-2 flex-shrink-0">
-        <span>Viewer</span>
-        <button
-          type="button"
-          class="btn btn-sm btn-outline-secondary py-0 px-2"
-          id="btnPropsTheaterToggle"
-          title="Near full screen (Shift+Space)"
-          aria-expanded="false"
-          aria-controls="propsAside"
-          aria-label="Expand viewer panel"
-        >
-          <i class="fa-solid fa-up-right-and-down-left-from-center" aria-hidden="true"></i>
-        </button>
+      <!-- Title row vs Add TODO order: folder = title first; file = Add TODO first (renderer.js flex order) -->
+      <div id="propsChromeStack" class="d-flex flex-column flex-shrink-0">
+      <div id="propTitleBlock" class="d-none px-2 py-2 border-bottom flex-shrink-0">
+        <!-- Icon + title on one flex row (center-aligned like Name column); tags below -->
+        <div class="min-w-0">
+          <div class="d-flex align-items-center gap-2 min-w-0">
+            <span id="propTitleIconMount" class="flex-shrink-0" aria-hidden="true"></span>
+            <div id="propDisplayName" class="fs-5 fw-semibold text-break min-w-0 flex-grow-1"></div>
+          </div>
+          <div id="propTitleTags" class="d-flex flex-wrap gap-1 mt-1"></div>
+        </div>
       </div>
       <!-- Add TODO: Title[(TODO)].md in the current folder (Enter = same as save button) -->
-      <div class="px-2 py-2 border-bottom d-flex align-items-center gap-2 flex-shrink-0 small min-w-0">
-        <label class="text-muted mb-0 flex-shrink-0" for="newMdTitleInput" title="Creates Title[(TODO)].md in the current folder">Add TODO</label>
+      <div id="propsAddTodoRow" class="px-2 py-2 border-bottom d-flex align-items-center gap-2 flex-shrink-0 small min-w-0">
+        <label class="text-muted mb-0 flex-shrink-0" id="labelNewMdTitle" for="newMdTitleInput" title="Creates Title[(TODO)].md in the current folder">Add TODO here</label>
         <input
           type="text"
           id="newMdTitleInput"
@@ -565,6 +940,16 @@
         </button>
         <button
           type="button"
+          class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
+          style="width: 2rem; height: 2rem"
+          id="btnCancelTodoMd"
+          title="Cancel new TODO title"
+          aria-label="Cancel new TODO title"
+        >
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
+        <button
+          type="button"
           class="btn btn-sm btn-outline-primary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
           style="width: 2rem; height: 2rem"
           id="btnCreateTodoMd"
@@ -574,23 +959,54 @@
           <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
         </button>
       </div>
+      </div>
+      <div class="p-2 border-bottom small fw-semibold d-flex align-items-center justify-content-between gap-2 flex-shrink-0 flex-wrap">
+        <div class="d-flex align-items-center gap-2 flex-wrap min-w-0">
+          <span id="propsPanelSectionTitle">Viewer</span>
+          <!-- Folder rows only: nested readme aggregate (renderer toggles visibility) -->
+          <div id="propsNestedReadmeToggleWrap" class="d-none small flex-shrink-0 ms-0" style="min-width: min(100%, 18rem)">
+            <div class="btn-group btn-group-sm tagfox-segmented" role="group" aria-label="Viewer doc mode">
+              <input type="radio" class="btn-check" name="viewerDocMode" id="optViewerDocSingle" value="single" autocomplete="off" checked />
+              <label class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center" for="optViewerDocSingle" title="Single doc">
+                <i class="fa-solid fa-file-lines fa-fw" aria-hidden="true"></i>
+                <span class="visually-hidden">Single doc</span>
+              </label>
+              <input type="radio" class="btn-check" name="viewerDocMode" id="optViewerDocNested" value="nested" autocomplete="off" />
+              <label class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center" for="optViewerDocNested" title="All nested docs">
+                <i class="fa-solid fa-folder-tree fa-fw" aria-hidden="true"></i>
+                <span class="visually-hidden">All nested docs</span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="d-inline-flex align-items-center gap-1 flex-shrink-0">
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-secondary d-none d-inline-flex align-items-center justify-content-center p-0"
+            style="width: 2rem; height: 2rem"
+            id="btnPropsCopyText"
+            title="Copy viewer text"
+            aria-label="Copy viewer text"
+          >
+            <i class="fa-solid fa-clipboard" aria-hidden="true"></i>
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0"
+            style="width: 2rem; height: 2rem"
+            id="btnPropsTheaterToggle"
+            title="Near full screen (Shift+Space)"
+            aria-expanded="false"
+            aria-controls="propsAside"
+            aria-label="Expand viewer panel"
+          >
+            <i class="fa-solid fa-up-right-and-down-left-from-center" aria-hidden="true"></i>
+          </button>
+        </div>
+      </div>
       <div id="propsScroll" class="flex-grow-1 overflow-y-auto p-2 small">
         <p id="propsEmpty" class="text-muted mb-0">Set the current folder in Settings — or select a row.</p>
         <div id="propsDetails" class="d-none">
-          <div id="propTitleBlock">
-            <div id="propDisplayName" class="fs-5 fw-semibold text-break"></div>
-            <div id="propTitleTags" class="d-flex flex-wrap gap-1 mt-1"></div>
-          </div>
-          <dl class="row mb-2">
-            <dt class="col-4 text-muted">Path</dt>
-            <dd class="col-8 text-break" id="propFullPath"></dd>
-            <dt class="col-4 text-muted">Type</dt>
-            <dd class="col-8" id="propType"></dd>
-            <dt class="col-4 text-muted">Size</dt>
-            <dd class="col-8" id="propSize"></dd>
-            <dt class="col-4 text-muted">Modified</dt>
-            <dd class="col-8" id="propModified"></dd>
-          </dl>
           <p id="propPlaceholder" class="text-muted d-none mb-2">No preview for this type — use Open.</p>
 
           <div id="imageBlock" class="d-none border-top pt-2">
@@ -613,9 +1029,33 @@
           </div>
 
           <div id="pdfBlock" class="d-none border-top pt-2 d-flex flex-column flex-grow-1">
-            <div class="fw-semibold mb-1 flex-shrink-0">PDF</div>
+            <div class="d-flex align-items-center gap-2 mb-1 flex-shrink-0">
+              <div class="fw-semibold flex-grow-1">PDF</div>
+              <button
+                type="button"
+                id="btnPdfRefresh"
+                class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
+                style="width: 2rem; height: 2rem"
+                title="Refresh PDF output from disk"
+                aria-label="Refresh PDF output from disk"
+              >
+                <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
+              </button>
+            </div>
             <!-- Idle: srcdoc only — never iframe.src='' (that loads about:blank → Chromium debug_utils scenario 4 spam / jank, Electron #44368). -->
             <iframe id="pdfFrame" class="rounded" title="PDF preview" srcdoc="<!DOCTYPE html><html><head><meta charset='utf-8'></head><body style='margin:0;background:#f8f9fa'></body></html>"></iframe>
+          </div>
+
+          <div id="htmlBlock" class="d-none border-top pt-2 d-flex flex-column flex-grow-1">
+            <div class="fw-semibold mb-1 flex-shrink-0">HTML</div>
+            <p class="small text-muted mb-1 flex-shrink-0">Sandboxed: scripts and plugins off; forms won’t escape the frame.</p>
+            <iframe
+              id="htmlPreviewFrame"
+              class="rounded"
+              title="HTML preview"
+              sandbox=""
+              srcdoc="<!DOCTYPE html><html><head><meta charset='utf-8'></head><body style='margin:0;background:#f8f9fa'></body></html>"
+            ></iframe>
           </div>
 
           <div id="officeBlock" class="d-none border-top pt-2 d-flex flex-column flex-grow-1">
@@ -624,50 +1064,134 @@
           </div>
 
           <div id="readmeBlock" class="d-none border-top pt-2 d-flex flex-column flex-grow-1 gap-1 min-h-0">
-            <div class="d-flex flex-wrap align-items-center gap-2 flex-shrink-0">
-              <div class="fw-semibold" id="readmeFolderDocTitle">Folder doc</div>
-              <div class="ms-auto d-inline-flex align-items-center gap-1">
+            <!-- Filename + tag button on one row (no flex-min-w traps); tag pills on next row -->
+            <div id="readmeFolderDocControlsWrap" class="d-flex flex-column gap-2 flex-shrink-0">
+              <div class="d-flex flex-wrap align-items-center gap-2 w-100">
+                <span class="small text-muted flex-shrink-0">Folder doc</span>
+                <label class="visually-hidden" for="readmeFolderDocStemInput">Folder doc base name</label>
+                <input
+                  type="text"
+                  id="readmeFolderDocStemInput"
+                  class="form-control form-control-sm flex-shrink-0"
+                  style="width: 7.5rem; max-width: min(46vw, 14rem)"
+                  value="-readme"
+                  autocomplete="off"
+                  title="Changing the name starts a new folder doc here; body clears until you edit and Save"
+                />
+                <span id="readmeFolderDocExt" class="small text-nowrap fw-semibold flex-shrink-0">.md</span>
                 <button
                   type="button"
-                  id="btnReadmeEdit"
-                  class="btn btn-sm btn-outline-secondary"
-                  aria-expanded="false"
-                  aria-controls="readmeEditorWrap"
-                  title="Edit folder doc"
+                  class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
+                  style="width: 2rem; height: 2rem"
+                  id="btnReadmeFolderDocTags"
+                  title="[(…)] tags in the folder doc file name — changing tags with the loaded file clears body for a new name (like renaming)"
+                  aria-label="Edit tags for folder doc file name"
                 >
-                  Edit
+                  <i class="fa-solid fa-tags" aria-hidden="true"></i>
                 </button>
+                <div class="ms-auto d-inline-flex align-items-center gap-1 flex-shrink-0">
+                  <button
+                    type="button"
+                    id="btnReadmeCancel"
+                    class="btn btn-sm btn-outline-secondary d-none d-inline-flex align-items-center justify-content-center p-0"
+                    style="width: 2rem; height: 2rem"
+                    title="Cancel folder doc edit"
+                    aria-label="Cancel folder doc edit"
+                  >
+                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                  </button>
+                  <button
+                    type="button"
+                    id="btnReadmeEdit"
+                    class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0"
+                    style="width: 2rem; height: 2rem"
+                    aria-expanded="false"
+                    aria-controls="readmeEditorWrap"
+                    title="Edit folder doc"
+                    aria-label="Edit folder doc"
+                  >
+                    <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                  </button>
+                </div>
               </div>
+              <div id="readmeFolderDocTagPills" class="d-flex flex-wrap gap-1" aria-label="Tags in folder doc file name"></div>
             </div>
-            <div id="readmeEditorWrap" class="viewer-doc-editor-wrap d-none">
-              <textarea id="readmeEditor" class="form-control form-control-sm font-monospace" placeholder="Markdown…"></textarea>
+            <div class="viewer-doc-split flex-grow-1 min-h-0" id="readmeDocSplit">
+              <div id="readmeEditorWrap" class="viewer-doc-editor-wrap d-none">
+                <textarea id="readmeEditor" class="form-control form-control-sm font-monospace" placeholder="Markdown…"></textarea>
+              </div>
+              <div
+                id="readmeEditorDivider"
+                class="viewer-doc-split-divider d-none"
+                role="separator"
+                aria-label="Resize folder doc editor and preview"
+                aria-orientation="horizontal"
+              ></div>
+              <div
+                id="readmePreview"
+                class="prop-md-preview border rounded p-2 min-h-0 small viewer-doc-preview"
+                title="Double-click to edit"
+                role="button"
+                tabindex="0"
+              ></div>
             </div>
-            <div
-              id="readmePreview"
-              class="prop-md-preview border rounded p-2 min-h-0 small viewer-doc-preview"
-              title="Double-click to edit"
-              role="button"
-              tabindex="0"
-            ></div>
           </div>
 
           <div id="mdFileBlock" class="d-none border-top pt-2 d-flex flex-column flex-grow-1 gap-1 min-h-0">
             <div class="d-flex align-items-center gap-2 flex-shrink-0">
-              <div class="fw-semibold flex-grow-1 mb-0">Markdown / text file</div>
-              <button type="button" id="btnMdFileEdit" class="btn btn-sm btn-outline-secondary flex-shrink-0" aria-expanded="false" aria-controls="mdFileEditorWrap">
-                Edit
+              <div class="fw-semibold flex-grow-1 mb-0" id="mdFileTitle">Text file</div>
+              <button
+                type="button"
+                id="btnMdFileCopyText"
+                class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
+                style="width: 2rem; height: 2rem"
+                title="Copy file text"
+                aria-label="Copy file text"
+              >
+                <i class="fa-solid fa-clipboard" aria-hidden="true"></i>
+              </button>
+              <button
+                type="button"
+                id="btnMdFileRefresh"
+                class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
+                style="width: 2rem; height: 2rem"
+                title="Refresh file text from disk"
+                aria-label="Refresh file text from disk"
+              >
+                <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
+              </button>
+              <button
+                type="button"
+                id="btnMdFileEdit"
+                class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
+                style="width: 2rem; height: 2rem"
+                aria-expanded="false"
+                aria-controls="mdFileEditorWrap"
+                title="Edit file"
+                aria-label="Edit file"
+              >
+                <i class="fa-solid fa-pen" aria-hidden="true"></i>
               </button>
             </div>
-            <div id="mdFileEditorWrap" class="viewer-doc-editor-wrap d-none">
-              <textarea id="mdFileEditor" class="form-control form-control-sm font-monospace"></textarea>
+            <div class="viewer-doc-split flex-grow-1 min-h-0" id="mdFileDocSplit">
+              <div id="mdFileEditorWrap" class="viewer-doc-editor-wrap d-none">
+                <textarea id="mdFileEditor" class="form-control form-control-sm font-monospace"></textarea>
+              </div>
+              <div
+                id="mdFileEditorDivider"
+                class="viewer-doc-split-divider d-none"
+                role="separator"
+                aria-label="Resize file editor and preview"
+                aria-orientation="horizontal"
+              ></div>
+              <div
+                id="mdFilePreview"
+                class="prop-md-preview border rounded p-2 bg-light small min-h-0 viewer-doc-preview"
+                title="Double-click to edit"
+                role="button"
+                tabindex="0"
+              ></div>
             </div>
-            <div
-              id="mdFilePreview"
-              class="prop-md-preview border rounded p-2 bg-light small min-h-0 viewer-doc-preview"
-              title="Double-click to edit"
-              role="button"
-              tabindex="0"
-            ></div>
           </div>
 
           <div id="gdocWorkspaceBlock" class="d-none border-top pt-2">
@@ -705,7 +1229,18 @@
         </div>
       </div>
     </aside>
+    </div>
   </div>
+
+  <footer
+    id="tagfoxNavbarStatus"
+    class="tagfox-app-statusbar d-flex flex-wrap align-items-center gap-2 min-w-0 small text-muted"
+    role="status"
+    aria-live="polite"
+  >
+    <span id="statusMain" class="min-w-0"></span>
+    <span id="statusSmartNote" class="d-none tagfox-status-hidden-hint flex-shrink-0"></span>
+  </footer>
 
   <!-- Quick TODO: fixed strip (z-index in styles.css — below modal backdrop 1100 so #tagModal stays on top). -->
   <div
@@ -740,6 +1275,26 @@
       </button>
       <button
         type="button"
+        class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
+        style="width: 2rem; height: 2rem"
+        id="btnQuickTodoPopBody"
+        title="Optional file contents"
+        aria-label="Edit Quick TODO file contents"
+      >
+        <i class="fa-solid fa-align-left" aria-hidden="true"></i>
+      </button>
+      <button
+        type="button"
+        class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
+        style="width: 2rem; height: 2rem"
+        id="btnQuickTodoPopCancel"
+        title="Cancel Quick TODO"
+        aria-label="Cancel Quick TODO"
+      >
+        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+      </button>
+      <button
+        type="button"
         class="btn btn-sm btn-outline-primary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
         style="width: 2rem; height: 2rem"
         id="btnQuickTodoPopSave"
@@ -749,6 +1304,42 @@
         <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
       </button>
     </div>
+    <!-- OFF = keep current folder/list selection; ON = scope to file’s folder and select the new file -->
+    <div class="form-check form-switch mt-2 mb-0">
+      <input class="form-check-input" type="checkbox" id="quickTodoLoadAfterCreate" autocomplete="off" />
+      <label class="form-check-label" for="quickTodoLoadAfterCreate">Open in list after save</label>
+    </div>
+  <!-- Quick TODO tags: inline panel so this stays a single popup. -->
+  <div id="quickTodoTagsPanel" class="d-none border-top mt-2 pt-2">
+    <div id="quickTodoTagsChips" class="d-flex flex-wrap gap-1 mb-2" aria-label="Tags for the new file"></div>
+    <div id="quickTodoTagsQuick" class="d-flex flex-wrap gap-1 mb-2" role="group" aria-label="Add a tag"></div>
+    <div class="input-group input-group-sm mb-2">
+      <input
+        type="text"
+        id="quickTodoTagInput"
+        class="form-control"
+        list="quickTodoExistingTags"
+        placeholder="New tag"
+        autocomplete="off"
+      />
+      <button type="button" class="btn btn-outline-primary" id="quickTodoTagAddBtn">Add</button>
+    </div>
+    <datalist id="quickTodoExistingTags"></datalist>
+    <p class="small text-muted mb-0">
+      These <code>[( … )]</code> tags are used for the new markdown file name and stay set until you change them.
+    </p>
+  </div>
+  <!-- Quick TODO body: optional markdown content for the new file. -->
+  <div id="quickTodoBodyPanel" class="d-none border-top mt-2 pt-2">
+    <label for="quickTodoBodyInput" class="form-label small mb-1">Optional file contents</label>
+    <textarea
+      id="quickTodoBodyInput"
+      class="form-control form-control-sm font-monospace"
+      rows="8"
+      spellcheck="false"
+      placeholder="Markdown body..."
+    ></textarea>
+  </div>
   </div>
 
   <!-- Tag edit modal -->
@@ -761,9 +1352,10 @@
         </div>
         <div class="modal-body">
           <p class="small text-break text-muted mb-2" id="tagModalPath"></p>
-          <p id="tagModalBulkHint" class="small text-muted mb-2 d-none">Several items: chips show the union of tags. <strong>Add</strong> appends to each name; <strong>×</strong> removes that tag from every selected item.</p>
-          <div id="tagModalChips" class="d-flex flex-wrap gap-1 mb-2"></div>
-          <div id="tagModalQuickTags" class="d-flex flex-wrap gap-1 mb-2" role="group" aria-label="Quick-add tags from the tag list"></div>
+          <p id="tagModalBulkHint" class="small text-muted mb-2 d-none">Several items: active tags are on at least one selected item. Click an inactive tag to add it to all selected items; click an active tag to remove it from every selected item.</p>
+          <!-- Current [(…)] tags as removable chips (renderer: renderModalChips) -->
+          <div id="tagModalChips" class="d-flex flex-wrap gap-1 mb-2" aria-label="Tags on this item"></div>
+          <div id="tagModalQuickTags" class="d-flex flex-wrap gap-1 mb-2" role="group" aria-label="Toggle tags on or off"></div>
           <div class="input-group input-group-sm mb-2">
             <input type="text" id="tagModalInput" class="form-control" list="tagModalExistingTags" placeholder="New tag (type here)" autocomplete="off" />
             <button type="button" class="btn btn-outline-primary" id="tagModalAddBtn">Add</button>
@@ -771,10 +1363,13 @@
           <!-- Existing [(…)] tags + remembered (datalist). -->
           <datalist id="tagModalExistingTags"></datalist>
           <p class="small text-muted mb-0" id="tagModalHintRename">
-            Tags live in the last <code>[( … )]</code> block of the segment name. <strong>Add</strong> or remove a chip renames on disk immediately.
+            Tags live in the last <code>[( … )]</code> block of the segment name. Click a tag to toggle it; typing a new tag and pressing <strong>Add</strong> renames on disk immediately.
           </p>
           <p class="small text-muted mb-0 d-none" id="tagModalHintNewTodo">
             These <code>[( … )]</code> tags are used when you create a markdown file from Add TODO. Close to keep them for the next create; disk renames only happen on existing files in this dialog.
+          </p>
+          <p class="small text-muted mb-0 d-none" id="tagModalHintFolderDoc">
+            These <code>[( … )]</code> tags go in the folder doc file name. Close to keep them; if the name differs from the file that was loaded, <strong>Save</strong> creates that new file and leaves the previous file unchanged.
           </p>
           <p id="tagModalFeedback" class="small mb-0 mt-2" aria-live="assertive"></p>
         </div>
@@ -801,6 +1396,27 @@
         <div class="modal-footer py-2">
           <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
           <button type="button" class="btn btn-primary btn-sm" id="newFolderModalCreate">Create</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Paste target chooser: ask only when checked rows make the destination ambiguous. -->
+  <div class="modal fade" id="pasteTargetModal" tabindex="-1" aria-labelledby="pasteTargetModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header py-2">
+          <h2 class="modal-title fs-6" id="pasteTargetModalLabel">Paste into</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body py-2">
+          <p class="small text-muted mb-2" id="pasteTargetModalHint">Choose the destination folder for the clipboard items.</p>
+          <label class="form-label small mb-1" for="pasteTargetSelect">Destination</label>
+          <select id="pasteTargetSelect" class="form-select form-select-sm" size="6" aria-describedby="pasteTargetModalHint"></select>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary btn-sm" id="pasteTargetModalApply">Paste</button>
         </div>
       </div>
     </div>
@@ -872,6 +1488,25 @@
     </div>
   </div>
 
+  <!-- Confirm removing a saved search (× on saved searches bar) -->
+  <div class="modal fade" id="deleteSavedSearchModal" tabindex="-1" aria-labelledby="deleteSavedSearchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header py-2">
+          <h2 class="modal-title fs-6" id="deleteSavedSearchModalLabel">Remove saved search</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body py-2">
+          <p class="small mb-0" id="deleteSavedSearchModalBody"></p>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-danger btn-sm" id="deleteSavedSearchModalConfirm">Remove</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Help modal: help.html (generated by `npm run build:help` from help.md) -->
   <div id="helpModalContainer"></div>
   <script>
@@ -886,59 +1521,24 @@
   </script>
 
 
-  <!-- Vendor JS: sync fetch + eval so order is guaranteed if primary CDN is slow/down (script onerror would race). -->
-  <script>
-    (function () {
-      function fetchSync(url) {
-        try {
-          var xhr = new XMLHttpRequest();
-          xhr.open('GET', url, false);
-          xhr.send();
-          if (xhr.status === 200) return xhr.responseText;
-        } catch (_) {}
-        return null;
-      }
-      function loadFirstOk(urls) {
-        for (var i = 0; i < urls.length; i++) {
-          var body = fetchSync(urls[i]);
-          if (body) {
-            (0, eval)(body);
-            return true;
-          }
-        }
-        return false;
-      }
-      var st = document.getElementById('statusMain');
-      var bundles = [
-        [
-          'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js',
-          'https://unpkg.com/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js',
-        ],
-        ['https://cdn.jsdelivr.net/npm/marked@14.1.3/marked.min.js', 'https://unpkg.com/marked@14.1.3/marked.min.js'],
-        [
-          'https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js',
-          'https://unpkg.com/mammoth@1.8.0/mammoth.browser.min.js',
-        ],
-        [
-          'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
-          'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js',
-        ],
-        [
-          'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
-          'https://unpkg.com/jszip@3.10.1/dist/jszip.min.js',
-        ],
-      ];
-      window.__tagBrowserCdnOk = true;
-      for (var b = 0; b < bundles.length; b++) {
-        if (!loadFirstOk(bundles[b])) {
-          window.__tagBrowserCdnOk = false;
-          if (st) st.textContent = 'Could not load app scripts from CDN (try jsDelivr or unpkg when online).';
-          break;
-        }
-      }
-    })();
-  </script>
+  <!-- Vendor JS: local files only (CDN sync loader broke offline startups). Same order as the old CDN bundle list. -->
+  <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+  <script src="vendor/marked/marked.min.js"></script>
+  <script src="vendor/mammoth/mammoth.browser.min.js"></script>
+  <script src="vendor/xlsx/xlsx.full.min.js"></script>
+  <script src="vendor/jszip/jszip.min.js"></script>
+  <script src="vendor/codemirror/lib/codemirror.js"></script>
+  <script src="vendor/codemirror/mode/xml/xml.js"></script>
+  <script src="vendor/codemirror/mode/meta.js"></script>
+  <script src="vendor/codemirror/mode/markdown/markdown.js"></script>
+  <script src="vendor/codemirror/addon/dialog/dialog.js"></script>
+  <script src="vendor/codemirror/addon/search/searchcursor.js"></script>
+  <script src="vendor/codemirror/addon/search/search.js"></script>
+  <script src="vendor/codemirror/addon/search/jump-to-line.js"></script>
+  <script src="vendor/codemirror/addon/edit/continuelist.js"></script>
   <script src="tags.js"></script>
+  <script src="preview-text-helpers.js"></script>
+  <script src="did-you-know-tips.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

@@ -5,10 +5,12 @@
   "main": "main.js",
   "scripts": {
     "build:help": "node scripts/build-help.js",
-    "prestart": "npm run build:help",
-    "predist": "npm run build:help",
+    "vendor:sync": "node scripts/sync-vendor-assets.js",
+    "postinstall": "node scripts/sync-vendor-assets.js",
+    "prestart": "npm run vendor:sync && npm run build:help",
+    "predist": "npm run vendor:sync && npm run build:help",
     "start": "electron .",
-    "dist": "electron-builder --win"
+    "dist": "node scripts/run-dist.js"
   },
   "build": {
     "appId": "app.tagbrowser",
@@ -25,8 +27,11 @@
       "help.html",
       "styles.css",
       "tags.js",
+      "preview-text-helpers.js",
+      "did-you-know-tips.js",
       "renderer.js",
-      "package.json"
+      "package.json",
+      "vendor/**/*"
     ],
     "win": {
       "target": [
@@ -40,8 +45,20 @@
     }
   },
   "devDependencies": {
+    "@fortawesome/fontawesome-free": "^6.5.1",
+    "bootstrap": "5.3.3",
+    "codemirror": "5.65.20",
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8",
-    "marked": "^14.1.3"
+    "electron-reloader": "^1.2.3",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.8.0",
+    "marked": "^14.1.3",
+    "xlsx": "^0.18.5"
+  },
+  "dependencies": {
+    "@googleapis/drive": "^16.0.0",
+    "@kenjiuno/msgreader": "^1.28.0",
+    "google-auth-library": "^10.6.2"
   }
 }
