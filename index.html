@@ -748,6 +748,8 @@
           role="region"
           aria-label="Search results pane A"
         >
+        <!-- Two-pane view only: read-only scope breadcrumb shown when this pane is inactive. -->
+        <div class="pane-inactive-breadcrumb d-none" data-pane-breadcrumb="A" aria-hidden="true"></div>
         <!-- Scroll only the table (+ load more) -->
         <div id="resultsScroll" class="results-table-scroll flex-grow-1 min-h-0">
           <table class="table table-sm mb-0" id="resultsTable">
@@ -821,6 +823,8 @@
           role="region"
           aria-label="Search results pane B"
         >
+        <!-- Two-pane view only: read-only scope breadcrumb shown when this pane is inactive. -->
+        <div class="pane-inactive-breadcrumb d-none" data-pane-breadcrumb="B" aria-hidden="true"></div>
         <div id="resultsScrollB" class="results-table-scroll flex-grow-1 min-h-0">
           <table class="table table-sm mb-0" id="resultsTableB">
           <colgroup>

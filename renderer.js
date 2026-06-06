@@ -2827,6 +2827,7 @@
       saveActivePaneStateFromUi();
       swapCanonicalResultsIds(next);
       restorePaneStateIntoUi(next);
+      updateInactivePaneBreadcrumb();
       if (opts && opts.skipSearch) return;
       await runSearchNow('identity', { singlePaneOnly: true });
       saveActivePaneStateFromUi();
@@ -2903,6 +2904,7 @@
         resultsPaneState[activePaneKey].searchState = activeUiSnapshot;
         restorePaneStateIntoUi(activePaneKey);
         restoreGlobalStatusBar(statusSnapshot);
+        updateInactivePaneBreadcrumb();
         topLevelSearchDepth--;
         if (!isNested && releaseMutex) releaseMutex();
         const inactiveTbodyId = inactive === 'A' ? 'tbodyA' : 'tbodyB';
@@ -2930,6 +2932,7 @@
         resultsPaneState[activePaneKey].searchState = activeUiSnapshot;
         restorePaneStateIntoUi(activePaneKey);
         restoreGlobalStatusBar(statusSnapshot);
+        updateInactivePaneBreadcrumb();
       }
     }
 
@@ -2937,7 +2940,9 @@
       document.querySelectorAll('.results-pane[data-results-pane]').forEach((paneEl) => {
         if (paneEl.dataset.paneActivationBound === '1') return;
         paneEl.dataset.paneActivationBound = '1';
-        paneEl.addEventListener('pointerdown', () => {
+        paneEl.addEventListener('pointerdown', (e) => {
+          /* Breadcrumb strip handles its own activate + navigate on click; activating here on pointerdown would re-render and remove the button before the click lands. */
+          if (e.target && e.target.closest && e.target.closest('.pane-inactive-breadcrumb')) return;
           const paneKey = paneEl.getAttribute('data-results-pane') === 'B' ? 'B' : 'A';
           if (paneKey === activeResultsPane) return;
           void activateResultsPane(paneKey);
@@ -2985,6 +2990,82 @@
       const bottomPct = 100 - topPct;
       paneA.style.flex = `0 1 ${topPct}%`;
       paneB.style.flex = `0 1 ${bottomPct}%`;
+      updateInactivePaneBreadcrumb();
+    }
+
+    /* Two-pane view: clickable breadcrumb of the inactive pane's scope, above its table. The active pane keeps the full #breadcrumbBar (with sibling/subfolder flyouts) at the top of the results area; this is a lighter version, plain segment pills with no dropdowns. Clicking a segment activates that pane, then navigates it via the same applySearchScopeAndRefresh path the live bar uses (scope-max clamp handled there). Keyed by stable data-pane-breadcrumb (A/B), not by id, so the canonical-id swap dance leaves these alone. */
+    function fillInactivePaneBreadcrumb(el, paneKey, searchState) {
+      el.textContent = '';
+      const raw = searchState
+        ? String(searchState.rootFolder || '').trim() || String(searchState.searchScopeMax || '').trim()
+        : '';
+      if (!raw) return false;
+      const norm = normalizeFolderPathForEverything(raw).replace(/[/\\]+$/, '');
+      const sep = norm.includes('/') ? '/' : '\\';
+      const parts = norm.split(/[/\\]/).filter((p) => p !== '');
+      if (!parts.length) return false;
+      const folderIcon = document.createElement('i');
+      folderIcon.className = 'fa-solid fa-folder fa-fw tagfox-pane-bc-folder';
+      folderIcon.setAttribute('aria-hidden', 'true');
+      el.appendChild(folderIcon);
+      let acc = '';
+      let shownCount = 0;
+      parts.forEach((part, i) => {
+        acc = i === 0 ? part : acc + sep + part;
+        /* Hide Google Drive shortcut-targets wrapper segment, but keep it in acc so the click path stays valid. */
+        if (isGoogleDriveShortcutTargetsSegment(part)) return;
+        const folderForSearch = normalizeFolderPathForEverything(acc);
+        const isGDriveShortcutId = i > 0 && isGoogleDriveShortcutTargetsSegment(parts[i - 1]);
+        const isLast = i === parts.length - 1;
+        if (shownCount > 0) {
+          const chev = document.createElement('i');
+          chev.className = 'fa-solid fa-chevron-right fa-xs tagfox-pane-bc-sep';
+          chev.setAttribute('aria-hidden', 'true');
+          el.appendChild(chev);
+        }
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className =
+          'btn btn-link btn-sm p-0 align-baseline breadcrumb-folder-seg' +
+          (isLast ? ' breadcrumb-folder-seg-current' : '');
+        if (isGDriveShortcutId) {
+          btn.innerHTML = '<i class="fa-solid fa-link fa-xs" aria-hidden="true"></i>';
+          btn.setAttribute('aria-label', 'Google Drive shortcut: ' + folderForSearch);
+        } else {
+          btn.textContent = segmentPretty(part);
+        }
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          /* Navigate the inactive pane in place, leaving the active pane active: seed its saved scope, then re-run its search via the inactive-refresh dance (which restores state into the off-screen UI, searches its tbody, swaps back, and rebuilds this strip). */
+          if (paneKey === activeResultsPane) return;
+          const target = resultsPaneState[paneKey];
+          if (!target || !target.searchState) return;
+          target.searchState = { ...target.searchState, rootFolder: folderForSearch };
+          if (paneKey === 'B') persistPaneBSearchStateToStorage();
+          await refreshInactiveResultsPane('identity');
+        });
+        el.appendChild(btn);
+        shownCount++;
+      });
+      return shownCount > 0;
+    }
+
+    function updateInactivePaneBreadcrumb() {
+      const r = normalizeResultsSplitRatio(resultsSplitRatio);
+      const splitActive = r !== 0 && r !== 1;
+      const inactiveKey = paneStateKeyOfOther(activeResultsPane);
+      document.querySelectorAll('.pane-inactive-breadcrumb[data-pane-breadcrumb]').forEach((el) => {
+        const isInactivePane = splitActive && el.getAttribute('data-pane-breadcrumb') === inactiveKey;
+        if (!isInactivePane) {
+          el.textContent = '';
+          el.classList.add('d-none');
+          return;
+        }
+        const pane = resultsPaneState[inactiveKey];
+        const shown = fillInactivePaneBreadcrumb(el, inactiveKey, pane && pane.searchState);
+        el.classList.toggle('d-none', !shown);
+      });
     }
 
     function loadResultsSplitLayoutFromStorage() {
@@ -14697,7 +14778,7 @@
       return (isTypingTarget(el) || isInMarkdownEditSurface(el)) && !(el && el.id === 'query');
     }
 
-    /** Breadcrumb ▾ menus + fixed flyouts: skip global ↑/↓ table navigation (would re-render breadcrumb and kill focus). */
+    /** Breadcrumb ▾ menus + fixed flyouts own ↑/↓/←/→ + Enter: skip global table/scope nav (would re-render breadcrumb and kill focus, and ←/→ drill the flyout chain). */
     function isBreadcrumbScopeFolderNavTarget(el) {
       if (!el || !el.closest) return false;
       if (el.closest('ul.breadcrumb-folder-flyout')) return true;
@@ -15740,6 +15821,8 @@
         if (
           kk === 'ArrowDown' ||
           kk === 'ArrowUp' ||
+          kk === 'ArrowLeft' ||
+          kk === 'ArrowRight' ||
           kk === 'Enter' ||
           kk === 'Home' ||
           kk === 'End' ||
