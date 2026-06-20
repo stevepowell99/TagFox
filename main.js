@@ -975,9 +975,10 @@ async function validateScopePasteDestination(destDirRaw, rootPrefix, err) {
 
 /**
  * Explorer-style non-clobber name: use baseName if free, else `stem (1).ext`, `stem (2).ext`, …
- * baseName must be a single segment (basename semantics).
+ * baseName must be a single segment (basename semantics). takenKeys: lowercase resolved paths
+ * already claimed by earlier items in the same batch (planned but not yet on disk).
  */
-async function uniqueDestPathInDir(destDir, baseName) {
+async function uniqueDestPathInDir(destDir, baseName, takenKeys = null) {
   const baseSeg = path.basename(String(baseName || ''));
   if (!baseSeg || baseSeg === '.' || baseSeg === '..') {
     return { ok: false, error: 'Invalid paste name.' };
@@ -987,19 +988,26 @@ async function uniqueDestPathInDir(destDir, baseName) {
   while (true) {
     const label = n === 0 ? baseSeg : `${stem} (${n})${ext}`;
     const destResolved = path.resolve(path.join(destDir, label));
-    try {
-      await fs.stat(destResolved);
-      n += 1;
-      if (n > 10000) return { ok: false, error: 'Too many duplicate names.' };
-    } catch (e) {
-      if (e && e.code === 'ENOENT') return { ok: true, destResolved };
-      return { ok: false, error: 'Destination check: ' + String(e.message || e) };
+    if (!takenKeys || !takenKeys.has(destResolved.toLowerCase())) {
+      try {
+        await fs.stat(destResolved);
+      } catch (e) {
+        if (e && e.code === 'ENOENT') return { ok: true, destResolved };
+        return { ok: false, error: 'Destination check: ' + String(e.message || e) };
+      }
     }
+    n += 1;
+    if (n > 10000) return { ok: false, error: 'Too many duplicate names.' };
   }
 }
 
-/** Copy files/folders from disk into destDir (recursive); honors rootPrefix like rename-path. */
-async function copySourcesIntoScopeFolder(sourcePaths, destDirRaw, rootPrefix, replaceExisting = false) {
+/**
+ * Copy files/folders from disk into destDir (recursive); honors rootPrefix like rename-path.
+ * conflictMode 'unique' (clipboard paste: name clash → "stem (1).ext") or 'prompt' (drag: clash →
+ * { code: 'EEXIST' } so the renderer can offer replace; sources already in destDir are skipped).
+ * All planning happens before any disk write, so an EEXIST retry with replaceExisting re-runs cleanly.
+ */
+async function copySourcesIntoScopeFolder(sourcePaths, destDirRaw, rootPrefix, replaceExisting = false, conflictMode = 'unique') {
   const v = await validateScopePasteDestination(destDirRaw, rootPrefix, {
     noDest: 'No destination folder.',
     destNotUnderRoot: 'Destination must stay under the configured root folder.',
@@ -1008,10 +1016,13 @@ async function copySourcesIntoScopeFolder(sourcePaths, destDirRaw, rootPrefix, r
   });
   if (!v.ok) return v;
   const destDir = v.destDir;
+  const destDirResolved = path.resolve(destDir);
 
   const list = collapseNestedSourcePathsForBulkOp(sourcePaths);
   if (!list.length) return { ok: false, error: 'Nothing to paste.' };
 
+  const ops = [];
+  const plannedDestKeys = new Set();
   for (const srcRaw of list) {
     const src = path.normalize(String(srcRaw || '').trim());
     try {
@@ -1022,12 +1033,27 @@ async function copySourcesIntoScopeFolder(sourcePaths, destDirRaw, rootPrefix, r
 
     const base = path.basename(src);
     const srcResolved = path.resolve(src);
+    if (conflictMode === 'prompt' && path.dirname(srcResolved).toLowerCase() === destDirResolved.toLowerCase()) {
+      continue; // dropped into the folder it is already in: no-op, not a " (1)" duplicate
+    }
 
     let destResolved;
     if (replaceExisting) {
       destResolved = path.resolve(path.join(destDir, base));
+    } else if (conflictMode === 'prompt') {
+      destResolved = path.resolve(path.join(destDir, base));
+      let exists = plannedDestKeys.has(destResolved.toLowerCase());
+      if (!exists) {
+        try {
+          await fs.stat(destResolved);
+          exists = true;
+        } catch (_) {}
+      }
+      if (exists) {
+        return { ok: false, code: 'EEXIST', baseName: base, error: '"' + base + '" already exists in the destination folder.' };
+      }
     } else {
-      const u = await uniqueDestPathInDir(destDir, base);
+      const u = await uniqueDestPathInDir(destDir, base, plannedDestKeys);
       if (!u.ok) return u;
       destResolved = u.destResolved;
     }
@@ -1042,13 +1068,25 @@ async function copySourcesIntoScopeFolder(sourcePaths, destDirRaw, rootPrefix, r
       return { ok: false, error: 'Paste would place files outside the configured root folder.' };
     }
 
+    plannedDestKeys.add(destResolved.toLowerCase());
+    ops.push({ srcResolved, destResolved });
+  }
+
+  if (!ops.length) return { ok: true, noop: true };
+
+  // Execute: keep going on per-item failures so one bad file does not strand a half-finished batch.
+  const errs = [];
+  const copied = [];
+  for (const op of ops) {
     try {
-      await fs.cp(srcResolved, destResolved, { recursive: true, force: !!replaceExisting });
+      await fs.cp(op.srcResolved, op.destResolved, { recursive: true, force: !!replaceExisting });
+      copied.push(op.destResolved);
     } catch (e) {
-      return { ok: false, error: String(e.message || e) };
+      errs.push(path.basename(op.srcResolved) + ': ' + String(e.message || e));
     }
   }
-  return { ok: true };
+  if (errs.length) return { ok: false, error: errs.join('; '), partial: copied.length > 0, copied };
+  return { ok: true, copied };
 }
 
 /**
@@ -1087,7 +1125,11 @@ async function saveClipboardImagePngToScopeFolder(destDirRaw, rootPrefix, image,
   return { ok: true };
 }
 
-/** Move files/folders into destDir (rename); same scope / nesting rules as copySourcesIntoScopeFolder. */
+/**
+ * Move files/folders into destDir (rename); same scope / nesting rules as copySourcesIntoScopeFolder.
+ * Sources already in destDir are skipped (a same-folder move is a no-op, never a " (1)" rename);
+ * a name clash returns { code: 'EEXIST' } before anything moves, so the replace retry re-runs cleanly.
+ */
 async function moveSourcesIntoFolder(sourcePaths, destDirRaw, rootPrefix, replaceExisting = false) {
   const v = await validateScopePasteDestination(destDirRaw, rootPrefix, {
     noDest: 'No destination folder.',
@@ -1097,10 +1139,13 @@ async function moveSourcesIntoFolder(sourcePaths, destDirRaw, rootPrefix, replac
   });
   if (!v.ok) return v;
   const destDir = v.destDir;
+  const destDirResolved = path.resolve(destDir);
 
   const list = collapseNestedSourcePathsForBulkOp(sourcePaths);
   if (!list.length) return { ok: false, error: 'Nothing to move.' };
 
+  const ops = [];
+  const plannedDestKeys = new Set();
   for (const srcRaw of list) {
     const src = path.normalize(String(srcRaw || '').trim());
     try {
@@ -1114,17 +1159,21 @@ async function moveSourcesIntoFolder(sourcePaths, destDirRaw, rootPrefix, replac
 
     const base = path.basename(src);
     const srcResolved = path.resolve(src);
+    if (path.dirname(srcResolved).toLowerCase() === destDirResolved.toLowerCase()) continue;
 
-    let destResolved;
-    if (replaceExisting) {
-      destResolved = path.resolve(path.join(destDir, base));
-    } else {
-      const u = await uniqueDestPathInDir(destDir, base);
-      if (!u.ok) return u;
-      destResolved = u.destResolved;
+    const destResolved = path.resolve(path.join(destDir, base));
+    if (!replaceExisting) {
+      let exists = plannedDestKeys.has(destResolved.toLowerCase());
+      if (!exists) {
+        try {
+          await fs.stat(destResolved);
+          exists = true;
+        } catch (_) {}
+      }
+      if (exists) {
+        return { ok: false, code: 'EEXIST', baseName: base, error: '"' + base + '" already exists in the destination folder.' };
+      }
     }
-
-    if (destResolved.toLowerCase() === srcResolved.toLowerCase()) continue;
 
     if (wouldNestDestInsideSrc(srcResolved, destResolved)) {
       return { ok: false, error: 'Cannot move a folder into itself or a subfolder of the selection.' };
@@ -1134,18 +1183,30 @@ async function moveSourcesIntoFolder(sourcePaths, destDirRaw, rootPrefix, replac
       return { ok: false, error: 'Move would place items outside the configured root folder.' };
     }
 
+    plannedDestKeys.add(destResolved.toLowerCase());
+    ops.push({ srcResolved, destResolved });
+  }
+
+  if (!ops.length) return { ok: true, noop: true };
+
+  // Execute: keep going on per-item failures so one bad file does not strand a half-finished batch.
+  const errs = [];
+  const moved = [];
+  for (const op of ops) {
     if (replaceExisting) {
       try {
-        await fs.rm(destResolved, { recursive: true, force: true });
+        await fs.rm(op.destResolved, { recursive: true, force: true });
       } catch (e) {
-        return { ok: false, error: 'Could not replace existing item: ' + String(e.message || e) };
+        errs.push(path.basename(op.srcResolved) + ': could not replace existing item: ' + String(e.message || e));
+        continue;
       }
     }
-
-    const r = await renameWithBusyRetry(srcResolved, destResolved);
-    if (!r.ok) return r;
+    const r = await renameWithBusyRetry(op.srcResolved, op.destResolved);
+    if (r.ok) moved.push({ from: op.srcResolved, to: op.destResolved });
+    else errs.push(path.basename(op.srcResolved) + ': ' + String(r.error || 'Move failed'));
   }
-  return { ok: true };
+  if (errs.length) return { ok: false, error: errs.join('; '), partial: moved.length > 0, moved };
+  return { ok: true, moved };
 }
 
 /** Strip \\?\ / \\?\UNC\ so root compare matches ordinary paths from Everything. */
@@ -2414,6 +2475,20 @@ function registerGlobalViewerDocsIpc() {
       return { ok: false, error: String(e.message || e), sections: [] };
     }
     return { ok: true, sections, truncated };
+  });
+}
+
+/* Two instances share userData; the second cannot read localStorage (leveldb lock) and starts with
+   blank settings (default base URL, no favourites). Focus the existing window instead. */
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (!win || win.isDestroyed()) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
   });
 }
 
@@ -4152,7 +4227,7 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
               ok: r.ok,
               err: r.ok ? '' : String(r.error || ''),
             });
-            if (r.ok) event.sender.send('paths-mutated');
+            if (r.ok) event.sender.send('paths-mutated', { paths: norm ? [norm] : [], trashed: true });
             else event.sender.send('shell-action-error', String(r.error || 'Recycle failed'));
           });
         },
@@ -4201,7 +4276,7 @@ ipcMain.handle('paste-clipboard-into-folder', async (event, { destFolder, rootPr
   }
   if (sources.length) {
     const r = await copySourcesIntoScopeFolder(sources, destFolder, rootPrefix, !!replaceExisting);
-    if (r.ok) event.sender.send('paths-mutated', { paths: sources, destFolder });
+    if (r.ok || r.partial) event.sender.send('paths-mutated', { paths: sources, destFolder, copied: r.copied || [] });
     return r;
   }
   const clipImg = clipboard.readImage();
@@ -4391,10 +4466,12 @@ ipcMain.handle('trash-paths', async (event, payload) => {
   // Deepest first: if a parent+child both slip through, recycling the child avoids a bogus path on the next call.
   list.sort((a, b) => trashPathComparable(b).length - trashPathComparable(a).length);
   const errs = [];
+  const trashedPaths = [];
   for (const fp of list) {
     if (!fp) continue;
     const r = await recycleOnePathNormalized(fp);
     if (!r.ok) errs.push(fp + ': ' + String(r.error || 'Recycle failed'));
+    else trashedPaths.push(fp);
   }
   const ok = errs.length === 0;
   const cap = 8;
@@ -4414,8 +4491,8 @@ ipcMain.handle('trash-paths', async (event, payload) => {
     err: ok ? '' : errs.join('; '),
   };
   /* Context menu uses sendSearchDebugLine only; bulk/delete use recycleLog on invoke return (send can miss the log). */
+  if (trashedPaths.length) event.sender.send('paths-mutated', { paths: trashedPaths, trashed: true });
   if (errs.length) return { ok: false, error: errs.join('; '), recycleLog };
-  event.sender.send('paths-mutated', { paths: list });
   return { ok: true, recycleLog };
 });
 
@@ -4646,6 +4723,22 @@ ipcMain.on('tagbrowser-focus-web-contents', (event) => {
   event.sender.focus();
 });
 
+/*
+ * Stronger focus restore for modal inputs. Electron 33 on Windows: when the window is already
+ * foreground, win.focus()/webContents.focus() are no-ops, so OS keyboard focus can stay stuck off
+ * the page and a freshly shown modal field looks focused but ignores keys. A blur+focus cycle forces
+ * Windows to re-route the keyboard, the programmatic form of the alt-tab away-and-back that unsticks
+ * it manually. Used only on modal show (a discrete action), never on the per-click pointerdown path.
+ */
+ipcMain.on('tagbrowser-force-web-contents-focus', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  if (process.platform === 'win32' && win.isFocused()) win.blur();
+  win.focus();
+  event.sender.focus();
+});
+
 /** Preload had no F5 refresh callback (should not happen after init). */
 ipcMain.on('tagfox-plain-f5-missed', (event) => {
   sendSearchDebugLine(event.sender, 'searchRefresh.f5.missed', { reason: 'preloadHandlerMissing' });
@@ -4838,13 +4931,15 @@ ipcMain.handle('rename-path', async (event, { fromPath, toPath, rootPrefix }) =>
 
 ipcMain.handle('move-paths-into-folder', async (event, { sourcePaths, destFolder, rootPrefix, replaceExisting }) => {
   const r = await moveSourcesIntoFolder(sourcePaths, destFolder, rootPrefix, !!replaceExisting);
-  if (r.ok) event.sender.send('paths-mutated', { paths: sourcePaths, destFolder });
+  if ((r.ok && !r.noop) || r.partial)
+    event.sender.send('paths-mutated', { paths: sourcePaths, destFolder, moved: r.moved || [] });
   return r;
 });
 
 ipcMain.handle('copy-paths-into-folder', async (event, { sourcePaths, destFolder, rootPrefix, replaceExisting }) => {
-  const r = await copySourcesIntoScopeFolder(sourcePaths, destFolder, rootPrefix, !!replaceExisting);
-  if (r.ok) event.sender.send('paths-mutated', { paths: sourcePaths, destFolder });
+  const r = await copySourcesIntoScopeFolder(sourcePaths, destFolder, rootPrefix, !!replaceExisting, 'prompt');
+  if ((r.ok && !r.noop) || r.partial)
+    event.sender.send('paths-mutated', { paths: sourcePaths, destFolder, copied: r.copied || [] });
   return r;
 });
 
@@ -4928,15 +5023,17 @@ ipcMain.handle('read-text-file', async (_event, { fullPath }) => {
 });
 
 /** Binary read for PDF / Office previews in the renderer (base64). */
-ipcMain.handle('read-file-buffer', async (_event, { fullPath }) => {
+ipcMain.handle('read-file-buffer', async (_event, { fullPath, maxBytes }) => {
   const fp = path.normalize(String(fullPath || ''));
   if (!fp) return { ok: false, error: 'Missing path' };
-  // Office / PDF previews load the whole file into memory (base64 → renderer); big spreadsheets need headroom.
-  const maxBytes = 100 * 1024 * 1024;
+  // Office / PDF previews load the whole file into memory (base64 → renderer); callers pass a tighter cap where renderer-side parsing is the bottleneck.
+  const hardMax = 100 * 1024 * 1024;
+  const cap = Number.isFinite(maxBytes) && maxBytes > 0 ? Math.min(maxBytes, hardMax) : hardMax;
+  const tooBig = { ok: false, error: 'File too large for preview (max ' + Math.round(cap / (1024 * 1024)) + ' MB). Use Open.' };
   try {
     const st = await fs.stat(fp);
     if (st.isDirectory()) return { ok: false, error: 'Not a file' };
-    if (st.size > maxBytes) return { ok: false, error: 'File too large for preview (max 100 MB).' };
+    if (st.size > cap) return tooBig;
     const buf = await fs.readFile(fp);
     return { ok: true, base64: buf.toString('base64') };
   } catch (e) {
@@ -4945,7 +5042,7 @@ ipcMain.handle('read-file-buffer', async (_event, { fullPath }) => {
     if (code === 'EPERM' || code === 'EACCES') {
       try {
         const buf = await fs.readFile(fp);
-        if (buf.length > maxBytes) return { ok: false, error: 'File too large for preview (max 100 MB).' };
+        if (buf.length > cap) return tooBig;
         return { ok: true, base64: buf.toString('base64') };
       } catch (e2) {
         return { ok: false, error: String(e2.message || e2) };
@@ -4955,7 +5052,47 @@ ipcMain.handle('read-file-buffer', async (_event, { fullPath }) => {
   }
 });
 
-/** Outlook .msg — parse in main (npm msg reader); renderer shows plain text in the text preview panel. */
+/**
+ * OS shell thumbnail (Explorer's provider): images, video, PDF, Office where a provider exists.
+ * Serialised: concurrent createThumbnailFromPath calls fail on Windows with "Failed to get thumbnail
+ * from local thumbnail cache reference", so a render-time burst would poison many files at once. One at
+ * a time succeeds. Empty result (no provider) means the renderer keeps the file-type glyph.
+ */
+let thumbnailQueue = Promise.resolve();
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function thumbnailOnce(fp, px) {
+  const img = await nativeImage.createThumbnailFromPath(fp, { width: px, height: px });
+  if (!img || img.isEmpty()) return { ok: false, error: 'No thumbnail' };
+  return { ok: true, dataUrl: img.toDataURL() };
+}
+function makeThumbnail(fp, px) {
+  const run = thumbnailQueue.then(async () => {
+    // The Windows thumbnail cache fails intermittently ("local thumbnail cache reference") even for
+    // single calls. Retry a few times so a transient miss does not get cached as a permanent no-thumbnail.
+    let lastErr = 'No thumbnail';
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const r = await thumbnailOnce(fp, px);
+        if (r.ok) return r;
+        lastErr = r.error;
+      } catch (e) {
+        lastErr = String((e && e.message) || e);
+      }
+      await sleep(100);
+    }
+    return { ok: false, error: lastErr };
+  });
+  thumbnailQueue = run.then(() => {}, () => {});
+  return run;
+}
+ipcMain.handle('get-thumbnail', async (_event, { fullPath, size }) => {
+  const fp = path.normalize(String(fullPath || ''));
+  if (!fp) return { ok: false, error: 'Missing path' };
+  const px = Number.isFinite(size) && size > 0 ? Math.min(Math.round(size), 512) : 48;
+  return makeThumbnail(fp, px);
+});
+
+/** Outlook .msg parse in main (npm msg reader); renderer shows plain text in the text preview panel. */
 ipcMain.handle('read-msg-preview', async (_event, { fullPath }) => {
   const fp = path.normalize(String(fullPath || ''));
   if (!fp) return { ok: false, error: 'Missing path' };

@@ -53,6 +53,8 @@
       treeFolding: 'tagBrowserTreeFolding',
       treeGroupHighlight: 'tagBrowserTreeGroupHL',
       highlightMatchedNames: 'tagBrowserHighlightMatchedNames',
+      resultThumbnails: 'tagBrowserResultThumbnails',
+      hoverPreview: 'tagBrowserHoverPreview',
       collapsedFolders: 'tagBrowserCollapsedFolders',
       resultsLayout: 'tagBrowserResultsLayout',
       resultsContent: 'tagBrowserResultsContent',
@@ -230,6 +232,17 @@
     const TAG_BROWSER_FAV_FOLDER_DRAG_TYPE = 'application/x-tagbrowser-fav-folder';
     /** startDrag path: OS sets no custom MIME on dragover; stash until dragend. Not used for normal HTML5 drags. */
     let tagBrowserActiveNativeDragPaths = null;
+    let tagBrowserActiveNativeDragPathsAt = 0;
+    /** dragend is not guaranteed after a native startDrag (Esc, drop outside the window); age caps replay of old paths. */
+    const NATIVE_DRAG_STASH_MAX_AGE_MS = 5 * 60 * 1000;
+    function activeNativeDragPathsLive() {
+      if (!tagBrowserActiveNativeDragPaths || !tagBrowserActiveNativeDragPaths.length) return null;
+      if (Date.now() - tagBrowserActiveNativeDragPathsAt > NATIVE_DRAG_STASH_MAX_AGE_MS) {
+        tagBrowserActiveNativeDragPaths = null;
+        return null;
+      }
+      return tagBrowserActiveNativeDragPaths;
+    }
     /** One-shot: next row/Shelf-chip drag uses OS file drag (Explorer); normal drag stays HTML5 for in-app. */
     let tagBrowserNextOsFileDrag = false;
 
@@ -250,10 +263,28 @@
       }
     }
 
+    /** File-shaped drag: Files/uri-list types, file items, or no types at all (native dragover may expose none). */
+    function dataTransferLooksLikeOsFileDrag(dt) {
+      try {
+        const types = [...dt.types];
+        if (!types.length) return true;
+        if (types.includes('Files') || types.includes('text/uri-list')) return true;
+        if (dt.items && dt.items.length) {
+          for (let i = 0; i < dt.items.length; i++) {
+            if (dt.items[i].kind === 'file') return true;
+          }
+        }
+      } catch {
+        return false;
+      }
+      return false;
+    }
+
     /** Custom MIME, active native row drag, or OS file drag (Explorer / uri-list / file items). */
     function dataTransferHasTagBrowserOrFiles(dt) {
       if (dataTransferHasTagBrowserPaths(dt)) return true;
-      if (tagBrowserActiveNativeDragPaths && tagBrowserActiveNativeDragPaths.length) return true;
+      /* Native stash counts only while the hovering drag is file-shaped, so a stale stash cannot hijack a text drag. */
+      if (activeNativeDragPathsLive() && dataTransferLooksLikeOsFileDrag(dt)) return true;
       try {
         const types = [...dt.types];
         if (types.includes('Files') || types.includes('text/uri-list')) return true;
@@ -955,7 +986,28 @@
       const p = mdAutosaveTargetPath;
       if (!p) return;
       const text = getViewerMdValue('mdFile');
+      // TEMP DIAGNOSTIC (truncation hunt): compare editor value lengths vs what is written.
+      try {
+        const cm = getViewerMdEditor('mdFile');
+        const ta = getViewerMdTextarea('mdFile');
+        const probe = {
+          path: p,
+          writeLen: text.length,
+          cmLen: cm ? cm.getValue().length : null,
+          taLen: ta ? (ta.value || '').length : null,
+          cmLines: cm ? cm.lineCount() : null,
+        };
+        nativeConsole.log('mdAutosave.probe', probe);
+        searchDebugLog('mdAutosave.probe', probe);
+      } catch (_) {}
       const r = await window.tagBrowser.writeTextFile({ fullPath: p, text });
+      // TEMP DIAGNOSTIC: read back from disk and report the persisted length.
+      try {
+        const back = await window.tagBrowser.readTextFile({ fullPath: p });
+        const rb = { path: p, ok: !!(r && r.ok), wrote: text.length, readBack: back && back.ok ? String(back.text).length : null };
+        nativeConsole.log('mdAutosave.readback', rb);
+        searchDebugLog('mdAutosave.readback', rb);
+      } catch (_) {}
       setStatusMain(r.ok ? 'Saved.' : (r.error || 'Save failed'));
     }
 
@@ -1305,6 +1357,10 @@
     const TEXT_PREVIEW_MAX_CHARS = 450000;
     /** Excel HTML preview: max physical rows read from !ref (not “first N non-empty”; see comment at call site). */
     const EXCEL_PREVIEW_MAX_ROWS = 100;
+    /** Excel HTML preview: max columns; wide sheets (e.g. survey exports) make table layout freeze the renderer. */
+    const EXCEL_PREVIEW_MAX_COLS = 40;
+    /** Spreadsheet preview byte cap: XLSX.read parses synchronously on the UI thread, so big workbooks freeze the window. */
+    const SPREADSHEET_PREVIEW_MAX_BYTES = 20 * 1024 * 1024;
     /** PPTX text preview: max slides parsed (large decks = many zip/XML reads). */
     const PPTX_PREVIEW_MAX_SLIDES = 50;
 
@@ -2251,6 +2307,11 @@
     }
 
     function closeFavColumnHoverUi() {
+      /* If keyboard focus is inside an open subfolder menu or flyout the user is navigating it; a stray
+         pointermove (including the synthetic one the browser fires when scrollIntoView scrolls content
+         under a stationary cursor) must not tear the list down mid-navigation. */
+      const ae = document.activeElement;
+      if (ae && ae.closest && ae.closest('#favFoldersColumn .dropdown-menu, ul.breadcrumb-folder-flyout')) return;
       hideBreadcrumbSubfolderFlyout();
       document
         .querySelectorAll('#favFoldersColumn [data-bs-toggle="dropdown"]')
@@ -2320,22 +2381,23 @@
     }
 
     function bindFavColumnCollapsedHoverExit() {
+      /* pointermove fires continuously; closeFavColumnHoverUi walks every chip (laggy with many favourites).
+         Run the cleanup once per excursion into the rail zone, then stay idle until the pointer enters again. */
+      let exitCleanupPending = false;
       document.addEventListener(
         'pointermove',
         (ev) => {
           if (!favFoldersCollapsed) return;
           if (favFoldersSplitDragging) return;
-          const col = document.getElementById('favFoldersColumn');
           const t = ev.target;
           if (!t || !t.closest) return;
-          if (
-            t.closest('#favFoldersColumn') ||
-            t.closest('#splitFavFolders') ||
-            t.closest('#favFoldersColumn .dropdown-menu.show') ||
-            t.closest('ul.breadcrumb-folder-flyout.is-open')
-          ) {
+          if (t.closest('#favFoldersColumn, #splitFavFolders, ul.breadcrumb-folder-flyout.is-open')) {
+            exitCleanupPending = true;
             return;
           }
+          if (!exitCleanupPending) return;
+          exitCleanupPending = false;
+          const col = document.getElementById('favFoldersColumn');
           if (col) col.classList.remove('tagfox-fav-column--peek-suppressed');
           closeFavColumnHoverUi();
         },
@@ -2860,20 +2922,10 @@
     async function refreshInactiveResultsPane(eventKind = 'identity', opts = {}) {
       const inactive = paneStateKeyOfOther(activeResultsPane);
       const inactivePane = resultsPaneState[inactive];
-      console.log('[paneB-debug] refreshInactiveResultsPane ENTER', {
-        eventKind,
-        activeResultsPane,
-        inactive,
-        hasInactiveState: !!(inactivePane && inactivePane.searchState),
-        inactiveQuery: inactivePane && inactivePane.searchState && inactivePane.searchState.query,
-        inactiveRoot: inactivePane && inactivePane.searchState && inactivePane.searchState.rootFolder,
-        topLevelSearchDepth,
-      });
-      if (!inactivePane || !inactivePane.searchState) {
-        console.log('[paneB-debug] refreshInactiveResultsPane EARLY RETURN: no inactive state');
-        return;
-      }
-      const isNested = topLevelSearchDepth > 0;
+      if (!inactivePane || !inactivePane.searchState) return;
+      /* Explicit nesting (see runSearchNow): only the in-flow refresh at the end of a top-level runSearchNow
+         passes nested. A standalone call (init, breadcrumb navigation of the inactive pane) acquires the mutex. */
+      const isNested = !!(opts && opts.nested);
       let releaseMutex = null;
       if (!isNested) {
         const prev = searchMutex;
@@ -2887,19 +2939,11 @@
       const activeUiSnapshot = serializeSearchState();
       const statusSnapshot = snapshotGlobalStatusBar();
       try {
-        console.log('[paneB-debug] dance: swap to inactive', { inactive });
         swapCanonicalResultsIds(inactive);
-        console.log('[paneB-debug] dance: after swap, activeResultsPane=', activeResultsPane, 'tbody id sanity:', !!document.getElementById('tbody'));
         restorePaneStateIntoUi(inactive);
-        console.log('[paneB-debug] dance: await runSearch for inactive');
         await runSearch(eventKind, { ...opts, singlePaneOnly: true });
-        console.log('[paneB-debug] dance: runSearch returned, lastRows.length=', lastRows.length);
         saveActivePaneStateFromUi();
-      } catch (e) {
-        console.log('[paneB-debug] dance THREW', String(e && e.stack ? e.stack : e));
-        throw e;
       } finally {
-        console.log('[paneB-debug] dance: finally, swap back to active', { activePaneKey });
         swapCanonicalResultsIds(activePaneKey);
         resultsPaneState[activePaneKey].searchState = activeUiSnapshot;
         restorePaneStateIntoUi(activePaneKey);
@@ -2907,9 +2951,6 @@
         updateInactivePaneBreadcrumb();
         topLevelSearchDepth--;
         if (!isNested && releaseMutex) releaseMutex();
-        const inactiveTbodyId = inactive === 'A' ? 'tbodyA' : 'tbodyB';
-        const inactiveTbody = document.getElementById(inactiveTbodyId);
-        console.log('[paneB-debug] dance: EXIT, inactive tbody rows=', inactiveTbody ? inactiveTbody.querySelectorAll('tr').length : 'N/A');
       }
     }
 
@@ -3213,7 +3254,14 @@
 
     /* Serialize whole runSearchNow flow (active runSearch + inactive refresh dance) so two F5/auto-refresh ticks can't interleave the swap-canonical-IDs dance. Reuses searchMutex/topLevelSearchDepth; nested runSearchNow (smart-narrow inside outer runSearch) sees depth>0 and skips re-acquire. */
     async function runSearchNow(eventKind = 'identity', opts) {
-      const isNested = topLevelSearchDepth > 0;
+      /* Nested = a call made synchronously inside an already-running flow (smart-narrow / smart-probe
+         re-search), which must skip the mutex to avoid self-deadlock. It is marked explicitly via
+         opts.nested. A fresh event-loop task (debounced search, F5, disk-mutation retry) that fires while
+         a flow holds topLevelSearchDepth>0 is NOT nested: inferring nesting from the global counter let it
+         skip the mutex and run concurrently with the inactive-pane dance, rendering its rows into the
+         id-swapped (hidden) pane's tbody. The active pane then looked empty until a pane switch repainted
+         it. Explicit flag → such a task waits on the mutex instead. */
+      const isNested = !!(opts && opts.nested);
       let releaseMutex = null;
       if (!isNested) {
         const prev = searchMutex;
@@ -3242,7 +3290,7 @@
           if (activeState && inactiveState && searchStatesEqual(activeState, inactiveState)) {
             copyPaneState(activeResultsPane, inactive);
           } else {
-            await refreshInactiveResultsPane(eventKind, { ...(opts || {}), singlePaneOnly: true });
+            await refreshInactiveResultsPane(eventKind, { ...(opts || {}), singlePaneOnly: true, nested: true });
           }
         }
       } finally {
@@ -3278,12 +3326,15 @@
     function clearAndScheduleSearchRetries(payload) {
       for (const id of diskMutationRefreshTimeouts) clearTimeout(id);
       diskMutationRefreshTimeouts = [];
-      diskMutationRefreshTimeouts.push(
-        setTimeout(() => {
-          const retryOpts = diskMutationMayAffectInactivePane(payload) ? {} : { singlePaneOnly: true };
-          void runSearchNow('refresh', retryOpts);
-        }, 1200)
-      );
+      /* 350ms catches most index updates (new items at dest appear fast); 1200ms is the slow-index backstop. */
+      for (const delayMs of [350, 1200]) {
+        diskMutationRefreshTimeouts.push(
+          setTimeout(() => {
+            const retryOpts = diskMutationMayAffectInactivePane(payload) ? {} : { singlePaneOnly: true };
+            void runSearchNow('refresh', retryOpts);
+          }, delayMs)
+        );
+      }
     }
 
     /** After paste / move / trash: refresh now, then one scoped catch-up for Everything index lag. */
@@ -5612,9 +5663,23 @@
       menu.addEventListener('scroll', () => repositionBreadcrumbFlyoutChain());
       menu.addEventListener('mouseenter', cancelBreadcrumbFlyoutHideTimer);
       menu.addEventListener('keydown', (e) => {
-        if (e.key !== 'ArrowRight') return;
         const t = e.target;
-        if (!t.classList || !t.classList.contains('dropdown-item') || !menu.contains(t)) return;
+        const isItem = !!(t && t.classList && t.classList.contains('dropdown-item') && menu.contains(t));
+        /* Own ArrowUp/Down so Bootstrap's dropdown nav can't cycle/drop focus off the ends and close the menu;
+           clamp at first/last (focusin → scrollIntoView from appendBreadcrumbFolderListItems keeps it in view). */
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          if (!isItem) return;
+          const items = [...menu.querySelectorAll('button.dropdown-item')];
+          const idx = items.indexOf(t);
+          if (idx < 0) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const dest = e.key === 'ArrowDown' ? items[idx + 1] : items[idx - 1];
+          if (dest) dest.focus();
+          return;
+        }
+        if (e.key !== 'ArrowRight') return;
+        if (!isItem) return;
         const li = t.closest('li');
         const path = li && li.dataset.breadcrumbFlyoutPath;
         if (!path) return;
@@ -5892,9 +5957,12 @@
           if (document.activeElement !== b) b.focus({ preventScroll: true });
           onEnterRow();
         });
-        /* Keyboard nav: arrow keys move focus → focusin → open flyout. */
+        /* Keyboard nav: arrow keys move focus → focusin → open flyout. block:'nearest' keeps the
+           focused row inside the capped, scrollable menu/flyout; no-op for mouse hover (row already visible). */
         li.addEventListener('focusin', (ev) => {
-          if (ev.target === b) onEnterRow();
+          if (ev.target !== b) return;
+          b.scrollIntoView({ block: 'nearest' });
+          onEnterRow();
         });
         if (o.onMouseLeaveRow) li.addEventListener('mouseleave', o.onMouseLeaveRow);
         li.appendChild(b);
@@ -6550,11 +6618,7 @@
           }
         };
         const onInputPtr = () => pullWebContentsKeyboardFocus();
-        const pinModalTextFocus = () => {
-          pullWebContentsKeyboardFocus();
-          input.focus({ preventScroll: true });
-          input.select();
-        };
+        const pinModalTextFocus = () => pinModalFieldFocus(input, true);
         input.value = 'New folder';
         btnCreate.addEventListener('click', onCreate);
         modalEl.addEventListener('hidden.bs.modal', onHidden);
@@ -6611,10 +6675,7 @@
         };
         const onDblClick = () => onApply();
         const onSelectPtr = () => pullWebContentsKeyboardFocus();
-        const pinModalFocus = () => {
-          pullWebContentsKeyboardFocus();
-          select.focus({ preventScroll: true });
-        };
+        const pinModalFocus = () => pinModalFieldFocus(select, false);
         hint.textContent = 'Choose the destination folder for the clipboard items.';
         select.innerHTML = '';
         for (const folder of destFolders || []) {
@@ -6679,11 +6740,7 @@
           }
         };
         const onInputPtr = () => pullWebContentsKeyboardFocus();
-        const pinModalTextFocus = () => {
-          pullWebContentsKeyboardFocus();
-          input.focus({ preventScroll: true });
-          input.select();
-        };
+        const pinModalTextFocus = () => pinModalFieldFocus(input, true);
         input.value = String(initialBase || '');
         btnApply.addEventListener('click', onApply);
         modalEl.addEventListener('hidden.bs.modal', onHidden);
@@ -7737,7 +7794,8 @@
         officeBlock.classList.remove('d-none');
         document.getElementById('officeTitle').textContent = ext === 'ods' ? 'Calc (ODS)' : 'Excel';
         const prev = document.getElementById('officePreview');
-        const r = await window.tagBrowser.readFileBuffer({ fullPath: targetFp });
+        prev.innerHTML = '<p class="text-muted small mb-0">Loading…</p>';
+        const r = await window.tagBrowser.readFileBuffer({ fullPath: targetFp, maxBytes: SPREADSHEET_PREVIEW_MAX_BYTES });
         if (!propsViewStill(targetFp)) return;
         if (!r.ok) {
           propPh.classList.remove('d-none');
@@ -7761,7 +7819,15 @@
           return;
         }
         try {
-          const wb = XLSX.read(new Uint8Array(base64ToArrayBuffer(r.base64)), { type: 'array' });
+          // Let the Loading… text paint before the synchronous parse.
+          await new Promise((res) => requestAnimationFrame(() => setTimeout(res, 0)));
+          if (!propsViewStill(targetFp)) return;
+          // Parse only the first sheet and first N rows; a full parse of a large workbook freezes the UI thread.
+          const wb = XLSX.read(new Uint8Array(base64ToArrayBuffer(r.base64)), {
+            type: 'array',
+            sheets: 0,
+            sheetRows: EXCEL_PREVIEW_MAX_ROWS,
+          });
           const sn = wb.SheetNames[0];
           if (!propsViewStill(targetFp)) return;
           const ws = wb.Sheets[sn];
@@ -7769,19 +7835,24 @@
           let noteHtml = '';
           if (ws['!ref']) {
             const full = XLSX.utils.decode_range(ws['!ref']);
-            const totalRows = full.e.r - full.s.r + 1;
+            // sheetRows truncates !ref; the untruncated range survives in !fullref.
+            const fullAll = ws['!fullref'] ? XLSX.utils.decode_range(ws['!fullref']) : full;
+            const totalRows = fullAll.e.r - fullAll.s.r + 1;
+            const totalCols = full.e.c - full.s.c + 1;
             const endRow = Math.min(full.e.r, full.s.r + EXCEL_PREVIEW_MAX_ROWS - 1);
-            const limitedRange = { s: full.s, e: { r: endRow, c: full.e.c } };
+            const endCol = Math.min(full.e.c, full.s.c + EXCEL_PREVIEW_MAX_COLS - 1);
+            const limitedRange = { s: full.s, e: { r: endRow, c: endCol } };
             // First N rows of used range only — “first N non-empty rows” would mean scanning far more of the grid (often the whole sheet).
             const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true, range: limitedRange });
             tableHtml = XLSX.utils.sheet_to_html(XLSX.utils.aoa_to_sheet(rows));
-            if (totalRows > EXCEL_PREVIEW_MAX_ROWS) {
-              noteHtml =
-                '<p class="text-muted small mb-0 mt-2">Preview: first ' +
-                EXCEL_PREVIEW_MAX_ROWS +
-                ' rows only (sheet used range: ' +
-                totalRows +
-                ' rows).</p>';
+            // Files with no dimension record give no !fullref, so a sheet that fills the row cap counts as truncated.
+            const rowsCapped = totalRows > EXCEL_PREVIEW_MAX_ROWS || (!ws['!fullref'] && totalRows >= EXCEL_PREVIEW_MAX_ROWS);
+            const colsCapped = totalCols > EXCEL_PREVIEW_MAX_COLS;
+            if (rowsCapped || colsCapped) {
+              const bits = [];
+              if (rowsCapped) bits.push('first ' + EXCEL_PREVIEW_MAX_ROWS + ' rows');
+              if (colsCapped) bits.push('first ' + EXCEL_PREVIEW_MAX_COLS + ' of ' + totalCols + ' columns');
+              noteHtml = '<p class="text-muted small mb-0 mt-2">Preview: ' + bits.join(', ') + '.</p>';
             }
           } else {
             tableHtml = XLSX.utils.sheet_to_html(ws);
@@ -9290,10 +9361,11 @@
       }
     }
 
-    /** Drag-out: all checked paths, or single row path. */
+    /** Drag-out: the checked set when the grabbed row is part of it, else just that row (Explorer-style). */
     function pathsForRowDrag(fp) {
       const checked = getCheckedPathsArr();
-      if (checked.length) return checked;
+      const k = pathNormKey(fp);
+      if (checked.length && checked.some((p) => pathNormKey(p) === k)) return checked;
       return [fp];
     }
 
@@ -9359,6 +9431,10 @@
           destFolder,
           rootPrefix,
         });
+        if (r.ok && r.noop) {
+          setStatusMain('Already in that folder.');
+          return false;
+        }
         setStatusMain(r.ok ? 'Copied into folder.' : (r.error || 'Copy failed'));
         if (r.ok) {
           await renderShelf(); // Shelf chips must match disk after drop (drop event may end before this await).
@@ -9377,6 +9453,10 @@
         destFolder,
         rootPrefix,
       });
+      if (r.ok && r.noop) {
+        setStatusMain('Already in that folder.');
+        return false;
+      }
       setStatusMain(r.ok ? 'Moved into folder.' : (r.error || 'Move failed'));
       if (r.ok) {
         await renderShelf();
@@ -9591,8 +9671,12 @@
           if (fp) out.push(fp);
         }
       }
-      if (!out.length && tagBrowserActiveNativeDragPaths && tagBrowserActiveNativeDragPaths.length) {
-        out.push(...tagBrowserActiveNativeDragPaths);
+      if (!out.length) {
+        const stash = activeNativeDragPathsLive();
+        if (stash && dataTransferLooksLikeOsFileDrag(dt)) {
+          out.push(...stash);
+          tagBrowserActiveNativeDragPaths = null; // consumed: one drop per drag, never replay on a later drop
+        }
       }
       const seen = new Set();
       const uniq = [];
@@ -9647,6 +9731,7 @@
           tagBrowserNextOsFileDrag = false;
           e.preventDefault();
           tagBrowserActiveNativeDragPaths = list.slice();
+          tagBrowserActiveNativeDragPathsAt = Date.now();
           window.tagBrowser.startDragFiles(list);
           return;
         }
@@ -9804,12 +9889,14 @@
             }
             setStatusMain(
               r.ok
-                ? copy
-                  ? 'Copied to Shelf.'
-                  : 'Moved to Shelf.'
+                ? r.noop
+                  ? 'Already on the Shelf.'
+                  : copy
+                    ? 'Copied to Shelf.'
+                    : 'Moved to Shelf.'
                 : r.error || (copy ? 'Shelf copy failed' : 'Shelf move failed')
             );
-            if (r.ok) void refreshAfterDiskMutation({ paths: filtered, destFolder: st.path });
+            if (r.ok && !r.noop) void refreshAfterDiskMutation({ paths: filtered, destFolder: st.path });
           })();
         }, 40);
       });
@@ -10397,6 +10484,53 @@
       sortLastRowsForDisplay(true);
     }
 
+    /** Paths just moved away or recycled: hide their rows at once and stop a lagging Everything index resurrecting them. */
+    const goneTombstoneKeys = new Map();
+    const GONE_TOMBSTONE_TTL_MS = 15000;
+    function registerGoneTombstones(paths) {
+      const until = Date.now() + GONE_TOMBSTONE_TTL_MS;
+      for (const p of Array.isArray(paths) ? paths : []) {
+        const k = pathNormKey(p);
+        if (!k) continue;
+        goneTombstoneKeys.set(k, until);
+        checkedPathsMap.delete(k);
+      }
+    }
+
+    /** A path recreated at a tombstoned location (moved back, re-copied) must show again at once. */
+    function clearGoneTombstones(paths) {
+      for (const p of Array.isArray(paths) ? paths : []) {
+        const k = pathNormKey(p);
+        if (k) goneTombstoneKeys.delete(k);
+      }
+    }
+
+    /** Drop tombstoned rows (and children of tombstoned folders) from lastRows; expired tombstones fall away here. */
+    function applyGoneTombstonesToLastRows() {
+      if (!goneTombstoneKeys.size) return;
+      const now = Date.now();
+      for (const [k, until] of goneTombstoneKeys) {
+        if (until <= now) goneTombstoneKeys.delete(k);
+      }
+      if (!goneTombstoneKeys.size) return;
+      lastRows = lastRows.filter((row) => {
+        const k = pathNormKey(fullPathForRow(row));
+        if (!k) return true;
+        if (goneTombstoneKeys.has(k)) return false;
+        for (const g of goneTombstoneKeys.keys()) {
+          if (k.length > g.length && k.startsWith(g + '\\')) return false;
+        }
+        return true;
+      });
+    }
+
+    /** Instant repaint after move/delete; the scheduled search refreshes then confirm against the index. */
+    function removeGonePathsFromUiNow(paths) {
+      if (!paths || !paths.length) return;
+      registerGoneTombstones(paths);
+      renderTable();
+    }
+
     /** Numeric modified time for client-side sort (same shapes as formatModified). */
     function rowModifiedSortKey(row) {
       const ms = modifiedTimeMs(row);
@@ -10863,6 +10997,10 @@
       {
         const hm = document.getElementById('optHighlightMatchedNames');
         if (hm) hm.checked = localStorage.getItem(LS.highlightMatchedNames) !== '0';
+        const th = document.getElementById('optResultThumbnails');
+        if (th) th.checked = localStorage.getItem(LS.resultThumbnails) === '1';
+        const hp = document.getElementById('optHoverPreview');
+        if (hp) hp.checked = localStorage.getItem(LS.hoverPreview) === '1';
       }
       /* Default on; only stays off when user saved off ('0'). */
       document.getElementById('optSearchDebug').checked = localStorage.getItem(LS.searchDebug) !== '0';
@@ -10931,6 +11069,10 @@
       {
         const hm = document.getElementById('optHighlightMatchedNames');
         if (hm) localStorage.setItem(LS.highlightMatchedNames, hm.checked ? '1' : '0');
+        const th = document.getElementById('optResultThumbnails');
+        if (th) localStorage.setItem(LS.resultThumbnails, th.checked ? '1' : '0');
+        const hp = document.getElementById('optHoverPreview');
+        if (hp) localStorage.setItem(LS.hoverPreview, hp.checked ? '1' : '0');
       }
       localStorage.setItem(LS.searchDebug, document.getElementById('optSearchDebug').checked ? '1' : '0');
       localStorage.setItem(LS.tagFilterCombineOr, tagFilterCombineOr ? '1' : '0');
@@ -11379,6 +11521,168 @@
     }
     const FILE_ICON_BY_EXT = buildFileIconSpecMap();
 
+    /** Result-row thumbnails (Settings, Search results). Default off: each visible row costs one OS thumbnail read. */
+    function isResultThumbnailsOn() {
+      const el = document.getElementById('optResultThumbnails');
+      if (el) return !!el.checked;
+      return localStorage.getItem(LS.resultThumbnails) === '1';
+    }
+
+    /** Extensions where Explorer's shell thumbnail is more useful than the file-type glyph. Others keep the glyph. */
+    const THUMBNAIL_EXT = new Set([
+      'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'tif', 'tiff', 'heic', 'heif', 'svg',
+      'psd', 'ai', 'raw', 'cr2', 'nef', 'arw', 'dng',
+      'mp4', 'mkv', 'webm', 'mov', 'avi', 'wmv', 'm4v',
+      'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp',
+    ]);
+    /** Inline row glyph size (square); CSS scales the icon box down. Larger size below for the hover preview. */
+    const THUMBNAIL_REQ_PX = 64;
+    const HOVER_PREVIEW_REQ_PX = 320;
+    const HOVER_PREVIEW_DELAY_MS = 320;
+    /** Cap so a long browsing session does not retain unbounded data URLs. value null = tried, no thumbnail. */
+    const THUMBNAIL_CACHE_MAX = 2000;
+    const thumbnailCache = new Map();
+
+    /** Cache key folds in mtime (busts on edit) and px (inline 64 and hover 320 are separate entries). */
+    function thumbKey(fp, mtime, px) {
+      return fp + '|' + (mtime || '') + '|' + px;
+    }
+    function thumbCacheKey(fp, row, px) {
+      return thumbKey(fp, modifiedTimeMs(row), px);
+    }
+    function thumbCacheSet(key, val) {
+      if (thumbnailCache.size >= THUMBNAIL_CACHE_MAX) {
+        const first = thumbnailCache.keys().next().value;
+        if (first !== undefined) thumbnailCache.delete(first);
+      }
+      thumbnailCache.set(key, val);
+    }
+    /** One shell call per (path, mtime, px); null cached so a missing provider is not retried. */
+    async function fetchThumbnail(fp, key, px) {
+      if (thumbnailCache.has(key)) return thumbnailCache.get(key);
+      let dataUrl = null;
+      try {
+        const r = await window.tagBrowser.getThumbnail({ fullPath: fp, size: px });
+        if (r && r.ok && r.dataUrl) dataUrl = r.dataUrl;
+      } catch (_e) { /* keep glyph */ }
+      thumbCacheSet(key, dataUrl);
+      return dataUrl;
+    }
+    function applyThumbnail(holder, dataUrl) {
+      if (!dataUrl) return; /* keep the file-type glyph */
+      holder.innerHTML = '<img class="file-type-thumb" alt="" aria-hidden="true">';
+      holder.firstChild.src = dataUrl;
+      holder.classList.add('file-type-icon-has-thumb');
+    }
+    async function loadThumbnail(holder) {
+      const fp = holder.dataset.thumbPath;
+      const key = holder.dataset.thumbKey;
+      if (!fp || !key) return;
+      const dataUrl = await fetchThumbnail(fp, key, THUMBNAIL_REQ_PX);
+      /* Holder may have been replaced by a re-render; only paint if it still maps to this key. */
+      if (holder.isConnected && holder.dataset.thumbKey === key) applyThumbnail(holder, dataUrl);
+    }
+    /** Swap a file-row glyph for its OS thumbnail; cached hits paint immediately, misses load via the serialised backend. */
+    function maybeAttachThumbnail(holder, fp, ext, row) {
+      if (!isResultThumbnailsOn()) return;
+      if (!THUMBNAIL_EXT.has(ext)) return;
+      if (!window.tagBrowser || !window.tagBrowser.getThumbnail) return;
+      const key = thumbCacheKey(fp, row, THUMBNAIL_REQ_PX);
+      holder.dataset.thumbPath = fp;
+      holder.dataset.thumbKey = key;
+      if (thumbnailCache.has(key)) {
+        applyThumbnail(holder, thumbnailCache.get(key));
+        return;
+      }
+      /* Load directly; the main-process queue serialises the work and the cache makes re-renders free. */
+      void loadThumbnail(holder);
+    }
+
+    /* ---- Hover preview: a larger floating thumbnail while the pointer rests on an eligible row. ---- */
+    function isHoverPreviewOn() {
+      const el = document.getElementById('optHoverPreview');
+      if (el) return !!el.checked;
+      return localStorage.getItem(LS.hoverPreview) === '1';
+    }
+    let hoverPreviewEl = null;
+    let hoverPreviewTimer = null;
+    let hoverPreviewActiveKey = null;
+    function ensureHoverPreviewEl() {
+      if (hoverPreviewEl) return hoverPreviewEl;
+      const d = document.createElement('div');
+      d.className = 'tagfox-hover-preview d-none';
+      d.setAttribute('aria-hidden', 'true');
+      d.innerHTML = '<img alt="">';
+      document.body.appendChild(d);
+      hoverPreviewEl = d;
+      return d;
+    }
+    function hideHoverPreview() {
+      if (hoverPreviewTimer) {
+        clearTimeout(hoverPreviewTimer);
+        hoverPreviewTimer = null;
+      }
+      hoverPreviewActiveKey = null;
+      if (hoverPreviewEl) {
+        hoverPreviewEl.classList.add('d-none');
+        const img = hoverPreviewEl.firstChild;
+        if (img) img.removeAttribute('src');
+      }
+    }
+    /** Anchor near the entry cursor position, flipping/clamping so the popup stays on screen. */
+    function positionHoverPreview(el, x, y) {
+      const margin = 16;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      el.classList.remove('d-none');
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      let left = x + margin;
+      if (left + w > vw - 8) left = x - margin - w;
+      if (left < 8) left = 8;
+      let top = y - h / 2;
+      if (top < 8) top = 8;
+      if (top + h > vh - 8) top = vh - 8 - h;
+      el.style.left = left + 'px';
+      el.style.top = top + 'px';
+    }
+    async function showHoverPreviewFor(fp, key, x, y) {
+      const dataUrl = await fetchThumbnail(fp, key, HOVER_PREVIEW_REQ_PX);
+      if (hoverPreviewActiveKey !== key || !dataUrl) return;
+      const el = ensureHoverPreviewEl();
+      const img = el.firstChild;
+      const place = () => {
+        if (hoverPreviewActiveKey === key) positionHoverPreview(el, x, y);
+      };
+      img.onload = place;
+      img.src = dataUrl;
+      place();
+    }
+    function onResultRowHoverOver(e) {
+      if (!isHoverPreviewOn()) return;
+      const tr = e.target.closest && e.target.closest('tr[data-thumb-path]');
+      if (!tr) return;
+      const fp = tr.dataset.thumbPath;
+      if (!fp) return;
+      const key = thumbKey(fp, tr.dataset.thumbMtime, HOVER_PREVIEW_REQ_PX);
+      if (hoverPreviewActiveKey === key) return; /* still on the same row */
+      if (hoverPreviewTimer) clearTimeout(hoverPreviewTimer);
+      if (hoverPreviewEl && !hoverPreviewEl.classList.contains('d-none')) {
+        hoverPreviewEl.classList.add('d-none');
+      }
+      hoverPreviewActiveKey = key;
+      const x = e.clientX;
+      const y = e.clientY;
+      hoverPreviewTimer = setTimeout(() => void showHoverPreviewFor(fp, key, x, y), HOVER_PREVIEW_DELAY_MS);
+    }
+    function onResultRowHoverOut(e) {
+      const tr = e.target.closest && e.target.closest('tr[data-thumb-path]');
+      if (!tr) return;
+      const to = e.relatedTarget;
+      if (to && tr.contains(to)) return; /* moving within the same row */
+      hideHoverPreview();
+    }
+
     function fileExtFromPretty(pretty) {
       const i = pretty.lastIndexOf('.');
       if (i <= 0) return '';
@@ -11407,7 +11711,12 @@
       const lead = document.createElement('span');
       lead.className = 'name-badges-lead';
       if (rowIsFolder(row)) lead.appendChild(folderIconEl());
-      else lead.appendChild(fileIconEl(fileExtFromPretty(parsed.pretty)));
+      else {
+        const ext = fileExtFromPretty(parsed.pretty);
+        const iconHolder = fileIconEl(ext);
+        maybeAttachThumbnail(iconHolder, fp, ext, row);
+        lead.appendChild(iconHolder);
+      }
       const blob = document.createElement('span');
       blob.className = recencyBlobClassForRow(row);
       blob.title = 'Recency (modified time)';
@@ -12030,6 +12339,8 @@
             customClass: 'tagfox-ui-tooltip',
             trigger: 'hover',
             animation: false,
+            /* Show only on dwell: sweeping the pointer across chip lists must not build a popper per chip. */
+            delay: { show: 300, hide: 0 },
           });
         } catch (_) {}
       });
@@ -12183,6 +12494,7 @@
       });
       clearInternalPathDragDropTargetHints();
       tbody.innerHTML = '';
+      applyGoneTombstonesToLastRows();
       pruneCheckedPaths();
       const rows = filteredRows();
       const rowsForDisplay = listRowsForUi();
@@ -12324,6 +12636,11 @@
 
         const baseName = T.baseName(fp);
         const parsedName = T.parseSegmentTags(baseName);
+        /* Mark eligible file rows for the hover preview (delegated listener reads these; set regardless of toggle so it works without a re-render). */
+        if (!rowIsFolder(row) && THUMBNAIL_EXT.has(fileExtFromPretty(parsedName.pretty))) {
+          tr.dataset.thumbPath = fp;
+          tr.dataset.thumbMtime = String(modifiedTimeMs(row) || '');
+        }
         const tdName = document.createElement('td');
         tdName.className = 'min-w-0';
         {
@@ -12557,6 +12874,7 @@
             tagBrowserNextOsFileDrag = false;
             e.preventDefault();
             tagBrowserActiveNativeDragPaths = paths.slice();
+            tagBrowserActiveNativeDragPathsAt = Date.now();
             window.tagBrowser.startDragFiles(paths);
             return;
           }
@@ -13284,6 +13602,10 @@
         clearBigFolderCapSmartNoteIfStale();
       } finally {
         resultsLoadMoreBusy = false;
+        /* loadMore mutates lastRows + resultsPagingCtx; persist them to the active pane or a later pane
+           switch / inactive-pane refresh (restorePaneStateIntoUi) reverts to the pre-load-more page and
+           the extra rows vanish. */
+        if (runId === searchRunSeq) saveActivePaneStateFromUi();
         updateResultsLoadMoreUi();
       }
     }
@@ -13521,7 +13843,7 @@
         syncViewRadioActiveFromDom();
         saveSettings();
         smartProbePrior = null;
-        await runSearchNow('smart-narrow', { keepPendingSmartNote: true });
+        await runSearchNow('smart-narrow', { keepPendingSmartNote: true, nested: true });
         smartRevertFP = smartOutcomeFingerprint();
         return true;
       }
@@ -13536,7 +13858,7 @@
             syncViewRadioActiveFromDom();
             saveSettings();
             pendingSmartStatusNote = { text: 'Smart View is hiding subfolders.', kind: 'warn' };
-            await runSearchNow('smart-narrow', { keepPendingSmartNote: true });
+            await runSearchNow('smart-narrow', { keepPendingSmartNote: true, nested: true });
             return true;
           }
         }
@@ -13545,7 +13867,7 @@
           syncViewRadioActiveFromDom();
           saveSettings();
           pendingSmartStatusNote = { text: 'Smart View is hiding files.', kind: 'warn' };
-          await runSearchNow('smart-narrow', { keepPendingSmartNote: true });
+          await runSearchNow('smart-narrow', { keepPendingSmartNote: true, nested: true });
           return true;
         }
       }
@@ -13599,7 +13921,7 @@
         applyResultsViewRadiosToDom('smart', true, 'all');
         syncViewRadioActiveFromDom();
         saveSettings();
-        await runSearchNow('smart-probe');
+        await runSearchNow('smart-probe', { nested: true });
       }
     }
 
@@ -14276,6 +14598,19 @@
       saveSettings();
       renderTable();
     });
+    document.getElementById('optResultThumbnails')?.addEventListener('change', () => {
+      saveSettings();
+      renderTable();
+    });
+    document.getElementById('optHoverPreview')?.addEventListener('change', () => {
+      saveSettings();
+      if (!isHoverPreviewOn()) hideHoverPreview();
+    });
+    /* Hover preview: delegated so it spans both panes and survives re-renders; hidden on scroll / leaving the window. */
+    document.addEventListener('mouseover', onResultRowHoverOver);
+    document.addEventListener('mouseout', onResultRowHoverOut);
+    document.addEventListener('scroll', hideHoverPreview, true);
+    window.addEventListener('blur', hideHoverPreview);
     document.getElementById('optSearchDebug').addEventListener('change', () => {
       saveSettings();
       if (isSearchDebugOn()) searchDebugLog('debug.enabled', { on: true });
@@ -14372,7 +14707,7 @@
 
     document.getElementById('tagModal').addEventListener('shown.bs.modal', () => {
       refreshTagModalDatalist();
-      requestAnimationFrame(() => document.getElementById('tagModalInput')?.focus());
+      requestAnimationFrame(() => pinModalFieldFocus(document.getElementById('tagModalInput'), false));
     });
     document.getElementById('tagModal').addEventListener('hidden.bs.modal', () => {
       const wasFolderDocDraft = tagModalMode === 'folderDocDraft';
@@ -14388,10 +14723,8 @@
     document.getElementById('bulkRenameModal').addEventListener('shown.bs.modal', () => {
       requestAnimationFrame(() => {
         const rep = document.getElementById('bulkRenameReplace');
-        if (rep) {
-          rep.focus();
-          rep.select();
-        } else document.getElementById('bulkRenameFind')?.focus();
+        if (rep) pinModalFieldFocus(rep, true);
+        else pinModalFieldFocus(document.getElementById('bulkRenameFind'), false);
       });
     });
     document.getElementById('bulkRenameModal').addEventListener('hidden.bs.modal', () => {
@@ -14618,7 +14951,16 @@
       if (status) setStatusMain(r.ok ? 'Opened in app window.' : (r.error || 'Open failed'));
     });
 
-    window.tagBrowser.setPathsMutatedHandler((payload) => void refreshAfterDiskMutation(payload));
+    window.tagBrowser.setPathsMutatedHandler((payload) => {
+      const p = payload && typeof payload === 'object' ? payload : {};
+      if (p.trashed && Array.isArray(p.paths)) removeGonePathsFromUiNow(p.paths);
+      if (Array.isArray(p.moved) && p.moved.length) {
+        clearGoneTombstones(p.moved.map((m) => m && m.to));
+        removeGonePathsFromUiNow(p.moved.map((m) => m && m.from));
+      }
+      if (Array.isArray(p.copied) && p.copied.length) clearGoneTombstones(p.copied);
+      void refreshAfterDiskMutation(payload);
+    });
     window.tagBrowser.setShellActionErrorHandler((msg) => {
       setStatusMain(String(msg || 'Action failed'));
     });
@@ -14700,6 +15042,24 @@
     /** Bootstrap: body gets `modal-open` with backdrop — treat as modal even if `.show` query lags one frame. */
     function tagfoxModalBlocksWorkAreaFocus() {
       return document.body.classList.contains('modal-open') || !!document.querySelector('.modal.show');
+    }
+
+    /* Modal fields can show focused but ignore keys on Windows until you alt-tab away and back; force an OS
+       focus cycle in main. Heavier than pullWebContentsKeyboardFocus, so call only on modal show, not per click. */
+    function forceWebContentsKeyboardFocus() {
+      try {
+        if (window.tagBrowser && typeof window.tagBrowser.forceFocusWebContents === 'function') {
+          window.tagBrowser.forceFocusWebContents();
+        }
+      } catch (_) {}
+    }
+
+    /* Focus the field first so Windows returns the keyboard to it when the forced focus cycle completes. */
+    function pinModalFieldFocus(el, selectText) {
+      if (!el) return;
+      el.focus({ preventScroll: true });
+      if (selectText && typeof el.select === 'function') el.select();
+      forceWebContentsKeyboardFocus();
     }
 
     /** Focus search input; select all text when true. Skips if a dialog is open. */
@@ -16420,3 +16780,87 @@
         requestAnimationFrame(() => searchDebugFocusSnapshot('window.focus.afterRestore'));
       });
     });
+
+    /* Automated-test hook: inert unless the page is loaded with #tagfoxtest in the URL (the dual-pane
+       harness in _tmp/ sets it). Exposes the closure-private search/pane orchestration + a state snapshot
+       so an external CDP driver can exercise the loop/refresh/dual-pane flows and assert invariants. */
+    if (location.hash.includes('tagfoxtest')) {
+      const baseIdTbodyPane = () => {
+        const tb = document.getElementById('tbody');
+        const pane = tb && tb.closest && tb.closest('.results-pane[data-results-pane]');
+        return pane ? pane.getAttribute('data-results-pane') : null;
+      };
+      const activeClassPane = () => {
+        const el = document.querySelector('.results-pane.results-pane-active[data-results-pane]');
+        return el ? el.getAttribute('data-results-pane') : null;
+      };
+      const rowCount = (id) => {
+        const el = document.getElementById(id);
+        return el ? el.querySelectorAll('tr').length : -1;
+      };
+      window.__tagfoxTest = {
+        runSearchNow: (kind, opts) => runSearchNow(kind, opts),
+        refreshNow: () => runSearchNow('refresh', { uiHint: 'f5' }),
+        refreshInactivePane: (opts) => refreshInactiveResultsPane('identity', opts || { singlePaneOnly: true }),
+        activatePane: (key) => activateResultsPane(key),
+        scheduleSearch: (kind) => scheduleSearch(kind),
+        setQuery: (q) => {
+          const el = document.getElementById('query');
+          if (el) { el.value = String(q == null ? '' : q); el.dispatchEvent(new Event('input', { bubbles: true })); }
+        },
+        setRecency: (mode) => { setRecencyFilterMode(mode); void runSearchNow('identity'); },
+        setView: (subsOn, content) => { applyResultsViewRadiosToDom('smart', !!subsOn, content || 'all'); syncViewRadioActiveFromDom(); void runSearchNow('identity'); },
+        setScope: (root) => { const e = document.getElementById('rootFolder'); if (e) e.value = String(root || ''); void runSearchNow('identity'); },
+        autoTick: () => maybeAutoRefreshSearchTick(),
+        loadMore: () => loadMoreResults(),
+        disableAutofill: () => { maybeAutoFillResultsUntilScrollable = () => {}; },
+        autoStart: (sec) => { const e = document.getElementById('autoRefreshSec'); if (e) { e.value = String(sec); } syncAutoRefreshTimer(); },
+        autoStop: () => { const e = document.getElementById('autoRefreshSec'); if (e) e.value = '0'; syncAutoRefreshTimer(); },
+        configure: (cfg) => {
+          const c = cfg || {};
+          if (c.baseUrl != null) { const e = document.getElementById('baseUrl'); if (e) e.value = c.baseUrl; }
+          if (c.rootFolder != null) { const e = document.getElementById('rootFolder'); if (e) e.value = c.rootFolder; }
+          if (c.maxResults != null) { const e = document.getElementById('maxResults'); if (e) e.value = String(c.maxResults); }
+          saveSettings();
+        },
+        diag: () => ({
+          recencyMode: recencyFilterMode(),
+          recencyCutoff: recencyFilterCutoffMs(),
+          hideSpecial: isHideSpecialPaths(),
+          hideTilde: isHideTildePaths(),
+          foldersOnly: isFoldersOnly(),
+          filesOnly: isFilesOnly(),
+          showSubfolders: isShowSubfolders(),
+          smart: isSmartView(),
+          n_lastRows: lastRows.length,
+          n_afterTags: filteredRowsAfterTagsOnly().length,
+          n_beforeAdvanced: filteredRowsBeforeAdvancedPathHides().length,
+          n_filteredRows: filteredRows().length,
+          n_listRowsForUi: listRowsForUi().length,
+          rows: lastRows.slice(0, 8).map((r) => ({ path: fullPathForRow(r), folder: rowIsFolder(r), mtime: modifiedTimeMs(r) })),
+        }),
+        state: () => ({
+          activeResultsPane,
+          activeClassPane: activeClassPane(),
+          baseIdTbodyPane: baseIdTbodyPane(),
+          topLevelSearchDepth,
+          searchInFlight,
+          pendingDebounce: !!searchDebounceTimer,
+          searchRunSeq,
+          lastRows: lastRows.length,
+          paneA_state: resultsPaneState.A.lastRows.length,
+          paneB_state: resultsPaneState.B.lastRows.length,
+          tbodyBase: rowCount('tbody'),
+          tbodyA: rowCount('tbodyA'),
+          tbodyB: rowCount('tbodyB'),
+          dupBaseIds: RESULT_DOM_ID_MAP.filter((p) => document.querySelectorAll('[id="' + p.base + '"]').length !== 1).map((p) => p.base),
+          status: (document.getElementById('statusMain')?.textContent || '').trim().slice(0, 120),
+          recency: recencyFilterMode(),
+          foldersOnly: isFoldersOnly(),
+          filesOnly: isFilesOnly(),
+          splitRatio: resultsSplitRatio,
+        }),
+      };
+      try { window.tagBrowser && window.tagBrowser.setSearchDebugEnabled && window.tagBrowser.setSearchDebugEnabled(false); } catch (_) {}
+      console.log('[tagfoxtest] hook ready');
+    }

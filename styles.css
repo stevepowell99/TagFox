@@ -1492,6 +1492,18 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   min-height: 0; /* allow shrink so overflow:auto scrolls inside preview */
   overflow: auto;
 }
+/* Wide survey exports (100+ columns) freeze Chromium under auto table-layout; fixed layout skips
+   the per-column content measurement, and the column cap in renderer.js bounds the rest. */
+#officePreview table {
+  table-layout: fixed;
+}
+#officePreview td,
+#officePreview th {
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* Folder readme, selected .md/.txt, and plain-text preview: fill RHS under metadata (same flex idea as #officeBlock) */
 #readmeBlock,
 #mdFileBlock,
@@ -1838,6 +1850,34 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
 }
 .folder-type-icon { color: #d97706; }
 .folder-type-icon i, .file-type-icon i { font-size: 0.8125rem; line-height: 1; vertical-align: -0.06em; }
+/* Result-row thumbnail replaces the glyph in the same icon box (Settings, Thumbnails). */
+.file-type-icon.file-type-icon-has-thumb { width: 1.25rem; justify-content: center; }
+.file-type-thumb {
+  width: 1.25rem;
+  height: 1.25rem;
+  object-fit: contain;
+  border-radius: 2px;
+  display: block;
+}
+/* Floating larger preview on row hover (Settings, Hover preview). Never intercepts the pointer. */
+.tagfox-hover-preview {
+  position: fixed;
+  z-index: 1090;
+  pointer-events: none;
+  padding: 4px;
+  max-width: 340px;
+  max-height: 340px;
+  background: var(--bs-body-bg);
+  border: 1px solid var(--bs-border-color);
+  border-radius: 4px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+}
+.tagfox-hover-preview img {
+  display: block;
+  max-width: 332px;
+  max-height: 332px;
+  object-fit: contain;
+}
 .tagfox-toolbar-lead .fa-solid { font-size: 0.9375rem; line-height: 1; vertical-align: -0.06em; }
 .name-badges { min-width: 0; }
 /* Icon + pills + filename on one row; title truncates (flex-wrap was pushing the name under the icon). */

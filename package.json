@@ -10,7 +10,11 @@
     "prestart": "npm run vendor:sync && npm run build:help",
     "predist": "npm run vendor:sync && npm run build:help",
     "start": "electron .",
-    "dist": "node scripts/run-dist.js"
+    "dist": "node scripts/run-dist.js",
+    "test": "node test/run-all.cjs",
+    "test:smoke": "node test/smoke.cjs",
+    "test:loadmore": "node test/loadmore-regression.cjs",
+    "test:fuzz": "node test/fuzz.cjs"
   },
   "build": {
     "appId": "app.tagbrowser",

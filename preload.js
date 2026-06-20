@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   copyPathsIntoFolder: (payload) => ipcRenderer.invoke('copy-paths-into-folder', payload),
   readTextFile: (payload) => ipcRenderer.invoke('read-text-file', payload),
   readFileBuffer: (payload) => ipcRenderer.invoke('read-file-buffer', payload),
+  getThumbnail: (payload) => ipcRenderer.invoke('get-thumbnail', payload),
   readMsgPreview: (payload) => ipcRenderer.invoke('read-msg-preview', payload),
   writeTextFile: (payload) => ipcRenderer.invoke('write-text-file', payload),
   writeImageFilePng: (payload) => ipcRenderer.invoke('write-image-file-png', payload),
@@ -63,6 +64,7 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   debugFolderSnapshot: (payload) => ipcRenderer.invoke('debug-folder-snapshot', payload),
   listDriveRoots: () => ipcRenderer.invoke('list-drive-roots'),
   focusWebContents: () => ipcRenderer.send('tagbrowser-focus-web-contents'),
+  forceFocusWebContents: () => ipcRenderer.send('tagbrowser-force-web-contents-focus'),
   /* Must be synchronous with dragstart or OS drag never starts (send is async). */
   startDragFiles: (paths) => ipcRenderer.sendSync('start-drag-files', paths),
   trashPaths: (paths, opts) => {

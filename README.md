@@ -78,6 +78,17 @@ npm run dist
 
 This runs electron-builder and writes an NSIS installer to `dist/`. The build is not code-signed, so SmartScreen may warn recipients. The built `dist/` is gitignored; publish the installer to the GitHub Releases page for the download link above to work.
 
+### Tests
+
+```bash
+npm test
+```
+
+This runs the dual-pane and refresh regression suite. The tests launch the real app under the Chrome
+DevTools Protocol and drive it through a hidden `#tagfoxtest` hook (inert in normal runs), so they exercise
+the actual `renderer.js`. Everything must be running, the same as for the app. Full detail, including the
+invariants checked and how to add a test, is in [`test/README.md`](test/README.md).
+
 ### Project layout
 
 | File | Role |
@@ -93,12 +104,42 @@ This runs electron-builder and writes an NSIS installer to `dist/`. The build is
 | `scripts/build-help.js` | Builds `help.html` from `help.md` and its tab markers |
 | `scripts/sync-vendor-assets.js` | Copies Bootstrap, Font Awesome, CodeMirror and other vendor files into `vendor/` |
 | `scripts/run-dist.js` | Wraps the electron-builder distribution build |
+| `test/` | Automated dual-pane / refresh regression tests (see [`test/README.md`](test/README.md)) |
 
 ### How search works
 
 Everything's HTTP API returns all folders before all files for a given sort. With **Max results** capped, a folder-heavy scope can fill a page with folders and show no files. Everything 1.5a adds a `sort-mix:` prefix that interleaves files and folders in true sort order, and TagFox appends it when **Hide files** is off (see `runSearch()` in `renderer.js`). This is why 1.5a is required. Reference: the [Everything forum thread](https://www.voidtools.com/forum/viewtopic.php?t=8994).
 
 Active tag filters are sent to Everything as a regex clause, so matches exist before results load. The tag bar refresh control runs a full-index scan for `[(...)]` patterns and prunes tags that no longer appear; ordinary searches do not. **Hide special** and **Hide ~** are client-side filters in `filteredRows()`; the Everything query is unchanged, so paging still counts raw hits per page.
+
+### Search concurrency and dual panes
+
+The results area is two panes (A and B). Only one is active; the active pane owns the canonical DOM ids
+(`tbody`, `resultsTable`, and so on) and the global status bar. `swapCanonicalResultsIds()` moves those ids
+onto whichever pane is active, so `renderTable()` (which writes to `#tbody`) always targets the active pane.
+Each pane's filter state and last results are stored in `resultsPaneState`; switching panes saves the live
+UI into the leaving pane and restores the entering one.
+
+One search flow runs at a time. `searchMutex` serialises top-level flows; genuinely nested calls (smart
+narrow / probe re-searches, and the inactive-pane refresh launched from inside a `runSearchNow`) skip the
+mutex by passing `nested: true`. Nesting is marked explicitly, not inferred from a depth counter: a fresh
+event-loop task (the debounced search, F5, a disk-mutation retry) that fires while another flow is mid-await
+must wait for the mutex, not run concurrently.
+
+The inactive pane is refreshed by a background "dance" in `refreshInactiveResultsPane()`: swap the canonical
+ids onto the inactive pane, restore its state, run its search (so `renderTable()` writes to its tbody), then
+swap back and restore the active pane.
+
+Two faults here were fixed in June 2026, and the [tests](test/README.md) guard both:
+
+- **Searches rendering into the hidden pane.** Nesting was inferred from a global depth counter, so the
+  startup debounced search, firing while the inactive-pane dance held the counter up, mistook itself for a
+  nested call, skipped the mutex, and rendered into the id-swapped (hidden) pane. The active pane looked
+  empty until a pane switch repainted it. Fixed by making `nested` explicit (`runSearchNow`,
+  `refreshInactiveResultsPane`).
+- **Load-more rows lost on a background refresh.** `loadMoreResults()` grew `lastRows` but did not save it
+  to the active pane's stored state, so the dance's restore reverted to the pre-load-more page. Fixed by
+  persisting the active pane state at the end of `loadMoreResults()`.
 
 ### Drag and drop
 
