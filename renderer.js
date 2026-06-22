@@ -102,7 +102,7 @@
     const KNOWN_BRACKET_TAGS_MAX = 5000;
     /** MRU subset (40) for search history / datalist order hint — not the tag bar source of truth. */
     let tagStoreOrder = [];
-    /** Global `[(…)]` tag names: rescan + adds; not scope-local (LS + userData JSON). */
+    /** Global `xk…` tag names: rescan + adds; not scope-local (LS + userData JSON). */
     let knownBracketTagsList = [];
     let tagPrefsDiskTimer = null;
 
@@ -329,7 +329,7 @@
       document.body.classList.remove('tagfox-internal-path-drag');
       clearAllFavBarDropGaps();
     }
-    /** Last tag scan: Everything r=1 + `\\[\\(` so we only index `[(…)]` blocks, not every `[`. */
+    /** Last tag scan: Everything r=1 + `[ \\]xk` so we only index `xk…` tag tokens. */
     let tagDiscoveryRows = [];
     /** Last non-empty scan — keeps tag pills when a later scan fails, returns empty, or races navigation. */
     let tagDiscoveryRowsLastGood = [];
@@ -928,7 +928,7 @@
       'index.txt',
     ];
     const DEFAULT_GLOBAL_VIEWER_BASENAMES_STR = DEFAULT_GLOBAL_VIEWER_BASENAMES_LIST.join(', ');
-    /** User list: comma/semicolon/newline; pretty names (readme[(t)].md → readme.md); no path segments. */
+    /** User list: comma/semicolon/newline; pretty names (readme xkt.md → readme.md); no path segments. */
     function normalizeGlobalViewerBasenamesList(raw) {
       const parts = String(raw ?? '')
         .split(/[,;\n]+/)
@@ -3323,11 +3323,14 @@
       return paths.some((p) => pathIsUnderOrEqualFolder(p, inactiveRoot) || pathIsUnderOrEqualFolder(inactiveRoot, p));
     }
 
-    function clearAndScheduleSearchRetries(payload) {
+    function clearAndScheduleSearchRetries(payload, opts) {
       for (const id of diskMutationRefreshTimeouts) clearTimeout(id);
       diskMutationRefreshTimeouts = [];
-      /* 350ms catches most index updates (new items at dest appear fast); 1200ms is the slow-index backstop. */
-      for (const delayMs of [350, 1200]) {
+      /* 350ms catches most index updates (new items at dest appear fast); 1200ms is the slow-index backstop.
+         A pure delete needs neither: tombstones already hid the rows, so one quiet pass clears them once
+         Everything catches up, instead of two extra full repaints the user reads as flicker. */
+      const delays = opts && opts.quietSingle ? [1000] : [350, 1200];
+      for (const delayMs of delays) {
         diskMutationRefreshTimeouts.push(
           setTimeout(() => {
             const retryOpts = diskMutationMayAffectInactivePane(payload) ? {} : { singlePaneOnly: true };
@@ -3335,6 +3338,16 @@
           }, delayMs)
         );
       }
+    }
+
+    /* A delete only removes rows, and removeGonePathsFromUiNow() already tombstoned + repainted them. No
+       new content can appear, so the immediate re-query is pure churn. Moves/pastes (destFolder, copied,
+       moved) bring in new rows and still need the prompt refresh. */
+    function isPureTombstoneMutation(payload) {
+      const p = payload && typeof payload === 'object' ? payload : {};
+      const trashed = !!(p.trashed && Array.isArray(p.paths) && p.paths.length);
+      const bringsNewContent = !!(p.destFolder || (Array.isArray(p.copied) && p.copied.length) || (Array.isArray(p.moved) && p.moved.length));
+      return trashed && !bringsNewContent;
     }
 
     /** After paste / move / trash: refresh now, then one scoped catch-up for Everything index lag. */
@@ -3345,6 +3358,12 @@
       folderChildCountCache.clear();
       await detachViewerEditorsIfOpenTargetsGone();
       void renderShelf();
+      if (isPureTombstoneMutation(payload)) {
+        /* Rows are already gone from the UI. Skip the immediate re-render and its inactive-pane dance;
+           schedule a single quiet reconcile to retire the tombstones once the index settles. */
+        clearAndScheduleSearchRetries(payload, { quietSingle: true });
+        return;
+      }
       clearAndScheduleSearchRetries(payload);
       const refreshOpts = diskMutationMayAffectInactivePane(payload) ? {} : { singlePaneOnly: true };
       void runSearchNow('refresh', refreshOpts);
@@ -3381,7 +3400,7 @@
       }
     }
 
-    /** Known bracket-tag labels, de-duped case-insensitively and sorted for draft tag pickers. */
+    /** Known tag labels, de-duped case-insensitively and sorted for draft tag pickers. */
     function collectKnownTagLabels() {
       const seen = new Set();
       const labels = [];
@@ -6555,7 +6574,7 @@
       return '';
     }
 
-    /** Strip trailing extension (last `.` segment) for prefill only; keeps `[(tags)]` etc. in the stem. */
+    /** Strip trailing extension (last `.` segment) for prefill only; keeps `xk…` tags etc. in the stem. */
     function basenameStemIgnoringExtension(segment) {
       const s = String(segment ?? '');
       const d = s.lastIndexOf('.');
@@ -7142,7 +7161,7 @@
       const todoLbl = document.getElementById('labelNewMdTitle');
       if (todoLbl) {
         todoLbl.textContent = 'Add TODO here';
-        todoLbl.title = 'Creates Title[(TODO)].md in the current folder';
+        todoLbl.title = 'Creates Title xkTODO.md in the current folder';
       }
       const readmeStem = document.getElementById('readmeFolderDocStemInput');
       const readmeExt = document.getElementById('readmeFolderDocExt');
@@ -7406,12 +7425,12 @@
       if (todoLbl) {
         if (isFolder) {
           todoLbl.textContent = 'Add TODO here';
-          todoLbl.title = 'Creates Title[(TODO)].md in the current folder';
+          todoLbl.title = 'Creates Title xkTODO.md in the current folder';
         } else {
           const par = T.parentDir(propPath);
           const leaf = segmentPretty(T.baseName(String(par || '').replace(/[/\\]+$/, '')));
           todoLbl.textContent = leaf ? 'Add TODO in current folder: ' + leaf : 'Add TODO in current folder';
-          todoLbl.title = 'Creates Title[(TODO)].md in ' + (leaf ? leaf : 'this folder');
+          todoLbl.title = 'Creates Title xkTODO.md in ' + (leaf ? leaf : 'this folder');
         }
       }
       const nestReadmeToggle = document.getElementById('propsNestedReadmeToggleWrap');
@@ -8893,8 +8912,8 @@
       const httpUser = document.getElementById('httpUser').value;
       const httpPassword = document.getElementById('httpPassword').value;
       const ui = searchOptionsFromUI();
-      // r=1: require `[(` so plain `[foobar]` noise is excluded; TagFox tags are `[(t1,t2)]`.
-      const bracketDiscoveryQuery = '\\[\\(';
+      // r=1: a space or path sep before `xk` so only tag tokens match; TagFox tags are `xkt1 xkt2`.
+      const bracketDiscoveryQuery = '[ \\\\]' + T.TAG_PREFIX;
       searchDebugLog('tagDiscovery.request', {
         prune: pruneDeadRemembered,
         searchText: bracketDiscoveryQuery,
@@ -8983,7 +9002,7 @@
           const n = rawRows.length;
           const extra =
             storeChanged || knownChanged || fullScanActiveChanged ? ' Dropped tags not in this scan.' : '';
-          setStatusMain('Tag scan: ' + n + ' path(s) with [(…)] tag block (full index).' + extra);
+          setStatusMain('Tag scan: ' + n + ' path(s) with xk… tags (full index).' + extra);
         }
       }
       renderTagBar();
@@ -9000,7 +9019,7 @@
       return String(s || '').replace(/[\\^$.|?*+()[\]{}]/g, '\\$&');
     }
 
-    /** One (?i)regex:… clause for `[(t1,t2)]` lists (same as rowHasTag / pathHasTag). */
+    /** One (?i)regex:… clause matching the `xk<tag>` token (same as rowHasTag / pathHasTag). */
     function tagKeyToEverythingBracketRegex(lowerKey) {
       const t = String(lowerKey || '').trim().toLowerCase();
       if (!t) return '';
@@ -9008,7 +9027,9 @@
       if (!inner) inner = t.replace(/[^a-z0-9_-]/gi, '');
       if (!inner) return '';
       const esc = escapeEverythingRegexFragment(inner);
-      return '(?i)\\[\\((?:[^,)]*,)*' + esc + '(?:,[^)]*)?\\)\\][^\\\\]*$';
+      // space/sep before xk, then the tag as a whole token, anchored to the leaf segment
+      // (a boundary then non-backslash to end, or end) so a tagged parent folder does not match.
+      return '(?i)[ \\\\]' + T.TAG_PREFIX + esc + '(?:[ .][^\\\\]*)?$';
     }
 
     /** Narrow Everything: AND (space) or OR (|) of regex: clauses per active tag. */
@@ -12099,7 +12120,7 @@
         rescan.innerHTML = faRescan15;
         rescan.setAttribute('aria-label', 'Refresh search and rescan all tags');
         rescan.title =
-          'Re-run the main Everything search, then a full-index [(…)] bracket-tag scan. Prunes remembered or active tag filters that do not appear in that scan. (Ordinary searches do not run this scan — use this when the tag bar is stale.)';
+          'Re-run the main Everything search, then a full-index xk… tag scan. Prunes remembered or active tag filters that do not appear in that scan. (Ordinary searches do not run this scan — use this when the tag bar is stale.)';
         rescan.addEventListener('click', () => {
           void (async () => {
             rescan.disabled = true;
@@ -12148,7 +12169,7 @@
         const s = document.createElement('span');
         s.className = 'text-muted';
         s.textContent =
-          'No bracket tags in your list yet. Add one from the tags dialog, toggle a filter, or use Rescan.';
+          'No tags in your list yet. Add one from the tags dialog, toggle a filter, or use Rescan.';
         el.appendChild(s);
         appendRescanAllTags();
         updateEmptyResultsPulseHints(listRowsForUi().length);
@@ -12481,7 +12502,7 @@
         if (target) await applySearchScopeAndRefresh(target);
       } else if (res && res.action === 'rename') void renameItemInteractive(fp);
       else if (res && res.action === 'bulkRename') openBulkRenameModal();
-      else if (res && res.action === 'trash') void refreshAfterDiskMutation();
+      else if (res && res.action === 'trash') void refreshAfterDiskMutation({ paths: fp ? [fp] : [], trashed: true });
     }
 
     function renderTable() {
@@ -12818,8 +12839,8 @@
         btnTags.className =
           'btn btn-sm btn-outline-primary tagfox-scope-bar-icon-btn d-inline-flex align-items-center justify-content-center';
         btnTags.title = rowIsFolder(row)
-          ? 'Edit [(…)] tags in the folder name'
-          : 'Edit [(…)] tags in the file name';
+          ? 'Edit xk… tags in the folder name'
+          : 'Edit xk… tags in the file name';
         btnTags.setAttribute('aria-label', 'Edit tags');
         /* Same tag icon as tag toolbar lead (#tagBar row in index.html). */
         btnTags.innerHTML = '<i class="fa-solid fa-tags" aria-hidden="true"></i>';
@@ -14693,7 +14714,7 @@
       else {
         checkedPathsMap.clear();
         updateBulkBar();
-        void refreshAfterDiskMutation({ paths: p }); // + paths-mutated from main; retries help Everything catch up
+        void refreshAfterDiskMutation({ paths: p, trashed: true }); // + paths-mutated from main; retries help Everything catch up
       }
     });
     document.getElementById('btnBulkTags').addEventListener('click', () => {
@@ -15703,7 +15724,7 @@
       else {
         checkedPathsMap.clear();
         updateBulkBar();
-        void refreshAfterDiskMutation({ paths: p });
+        void refreshAfterDiskMutation({ paths: p, trashed: true });
       }
     }
 

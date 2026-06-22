@@ -23,7 +23,7 @@
 
   Hide special / Hide ~ (Advanced): client-side only — filteredRows() uses pathUnderHideSpecialSegments() and pathUnderTildeSegment() in renderer.js; Everything query unchanged (pagination still uses raw hit count per page).
 
-  Active tag filters: sent to Everything as a regex clause so matches exist before results load. Tag bar ↻ runs a full-index [( scan and prunes ghosts; normal searches do not.
+  Active tag filters: sent to Everything as a regex clause so matches exist before results load. Tag bar ↻ runs a full-index xk… scan and prunes ghosts; normal searches do not.
 
   Bulk rename preview: first 200 rows in the dialog only; Rename applies to the full batch captured at open. Wildcard Find uses same Match case as the search row.
 
@@ -62,7 +62,7 @@ Welcome to TagFox — a fast, keyboard-friendly file manager powered by instant 
 
 TagFox combines **instant search** (powered by Everything) with a **folder tree view** — so you see results *in context*. You can navigate folders, tag files, preview documents, and manage simple project specifications and tasks without ever opening File Explorer.
 
-**Tags** are labels like `draft`, `urgent`, or `2026` that you attach to files and folders to organise your work. You can filter by tag to instantly find everything marked that way. Windows has no native equivalent, so TagFox fills that gap. TagFox stores tags in the filename itself (e.g. `Report[(draft,urgent)].docx`), so they travel with the file — no database, no hidden metadata. They work in Explorer, Google Drive, zip exports, everywhere.
+**Tags** are labels like `draft`, `urgent`, or `2026` that you attach to files and folders to organise your work. You can filter by tag to instantly find everything marked that way. Windows has no native equivalent, so TagFox fills that gap. TagFox stores tags in the filename itself (e.g. `Report xkdraft xkurgent.docx`), so they travel with the file — no database, no hidden metadata. They work in Explorer, Google Drive, zip exports, everywhere.
 
 ### 🤔 The problems TagFox solves
 
@@ -78,8 +78,8 @@ Meanwhile, tools like Google Drive train you to type a word and expect the right
 - ⭐ **Favourite folders & saved searches** — drag chips to reorder; folders: `Ctrl`+`Shift`+`1`…`9`; saved searches: `Ctrl`+`1`…`9` (or click).
 - 🔍 **Three view switches** — Flat/Tree, Subfolders on/off, Files+folders/Folders only (combine freely). Plus recency buttons (1h, 1d, 1w, 1m, 1y) to filter “what changed recently”.
 - 👁️ **Fast previews** — images, PDFs, Word, Excel, PowerPoint, text, JSON, markdown and more, right in the Viewer panel.
-- 🏷️ **Filename tags** — add, remove and filter by `[(tag)]` labels. Tags scan your folder automatically; click them to filter results.
-- 📋 **Add TODO** — create a small markdown file tagged `[(TODO)]` in the current folder, right from the Viewer panel.
+- 🏷️ **Filename tags** — add, remove and filter by `xktag` labels. Tags scan your folder automatically; click them to filter results.
+- 📋 **Add TODO** — create a small markdown file tagged `xkTODO` in the current folder, right from the Viewer panel.
 - 📝 **Folder docs** — Viewer loads the first of `-readme.md` → `-readme.txt` → `readme.md` → `readme.txt` → `claude.md` → `agents.md` → `about.md` → `about.txt` → `context.md` → `context.txt` → `index.md` → `index.txt` (details under **📁 Files & folders**).
 - 📦 **Shelf** — a visual staging area for files, like a kind of clipboard. Copy items onto the Shelf, navigate to another folder, paste them. No tabs or split panes needed.
 - 🔄 **Bulk rename** — check several files (or highlight one), press `Ctrl`+`H`, use wildcards (`*` / `?`) on the **last path segment only**; live preview shows the first 200 rows but **Rename** still applies to the whole batch captured when the dialog opened. **Match case** follows the search row toggle.
@@ -138,9 +138,9 @@ Three icon-pair switches next to the search box — combine them freely:
 ### 🏷️ Tags
 
 - Tags appear as coloured chips in the tag bar (below the breadcrumb). Click a tag to filter results; click again to remove the filter. Counts in parentheses reflect the current result list (after filters), capped by **Max results**.
-- The **↻** control at the end of the tag row re-runs the main search and rescans the whole index for `[(…)]` patterns, pruning remembered/active tags that no longer appear — use if the bar looks stale or after bulk renames outside TagFox. Ordinary searches do not do that full scan.
+- The **↻** control at the end of the tag row re-runs the main search and rescans the whole index for `xk…` tag tokens, pruning remembered/active tags that no longer appear — use if the bar looks stale or after bulk renames outside TagFox. Ordinary searches do not do that full scan.
 - To edit a file's tags: select the row and press `Ctrl`+`T`, or use the **Tags** button in the bulk bar. **Add** or removing a chip renames on disk immediately. When a **current folder** is set, renames must stay under that path.
-- Tags are stored as `[(tag1,tag2)]` inside the **last** bracketed segment of a name piece — e.g. `Notes[(draft)].md` or a folder `Project[(2024,clientA)]`. Plain `[text]` without inner `()` is *not* a TagFox tag.
+- Tags are stored as trailing `xk…` tokens before the extension — e.g. `Notes xkdraft.md` or a folder `Project xk2024 xkclientA`. A word is a tag only when it starts with `xk`; anything else is literal text.
 
 ### 📄 Viewer panel
 
@@ -191,7 +191,7 @@ The Shelf is the narrow vertical strip to the right of the results table. It's a
 
 TagFox lets you manage simple projects right on your filesystem — no separate app needed.
 
-- 📋 **Add TODO** — in the Viewer panel, type a title and hit save. TagFox creates a markdown file like `Buy milk[(TODO)].md` in your current folder. The `[(TODO)]` tag makes it easy to find later.
+- 📋 **Add TODO** — in the Viewer panel, type a title and hit save. TagFox creates a markdown file like `Buy milk xkTODO.md` in your current folder. The `xkTODO` tag makes it easy to find later.
 - 📝 **Folder docs** — write a short description of what a folder is for. Tag it *active*, *archived*, etc. to track project status. Filter by tag to see only active work.
 - 🌲 **Tree view + tags = lightweight project management.** You can organise a whole project with markdown notes, tags, and folder docs — no proprietary database. Everything stays as normal files that work in Explorer, Drive, and zip exports.
 

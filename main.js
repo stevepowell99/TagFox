@@ -33,7 +33,7 @@ const { drive: createDriveClient } = require('@googleapis/drive');
 const { OAuth2Client } = require('google-auth-library');
 const MsgReader = require('@kenjiuno/msgreader').default;
 
-// Populates globalThis.TagBrowserTags (same bracket-tag rules as the renderer).
+// Populates globalThis.TagBrowserTags (same xk-tag rules as the renderer).
 require(path.join(__dirname, 'tags.js'));
 const TagBrowserTags = globalThis.TagBrowserTags;
 
@@ -2248,6 +2248,9 @@ function createWindow() {
     }
   });
   win.once('ready-to-show', () => {
+    // Test runs (CDP) set TAGFOX_TEST_HIDDEN so the window never flashes onscreen; a hidden window still
+    // renders and drives through the #tagfoxtest hook. Normal runs maximize and show as usual.
+    if (process.env.TAGFOX_TEST_HIDDEN === '1') return;
     win.maximize();
     win.show();
   });
@@ -4291,33 +4294,40 @@ ipcMain.handle('paste-clipboard-into-folder', async (event, { destFolder, rootPr
 /* ========== Recycle Bin: IPC trash-paths, nested-path collapse, Drive PS (VB FileIO) ========== */
 
 /** JSON `{ "path": "C:\\\\full" }` — VB FileIO SendToRecycleBin via C# Add-Type (PS cannot bind DeleteDirectory overloads reliably). */
+/*
+ * Batch recycle: JSON file holds an array of absolute paths. One spawn handles all of them.
+ * Loads Microsoft.VisualBasic from the GAC (`Add-Type -AssemblyName`, about 2ms) instead of compiling C# at
+ * runtime (`Add-Type -Language CSharp`, about 365ms per call); the old per-path compile dominated delete time.
+ * Emits one compact JSON object per line: { path, ok, err }.
+ */
 const PS1_RECYCLE_TO_BIN = `param([Parameter(Mandatory)][string]$JsonPath)
+$ErrorActionPreference = 'Stop'
 try {
+  Add-Type -AssemblyName Microsoft.VisualBasic
   $raw = Get-Content -LiteralPath $JsonPath -Raw -Encoding UTF8
-  $j = $raw | ConvertFrom-Json
-  $p = [string]$j.path
-  if (-not $p) { throw 'Missing path' }
-  if (-not (Test-Path -LiteralPath $p)) { throw 'Path not found' }
-  Add-Type -Language CSharp -ReferencedAssemblies Microsoft.VisualBasic -ErrorAction Stop -TypeDefinition @'
-using Microsoft.VisualBasic.FileIO;
-public static class TagFoxSendToRecycle {
-  public static void ToBin(string path, bool isDirectory) {
-    if (isDirectory) {
-      /* .NET Framework exposes (path, UIOption, RecycleOption, UICancelOption) — not DeleteDirectoryOption overload for this host. */
-      FileSystem.DeleteDirectory(path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin, UICancelOption.DoNothing);
-    } else {
-      FileSystem.DeleteFile(path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
-    }
-  }
-}
-'@
-  $item = Get-Item -LiteralPath $p -Force
-  [TagFoxSendToRecycle]::ToBin($p, $item.PSIsContainer)
-  exit 0
+  $paths = $raw | ConvertFrom-Json
+  if ($paths -isnot [System.Array]) { $paths = @($paths) }
 } catch {
   [Console]::Error.WriteLine($_.Exception.Message)
   exit 1
-}`;
+}
+foreach ($p in $paths) {
+  $ps = [string]$p
+  try {
+    if (-not (Test-Path -LiteralPath $ps)) { throw 'Path not found' }
+    $item = Get-Item -LiteralPath $ps -Force
+    if ($item.PSIsContainer) {
+      /* .NET Framework exposes (path, UIOption, RecycleOption, UICancelOption); enum strings coerce. */
+      [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($ps, 'OnlyErrorDialogs', 'SendToRecycleBin', 'DoNothing')
+    } else {
+      [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($ps, 'OnlyErrorDialogs', 'SendToRecycleBin')
+    }
+    Write-Output (ConvertTo-Json -Compress ([ordered]@{ path = $ps; ok = $true; err = '' }))
+  } catch {
+    Write-Output (ConvertTo-Json -Compress ([ordered]@{ path = $ps; ok = $false; err = [string]$_.Exception.Message }))
+  }
+}
+exit 0`;
 
 /** JSON `{ "path": "C:\\\\full" }` — clear RO then Remove-Item (Node fs.rm often EPERM on Windows shelf trees). */
 const PS1_REMOVE_ITEM_RECURSE = `param([Parameter(Mandatory)][string]$JsonPath)
@@ -4363,19 +4373,51 @@ function removeItemRecurseViaPowershell(absPathRaw) {
   }
 }
 
-function trashPathViaPowershellRecycle(absPathRaw) {
-  if (process.platform !== 'win32') return 'Not Windows.';
-  const fp = normalizePathForRecycleBin(String(absPathRaw || ''));
-  if (!fp) return 'Missing path.';
+/**
+ * Recycle many paths in ONE PowerShell spawn. Returns an array of { path, ok, err } aligned to the input
+ * (normalized). A spawn-level failure (no JSON line for a path) is reported as a per-path error.
+ */
+function trashPathsViaPowershellRecycle(absPathsRaw) {
+  const norm = (Array.isArray(absPathsRaw) ? absPathsRaw : [absPathsRaw])
+    .map((p) => normalizePathForRecycleBin(String(p || '')))
+    .filter(Boolean);
+  if (!norm.length) return [];
+  if (process.platform !== 'win32') return norm.map((p) => ({ path: p, ok: false, err: 'Not Windows.' }));
+  const psExe = windowsPowerShellExe();
   const tmpJson = path.join(os.tmpdir(), `tagbrowser-recycle-${process.pid}-${Date.now()}.json`);
+  const tmpPs1 = path.join(os.tmpdir(), `tagbrowser-recycle-${process.pid}-${Date.now()}.ps1`);
   try {
-    fssync.writeFileSync(tmpJson, JSON.stringify({ path: fp }), 'utf8');
-    return runPowershellScriptFileWithArg(PS1_RECYCLE_TO_BIN, tmpJson, 'Recycle');
+    fssync.writeFileSync(tmpJson, JSON.stringify(norm), 'utf8');
+    fssync.writeFileSync(tmpPs1, PS1_RECYCLE_TO_BIN, 'utf8');
+    const r = spawnSync(psExe, ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', tmpPs1, tmpJson], {
+      windowsHide: true,
+      encoding: 'utf8',
+    });
+    const byPath = new Map();
+    for (const line of String(r.stdout || '').split(/\r?\n/)) {
+      const t = line.trim();
+      if (!t) continue;
+      try {
+        const o = JSON.parse(t);
+        const k = normalizePathForRecycleBin(String(o.path || ''));
+        if (k) byPath.set(k.toLowerCase(), o);
+      } catch (_) {}
+    }
+    const spawnErr = [r.stderr, r.error && r.error.message].filter(Boolean).join(' ').trim();
+    return norm.map((p) => {
+      const o = byPath.get(p.toLowerCase());
+      if (o) return { path: p, ok: !!o.ok, err: o.ok ? '' : String(o.err || 'Recycle failed') };
+      return { path: p, ok: false, err: spawnErr || 'Recycle failed (no result).' };
+    });
   } catch (e) {
-    return String(e.message || e);
+    const msg = String(e.message || e);
+    return norm.map((p) => ({ path: p, ok: false, err: msg }));
   } finally {
     try {
       fssync.unlinkSync(tmpJson);
+    } catch (_) {}
+    try {
+      fssync.unlinkSync(tmpPs1);
     } catch (_) {}
   }
 }
@@ -4430,27 +4472,44 @@ function sendSearchDebugLine(sender, eventName, data) {
   } catch (_) {}
 }
 
-/** Electron shell.trashItem often fails on Google Drive / OneDrive (“Failed to parse path”); same cloud heuristic as rename. */
+/** Single-path recycle (context menu). Native first, batched PowerShell fallback; see recycleListBatched. */
 async function recycleOnePathNormalized(fpNorm) {
   const fp = normalizePathForRecycleBin(fpNorm);
   if (!fp) return { ok: false, error: 'Missing path.' };
-  if (process.platform === 'win32' && preferShellRenameFirstForPath(fp)) {
-    const psErr = trashPathViaPowershellRecycle(fp);
-    return psErr ? { ok: false, error: psErr } : { ok: true };
-  }
-  try {
-    await shell.trashItem(fp);
-    return { ok: true };
-  } catch (e) {
-    const msg = String(e.message || e);
-    /* Mapped/network volumes: IFileOperation recycle often fails (“Failed to perform delete operation”); VB FileIO matches Explorer. */
-    if (process.platform === 'win32') {
-      const psErr = trashPathViaPowershellRecycle(fp);
-      if (!psErr) return { ok: true };
-      return { ok: false, error: msg + ' | ' + psErr };
+  const { trashedPaths, errs } = await recycleListBatched([fp]);
+  return trashedPaths.length ? { ok: true } : { ok: false, error: errs[0] || 'Recycle failed' };
+}
+
+/**
+ * Recycle a whole list, native fast path first. Every path tries shell.trashItem (about 100-300ms, no
+ * spawn). This works on mirror-mode Google Drive / OneDrive too (their files are real local NTFS), so the
+ * cloud heuristic that forced rename through PowerShell does not apply to recycle. Only paths native trash
+ * rejects fall back to ONE batched PowerShell spawn. shell.trashItem only ever recycles or throws, never
+ * hard-deletes, so trying it first carries no data-loss risk. Returns { trashedPaths, errs }.
+ */
+async function recycleListBatched(list) {
+  const trashedPaths = [];
+  const errs = [];
+  const psQueue = [];
+  for (const raw of list) {
+    const fp = normalizePathForRecycleBin(raw);
+    if (!fp) continue;
+    try {
+      await shell.trashItem(fp);
+      trashedPaths.push(fp);
+    } catch (_) {
+      // Native recycle rejected this path (odd path form, mapped/network volume): batched shell fallback.
+      if (process.platform === 'win32') psQueue.push(fp);
+      else errs.push(fp + ': Recycle failed');
     }
-    return { ok: false, error: msg };
   }
+  if (psQueue.length) {
+    for (const res of trashPathsViaPowershellRecycle(psQueue)) {
+      if (res.ok) trashedPaths.push(res.path);
+      else errs.push(res.path + ': ' + String(res.err || 'Recycle failed'));
+    }
+  }
+  return { trashedPaths, errs };
 }
 
 ipcMain.handle('trash-paths', async (event, payload) => {
@@ -4465,14 +4524,7 @@ ipcMain.handle('trash-paths', async (event, payload) => {
   const list = collapseNestedTrashPaths(raw);
   // Deepest first: if a parent+child both slip through, recycling the child avoids a bogus path on the next call.
   list.sort((a, b) => trashPathComparable(b).length - trashPathComparable(a).length);
-  const errs = [];
-  const trashedPaths = [];
-  for (const fp of list) {
-    if (!fp) continue;
-    const r = await recycleOnePathNormalized(fp);
-    if (!r.ok) errs.push(fp + ': ' + String(r.error || 'Recycle failed'));
-    else trashedPaths.push(fp);
-  }
+  const { trashedPaths, errs } = await recycleListBatched(list);
   const ok = errs.length === 0;
   const cap = 8;
   const requestedSample = raw

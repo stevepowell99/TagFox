@@ -11,7 +11,7 @@ It runs on top of [Voidtools Everything](https://www.voidtools.com/), which inde
 ### What you get
 
 - **Instant search** across your whole drive as you type.
-- **Tags** you add right in the filename, like `Report[(draft,urgent)].docx`. Click a tag to filter; the tags travel with the file into Explorer, Google Drive and zip files because they are part of the name.
+- **Tags** you add right in the filename, like `Report xkdraft xkurgent.docx`. Click a tag to filter; the tags travel with the file into Explorer, Google Drive and zip files because they are part of the name.
 - **Previews** of images, PDFs, Word, Excel, PowerPoint, markdown, text, audio and video, in a side panel.
 - **A folder tree** so you see results in context, not as a flat list.
 - **Favourites and saved searches** you reach with one click or a number key.
@@ -41,14 +41,14 @@ If search feels slow, open **Advanced** and turn off **Folder-contents highlight
 ## Features
 
 - **Keyboard first.** Navigate, tag, rename, bulk-edit and search without the mouse. Press `F1` for the shortcut table.
-- **Filename tags.** Add, remove and filter by `[(tag)]` labels stored in the filename. No database and no hidden metadata, so tags work everywhere the file goes.
+- **Filename tags.** Add, remove and filter by `xktag` labels stored in the filename. No database and no hidden metadata, so tags work everywhere the file goes.
 - **Three view switches.** Flat or Tree, subfolders on or off, files and folders or folders only, combined freely. Recency buttons (1h, 1d, 1w, 1m, 1y) filter to what changed recently.
 - **Fast previews.** Images, PDFs, Word, Excel, PowerPoint, text, JSON, markdown and more in the Viewer panel. For a folder it shows a folder readme you can edit in place.
 - **Smart view.** The default layout adjusts which results you see relative to **Max results**, so you rarely touch the subfolder and file toggles by hand.
 - **Favourite folders and saved searches.** Bookmark a folder or a whole search, reorder by drag, and jump back with `Ctrl`+`1` to `9` (searches) or `Ctrl`+`Shift`+`1` to `9` (folders). Together they replace browser-style tabs.
 - **The Shelf.** A staging strip beside the results. Collect files from several folders, navigate elsewhere, then paste or drag them in. A clipboard for files that does not empty when you move.
 - **Bulk rename.** Check several files, press `Ctrl`+`H`, and use wildcards on the last path segment with a live preview.
-- **Add TODO.** Create a small markdown file tagged `[(TODO)]` in the current folder from the Viewer panel.
+- **Add TODO.** Create a small markdown file tagged `xkTODO` in the current folder from the Viewer panel.
 - **Folder docs.** The Viewer loads the first of `-readme.md`, `readme.md`, `claude.md`, `agents.md`, `about.md`, `index.md` and similar, so each folder can describe itself.
 - **Split result panes.** Drag the horizontal separator to split the results into top and bottom panes, each remembering its own filters and search.
 - **Paste from Explorer and screenshots.** Paste copied files into the current folder, or paste a screenshot to save `Clipboard image.png` there.
@@ -97,7 +97,7 @@ invariants checked and how to add a test, is in [`test/README.md`](test/README.m
 | `preload.js` | Context bridge between renderer and main |
 | `renderer.js` | The UI: search, results, tree, tags, Viewer, Shelf, favourites, keyboard handling |
 | `index.html`, `styles.css` | Markup and styling (Bootstrap 5 plus custom CSS) |
-| `tags.js` | Tag parsing and the `[(tag1,tag2)]` filename grammar |
+| `tags.js` | Tag parsing and the `xktag1 xktag2` filename grammar |
 | `preview-text-helpers.js` | Text and markdown preview helpers |
 | `did-you-know-tips.js` | Rotating tips shown in the tip bar |
 | `help.md`, `help.html` | In-app help source and generated output |
@@ -110,7 +110,7 @@ invariants checked and how to add a test, is in [`test/README.md`](test/README.m
 
 Everything's HTTP API returns all folders before all files for a given sort. With **Max results** capped, a folder-heavy scope can fill a page with folders and show no files. Everything 1.5a adds a `sort-mix:` prefix that interleaves files and folders in true sort order, and TagFox appends it when **Hide files** is off (see `runSearch()` in `renderer.js`). This is why 1.5a is required. Reference: the [Everything forum thread](https://www.voidtools.com/forum/viewtopic.php?t=8994).
 
-Active tag filters are sent to Everything as a regex clause, so matches exist before results load. The tag bar refresh control runs a full-index scan for `[(...)]` patterns and prunes tags that no longer appear; ordinary searches do not. **Hide special** and **Hide ~** are client-side filters in `filteredRows()`; the Everything query is unchanged, so paging still counts raw hits per page.
+Active tag filters are sent to Everything as a regex clause, so matches exist before results load. The tag bar refresh control runs a full-index scan for `xk…` tag tokens and prunes tags that no longer appear; ordinary searches do not. **Hide special** and **Hide ~** are client-side filters in `filteredRows()`; the Everything query is unchanged, so paging still counts raw hits per page.
 
 ### Search concurrency and dual panes
 
@@ -140,6 +140,23 @@ Two faults here were fixed in June 2026, and the [tests](test/README.md) guard b
 - **Load-more rows lost on a background refresh.** `loadMoreResults()` grew `lastRows` but did not save it
   to the active pane's stored state, so the dance's restore reverted to the pre-load-more page. Fixed by
   persisting the active pane state at the end of `loadMoreResults()`.
+
+### Refresh after CRUD (delete fast-path)
+
+A delete only removes rows. `removeGonePathsFromUiNow()` tombstones the deleted paths and repaints once, so
+the rows vanish immediately. Because no new content can appear, `refreshAfterDiskMutation()` detects a pure
+delete (`isPureTombstoneMutation`, payload `trashed` with no `destFolder`/`copied`/`moved`) and skips the
+immediate re-query and its inactive-pane dance, scheduling a single quiet reconcile (~1s) to retire the
+tombstones once the Everything index settles. Moves and pastes bring in new rows and keep the prompt refresh
+plus the 350ms/1200ms catch-up retries. All delete call sites (bulk bar, Delete key, context menu) tag the
+payload with `trashed: true` so the fast-path fires regardless of which refresh call wins the coalesce.
+
+The recycle itself (`main.js`) was the bigger cost for cloud paths (Google Drive, OneDrive), which take the
+PowerShell route because `shell.trashItem` rejects many of those paths. The old script spawned one PowerShell
+per file and compiled C# at runtime each time (about 365ms of compile plus cold start, so 1-4s for a few
+files). It now loads `Microsoft.VisualBasic` from the GAC (no compile) and recycles the whole batch in one
+spawn, returning per-path results as JSON lines. Local paths still use the native `shell.trashItem` (no
+spawn). Measured: 3 files about 4.0s to 1.7s, 5 files about 6.8s to 1.4s.
 
 ### Drag and drop
 

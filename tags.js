@@ -1,25 +1,46 @@
-// TagFox tags: only name[(t1,t2)].ext — plain name[foo].ext is literal text, not tags.
+// TagFox tags: trailing `xk`-prefixed tokens are tags, e.g. `name xkTODO xkurgent.ext`.
+// Tags are space-separated, sit right before the extension, and the `xk` prefix is
+// stripped for display. Plain words and `name[foo].ext` are literal text, not tags.
 (function (global) {
-  /** "file[(a,b)].pdf" -> pretty file.pdf, tags [a,b]. "file[noise].pdf" -> pretty unchanged, tags []. */
+  /** Literal prefix that marks a trailing filename token as a TagFox tag. */
+  const TAG_PREFIX = 'xk';
+
+  /** Split a component into [stem, ext]; ext is a trailing `.word` (else ''). */
+  function splitExt(component) {
+    const c = String(component || '');
+    const dot = c.lastIndexOf('.');
+    if (dot > 0 && /^\.\w+$/.test(c.slice(dot))) return [c.slice(0, dot), c.slice(dot)];
+    return [c, ''];
+  }
+
+  /** Tag name for a single token, or '' if the token is not a tag. `xkTODO` -> `TODO`. */
+  function tagNameFromToken(token) {
+    if (!token || token.length <= TAG_PREFIX.length) return '';
+    if (token.slice(0, TAG_PREFIX.length) !== TAG_PREFIX) return '';
+    return token.slice(TAG_PREFIX.length);
+  }
+
+  /** Peel trailing `xk…` tokens off a stem; returns { base, tags } with tags in file order. */
+  function peelTrailingTags(stem) {
+    const tokens = String(stem || '').split(' ');
+    const tags = [];
+    while (tokens.length) {
+      const name = tagNameFromToken(tokens[tokens.length - 1]);
+      if (!name) break;
+      tags.unshift(name);
+      tokens.pop();
+    }
+    return { base: tokens.join(' ').replace(/\s+$/, ''), tags };
+  }
+
+  /** "file xkA xkB.pdf" -> pretty "file.pdf", tags [A,B]. "file.pdf" -> pretty unchanged, tags []. */
   function parseSegmentTags(component) {
     if (!component) return { pretty: '', tags: [], raw: '' };
     const raw = component;
-    const lb = component.lastIndexOf('[');
-    if (lb < 0) return { pretty: component, tags: [], raw };
-    const rb = component.indexOf(']', lb);
-    if (rb < 0) return { pretty: component, tags: [], raw };
-    const inner = component.slice(lb + 1, rb);
-    if (!(inner.startsWith('(') && inner.endsWith(')'))) {
-      return { pretty: component, tags: [], raw };
-    }
-    const before = component.slice(0, lb);
-    const after = component.slice(rb + 1);
-    const listBody = inner.slice(1, -1);
-    const tags = listBody
-      .split(',')
-      .map((t) => t.trim())
-      .filter(Boolean);
-    return { pretty: before + after, tags, raw };
+    const [stem, ext] = splitExt(component);
+    const { base, tags } = peelTrailingTags(stem);
+    if (!tags.length) return { pretty: component, tags: [], raw };
+    return { pretty: base + ext, tags, raw };
   }
 
   /** Tags from the item's own name only (last path segment); parent-folder tags are not inherited. */
@@ -53,42 +74,24 @@
     return false;
   }
 
-  /** Only `[(…)]` is edited; other `[text]` is left alone (insert `[(tags)]` before .ext or at end). */
+  /** Replace any trailing `xk…` tags on the component with the given tags (before .ext). */
   function buildTaggedComponent(component, tags) {
-    const lb = component.lastIndexOf('[');
-    const rb = lb >= 0 ? component.indexOf(']', lb) : -1;
-    let before;
-    let afterBracket;
-    let isTagFoxBlock = false;
-    if (lb >= 0 && rb > lb) {
-      const inner = component.slice(lb + 1, rb);
-      isTagFoxBlock = inner.startsWith('(') && inner.endsWith(')');
-    }
-    if (isTagFoxBlock) {
-      before = component.slice(0, lb);
-      afterBracket = component.slice(rb + 1);
-    } else {
-      const dot = component.lastIndexOf('.');
-      if (dot > 0 && /^\.\w+$/.test(component.slice(dot))) {
-        before = component.slice(0, dot);
-        afterBracket = component.slice(dot);
-      } else {
-        before = component;
-        afterBracket = '';
-      }
-    }
+    const [stem, ext] = splitExt(component);
+    const { base } = peelTrailingTags(stem);
     const uniq = [];
     const seen = new Set();
     for (const t of tags || []) {
-      const s = String(t).trim();
+      // No spaces inside a tag: space is the tag delimiter on disk.
+      const s = String(t).trim().replace(/\s+/g, '');
       if (!s) continue;
       const k = s.toLowerCase();
       if (seen.has(k)) continue;
       seen.add(k);
       uniq.push(s);
     }
-    const block = uniq.length ? `[(${uniq.join(',')})]` : '';
-    return before + block + afterBracket;
+    if (!uniq.length) return base + ext;
+    const tagStr = uniq.map((t) => TAG_PREFIX + t).join(' ');
+    return (base ? base + ' ' : '') + tagStr + ext;
   }
 
   function parentDir(p) {
@@ -153,6 +156,9 @@
   }
 
   global.TagBrowserTags = {
+    TAG_PREFIX,
+    splitExt,
+    tagNameFromToken,
     parseSegmentTags,
     allTagsFromFullPath,
     pathHasTag,

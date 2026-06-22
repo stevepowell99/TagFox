@@ -29,7 +29,7 @@
       <button type="button" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center p-0 tagfox-bulk-bar-icon" id="btnBulkTrash" title="Move checked or highlighted rows to the Recycle Bin (confirmation) — Del" aria-label="Delete — move to Recycle Bin">
         <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
       </button>
-      <button type="button" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center p-0 tagfox-bulk-bar-icon" id="btnBulkTags" title="Edit bracket-tag names for all checked rows (or the highlighted row if none checked) — Ctrl+T or t" aria-label="Edit tags">
+      <button type="button" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center p-0 tagfox-bulk-bar-icon" id="btnBulkTags" title="Edit xk… tags for all checked rows (or the highlighted row if none checked) — Ctrl+T or t" aria-label="Edit tags">
         <i class="fa-solid fa-tags" aria-hidden="true"></i>
       </button>
       <button type="button" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0 tagfox-bulk-bar-icon" id="btnBulkClearSel" title="Uncheck every row in the results list — Esc" aria-label="Clear selection — Esc">
@@ -934,9 +934,9 @@
           <div id="propTitleTags" class="d-flex flex-wrap gap-1 mt-1"></div>
         </div>
       </div>
-      <!-- Add TODO: Title[(TODO)].md in the current folder (Enter = same as save button) -->
+      <!-- Add TODO: Title xkTODO.md in the current folder (Enter = same as save button) -->
       <div id="propsAddTodoRow" class="px-2 py-2 border-bottom d-flex align-items-center gap-2 flex-shrink-0 small min-w-0">
-        <label class="text-muted mb-0 flex-shrink-0" id="labelNewMdTitle" for="newMdTitleInput" title="Creates Title[(TODO)].md in the current folder">Add TODO here</label>
+        <label class="text-muted mb-0 flex-shrink-0" id="labelNewMdTitle" for="newMdTitleInput" title="Creates Title xkTODO.md in the current folder">Add TODO here</label>
         <input
           type="text"
           id="newMdTitleInput"
@@ -949,7 +949,7 @@
           class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
           style="width: 2rem; height: 2rem"
           id="btnNewTodoMdTags"
-          title="Tags applied to the new file name [(…)]"
+          title="Tags applied to the new file name (xk…)"
           aria-label="Edit tags for new TODO file"
         >
           <i class="fa-solid fa-tags" aria-hidden="true"></i>
@@ -969,7 +969,7 @@
           class="btn btn-sm btn-outline-primary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
           style="width: 2rem; height: 2rem"
           id="btnCreateTodoMd"
-          title="Creates Title[(TODO)].md in the current folder"
+          title="Creates Title xkTODO.md in the current folder"
           aria-label="Create TODO markdown file in the current folder"
         >
           <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
@@ -1100,7 +1100,7 @@
                   class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
                   style="width: 2rem; height: 2rem"
                   id="btnReadmeFolderDocTags"
-                  title="[(…)] tags in the folder doc file name — changing tags with the loaded file clears body for a new name (like renaming)"
+                  title="xk… tags in the folder doc file name — changing tags with the loaded file clears body for a new name (like renaming)"
                   aria-label="Edit tags for folder doc file name"
                 >
                   <i class="fa-solid fa-tags" aria-hidden="true"></i>
@@ -1284,7 +1284,7 @@
         class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
         style="width: 2rem; height: 2rem"
         id="btnQuickTodoPopTags"
-        title="Tags for the new file [(…)]"
+        title="Tags for the new file (xk…)"
         aria-label="Edit tags for Quick TODO file"
       >
         <i class="fa-solid fa-tags" aria-hidden="true"></i>
@@ -1342,7 +1342,7 @@
     </div>
     <datalist id="quickTodoExistingTags"></datalist>
     <p class="small text-muted mb-0">
-      These <code>[( … )]</code> tags are used for the new markdown file name and stay set until you change them.
+      These <code>xk…</code> tags are used for the new markdown file name and stay set until you change them.
     </p>
   </div>
   <!-- Quick TODO body: optional markdown content for the new file. -->
@@ -1369,23 +1369,23 @@
         <div class="modal-body">
           <p class="small text-break text-muted mb-2" id="tagModalPath"></p>
           <p id="tagModalBulkHint" class="small text-muted mb-2 d-none">Several items: active tags are on at least one selected item. Click an inactive tag to add it to all selected items; click an active tag to remove it from every selected item.</p>
-          <!-- Current [(…)] tags as removable chips (renderer: renderModalChips) -->
+          <!-- Current xk… tags as removable chips (renderer: renderModalChips) -->
           <div id="tagModalChips" class="d-flex flex-wrap gap-1 mb-2" aria-label="Tags on this item"></div>
           <div id="tagModalQuickTags" class="d-flex flex-wrap gap-1 mb-2" role="group" aria-label="Toggle tags on or off"></div>
           <div class="input-group input-group-sm mb-2">
             <input type="text" id="tagModalInput" class="form-control" list="tagModalExistingTags" placeholder="New tag (type here)" autocomplete="off" />
             <button type="button" class="btn btn-outline-primary" id="tagModalAddBtn">Add</button>
           </div>
-          <!-- Existing [(…)] tags + remembered (datalist). -->
+          <!-- Existing xk… tags + remembered (datalist). -->
           <datalist id="tagModalExistingTags"></datalist>
           <p class="small text-muted mb-0" id="tagModalHintRename">
-            Tags live in the last <code>[( … )]</code> block of the segment name. Click a tag to toggle it; typing a new tag and pressing <strong>Add</strong> renames on disk immediately.
+            Tags live in the <code>xk…</code> tokens at the end of the segment name. Click a tag to toggle it; typing a new tag and pressing <strong>Add</strong> renames on disk immediately.
           </p>
           <p class="small text-muted mb-0 d-none" id="tagModalHintNewTodo">
-            These <code>[( … )]</code> tags are used when you create a markdown file from Add TODO. Close to keep them for the next create; disk renames only happen on existing files in this dialog.
+            These <code>xk…</code> tags are used when you create a markdown file from Add TODO. Close to keep them for the next create; disk renames only happen on existing files in this dialog.
           </p>
           <p class="small text-muted mb-0 d-none" id="tagModalHintFolderDoc">
-            These <code>[( … )]</code> tags go in the folder doc file name. Close to keep them; if the name differs from the file that was loaded, <strong>Save</strong> creates that new file and leaves the previous file unchanged.
+            These <code>xk…</code> tags go in the folder doc file name. Close to keep them; if the name differs from the file that was loaded, <strong>Save</strong> creates that new file and leaves the previous file unchanged.
           </p>
           <p id="tagModalFeedback" class="small mb-0 mt-2" aria-live="assertive"></p>
         </div>
