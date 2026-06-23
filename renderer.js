@@ -9020,11 +9020,15 @@
       let inner = t.replace(/[|*?()<>]/g, '');
       if (!inner) inner = t.replace(/[^a-z0-9_-]/gi, '');
       if (!inner) return '';
-      const esc = escapeEverythingRegexFragment(inner);
-      // space/sep before the tag's own family prefix, then the tag as a whole token, anchored to
-      // the leaf segment (a boundary then non-backslash to end, or end) so a tagged parent folder
-      // does not match.
-      return '(?i)[ \\\\]' + T.prefixForTag(inner) + esc + '(?:[ .][^\\\\]*)?$';
+      // Match the exact on-disk casing: lowercase family prefix + uppercase body. Tag bodies are
+      // always uppercase, so this matches whether or not Match Case is on, without relying on an
+      // inline (?i) flag (which Everything's regex does not always honour).
+      const esc = escapeEverythingRegexFragment(inner.toUpperCase());
+      // Use \s, never a literal space: a real space inside an inline `regex:` term makes Everything
+      // split it into two terms, which silently breaks the filter. Boundary before the family prefix,
+      // then the tag as a whole token anchored to the leaf segment (boundary then non-backslash to
+      // end, or end) so a tagged parent folder does not match.
+      return '[\\s\\\\]' + T.prefixForTag(inner) + esc + '(?:[\\s.][^\\\\]*)?$';
     }
 
     /** Narrow Everything: AND (space) or OR (|) of regex: clauses per active tag. */
