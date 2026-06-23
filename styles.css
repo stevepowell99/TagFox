@@ -1050,6 +1050,23 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
 .pane-inactive-breadcrumb .breadcrumb-folder-seg:hover {
   filter: brightness(0.96);
 }
+/* "Out of date" pill: the inactive pane changed on disk but is showing an older snapshot. */
+.tagfox-pane-stale-badge {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  line-height: 1.1;
+  color: #664d03;
+  background: var(--bs-warning-bg-subtle, #fff3cd);
+  border: 1px solid var(--bs-warning-border-subtle, #ffe69c);
+  border-radius: 0.8rem;
+  white-space: nowrap;
+}
+.tagfox-pane-stale-badge:hover {
+  filter: brightness(0.97);
+}
+.tagfox-pane-stale-badge .fa-arrows-rotate {
+  margin-right: 0.15rem;
+}
 .split-h {
   position: relative;
   height: 4px;

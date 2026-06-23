@@ -22,7 +22,7 @@ These guard the concurrency bugs fixed in June 2026 (see [Search concurrency and
 ## Running
 
 ```
-npm test                      # whole suite (smoke + crud-isolation + load-more + 3 fuzz seeds)
+npm test                      # whole suite (smoke + crud-isolation + pane-stale + load-more + 3 fuzz seeds)
 npm run test:smoke            # readable walkthrough of the main flows
 npm run test:loadmore         # focused load-more / pane-state regression
 npm run test:fuzz             # randomized fuzz, default 60 iterations
@@ -44,6 +44,7 @@ runs are unaffected: `main.js` only skips `show()` when that env var is set.
 | `harness.cjs` | Shared library: launch Electron under CDP, the `#tagfoxtest` driver, `settle()`, and `structuralProblems()` (the invariants below). Not a test itself. |
 | `smoke.cjs` | Startup, a 10x F5 refresh loop, type+refresh races, pane switches, rapid A/B toggles, and the inactive-pane dance racing a scheduled search. Checks the structural invariants after each step. |
 | `crud-pane-isolation.cjs` | A delete in the active pane must leave the inactive pane's stored rows untouched (the copy/delete cross-pane bleed). Guards the passive-inactive-pane rule. |
+| `pane-stale.cjs` | A disk mutation into the inactive pane's scope flags it stale and shows the "out of date" badge; a refresh clears it; an unrelated mutation does not flag it. |
 | `loadmore-regression.cjs` | Loads a second page, runs the background dance, and checks the loaded rows survive (the load-more desync bug). |
 | `fuzz.cjs` | Random bursts of actions (type, refresh, pane switch, recency, view, scope, dance, auto-refresh tick) with a structural check plus a consistency re-search after every burst. |
 | `run-all.cjs` | Runs the above in sequence and prints a pass/fail summary. |

@@ -158,6 +158,12 @@ Every CRUD refresh acts on the active pane only (`singlePaneOnly`); the inactive
 you switch to it (see the passive-snapshot rule above). So a copy, move or delete in one pane never changes
 the other.
 
+Because the inactive pane is a frozen snapshot, a disk change that touches its folder (a file dropped into
+it, or a delete/move/copy under its scope) would otherwise leave it silently out of date. When that happens
+in split view, the pane is flagged stale (`markInactivePaneStaleIfAffected`, scope test in
+`diskMutationAffectsPaneScope`) and its breadcrumb shows an "out of date" badge; clicking it (or activating
+the pane) re-runs that pane's search and clears the flag. Guarded by `pane-stale.cjs`.
+
 A delete only removes rows. `removeGonePathsFromUiNow()` tombstones the deleted paths and repaints once, so
 the rows vanish immediately. Because no new content can appear, `refreshAfterDiskMutation()` detects a pure
 delete (`isPureTombstoneMutation`, payload `trashed` with no `destFolder`/`copied`/`moved`) and skips the

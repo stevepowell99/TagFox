@@ -12,7 +12,7 @@ Do not duplicate these here; read them:
 ## Working rules
 
 - After changing search, results rendering, paging, or the dual-pane logic in `renderer.js`, run `npm test`. The dual-pane / refresh concurrency is the most fragile part of the codebase; the bugs fixed in June 2026 (searches rendering into the hidden pane; load-more rows lost on a background refresh; copy/delete bleeding between panes) are written up in the README concurrency section and guarded by the suite.
-- **Keep the inactive pane passive.** Only the active pane is live. Nothing (search, F5, auto-refresh, CRUD) may refresh, mirror or re-render the inactive pane in the background; it re-runs its own search only when activated. Every past dual-pane bug came from a background flow touching the other pane. If you think you need to update both panes at once, you almost certainly do not.
+- **Keep the inactive pane passive.** Only the active pane is live. Nothing (search, F5, auto-refresh, CRUD) may refresh, mirror or re-render the inactive pane in the background; it re-runs its own search only when activated. Every past dual-pane bug came from a background flow touching the other pane. If you think you need to update both panes at once, you almost certainly do not. When a disk change touches the inactive pane's scope it is flagged stale and shows an "out of date" badge on its breadcrumb (`markInactivePaneStaleIfAffected`); surfacing staleness is the answer, not refreshing it in the background.
 - The tests drive the real app over CDP via a `#tagfoxtest` hook at the end of `renderer.js` (inert in normal runs). See memory `[[reference_electron_cdp_testing]]` for the general technique.
 - Dates in generated output / change stamps must not use year-less numeric form (global writing rule).
 

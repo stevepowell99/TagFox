@@ -376,8 +376,8 @@
       { base: 'chkSelectAllResults', A: 'chkSelectAllResultsA', B: 'chkSelectAllResultsB' },
     ]);
     const resultsPaneState = {
-      A: { searchState: null, lastRows: [], resultsPagingCtx: null },
-      B: { searchState: null, lastRows: [], resultsPagingCtx: null },
+      A: { searchState: null, lastRows: [], resultsPagingCtx: null, stale: false },
+      B: { searchState: null, lastRows: [], resultsPagingCtx: null, stale: false },
     };
     /** Smart view event kind for the current search: identity|refresh|manual|smart-narrow|smart-probe|null. */
     let smartEvent = null;
@@ -2883,6 +2883,7 @@
       swapCanonicalResultsIds(next);
       restorePaneStateIntoUi(next);
       updateInactivePaneBreadcrumb();
+      resultsPaneState[next].stale = false; // newly active pane is the live one
       if (opts && opts.skipSearch) return;
       await runSearchNow('identity', { singlePaneOnly: true });
       saveActivePaneStateFromUi();
@@ -2936,6 +2937,7 @@
         restorePaneStateIntoUi(inactive);
         await runSearch(eventKind, { ...opts, singlePaneOnly: true });
         saveActivePaneStateFromUi();
+        inactivePane.stale = false; // just re-searched against disk; the finally repaints its breadcrumb
       } finally {
         swapCanonicalResultsIds(activePaneKey);
         resultsPaneState[activePaneKey].searchState = activeUiSnapshot;
@@ -3082,6 +3084,20 @@
         el.appendChild(btn);
         shownCount++;
       });
+      if (shownCount > 0 && resultsPaneState[paneKey] && resultsPaneState[paneKey].stale) {
+        const staleBtn = document.createElement('button');
+        staleBtn.type = 'button';
+        staleBtn.className = 'btn btn-sm py-0 px-1 ms-2 align-baseline tagfox-pane-stale-badge';
+        staleBtn.innerHTML = '<i class="fa-solid fa-arrows-rotate fa-xs" aria-hidden="true"></i> out of date';
+        staleBtn.title = 'This pane changed on disk but is showing an older view. Click to refresh it.';
+        staleBtn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (paneKey === activeResultsPane) return;
+          await refreshInactiveResultsPane('refresh'); // refresh in place; clears stale, keeps the active pane active
+        });
+        el.appendChild(staleBtn);
+      }
       return shownCount > 0;
     }
 
@@ -3100,6 +3116,42 @@
         const shown = fillInactivePaneBreadcrumb(el, inactiveKey, pane && pane.searchState);
         el.classList.toggle('d-none', !shown);
       });
+    }
+
+    /** True if a disk-mutation payload touches paths under (or containing) a pane's scope folder. */
+    function diskMutationAffectsPaneScope(payload, paneKey) {
+      const st = resultsPaneState[paneKey] && resultsPaneState[paneKey].searchState;
+      const root = normalizeFolderPathForEverything(String((st && st.rootFolder) || '').trim());
+      if (!root) return true; // no scope folder ~ whole index: assume affected
+      const p = payload && typeof payload === 'object' ? payload : {};
+      const raw = [];
+      if (Array.isArray(p.paths)) raw.push(...p.paths);
+      if (p.destFolder) raw.push(p.destFolder);
+      if (Array.isArray(p.copied)) raw.push(...p.copied);
+      if (Array.isArray(p.moved)) for (const m of p.moved) { if (m && m.from) raw.push(m.from); if (m && m.to) raw.push(m.to); }
+      const norms = raw.map((x) => normalizeFolderPathForEverything(String(x || '').trim())).filter(Boolean);
+      if (!norms.length) return true;
+      return norms.some((n) => pathIsUnderOrEqualFolder(n, root) || pathIsUnderOrEqualFolder(root, n));
+    }
+
+    /** Mark a pane's snapshot stale (it changed on disk but is not the live pane) and repaint its breadcrumb. */
+    function setPaneStale(paneKey, stale) {
+      const pane = resultsPaneState[paneKey];
+      if (!pane || pane.stale === !!stale) return;
+      pane.stale = !!stale;
+      updateInactivePaneBreadcrumb();
+    }
+
+    /* After a disk mutation, flag the inactive pane stale if the change touched its scope. Only the active pane
+       is refreshed (see the passive-snapshot rule), so a drop / copy / delete into the inactive pane's folder
+       would otherwise leave it silently showing the old view. Split view only (inactive pane not visible else). */
+    function markInactivePaneStaleIfAffected(payload) {
+      const r = normalizeResultsSplitRatio(resultsSplitRatio);
+      if (r === 0 || r === 1) return;
+      const inactive = paneStateKeyOfOther(activeResultsPane);
+      if (resultsPaneState[inactive] && resultsPaneState[inactive].stale) return;
+      if (!diskMutationAffectsPaneScope(payload, inactive)) return;
+      setPaneStale(inactive, true);
     }
 
     function loadResultsSplitLayoutFromStorage() {
@@ -14917,7 +14969,7 @@
       if (status) setStatusMain(r.ok ? 'Opened in app window.' : (r.error || 'Open failed'));
     });
 
-    window.tagBrowser.setPathsMutatedHandler((payload) => {
+    function onPathsMutated(payload) {
       const p = payload && typeof payload === 'object' ? payload : {};
       if (p.trashed && Array.isArray(p.paths)) removeGonePathsFromUiNow(p.paths);
       if (Array.isArray(p.moved) && p.moved.length) {
@@ -14925,8 +14977,10 @@
         removeGonePathsFromUiNow(p.moved.map((m) => m && m.from));
       }
       if (Array.isArray(p.copied) && p.copied.length) clearGoneTombstones(p.copied);
+      markInactivePaneStaleIfAffected(payload);
       void refreshAfterDiskMutation(payload);
-    });
+    }
+    window.tagBrowser.setPathsMutatedHandler(onPathsMutated);
     window.tagBrowser.setShellActionErrorHandler((msg) => {
       setStatusMain(String(msg || 'Action failed'));
     });
@@ -16785,6 +16839,10 @@
         setScope: (root) => { const e = document.getElementById('rootFolder'); if (e) e.value = String(root || ''); void runSearchNow('identity'); },
         autoTick: () => maybeAutoRefreshSearchTick(),
         loadMore: () => loadMoreResults(),
+        /* Force the split ratio (0/1 = single pane, between = split) so a test can exercise the stale-badge path. */
+        setSplit: (ratio) => { resultsSplitRatio = Number(ratio); applyResultsSplitLayout(); updateInactivePaneBreadcrumb(); },
+        /* Drive the real disk-mutation handler (the IPC callback) so tests can assert the inactive-pane stale flag. */
+        mutate: (payload) => onPathsMutated(payload),
         /* Simulate the renderer side of a delete (what setPathsMutatedHandler does for a trashed payload):
            tombstone the paths + repaint the active pane. Used by crud-pane-isolation to prove a delete in
            the active pane never touches the inactive pane's stored rows. */
@@ -16826,6 +16884,9 @@
           lastRows: lastRows.length,
           paneA_state: resultsPaneState.A.lastRows.length,
           paneB_state: resultsPaneState.B.lastRows.length,
+          paneA_stale: !!resultsPaneState.A.stale,
+          paneB_stale: !!resultsPaneState.B.stale,
+          staleBadgeShown: !!document.querySelector('.pane-inactive-breadcrumb:not(.d-none) .tagfox-pane-stale-badge'),
           tbodyBase: rowCount('tbody'),
           tbodyA: rowCount('tbodyA'),
           tbodyB: rowCount('tbodyB'),
