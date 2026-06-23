@@ -15,6 +15,11 @@ Do not duplicate these here; read them:
 - **Keep the inactive pane passive.** Only the active pane is live. Nothing (search, F5, auto-refresh, CRUD) may refresh, mirror or re-render the inactive pane in the background; it re-runs its own search only when activated. Every past dual-pane bug came from a background flow touching the other pane. If you think you need to update both panes at once, you almost certainly do not. When a disk change touches the inactive pane's scope it is flagged stale and shows an "out of date" badge on its breadcrumb (`markInactivePaneStaleIfAffected`); surfacing staleness is the answer, not refreshing it in the background.
 - The tests drive the real app over CDP via a `#tagfoxtest` hook at the end of `renderer.js` (inert in normal runs). See memory `[[reference_electron_cdp_testing]]` for the general technique.
 - Dates in generated output / change stamps must not use year-less numeric form (global writing rule).
+- **Resolving a row's Google Drive file id: use `resolveGoogleDriveFileIdRobust` (main.js), not the thin `resolveGoogleDriveFileIdForPath`.** The robust one escalates: the local `:user.drive.id` stream, else hunt the parent folder id via a sibling that carries one (`inferGoogleDriveFolderIdFromChildItems`) and look the file up scoped to that folder (collision-safe for repeated names), else a unique exact-name Drive-API match. The thin resolver is stream-only and returns nothing for a mirrored file whose stream is unreadable. The stream path needs no API; the fallbacks need Google sign-in (the `google-oauth-client.json` OAuth account, same as "Open in Google Workspace" / "Create Google Doc here").
+
+## Open in gmist
+
+A row button (`.md`/`.qmd` under a Google Drive mount) deep-links the file into the [gmist](https://mist.broad-smoke-cc64.workers.dev) web editor: TagFox resolves the Drive file id (above) and opens `https://mist.broad-smoke-cc64.workers.dev/open?file=<id>&p=<readable home-relative path>` in the default browser. gmist mints the room server-side and is the source of truth for that contract (see gmist's `CLAUDE.md`, the `GET /open` route); `&p=` is a harmless legibility breadcrumb gmist ignores. Auth is the browser's gmist session, so TagFox holds no gmist credentials. Eligibility is a cheap path check (`rowEligibleForGmist`); the click-time resolve is authoritative.
 
 ## Open threads
 
