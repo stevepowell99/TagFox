@@ -62,9 +62,9 @@ Welcome to TagFox — a fast, keyboard-friendly file manager powered by instant 
 
 TagFox combines **instant search** (powered by Everything) with a **folder tree view** — so you see results *in context*. You can navigate folders, tag files, preview documents, and manage simple project specifications and tasks without ever opening File Explorer.
 
-**Tags** are labels like `DRAFT`, `URGENT`, or `2026` that you attach to files and folders to organise your work. You can filter by tag to instantly find everything marked that way. Windows has no native equivalent, so TagFox fills that gap. TagFox stores tags in the filename itself (e.g. `Report xxDRAFT xxURGENT.docx`), so they travel with the file — no database, no hidden metadata. They work in Explorer, Google Drive, zip exports, everywhere.
+**Tags** are short labels you attach to files and folders to organise your work. You can filter by tag to instantly find everything marked that way. Windows has no native equivalent, so TagFox fills that gap. TagFox stores tags in the filename itself (e.g. `Report xkTODO xxKEY.docx`), so they travel with the file: no database, no hidden metadata. They work in Explorer, Google Drive, zip exports, everywhere.
 
-Tags come in three families, chosen automatically from the word you type: `xk` for status (`TODO`, `WAITING`, `LATER`), `xp` for a person (`GCC`, `STEVE`, `CLAUDE`), and `xx` for any other label. Bodies are always uppercase. You do not type the prefix — type `todo` and TagFox writes `xkTODO`; type anything else and it becomes an `xx` label.
+Tags come from a fixed vocabulary in three families: `xk` status (`TODO`, `WAITING`, `LATER`), `xp` person (`GCC`, `STEVE`, `CLAUDE`), and `xx` label (`PUB`, `INFO`, `KEY`). Only these words are treated as tags, which keeps ordinary filenames from being mistaken for tags. Bodies are always uppercase and you do not type the prefix; type `todo` and TagFox writes `xkTODO`. To add a word to the vocabulary, edit `TAG_VOCAB` in `tags.js`.
 
 ### 🤔 The problems TagFox solves
 
@@ -142,7 +142,7 @@ Three icon-pair switches next to the search box — combine them freely:
 - Tags appear as coloured chips in the tag bar (below the breadcrumb). Click a tag to filter results; click again to remove the filter. Counts in parentheses reflect the current result list (after filters), capped by **Max results**.
 - The **↻** control at the end of the tag row re-runs the main search and rescans the whole index for `xk`/`xp`/`xx` tag tokens, pruning remembered/active tags that no longer appear — use if the bar looks stale or after bulk renames outside TagFox. Ordinary searches do not do that full scan.
 - To edit a file's tags: select the row and press `Ctrl`+`T`, or use the **Tags** button in the bulk bar. **Add** or removing a chip renames on disk immediately. When a **current folder** is set, renames must stay under that path.
-- Tags are stored as trailing prefixed tokens before the extension — e.g. `Notes xxDRAFT.md` or a folder `Project xx2024 xxCLIENTA`. A word is a tag only when it starts with `xk`, `xp` or `xx`; anything else is literal text.
+- Tags are stored as trailing prefixed tokens before the extension, e.g. `Notes xxINFO.md` or a folder `Project xkTODO xpGCC`. A token is a tag only when it is a vocabulary word with its family prefix (e.g. `xkTODO`, `xpGCC`, `xxPUB`); anything else is literal text.
 
 ### 📄 Viewer panel
 

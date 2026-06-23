@@ -8,7 +8,7 @@
     { score: 5, tip: ['Press the question-mark button (top left) or ', K('F1'), ' to open the full guide at any time.'] },
     { score: 5, tip: ['Double-click any folder row to open it and search inside it.'] },
     { score: 5, tip: ['Click Settings (top left) to set which folder TagFox searches and to adjust other options.'] },
-    { score: 5, tip: ['Tags are labels stored right inside the filename — like Report xxDRAFT.docx. No database needed.'] },
+    { score: 5, tip: ['Tags are labels stored right inside the filename — like Report xkTODO.docx. No database needed.'] },
     { score: 5, tip: ['The coloured tag buttons below the search box show all tags in the current results — click one to filter.'] },
     { score: 5, tip: ['Click an active tag button again to turn that filter off.'] },
     { score: 5, tip: ['The Viewer panel (right side) previews images, PDFs, Office files, markdown, audio, and video — just click a row.'] },

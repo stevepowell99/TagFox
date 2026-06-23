@@ -10,16 +10,22 @@
   /** Back-compat default prefix (status family). */
   const TAG_PREFIX = 'xk';
 
-  /** Closed sets that decide xk/xp; everything else is a label (xx). */
-  const STATUS_WORDS = ['TODO', 'WAITING', 'LATER'];
-  const PERSON_WORDS = ['GCC', 'STEVE', 'CLAUDE'];
+  /**
+   * The agreed, fixed tag vocabulary: tag body -> family prefix. This is the single source of
+   * truth for what counts as a tag. Only these are recognised, which keeps filename look-alikes
+   * (xkeyboard, xpath, ITL, RED1, package names, ...) out of the tag bar. To add a tag, add it
+   * here (and mirror it in CLAUDE.md / help.md).
+   */
+  const TAG_VOCAB = {
+    TODO: 'xk', WAITING: 'xk', LATER: 'xk', // status
+    GCC: 'xp', STEVE: 'xp', CLAUDE: 'xp', // person
+    PUB: 'xx', INFO: 'xx', KEY: 'xx', // label
+  };
 
-  /** Family prefix for a tag name (word, no prefix): status -> xk, person -> xp, else label xx. */
+  /** Family prefix for a tag name (word, no prefix); unknown words default to a label (xx). */
   function prefixForTag(name) {
     const u = String(name || '').trim().toUpperCase();
-    if (STATUS_WORDS.indexOf(u) !== -1) return 'xk';
-    if (PERSON_WORDS.indexOf(u) !== -1) return 'xp';
-    return 'xx';
+    return TAG_VOCAB[u] || 'xx';
   }
 
   /** Split a component into [stem, ext]; ext is a trailing `.word` (else ''). */
@@ -30,16 +36,12 @@
     return [c, ''];
   }
 
-  /** A real tag body is uppercase letters/digits by convention; this is what keeps `xkeyboard`,
-   *  `xpath` and other lowercase look-alikes from being read as tags. */
-  const TAG_BODY_RE = /^[A-Z0-9]+$/;
-
-  /** Tag name for a single token, or '' if not a tag. `xkTODO`->`TODO`, `xpGCC`->`GCC`. */
+  /** Tag name for a token, or '' if not a tag. Must be a vocabulary word with its own family
+   *  prefix: `xkTODO`->`TODO`, `xpGCC`->`GCC`. `xxTODO`, `xkeyboard`, `xpITL` etc. are not tags. */
   function tagNameFromToken(token) {
     if (!token || token.length <= PREFIX_LEN) return '';
-    if (TAG_PREFIXES.indexOf(token.slice(0, PREFIX_LEN)) === -1) return '';
     const body = token.slice(PREFIX_LEN);
-    if (!TAG_BODY_RE.test(body)) return '';
+    if (TAG_VOCAB[body] !== token.slice(0, PREFIX_LEN)) return '';
     return body;
   }
 
@@ -183,6 +185,7 @@
   global.TagBrowserTags = {
     TAG_PREFIX,
     TAG_PREFIXES,
+    TAG_VOCAB,
     prefixForTag,
     splitExt,
     tagNameFromToken,
