@@ -3278,21 +3278,11 @@
         }
         await runSearch(eventKind, opts);
         saveActivePaneStateFromUi();
-        /* Background refresh of inactive pane only on disk-change-style events (F5, auto-refresh, disk mutation). Skips identity/manual/smart-* to avoid UI flicker on every keystroke. */
-        if (
-          !isNested &&
-          eventKind === 'refresh' &&
-          (!opts || !opts.singlePaneOnly)
-        ) {
-          const inactive = paneStateKeyOfOther(activeResultsPane);
-          const activeState = resultsPaneState[activeResultsPane] && resultsPaneState[activeResultsPane].searchState;
-          const inactiveState = resultsPaneState[inactive] && resultsPaneState[inactive].searchState;
-          if (activeState && inactiveState && searchStatesEqual(activeState, inactiveState)) {
-            copyPaneState(activeResultsPane, inactive);
-          } else {
-            await refreshInactiveResultsPane(eventKind, { ...(opts || {}), singlePaneOnly: true, nested: true });
-          }
-        }
+        /* The inactive pane is a passive snapshot. It is NOT refreshed in the background on F5 / auto-refresh
+           / disk mutation: doing so meant every search/CRUD ran a second flow against the other pane (the
+           id-swap "dance", or a copyPaneState mirror when the two panes shared a search), which is where the
+           dual-pane races and the cross-pane copy/delete bleed lived. Only the active pane is live; the
+           inactive pane re-runs its own search the instant it is activated (see activateResultsPane). */
       } finally {
         topLevelSearchDepth--;
         if (!isNested && releaseMutex) releaseMutex();
@@ -3305,36 +3295,18 @@
     let lastDiskMutationRefreshStart = 0;
     const DISK_MUTATION_REFRESH_COALESCE_MS = 120;
 
-    function diskMutationPayloadPaths(payload) {
-      const p = payload && typeof payload === 'object' ? payload : {};
-      const list = [];
-      if (Array.isArray(p.paths)) list.push(...p.paths);
-      if (p.destFolder) list.push(p.destFolder);
-      return list.map((x) => normalizeFolderPathForEverything(String(x || '').trim())).filter(Boolean);
-    }
-
-    function diskMutationMayAffectInactivePane(payload) {
-      const inactive = paneStateKeyOfOther(activeResultsPane);
-      const inactiveState = resultsPaneState[inactive] && resultsPaneState[inactive].searchState;
-      const inactiveRoot = normalizeFolderPathForEverything(String((inactiveState && inactiveState.rootFolder) || '').trim());
-      if (!inactiveState || !inactiveRoot) return true;
-      const paths = diskMutationPayloadPaths(payload);
-      if (!paths.length) return true;
-      return paths.some((p) => pathIsUnderOrEqualFolder(p, inactiveRoot) || pathIsUnderOrEqualFolder(inactiveRoot, p));
-    }
-
     function clearAndScheduleSearchRetries(payload, opts) {
       for (const id of diskMutationRefreshTimeouts) clearTimeout(id);
       diskMutationRefreshTimeouts = [];
       /* 350ms catches most index updates (new items at dest appear fast); 1200ms is the slow-index backstop.
          A pure delete needs neither: tombstones already hid the rows, so one quiet pass clears them once
-         Everything catches up, instead of two extra full repaints the user reads as flicker. */
+         Everything catches up, instead of two extra full repaints the user reads as flicker. The retry only
+         ever touches the active pane (singlePaneOnly); the inactive pane refreshes when activated. */
       const delays = opts && opts.quietSingle ? [1000] : [350, 1200];
       for (const delayMs of delays) {
         diskMutationRefreshTimeouts.push(
           setTimeout(() => {
-            const retryOpts = diskMutationMayAffectInactivePane(payload) ? {} : { singlePaneOnly: true };
-            void runSearchNow('refresh', retryOpts);
+            void runSearchNow('refresh', { singlePaneOnly: true });
           }, delayMs)
         );
       }
@@ -3365,8 +3337,7 @@
         return;
       }
       clearAndScheduleSearchRetries(payload);
-      const refreshOpts = diskMutationMayAffectInactivePane(payload) ? {} : { singlePaneOnly: true };
-      void runSearchNow('refresh', refreshOpts);
+      void runSearchNow('refresh', { singlePaneOnly: true });
     }
 
     function tagModalIsNewTodoDraft() {
@@ -16834,6 +16805,10 @@
         setScope: (root) => { const e = document.getElementById('rootFolder'); if (e) e.value = String(root || ''); void runSearchNow('identity'); },
         autoTick: () => maybeAutoRefreshSearchTick(),
         loadMore: () => loadMoreResults(),
+        /* Simulate the renderer side of a delete (what setPathsMutatedHandler does for a trashed payload):
+           tombstone the paths + repaint the active pane. Used by crud-pane-isolation to prove a delete in
+           the active pane never touches the inactive pane's stored rows. */
+        tombstone: (paths) => removeGonePathsFromUiNow(Array.isArray(paths) ? paths : [paths]),
         disableAutofill: () => { maybeAutoFillResultsUntilScrollable = () => {}; },
         autoStart: (sec) => { const e = document.getElementById('autoRefreshSec'); if (e) { e.value = String(sec); } syncAutoRefreshTimer(); },
         autoStop: () => { const e = document.getElementById('autoRefreshSec'); if (e) e.value = '0'; syncAutoRefreshTimer(); },

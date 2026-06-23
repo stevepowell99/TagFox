@@ -4,10 +4,12 @@ Automated regression tests for the search and dual-pane logic in `renderer.js`. 
 under the Chrome DevTools Protocol (CDP) and drive it through a hidden test hook, so they exercise the
 actual renderer, not a reimplementation.
 
-These guard the two concurrency bugs fixed in June 2026 (see [Search concurrency and dual panes](../README.md#search-concurrency-and-dual-panes)):
+These guard the concurrency bugs fixed in June 2026 (see [Search concurrency and dual panes](../README.md#search-concurrency-and-dual-panes)):
 
 - Searches rendering into the hidden pane during the startup / refresh pane dance.
 - Load-more rows being dropped when the background inactive-pane refresh ran.
+- A copy or delete in one pane bleeding into the other (the inactive pane is now a passive snapshot,
+  refreshed only on activation).
 
 ## Prerequisites
 
@@ -20,7 +22,7 @@ These guard the two concurrency bugs fixed in June 2026 (see [Search concurrency
 ## Running
 
 ```
-npm test                      # whole suite (smoke + load-more + 3 fuzz seeds)
+npm test                      # whole suite (smoke + crud-isolation + load-more + 3 fuzz seeds)
 npm run test:smoke            # readable walkthrough of the main flows
 npm run test:loadmore         # focused load-more / pane-state regression
 npm run test:fuzz             # randomized fuzz, default 60 iterations
@@ -31,12 +33,17 @@ Each test launches its own isolated Electron instance (its own CDP port and `--u
 temp folder), so do not run them in parallel; `run-all.cjs` runs them in sequence. A run leaves no trace in
 your real TagFox profile.
 
+The harness spawns Electron with `TAGFOX_TEST_HIDDEN=1`, so the window never shows onscreen (no flashing
+during a run). A hidden window still renders and drives through the `#tagfoxtest` hook over CDP. Normal app
+runs are unaffected: `main.js` only skips `show()` when that env var is set.
+
 ## What each file covers
 
 | File | Covers |
 |------|--------|
 | `harness.cjs` | Shared library: launch Electron under CDP, the `#tagfoxtest` driver, `settle()`, and `structuralProblems()` (the invariants below). Not a test itself. |
 | `smoke.cjs` | Startup, a 10x F5 refresh loop, type+refresh races, pane switches, rapid A/B toggles, and the inactive-pane dance racing a scheduled search. Checks the structural invariants after each step. |
+| `crud-pane-isolation.cjs` | A delete in the active pane must leave the inactive pane's stored rows untouched (the copy/delete cross-pane bleed). Guards the passive-inactive-pane rule. |
 | `loadmore-regression.cjs` | Loads a second page, runs the background dance, and checks the loaded rows survive (the load-more desync bug). |
 | `fuzz.cjs` | Random bursts of actions (type, refresh, pane switch, recency, view, scope, dance, auto-refresh tick) with a structural check plus a consistency re-search after every burst. |
 | `run-all.cjs` | Runs the above in sequence and prints a pass/fail summary. |

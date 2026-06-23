@@ -126,11 +126,22 @@ mutex by passing `nested: true`. Nesting is marked explicitly, not inferred from
 event-loop task (the debounced search, F5, a disk-mutation retry) that fires while another flow is mid-await
 must wait for the mutex, not run concurrently.
 
-The inactive pane is refreshed by a background "dance" in `refreshInactiveResultsPane()`: swap the canonical
-ids onto the inactive pane, restore its state, run its search (so `renderTable()` writes to its tbody), then
-swap back and restore the active pane.
+**The inactive pane is a passive snapshot.** It is not refreshed in the background on a search, F5,
+auto-refresh or disk mutation. Only the active pane is live; the inactive pane re-runs its own search the
+instant you activate it (`activateResultsPane()`). This is the single most important rule for keeping the
+dual-pane code sane: a background flow that re-renders the *other* pane while the active flow runs is the
+source of every dual-pane race and of the cross-pane CRUD bleed (a file copied from one pane into the other
+appeared in both, and deleting either removed both, because the refresh path mirrored the active pane onto
+the inactive one and applied the active pane's delete tombstones to it). Removed June 2026; guarded by
+`crud-pane-isolation.cjs`.
 
-Two faults here were fixed in June 2026, and the [tests](test/README.md) guard both:
+The id-swap "dance" in `refreshInactiveResultsPane()` (swap the canonical ids onto the inactive pane,
+restore its state, run its search so `renderTable()` writes to its tbody, then swap back) still exists, but
+now runs only on explicit, serialized actions: first-load seeding of pane B, inactive-pane breadcrumb
+navigation, and the test hook. It never fires automatically from a search or a CRUD refresh, so it can no
+longer race a concurrent flow.
+
+Two earlier faults here were fixed in June 2026, and the [tests](test/README.md) guard both:
 
 - **Searches rendering into the hidden pane.** Nesting was inferred from a global depth counter, so the
   startup debounced search, firing while the inactive-pane dance held the counter up, mistook itself for a
@@ -143,13 +154,17 @@ Two faults here were fixed in June 2026, and the [tests](test/README.md) guard b
 
 ### Refresh after CRUD (delete fast-path)
 
+Every CRUD refresh acts on the active pane only (`singlePaneOnly`); the inactive pane stays as it was until
+you switch to it (see the passive-snapshot rule above). So a copy, move or delete in one pane never changes
+the other.
+
 A delete only removes rows. `removeGonePathsFromUiNow()` tombstones the deleted paths and repaints once, so
 the rows vanish immediately. Because no new content can appear, `refreshAfterDiskMutation()` detects a pure
 delete (`isPureTombstoneMutation`, payload `trashed` with no `destFolder`/`copied`/`moved`) and skips the
-immediate re-query and its inactive-pane dance, scheduling a single quiet reconcile (~1s) to retire the
-tombstones once the Everything index settles. Moves and pastes bring in new rows and keep the prompt refresh
-plus the 350ms/1200ms catch-up retries. All delete call sites (bulk bar, Delete key, context menu) tag the
-payload with `trashed: true` so the fast-path fires regardless of which refresh call wins the coalesce.
+immediate re-query, scheduling a single quiet reconcile (~1s) to retire the tombstones once the Everything
+index settles. Moves and pastes bring in new rows and keep the prompt refresh plus the 350ms/1200ms catch-up
+retries. All delete call sites (bulk bar, Delete key, context menu) tag the payload with `trashed: true` so
+the fast-path fires regardless of which refresh call wins the coalesce.
 
 The recycle itself (`main.js`) was the bigger cost for cloud paths (Google Drive, OneDrive), which take the
 PowerShell route because `shell.trashItem` rejects many of those paths. The old script spawned one PowerShell

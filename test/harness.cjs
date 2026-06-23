@@ -71,7 +71,12 @@ async function connect({ port, profile, maxResults = 60, scope = SCOPES.repo, di
   if (!port || !profile) throw new Error('connect needs { port, profile }');
   const baseUrl = await resolveEverythingUrl();
   const userData = path.join(os.tmpdir(), profile);
-  const child = spawn(ELECTRON, [APP_DIR, `--remote-debugging-port=${port}`, `--user-data-dir=${userData}`], { stdio: ['ignore', 'pipe', 'pipe'] });
+  // TAGFOX_TEST_HIDDEN keeps the window offscreen (never shown) so test runs do not flash up onscreen;
+  // the hidden window still renders and drives through the #tagfoxtest hook over CDP.
+  const child = spawn(ELECTRON, [APP_DIR, `--remote-debugging-port=${port}`, `--user-data-dir=${userData}`], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, TAGFOX_TEST_HIDDEN: '1' },
+  });
   let stderr = '';
   child.stderr.on('data', (d) => (stderr += d.toString()));
 
