@@ -54,6 +54,7 @@ If search feels slow, open **Advanced** and turn off **Folder-contents highlight
 - **Paste from Explorer and screenshots.** Paste copied files into the current folder, or paste a screenshot to save `Clipboard image.png` there.
 - **Mixed local and Google Docs.** Local Office files preview inline. Google Workspace shortcuts (`.gdoc`, `.gsheet`, `.gslides`) open in a popup, resolved from the shortcut or the Drive stream, including streamed (on-demand) files.
 - **Google Drive shortcut folders.** Shared-folder shortcuts under `.shortcut-targets-by-id` are resolved to their real names in the breadcrumb and Name column, cached across restarts.
+- **Open in gmist.** A markdown file (`.md`/`.qmd`) that lives in Google Drive gets a row button that opens it in the [gmist](https://mist.broad-smoke-cc64.workers.dev) web editor. TagFox reads the file's Drive id from the local mirror (the same resolver as Open in Google Workspace) and deep-links your browser to gmist's `/open?file=<id>`; auth is your signed-in gmist session.
 
 ## For developers
 
