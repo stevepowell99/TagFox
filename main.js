@@ -532,30 +532,37 @@ function windowsPowerShellExe() {
 }
 
 /**
- * Write ps1Body to a temp script, run `-File script arg`, delete script.
- * Returns null on success, or an error string.
+ * Write ps1Body to a temp script, run `-File script [args...]`, capture output, delete script.
+ * Returns { ok, status, stdout, stderr, error }. error is null on success, else a message string
+ * (spawn failure, or stderr/stdout on non-zero exit). The single home for the PowerShell spawn pattern.
  */
-function runPowershellScriptFileWithArg(ps1Body, argForScript, failMsgPrefix) {
+function runPowershellScriptFile(ps1Body, args = [], failMsgPrefix = 'PowerShell script failed') {
   const psExe = windowsPowerShellExe();
   const tmpPs1 = path.join(os.tmpdir(), `tagbrowser-ps-${process.pid}-${Date.now()}.ps1`);
   try {
     fssync.writeFileSync(tmpPs1, ps1Body, 'utf8');
-    const r = spawnSync(psExe, ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', tmpPs1, argForScript], {
+    const r = spawnSync(psExe, ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', tmpPs1, ...args], {
       windowsHide: true,
       encoding: 'utf8',
     });
-    if (r.status !== 0) {
-      const msg = [r.stderr, r.stdout].filter(Boolean).join(' ').trim();
-      return msg || failMsgPrefix + ' (exit ' + r.status + ').';
-    }
+    if (r.error) return { ok: false, status: null, stdout: '', stderr: '', error: String(r.error.message || r.error) };
+    const stdout = String(r.stdout || '');
+    const stderr = String(r.stderr || '');
+    const ok = r.status === 0;
+    const error = ok ? null : [stderr, stdout].filter(Boolean).join(' ').trim() || `${failMsgPrefix} (exit ${r.status}).`;
+    return { ok, status: r.status, stdout, stderr, error };
   } catch (e) {
-    return String(e.message || e);
+    return { ok: false, status: null, stdout: '', stderr: '', error: String(e.message || e) };
   } finally {
     try {
       fssync.unlinkSync(tmpPs1);
     } catch (_) {}
   }
-  return null;
+}
+
+/** Run a one-arg PowerShell script for its success/failure only: null on success, else an error string. */
+function runPowershellScriptFileWithArg(ps1Body, argForScript, failMsgPrefix) {
+  return runPowershellScriptFile(ps1Body, [argForScript], failMsgPrefix).error;
 }
 
 /** WinForms SetFileDropList — JSON array of absolute paths (UTF-8 file passed as arg). */
@@ -3637,203 +3644,104 @@ ipcMain.handle('google-drive-api-ping', async () => {
 ipcMain.handle('resolve-shell-shortcut', async (_event, { fullPath }) => resolveShellShortcutLnkWin(fullPath));
 
 /**
- * Windows shell Recent: newest .lnk files in %AppData%\...\Recent, resolve to directory targets (one PS run).
+ * Windows shell Recent: newest .lnk files in %AppData%\...\Recent, resolved to their targets in one PS run.
+ * pathType is the PowerShell Test-Path filter: 'Container' for folders, 'Leaf' for files. label is for
+ * error messages. Returns { ok, error, items } where items is [{ path, mtimeMs }] deduped by lowercased path.
  */
+async function scanWindowsRecentLnkTargets(pathType, label) {
+  const recentDir = path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Recent');
+  let names;
+  try {
+    names = await fs.readdir(recentDir);
+  } catch (e) {
+    return { ok: false, error: String(e.message || e), items: [] };
+  }
+  const lnks = names.filter((n) => n.toLowerCase().endsWith('.lnk'));
+  const withStat = await Promise.all(
+    lnks.map(async (n) => {
+      const full = path.join(recentDir, n);
+      try {
+        const st = await fs.stat(full);
+        return { full, mtimeMs: st.mtimeMs };
+      } catch {
+        return null;
+      }
+    })
+  );
+  const valid = withStat.filter(Boolean).sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 28);
+  if (!valid.length) return { ok: true, error: null, items: [] };
+  const jsonIn = path.join(os.tmpdir(), `tagfox-winrecent-${pathType}-${process.pid}-${Date.now()}.json`);
+  const ps1Body = `param([Parameter(Mandatory)][string]$JsonPath)
+$ErrorActionPreference = 'Stop'
+$raw = Get-Content -LiteralPath $JsonPath -Raw -Encoding UTF8
+$j = $raw | ConvertFrom-Json
+$items = $j.items
+if (-not $items) { Write-Output '[]'; exit 0 }
+if ($items -isnot [System.Array]) { $items = @($items) }
+$sh = New-Object -ComObject WScript.Shell
+$out = @()
+foreach ($it in $items) {
+  $f = [string]$it.full
+  $mt = [double]$it.mtimeMs
+  if (-not $f -or -not (Test-Path -LiteralPath $f)) { continue }
+  try {
+    $s = $sh.CreateShortcut($f)
+    $t = [string]$s.TargetPath
+    if ([string]::IsNullOrWhiteSpace($t)) { continue }
+    $t = $t.Trim()
+    if (Test-Path -LiteralPath $t -PathType ${pathType}) {
+      $out += @{ path = $t; mtimeMs = $mt }
+    }
+  } catch {}
+}
+if ($out.Count -lt 1) { Write-Output '[]' } else { $out | ConvertTo-Json -Compress -Depth 4 }
+`;
+  try {
+    await fs.writeFile(jsonIn, JSON.stringify({ items: valid }), 'utf8');
+    const r = runPowershellScriptFile(ps1Body, [jsonIn], `Recent ${label} script failed`);
+    if (!r.ok) return { ok: false, error: r.error, items: [] };
+    let arr;
+    try {
+      arr = JSON.parse(r.stdout.trim());
+    } catch {
+      return { ok: false, error: `Invalid JSON from recent ${label} script`, items: [] };
+    }
+    if (!Array.isArray(arr)) {
+      if (arr && typeof arr === 'object' && arr.path != null) arr = [arr];
+      else arr = [];
+    }
+    const items = [];
+    const seen = new Set();
+    for (const row of arr) {
+      if (!row || typeof row !== 'object') continue;
+      const p = path.normalize(String(row.path || '').trim());
+      if (!p) continue;
+      const low = p.toLowerCase();
+      if (seen.has(low)) continue;
+      seen.add(low);
+      const mtimeMs = typeof row.mtimeMs === 'number' ? row.mtimeMs : 0;
+      items.push({ path: p, mtimeMs });
+    }
+    return { ok: true, error: null, items };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e), items: [] };
+  } finally {
+    try {
+      fssync.unlinkSync(jsonIn);
+    } catch (_) {}
+  }
+}
+
 ipcMain.handle('windows-recent-folders', async () => {
   if (process.platform !== 'win32') return { ok: true, folders: [] };
-  const recentDir = path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Recent');
-  let names;
-  try {
-    names = await fs.readdir(recentDir);
-  } catch (e) {
-    return { ok: false, error: String(e.message || e), folders: [] };
-  }
-  const lnks = names.filter((n) => n.toLowerCase().endsWith('.lnk'));
-  const withStat = await Promise.all(
-    lnks.map(async (n) => {
-      const full = path.join(recentDir, n);
-      try {
-        const st = await fs.stat(full);
-        return { full, mtimeMs: st.mtimeMs };
-      } catch {
-        return null;
-      }
-    })
-  );
-  const valid = withStat.filter(Boolean).sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 28);
-  if (!valid.length) return { ok: true, folders: [] };
-  const jsonIn = path.join(os.tmpdir(), `tagfox-winrecent-in-${process.pid}-${Date.now()}.json`);
-  const tmpPs1 = path.join(os.tmpdir(), `tagfox-winrecent-${process.pid}-${Date.now()}.ps1`);
-  const psExe = windowsPowerShellExe();
-  const ps1Body = `param([Parameter(Mandatory)][string]$JsonPath)
-$ErrorActionPreference = 'Stop'
-$raw = Get-Content -LiteralPath $JsonPath -Raw -Encoding UTF8
-$j = $raw | ConvertFrom-Json
-$items = $j.items
-if (-not $items) { Write-Output '[]'; exit 0 }
-if ($items -isnot [System.Array]) { $items = @($items) }
-$sh = New-Object -ComObject WScript.Shell
-$out = @()
-foreach ($it in $items) {
-  $f = [string]$it.full
-  $mt = [double]$it.mtimeMs
-  if (-not $f -or -not (Test-Path -LiteralPath $f)) { continue }
-  try {
-    $s = $sh.CreateShortcut($f)
-    $t = [string]$s.TargetPath
-    if ([string]::IsNullOrWhiteSpace($t)) { continue }
-    $t = $t.Trim()
-    if (Test-Path -LiteralPath $t -PathType Container) {
-      $out += @{ path = $t; mtimeMs = $mt }
-    }
-  } catch {}
-}
-if ($out.Count -lt 1) { Write-Output '[]' } else { $out | ConvertTo-Json -Compress -Depth 4 }
-`;
-  try {
-    await fs.writeFile(jsonIn, JSON.stringify({ items: valid }), 'utf8');
-    fssync.writeFileSync(tmpPs1, ps1Body, 'utf8');
-    const r = spawnSync(psExe, ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', tmpPs1, jsonIn], {
-      windowsHide: true,
-      encoding: 'utf8',
-    });
-    if (r.status !== 0) {
-      const msg = [r.stderr, r.stdout].filter(Boolean).join(' ').trim();
-      return { ok: false, error: msg || 'Recent folders script failed', folders: [] };
-    }
-    let arr;
-    try {
-      arr = JSON.parse(String(r.stdout || '').trim());
-    } catch {
-      return { ok: false, error: 'Invalid JSON from recent folders script', folders: [] };
-    }
-    if (!Array.isArray(arr)) {
-      if (arr && typeof arr === 'object' && arr.path != null) arr = [arr];
-      else arr = [];
-    }
-    const folders = [];
-    const seen = new Set();
-    for (const row of arr) {
-      if (!row || typeof row !== 'object') continue;
-      const p = path.normalize(String(row.path || '').trim());
-      if (!p) continue;
-      const low = p.toLowerCase();
-      if (seen.has(low)) continue;
-      seen.add(low);
-      const mtimeMs = typeof row.mtimeMs === 'number' ? row.mtimeMs : 0;
-      folders.push({ path: p, mtimeMs });
-    }
-    return { ok: true, folders };
-  } catch (e) {
-    return { ok: false, error: String(e.message || e), folders: [] };
-  } finally {
-    try {
-      fssync.unlinkSync(jsonIn);
-    } catch (_) {}
-    try {
-      fssync.unlinkSync(tmpPs1);
-    } catch (_) {}
-  }
+  const r = await scanWindowsRecentLnkTargets('Container', 'folders');
+  return { ok: r.ok, error: r.error, folders: r.items };
 });
 
-/**
- * Windows shell Recent: same .lnk scan as folders, but keep file targets only (not directories).
- */
 ipcMain.handle('windows-recent-files', async () => {
   if (process.platform !== 'win32') return { ok: true, files: [] };
-  const recentDir = path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Recent');
-  let names;
-  try {
-    names = await fs.readdir(recentDir);
-  } catch (e) {
-    return { ok: false, error: String(e.message || e), files: [] };
-  }
-  const lnks = names.filter((n) => n.toLowerCase().endsWith('.lnk'));
-  const withStat = await Promise.all(
-    lnks.map(async (n) => {
-      const full = path.join(recentDir, n);
-      try {
-        const st = await fs.stat(full);
-        return { full, mtimeMs: st.mtimeMs };
-      } catch {
-        return null;
-      }
-    })
-  );
-  const valid = withStat.filter(Boolean).sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 28);
-  if (!valid.length) return { ok: true, files: [] };
-  const jsonIn = path.join(os.tmpdir(), `tagfox-winrecent-files-in-${process.pid}-${Date.now()}.json`);
-  const tmpPs1 = path.join(os.tmpdir(), `tagfox-winrecent-files-${process.pid}-${Date.now()}.ps1`);
-  const psExe = windowsPowerShellExe();
-  const ps1Body = `param([Parameter(Mandatory)][string]$JsonPath)
-$ErrorActionPreference = 'Stop'
-$raw = Get-Content -LiteralPath $JsonPath -Raw -Encoding UTF8
-$j = $raw | ConvertFrom-Json
-$items = $j.items
-if (-not $items) { Write-Output '[]'; exit 0 }
-if ($items -isnot [System.Array]) { $items = @($items) }
-$sh = New-Object -ComObject WScript.Shell
-$out = @()
-foreach ($it in $items) {
-  $f = [string]$it.full
-  $mt = [double]$it.mtimeMs
-  if (-not $f -or -not (Test-Path -LiteralPath $f)) { continue }
-  try {
-    $s = $sh.CreateShortcut($f)
-    $t = [string]$s.TargetPath
-    if ([string]::IsNullOrWhiteSpace($t)) { continue }
-    $t = $t.Trim()
-    if (Test-Path -LiteralPath $t -PathType Leaf) {
-      $out += @{ path = $t; mtimeMs = $mt }
-    }
-  } catch {}
-}
-if ($out.Count -lt 1) { Write-Output '[]' } else { $out | ConvertTo-Json -Compress -Depth 4 }
-`;
-  try {
-    await fs.writeFile(jsonIn, JSON.stringify({ items: valid }), 'utf8');
-    fssync.writeFileSync(tmpPs1, ps1Body, 'utf8');
-    const r = spawnSync(psExe, ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', tmpPs1, jsonIn], {
-      windowsHide: true,
-      encoding: 'utf8',
-    });
-    if (r.status !== 0) {
-      const msg = [r.stderr, r.stdout].filter(Boolean).join(' ').trim();
-      return { ok: false, error: msg || 'Recent files script failed', files: [] };
-    }
-    let arr;
-    try {
-      arr = JSON.parse(String(r.stdout || '').trim());
-    } catch {
-      return { ok: false, error: 'Invalid JSON from recent files script', files: [] };
-    }
-    if (!Array.isArray(arr)) {
-      if (arr && typeof arr === 'object' && arr.path != null) arr = [arr];
-      else arr = [];
-    }
-    const files = [];
-    const seen = new Set();
-    for (const row of arr) {
-      if (!row || typeof row !== 'object') continue;
-      const p = path.normalize(String(row.path || '').trim());
-      if (!p) continue;
-      const low = p.toLowerCase();
-      if (seen.has(low)) continue;
-      seen.add(low);
-      const mtimeMs = typeof row.mtimeMs === 'number' ? row.mtimeMs : 0;
-      files.push({ path: p, mtimeMs });
-    }
-    return { ok: true, files };
-  } catch (e) {
-    return { ok: false, error: String(e.message || e), files: [] };
-  } finally {
-    try {
-      fssync.unlinkSync(jsonIn);
-    } catch (_) {}
-    try {
-      fssync.unlinkSync(tmpPs1);
-    } catch (_) {}
-  }
+  const r = await scanWindowsRecentLnkTargets('Leaf', 'files');
+  return { ok: r.ok, error: r.error, files: r.items };
 });
 
 /**
@@ -4383,18 +4291,14 @@ function trashPathsViaPowershellRecycle(absPathsRaw) {
     .filter(Boolean);
   if (!norm.length) return [];
   if (process.platform !== 'win32') return norm.map((p) => ({ path: p, ok: false, err: 'Not Windows.' }));
-  const psExe = windowsPowerShellExe();
   const tmpJson = path.join(os.tmpdir(), `tagbrowser-recycle-${process.pid}-${Date.now()}.json`);
-  const tmpPs1 = path.join(os.tmpdir(), `tagbrowser-recycle-${process.pid}-${Date.now()}.ps1`);
   try {
     fssync.writeFileSync(tmpJson, JSON.stringify(norm), 'utf8');
-    fssync.writeFileSync(tmpPs1, PS1_RECYCLE_TO_BIN, 'utf8');
-    const r = spawnSync(psExe, ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', tmpPs1, tmpJson], {
-      windowsHide: true,
-      encoding: 'utf8',
-    });
+    /* Per-path JSON lines arrive on stdout even on a non-zero exit (partial failure), so read stdout
+       regardless of r.ok; r.error is only the spawn-level fallback when a path has no result line. */
+    const r = runPowershellScriptFile(PS1_RECYCLE_TO_BIN, [tmpJson], 'Recycle');
     const byPath = new Map();
-    for (const line of String(r.stdout || '').split(/\r?\n/)) {
+    for (const line of r.stdout.split(/\r?\n/)) {
       const t = line.trim();
       if (!t) continue;
       try {
@@ -4403,7 +4307,7 @@ function trashPathsViaPowershellRecycle(absPathsRaw) {
         if (k) byPath.set(k.toLowerCase(), o);
       } catch (_) {}
     }
-    const spawnErr = [r.stderr, r.error && r.error.message].filter(Boolean).join(' ').trim();
+    const spawnErr = (r.stderr || r.error || '').trim();
     return norm.map((p) => {
       const o = byPath.get(p.toLowerCase());
       if (o) return { path: p, ok: !!o.ok, err: o.ok ? '' : String(o.err || 'Recycle failed') };
@@ -4415,9 +4319,6 @@ function trashPathsViaPowershellRecycle(absPathsRaw) {
   } finally {
     try {
       fssync.unlinkSync(tmpJson);
-    } catch (_) {}
-    try {
-      fssync.unlinkSync(tmpPs1);
     } catch (_) {}
   }
 }

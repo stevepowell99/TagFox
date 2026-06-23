@@ -2835,14 +2835,8 @@
       }
     }
     function loadPaneBSearchStateFromStorage() {
-      try {
-        const raw = localStorage.getItem(LS.paneBSearchState);
-        if (!raw) return null;
-        const obj = JSON.parse(raw);
-        return obj && typeof obj === 'object' ? obj : null;
-      } catch (_) {
-        return null;
-      }
+      const obj = lsGetJson(LS.paneBSearchState, null);
+      return obj && typeof obj === 'object' ? obj : null;
     }
 
     function restorePaneStateIntoUi(paneKey) {
@@ -4253,76 +4247,68 @@
       pathBox.appendChild(bdi);
     }
 
-    function loadFavouriteFolders() {
+    /** Parse a JSON value from localStorage; return fallback on missing or invalid. */
+    function lsGetJson(key, fallback) {
       try {
-        const raw = localStorage.getItem(LS.favFolders);
-        const arr = raw ? JSON.parse(raw) : [];
-        return Array.isArray(arr) ? arr.filter((x) => typeof x === 'string' && String(x).trim()) : [];
+        const raw = localStorage.getItem(key);
+        if (raw == null) return fallback;
+        const v = JSON.parse(raw);
+        return v == null ? fallback : v;
       } catch {
-        return [];
+        return fallback;
       }
+    }
+
+    /** Stringify and store a JSON value; swallow quota / serialize errors. */
+    function lsSetJson(key, value) {
+      try {
+        localStorage.setItem(key, JSON.stringify(value));
+      } catch (_) {}
+    }
+
+    function loadFavouriteFolders() {
+      const arr = lsGetJson(LS.favFolders, []);
+      return Array.isArray(arr) ? arr.filter((x) => typeof x === 'string' && String(x).trim()) : [];
     }
 
     function saveFavouriteFolders(paths) {
-      localStorage.setItem(LS.favFolders, JSON.stringify(paths.slice(0, 30)));
+      lsSetJson(LS.favFolders, paths.slice(0, 30));
     }
 
-    /** Per-folder focus counts + last visit (normalized path keys, lowercased) for the Recent bar. */
-    function loadFolderFocusStats() {
-      try {
-        const raw = localStorage.getItem(LS.folderFocusStats);
-        const o = raw ? JSON.parse(raw) : {};
-        if (!o || typeof o !== 'object') return {};
-        const out = {};
-        for (const k of Object.keys(o)) {
-          const v = o[k];
-          if (!v || typeof v !== 'object') continue;
-          const visits = typeof v.visits === 'number' && v.visits >= 0 ? v.visits : 0;
-          const lastTs = typeof v.lastTs === 'number' ? v.lastTs : 0;
-          const p0 = typeof v.path === 'string' && v.path.trim() ? v.path.trim() : k;
-          const norm = normalizeFolderPathForEverything(p0);
-          if (!norm) continue;
-          out[norm.toLowerCase()] = { visits, lastTs, path: norm };
-        }
-        return out;
-      } catch {
-        return {};
+    /** Per-path focus counts + last visit (normalized lowercased keys) for the Recent bars. */
+    function loadFocusStats(lsKey) {
+      const o = lsGetJson(lsKey, {});
+      if (!o || typeof o !== 'object') return {};
+      const out = {};
+      for (const k of Object.keys(o)) {
+        const v = o[k];
+        if (!v || typeof v !== 'object') continue;
+        const visits = typeof v.visits === 'number' && v.visits >= 0 ? v.visits : 0;
+        const lastTs = typeof v.lastTs === 'number' ? v.lastTs : 0;
+        const p0 = typeof v.path === 'string' && v.path.trim() ? v.path.trim() : k;
+        const norm = normalizeFolderPathForEverything(p0);
+        if (!norm) continue;
+        out[norm.toLowerCase()] = { visits, lastTs, path: norm };
       }
+      return out;
+    }
+
+    /** Per-folder focus counts + last visit for the Recent bar. */
+    function loadFolderFocusStats() {
+      return loadFocusStats(LS.folderFocusStats);
     }
 
     function saveFolderFocusStats(o) {
-      try {
-        localStorage.setItem(LS.folderFocusStats, JSON.stringify(o));
-      } catch (_) {}
+      lsSetJson(LS.folderFocusStats, o);
     }
 
-    /** Per-file open counts + last open (normalized path keys) for Recent files bar. */
+    /** Per-file open counts + last open for the Recent files bar. */
     function loadFileFocusStats() {
-      try {
-        const raw = localStorage.getItem(LS.fileFocusStats);
-        const o = raw ? JSON.parse(raw) : {};
-        if (!o || typeof o !== 'object') return {};
-        const out = {};
-        for (const k of Object.keys(o)) {
-          const v = o[k];
-          if (!v || typeof v !== 'object') continue;
-          const visits = typeof v.visits === 'number' && v.visits >= 0 ? v.visits : 0;
-          const lastTs = typeof v.lastTs === 'number' ? v.lastTs : 0;
-          const p0 = typeof v.path === 'string' && v.path.trim() ? v.path.trim() : k;
-          const norm = normalizeFolderPathForEverything(p0);
-          if (!norm) continue;
-          out[norm.toLowerCase()] = { visits, lastTs, path: norm };
-        }
-        return out;
-      } catch {
-        return {};
-      }
+      return loadFocusStats(LS.fileFocusStats);
     }
 
     function saveFileFocusStats(o) {
-      try {
-        localStorage.setItem(LS.fileFocusStats, JSON.stringify(o));
-      } catch (_) {}
+      lsSetJson(LS.fileFocusStats, o);
     }
 
     function bumpFileFocusVisit(filePathRaw) {
@@ -5211,13 +5197,8 @@
     }
 
     function loadFavouriteSearches() {
-      try {
-        const raw = localStorage.getItem(LS.favSearches);
-        const arr = raw ? JSON.parse(raw) : [];
-        return Array.isArray(arr) ? arr.filter((x) => x && typeof x === 'object' && !Array.isArray(x)) : [];
-      } catch {
-        return [];
-      }
+      const arr = lsGetJson(LS.favSearches, []);
+      return Array.isArray(arr) ? arr.filter((x) => x && typeof x === 'object' && !Array.isArray(x)) : [];
     }
 
     function saveFavouriteSearches(entries) {
@@ -8798,18 +8779,11 @@
       if (ck && folderChildCountCache.has(ck)) return folderChildCountCache.get(ck);
       const searchText = everythingSearchTextForFolderChildCount(norm);
       if (!searchText) return null;
-      const baseUrl = document.getElementById('baseUrl').value.trim() || 'http://127.0.0.1';
-      const httpUser = document.getElementById('httpUser').value;
-      const httpPassword = document.getElementById('httpPassword').value;
       const want = FOLDER_CHILD_COUNT_MAX + 1;
-      const options = { ...everythingOptionsForRequest(), pathSearch: true, offset: 0 };
-      const res = await window.tagBrowser.search({
-        baseUrl,
+      const res = await everythingSearchOnce({
         searchText,
-        count: String(want),
-        httpUser,
-        httpPassword,
-        options,
+        count: want,
+        options: { ...everythingOptionsForRequest(), pathSearch: true, offset: 0 },
       });
       if (!res || !res.ok) return null;
       let rows = Array.isArray(res.rows) ? res.rows : [];
@@ -8876,11 +8850,9 @@
     /** pruneDeadRemembered: ghost cleanup on “Rescan all tags” only. */
     async function runTagDiscoverySearchInner(pruneDeadRemembered) {
       const statusEl = document.getElementById('statusMain');
-      const baseUrl = document.getElementById('baseUrl').value.trim() || 'http://127.0.0.1';
+      const { baseUrl, httpUser, httpPassword } = readEverythingConnection();
       const mr = Math.max(1, parseInt(document.getElementById('maxResults').value, 10) || 60);
       const countCap = Math.min(50000, Math.max(5000, mr));
-      const httpUser = document.getElementById('httpUser').value;
-      const httpPassword = document.getElementById('httpPassword').value;
       const ui = searchOptionsFromUI();
       // r=1: a space or path sep before `xk` so only tag tokens match; TagFox tags are `xkt1 xkt2`.
       const bracketDiscoveryQuery = '[ \\\\]' + T.TAG_PREFIX;
@@ -11265,6 +11237,27 @@
     /** Keep request options aligned with UI; direction fallback is handled explicitly in runSearch when needed. */
     function everythingOptionsForRequest() {
       return searchOptionsFromUI();
+    }
+
+    /** Everything HTTP connection from the Settings fields (baseUrl falls back to localhost; creds untrimmed). */
+    function readEverythingConnection() {
+      return {
+        baseUrl: document.getElementById('baseUrl').value.trim() || 'http://127.0.0.1',
+        httpUser: document.getElementById('httpUser').value,
+        httpPassword: document.getElementById('httpPassword').value,
+      };
+    }
+
+    /** Max results clamped to [1, 5000] (the per-page request cap; default 60). */
+    function parseMaxResultsCap() {
+      return Math.min(5000, Math.max(1, parseInt(String(document.getElementById('maxResults').value).trim(), 10) || 60));
+    }
+
+    /** One-shot Everything search using the current Settings connection. opts: { searchText, count, options }. */
+    async function everythingSearchOnce({ searchText, count, options }) {
+      if (!window.tagBrowser || typeof window.tagBrowser.search !== 'function') return null;
+      const { baseUrl, httpUser, httpPassword } = readEverythingConnection();
+      return window.tagBrowser.search({ baseUrl, searchText, count: String(count), httpUser, httpPassword, options });
     }
 
     function serializeSearchState() {
@@ -13728,19 +13721,12 @@
       el.className = 'badge rounded-pill text-bg-secondary';
       el.title = 'Sending a one-result test to Everything…';
       syncEverythingConnectionSectionCollapse();
-      const baseUrl = document.getElementById('baseUrl').value.trim() || 'http://127.0.0.1';
-      const httpUser = document.getElementById('httpUser').value;
-      const httpPassword = document.getElementById('httpPassword').value;
-      const opts = { ...everythingOptionsForRequest(), offset: 0 };
       let res;
       try {
-        res = await window.tagBrowser.search({
-          baseUrl,
-          count: '1',
-          httpUser,
-          httpPassword,
-          options: opts,
+        res = await everythingSearchOnce({
           searchText: 'sort-mix:',
+          count: 1,
+          options: { ...everythingOptionsForRequest(), offset: 0 },
         });
       } catch (e) {
         if (seq !== everythingConnectionBadgeProbeSeq) return;
@@ -13957,7 +13943,7 @@
       }
       if (!keepPendingSmartNote) pendingSmartStatusNote = null;
       saveSettings();
-      const baseUrl = document.getElementById('baseUrl').value.trim() || 'http://127.0.0.1';
+      const { baseUrl, httpUser, httpPassword } = readEverythingConnection();
       const ceilingNorms = getSearchScopeCeilingFoldersNorms();
       const rootFolder = document.getElementById('rootFolder').value.trim();
       /* Scope-change detection for Smart probe-widen on plain browse navigation. */
@@ -13981,11 +13967,8 @@
       else if (fileOnly) searchText = (String(searchText).trim() + ' file: sort-mix:').trim();
       else searchText = (String(searchText).trim() + ' sort-mix:').trim();
       searchText = appendRecencyToEverythingQuery(searchText);
-      const maxResultsRaw = document.getElementById('maxResults').value;
-      const cap = Math.min(5000, Math.max(1, parseInt(String(maxResultsRaw).trim(), 10) || 60));
+      const cap = parseMaxResultsCap();
       const countStr = String(cap);
-      const httpUser = document.getElementById('httpUser').value;
-      const httpPassword = document.getElementById('httpPassword').value;
       const baseSearchOpts = everythingOptionsForRequest();
       /* Scope: force Match path whenever path filters are present so tokens limit the index. */
       const scopeNeedsPathSearch = hasCeil || !!normalizeFolderPathForEverything(rootFolder);
@@ -15399,21 +15382,11 @@
       if (!window.tagBrowser || typeof window.tagBrowser.search !== 'function') return [];
       const par = normalizeFolderPathForEverything(String(parentNorm || '').trim());
       if (!par) return [];
-      const baseUrl = document.getElementById('baseUrl').value.trim() || 'http://127.0.0.1';
-      const maxResultsRaw = document.getElementById('maxResults').value;
-      const cap = Math.min(5000, Math.max(1, parseInt(String(maxResultsRaw).trim(), 10) || 60));
-      const httpUser = document.getElementById('httpUser').value;
-      const httpPassword = document.getElementById('httpPassword').value;
       let searchText = composeScopedEverythingSearch(getSearchScopeCeilingFoldersNorms(), par, '', true).trim() + ' folder:';
-      const baseSearchOpts = everythingOptionsForRequest();
-      const options = { ...baseSearchOpts, pathSearch: true, offset: 0 };
-      const res = await window.tagBrowser.search({
-        baseUrl,
-        count: String(cap),
-        httpUser,
-        httpPassword,
-        options,
+      const res = await everythingSearchOnce({
         searchText,
+        count: parseMaxResultsCap(),
+        options: { ...everythingOptionsForRequest(), pathSearch: true, offset: 0 },
       });
       if (!res || !res.ok) return [];
       let rows = Array.isArray(res.rows) ? res.rows.slice() : [];
