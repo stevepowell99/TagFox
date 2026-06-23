@@ -2443,7 +2443,11 @@ function registerGlobalViewerDocsIpc() {
             TagBrowserTags && typeof TagBrowserTags.parseSegmentTags === 'function'
               ? String(TagBrowserTags.parseSegmentTags(name).pretty || '').toLowerCase()
               : String(name).toLowerCase();
-          const rank = rankMap.get(pretty);
+          let rank = rankMap.get(pretty);
+          // Any readme-named .md/.txt counts too (tag-tolerant), ranked after explicit basenames.
+          if (rank === undefined && /readme/.test(pretty) && /\.(md|txt)$/.test(pretty)) {
+            rank = nameList.length;
+          }
           if (rank !== undefined) files.push({ name, rank });
         }
       }
@@ -5141,15 +5145,35 @@ ipcMain.handle('resolve-folder-viewer-doc', async (_event, { folderPath, basenam
     if (d.isFile()) files.push(d.name);
   }
   const lower = (n) => String(n).toLowerCase();
-  const pickCi = (want) => {
-    const w = lower(want);
-    const hit = files.find((f) => lower(f) === w);
-    return hit ? path.join(dir, hit) : null;
+  // Pretty = filename with TagFox tags stripped, so a tagged doc (e.g. "TreeAid readme xkTODO.md")
+  // still matches "readme". This is how a folder gets tagged: tag its readme, not the folder.
+  const pretty = (n) => {
+    try {
+      return String(TagBrowserTags.parseSegmentTags(n).pretty || n).toLowerCase();
+    } catch (_) {
+      return lower(n);
+    }
   };
-  let fullPath = null;
-  for (const name of nameList) {
-    fullPath = pickCi(name);
-    if (fullPath) break;
+  // 1) Prefer any file whose pretty name contains "readme" (.md before .txt, then shorter name).
+  const readmeFiles = files
+    .filter((f) => /readme/.test(pretty(f)) && /\.(md|txt)$/.test(pretty(f)))
+    .sort((a, b) => {
+      const am = pretty(a).endsWith('.md') ? 0 : 1;
+      const bm = pretty(b).endsWith('.md') ? 0 : 1;
+      if (am !== bm) return am - bm;
+      return pretty(a).length - pretty(b).length || (a < b ? -1 : 1);
+    });
+  let fullPath = readmeFiles.length ? path.join(dir, readmeFiles[0]) : null;
+  // 2) Else fall back to the configured basenames, matched on the pretty (tag-stripped) name.
+  if (!fullPath) {
+    for (const name of nameList) {
+      const w = lower(name);
+      const hit = files.find((f) => pretty(f) === w);
+      if (hit) {
+        fullPath = path.join(dir, hit);
+        break;
+      }
+    }
   }
   return { ok: true, fullPath };
 });

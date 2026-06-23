@@ -951,6 +951,8 @@
     function isGlobalViewerMarkdownFilePath(fullPath) {
       const leaf = T.baseName(fullPath || '');
       const pretty = String(T.parseSegmentTags(leaf).pretty || '').toLowerCase();
+      // Any readme-named .md/.txt is a folder doc (tag-tolerant), plus the configured basenames.
+      if (/readme/.test(pretty) && /\.(md|txt)$/.test(pretty)) return true;
       return getGlobalViewerBasenamesList().includes(pretty);
     }
     /** Directory for folder-doc / nested aggregate: selected folder, or parent of a trigger .md file. */
