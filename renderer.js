@@ -1023,7 +1023,6 @@
     /** Idle iframe HTML for #pdfFrame / #htmlPreviewFrame (never clear via iframe.src=''). */
     const PREVIEW_IFRAME_IDLE =
       "<!DOCTYPE html><html><head><meta charset='utf-8'></head><body style='margin:0;background:#f8f9fa'></body></html>";
-    const PDF_IFRAME_IDLE = PREVIEW_IFRAME_IDLE;
 
     /** Raster types for RHS image preview (SVG handled via readTextFile + blob). */
     const IMAGE_EXT_MIME = {
@@ -10096,18 +10095,6 @@
       setSelection(vis[vis.length - 1], fullPathForRow(vis[vis.length - 1]));
     }
 
-    /** Dedupe by path for merging main results + tag-discovery rows. */
-    function mergeUniqueRowsByPath(a, b, getFp) {
-      const seen = new Set();
-      const out = [];
-      for (const row of [...(a || []), ...(b || [])]) {
-        const fp = String(getFp(row) || '').toLowerCase();
-        if (!fp || seen.has(fp)) continue;
-        seen.add(fp);
-        out.push(row);
-      }
-      return out;
-    }
 
     function fullPathForRow(row) {
       const name = (row.name || '').trim();
