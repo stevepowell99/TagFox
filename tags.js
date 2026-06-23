@@ -1,9 +1,26 @@
-// TagFox tags: trailing `xk`-prefixed tokens are tags, e.g. `name xkTODO xkurgent.ext`.
-// Tags are space-separated, sit right before the extension, and the `xk` prefix is
-// stripped for display. Plain words and `name[foo].ext` are literal text, not tags.
+// TagFox tags: trailing two-letter-prefixed tokens are tags, e.g. `name xkTODO xpGCC xxdraft.ext`.
+// Three families, all two chars wide: xk = status (TODO/WAITING/LATER), xp = person/owner
+// (GCC/STEVE/CLAUDE), xx = label (anything else). Tags are space-separated, sit right before
+// the extension, and the prefix is stripped for display. The family for a typed tag is chosen
+// by word (see prefixForTag). Plain words and `name[foo].ext` are literal text, not tags.
 (function (global) {
-  /** Literal prefix that marks a trailing filename token as a TagFox tag. */
+  /** Two-char family prefixes that mark a trailing filename token as a tag. */
+  const TAG_PREFIXES = ['xk', 'xp', 'xx'];
+  const PREFIX_LEN = 2;
+  /** Back-compat default prefix (status family). */
   const TAG_PREFIX = 'xk';
+
+  /** Closed sets that decide xk/xp; everything else is a label (xx). */
+  const STATUS_WORDS = ['TODO', 'WAITING', 'LATER'];
+  const PERSON_WORDS = ['GCC', 'STEVE', 'CLAUDE'];
+
+  /** Family prefix for a tag name (word, no prefix): status -> xk, person -> xp, else label xx. */
+  function prefixForTag(name) {
+    const u = String(name || '').trim().toUpperCase();
+    if (STATUS_WORDS.indexOf(u) !== -1) return 'xk';
+    if (PERSON_WORDS.indexOf(u) !== -1) return 'xp';
+    return 'xx';
+  }
 
   /** Split a component into [stem, ext]; ext is a trailing `.word` (else ''). */
   function splitExt(component) {
@@ -13,11 +30,11 @@
     return [c, ''];
   }
 
-  /** Tag name for a single token, or '' if the token is not a tag. `xkTODO` -> `TODO`. */
+  /** Tag name for a single token, or '' if not a tag. `xkTODO`->`TODO`, `xpGCC`->`GCC`. */
   function tagNameFromToken(token) {
-    if (!token || token.length <= TAG_PREFIX.length) return '';
-    if (token.slice(0, TAG_PREFIX.length) !== TAG_PREFIX) return '';
-    return token.slice(TAG_PREFIX.length);
+    if (!token || token.length <= PREFIX_LEN) return '';
+    if (TAG_PREFIXES.indexOf(token.slice(0, PREFIX_LEN)) === -1) return '';
+    return token.slice(PREFIX_LEN);
   }
 
   /** Peel trailing `xk…` tokens off a stem; returns { base, tags } with tags in file order. */
@@ -90,7 +107,8 @@
       uniq.push(s);
     }
     if (!uniq.length) return base + ext;
-    const tagStr = uniq.map((t) => TAG_PREFIX + t).join(' ');
+    // Pick the family by word; tag bodies are always uppercase by convention.
+    const tagStr = uniq.map((t) => prefixForTag(t) + t.toUpperCase()).join(' ');
     return (base ? base + ' ' : '') + tagStr + ext;
   }
 
@@ -157,6 +175,8 @@
 
   global.TagBrowserTags = {
     TAG_PREFIX,
+    TAG_PREFIXES,
+    prefixForTag,
     splitExt,
     tagNameFromToken,
     parseSegmentTags,

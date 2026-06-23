@@ -33,7 +33,7 @@ const { drive: createDriveClient } = require('@googleapis/drive');
 const { OAuth2Client } = require('google-auth-library');
 const MsgReader = require('@kenjiuno/msgreader').default;
 
-// Populates globalThis.TagBrowserTags (same xk-tag rules as the renderer).
+// Populates globalThis.TagBrowserTags (same xk/xp/xx tag rules as the renderer).
 require(path.join(__dirname, 'tags.js'));
 const TagBrowserTags = globalThis.TagBrowserTags;
 

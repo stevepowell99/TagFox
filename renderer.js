@@ -102,7 +102,7 @@
     const KNOWN_BRACKET_TAGS_MAX = 5000;
     /** MRU subset (40) for search history / datalist order hint — not the tag bar source of truth. */
     let tagStoreOrder = [];
-    /** Global `xk…` tag names: rescan + adds; not scope-local (LS + userData JSON). */
+    /** Global `xk/xp/xx` tag names: rescan + adds; not scope-local (LS + userData JSON). */
     let knownBracketTagsList = [];
     let tagPrefsDiskTimer = null;
 
@@ -329,7 +329,7 @@
       document.body.classList.remove('tagfox-internal-path-drag');
       clearAllFavBarDropGaps();
     }
-    /** Last tag scan: Everything r=1 + `[ \\]xk` so we only index `xk…` tag tokens. */
+    /** Last tag scan: Everything r=1 + `[ \\]x[kpx]` so we only index `xk/xp/xx` tag tokens. */
     let tagDiscoveryRows = [];
     /** Last non-empty scan — keeps tag pills when a later scan fails, returns empty, or races navigation. */
     let tagDiscoveryRowsLastGood = [];
@@ -6577,7 +6577,7 @@
       return '';
     }
 
-    /** Strip trailing extension (last `.` segment) for prefill only; keeps `xk…` tags etc. in the stem. */
+    /** Strip trailing extension (last `.` segment) for prefill only; keeps `xk/xp/xx` tags etc. in the stem. */
     function basenameStemIgnoringExtension(segment) {
       const s = String(segment ?? '');
       const d = s.lastIndexOf('.');
@@ -8906,8 +8906,8 @@
       const mr = Math.max(1, parseInt(document.getElementById('maxResults').value, 10) || 60);
       const countCap = Math.min(50000, Math.max(5000, mr));
       const ui = searchOptionsFromUI();
-      // r=1: a space or path sep before `xk` so only tag tokens match; TagFox tags are `xkt1 xkt2`.
-      const bracketDiscoveryQuery = '[ \\\\]' + T.TAG_PREFIX;
+      // r=1: a space or path sep before any family prefix (xk/xp/xx) so only tag tokens match.
+      const bracketDiscoveryQuery = '[ \\\\]x[kpx]';
       searchDebugLog('tagDiscovery.request', {
         prune: pruneDeadRemembered,
         searchText: bracketDiscoveryQuery,
@@ -8996,7 +8996,7 @@
           const n = rawRows.length;
           const extra =
             storeChanged || knownChanged || fullScanActiveChanged ? ' Dropped tags not in this scan.' : '';
-          setStatusMain('Tag scan: ' + n + ' path(s) with xk… tags (full index).' + extra);
+          setStatusMain('Tag scan: ' + n + ' path(s) with xk/xp/xx tags (full index).' + extra);
         }
       }
       renderTagBar();
@@ -9021,9 +9021,10 @@
       if (!inner) inner = t.replace(/[^a-z0-9_-]/gi, '');
       if (!inner) return '';
       const esc = escapeEverythingRegexFragment(inner);
-      // space/sep before xk, then the tag as a whole token, anchored to the leaf segment
-      // (a boundary then non-backslash to end, or end) so a tagged parent folder does not match.
-      return '(?i)[ \\\\]' + T.TAG_PREFIX + esc + '(?:[ .][^\\\\]*)?$';
+      // space/sep before the tag's own family prefix, then the tag as a whole token, anchored to
+      // the leaf segment (a boundary then non-backslash to end, or end) so a tagged parent folder
+      // does not match.
+      return '(?i)[ \\\\]' + T.prefixForTag(inner) + esc + '(?:[ .][^\\\\]*)?$';
     }
 
     /** Narrow Everything: AND (space) or OR (|) of regex: clauses per active tag. */
@@ -12123,7 +12124,7 @@
         rescan.innerHTML = faRescan15;
         rescan.setAttribute('aria-label', 'Refresh search and rescan all tags');
         rescan.title =
-          'Re-run the main Everything search, then a full-index xk… tag scan. Prunes remembered or active tag filters that do not appear in that scan. (Ordinary searches do not run this scan — use this when the tag bar is stale.)';
+          'Re-run the main Everything search, then a full-index xk/xp/xx tag scan. Prunes remembered or active tag filters that do not appear in that scan. (Ordinary searches do not run this scan — use this when the tag bar is stale.)';
         rescan.addEventListener('click', () => {
           void (async () => {
             rescan.disabled = true;
@@ -12842,8 +12843,8 @@
         btnTags.className =
           'btn btn-sm btn-outline-primary tagfox-scope-bar-icon-btn d-inline-flex align-items-center justify-content-center';
         btnTags.title = rowIsFolder(row)
-          ? 'Edit xk… tags in the folder name'
-          : 'Edit xk… tags in the file name';
+          ? 'Edit xk/xp/xx tags in the folder name'
+          : 'Edit xk/xp/xx tags in the file name';
         btnTags.setAttribute('aria-label', 'Edit tags');
         /* Same tag icon as tag toolbar lead (#tagBar row in index.html). */
         btnTags.innerHTML = '<i class="fa-solid fa-tags" aria-hidden="true"></i>';

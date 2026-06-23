@@ -62,7 +62,9 @@ Welcome to TagFox — a fast, keyboard-friendly file manager powered by instant 
 
 TagFox combines **instant search** (powered by Everything) with a **folder tree view** — so you see results *in context*. You can navigate folders, tag files, preview documents, and manage simple project specifications and tasks without ever opening File Explorer.
 
-**Tags** are labels like `draft`, `urgent`, or `2026` that you attach to files and folders to organise your work. You can filter by tag to instantly find everything marked that way. Windows has no native equivalent, so TagFox fills that gap. TagFox stores tags in the filename itself (e.g. `Report xkdraft xkurgent.docx`), so they travel with the file — no database, no hidden metadata. They work in Explorer, Google Drive, zip exports, everywhere.
+**Tags** are labels like `DRAFT`, `URGENT`, or `2026` that you attach to files and folders to organise your work. You can filter by tag to instantly find everything marked that way. Windows has no native equivalent, so TagFox fills that gap. TagFox stores tags in the filename itself (e.g. `Report xxDRAFT xxURGENT.docx`), so they travel with the file — no database, no hidden metadata. They work in Explorer, Google Drive, zip exports, everywhere.
+
+Tags come in three families, chosen automatically from the word you type: `xk` for status (`TODO`, `WAITING`, `LATER`), `xp` for a person (`GCC`, `STEVE`, `CLAUDE`), and `xx` for any other label. Bodies are always uppercase. You do not type the prefix — type `todo` and TagFox writes `xkTODO`; type anything else and it becomes an `xx` label.
 
 ### 🤔 The problems TagFox solves
 
@@ -78,7 +80,7 @@ Meanwhile, tools like Google Drive train you to type a word and expect the right
 - ⭐ **Favourite folders & saved searches** — drag chips to reorder; folders: `Ctrl`+`Shift`+`1`…`9`; saved searches: `Ctrl`+`1`…`9` (or click).
 - 🔍 **Three view switches** — Flat/Tree, Subfolders on/off, Files+folders/Folders only (combine freely). Plus recency buttons (1h, 1d, 1w, 1m, 1y) to filter “what changed recently”.
 - 👁️ **Fast previews** — images, PDFs, Word, Excel, PowerPoint, text, JSON, markdown and more, right in the Viewer panel.
-- 🏷️ **Filename tags** — add, remove and filter by `xktag` labels. Tags scan your folder automatically; click them to filter results.
+- 🏷️ **Filename tags** — add, remove and filter by `xk`/`xp`/`xx` tags. Tags scan your folder automatically; click them to filter results.
 - 📋 **Add TODO** — create a small markdown file tagged `xkTODO` in the current folder, right from the Viewer panel.
 - 📝 **Folder docs** — Viewer loads the first of `-readme.md` → `-readme.txt` → `readme.md` → `readme.txt` → `claude.md` → `agents.md` → `about.md` → `about.txt` → `context.md` → `context.txt` → `index.md` → `index.txt` (details under **📁 Files & folders**).
 - 📦 **Shelf** — a visual staging area for files, like a kind of clipboard. Copy items onto the Shelf, navigate to another folder, paste them. No tabs or split panes needed.
@@ -138,9 +140,9 @@ Three icon-pair switches next to the search box — combine them freely:
 ### 🏷️ Tags
 
 - Tags appear as coloured chips in the tag bar (below the breadcrumb). Click a tag to filter results; click again to remove the filter. Counts in parentheses reflect the current result list (after filters), capped by **Max results**.
-- The **↻** control at the end of the tag row re-runs the main search and rescans the whole index for `xk…` tag tokens, pruning remembered/active tags that no longer appear — use if the bar looks stale or after bulk renames outside TagFox. Ordinary searches do not do that full scan.
+- The **↻** control at the end of the tag row re-runs the main search and rescans the whole index for `xk`/`xp`/`xx` tag tokens, pruning remembered/active tags that no longer appear — use if the bar looks stale or after bulk renames outside TagFox. Ordinary searches do not do that full scan.
 - To edit a file's tags: select the row and press `Ctrl`+`T`, or use the **Tags** button in the bulk bar. **Add** or removing a chip renames on disk immediately. When a **current folder** is set, renames must stay under that path.
-- Tags are stored as trailing `xk…` tokens before the extension — e.g. `Notes xkdraft.md` or a folder `Project xk2024 xkclientA`. A word is a tag only when it starts with `xk`; anything else is literal text.
+- Tags are stored as trailing prefixed tokens before the extension — e.g. `Notes xxDRAFT.md` or a folder `Project xx2024 xxCLIENTA`. A word is a tag only when it starts with `xk`, `xp` or `xx`; anything else is literal text.
 
 ### 📄 Viewer panel
 

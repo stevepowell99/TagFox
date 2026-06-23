@@ -1,5 +1,8 @@
 /**
- * One-off migration: rename old `[(tag1,tag2)]` filenames to the new `xktag1 xktag2` form.
+ * One-off migration: rename old `[(tag1,tag2)]` filenames to the new prefixed form.
+ * Family and case are decided by tags.js (buildTaggedComponent): status -> xk, person -> xp,
+ * label -> xx, bodies uppercased. Old quirks handled here: a leading `@` on a tag is dropped
+ * (`@gcc` -> `GCC`), and a retired `active` tag is dropped (falling back to `TODO` if it was alone).
  *
  * Usage (dry run by default, prints the planned renames and changes nothing):
  *   node scripts/migrate-bracket-tags.js "C:\path\to\folder" ["C:\another"] ...
@@ -33,12 +36,15 @@ function oldParse(component) {
   if (rb < 0) return null;
   const inner = component.slice(lb + 1, rb);
   if (!(inner.startsWith('(') && inner.endsWith(')'))) return null;
-  const tags = inner
+  const raw = inner
     .slice(1, -1)
     .split(',')
     .map((t) => t.trim())
     .filter(Boolean);
-  if (!tags.length) return null;
+  if (!raw.length) return null;
+  // Drop leading @ on owner tags and the retired `active`; fall back to TODO if nothing survives.
+  let tags = raw.map((t) => t.replace(/^@/, '')).filter((t) => t.toUpperCase() !== 'ACTIVE');
+  if (!tags.length) tags = ['TODO'];
   return { pretty: component.slice(0, lb) + component.slice(rb + 1), tags };
 }
 
