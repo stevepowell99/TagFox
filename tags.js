@@ -30,11 +30,17 @@
     return [c, ''];
   }
 
+  /** A real tag body is uppercase letters/digits by convention; this is what keeps `xkeyboard`,
+   *  `xpath` and other lowercase look-alikes from being read as tags. */
+  const TAG_BODY_RE = /^[A-Z0-9]+$/;
+
   /** Tag name for a single token, or '' if not a tag. `xkTODO`->`TODO`, `xpGCC`->`GCC`. */
   function tagNameFromToken(token) {
     if (!token || token.length <= PREFIX_LEN) return '';
     if (TAG_PREFIXES.indexOf(token.slice(0, PREFIX_LEN)) === -1) return '';
-    return token.slice(PREFIX_LEN);
+    const body = token.slice(PREFIX_LEN);
+    if (!TAG_BODY_RE.test(body)) return '';
+    return body;
   }
 
   /** Peel trailing `xk…` tokens off a stem; returns { base, tags } with tags in file order. */
@@ -98,8 +104,9 @@
     const uniq = [];
     const seen = new Set();
     for (const t of tags || []) {
-      // No spaces inside a tag: space is the tag delimiter on disk.
-      const s = String(t).trim().replace(/\s+/g, '');
+      // Only letters/digits in a tag body, so what we write always reads back as a tag
+      // (space is the on-disk delimiter; punctuation/spaces would break recognition).
+      const s = String(t).replace(/[^A-Za-z0-9]/g, '');
       if (!s) continue;
       const k = s.toLowerCase();
       if (seen.has(k)) continue;
