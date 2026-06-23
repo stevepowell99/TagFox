@@ -1167,6 +1167,39 @@
       else if (!err) bumpFileFocusVisit(fp);
     }
 
+    /* Open in gmist (the Drive-only markdown web editor). gmist opens a Drive file by its Drive file id, which
+       TagFox reads off the local mirror via the same resolver as Open in Google Workspace, then deep-links to
+       the worker's /open route in the default browser (where Steve is signed into gmist). */
+    const GMIST_BASE_URL = 'https://mist.broad-smoke-cc64.workers.dev';
+    const GMIST_EXT = new Set(['md', 'qmd']);
+
+    /** A markdown file living under a Google Drive mount: the only rows gmist can open. */
+    function rowEligibleForGmist(fp) {
+      const s = String(fp || '');
+      const base = T.baseName(s);
+      const dot = base.lastIndexOf('.');
+      const ext = dot >= 0 ? base.slice(dot + 1).toLowerCase() : '';
+      if (!GMIST_EXT.has(ext)) return false;
+      return /[\\/]My Drive [(]/i.test(s) || /\.shortcut-targets-by-id|\.shortcuts-by-id/i.test(s);
+    }
+
+    async function openRowInGmist(fp) {
+      if (!window.tagBrowser || typeof window.tagBrowser.resolveGoogleDriveFileId !== 'function') {
+        setStatusMain('Open in gmist is not available.');
+        return;
+      }
+      setStatusMain('Opening in gmist…');
+      const r = await window.tagBrowser.resolveGoogleDriveFileId({ fullPath: fp });
+      if (!r || !r.ok || !r.fileId) {
+        setStatusMain('Open in gmist: could not find this file in Google Drive.');
+        return;
+      }
+      const url = GMIST_BASE_URL + '/open?file=' + encodeURIComponent(r.fileId);
+      const opened = await window.tagBrowser.openUrlDefaultBrowser({ url });
+      if (opened && opened.ok === false) setStatusMain(opened.error || 'Could not open browser for gmist.');
+      else setStatusMain('Opening in gmist (browser)…');
+    }
+
     /** Text files opened in the RHS viewer editor. Special rendered previews are deliberately bypassed here so these are editable. */
     const TEXT_EDIT_EXT = new Set([
       'md',
@@ -12878,6 +12911,21 @@
           }
           await openFileDefaultOrGoogleWorkspace(fp);
         });
+        /* Drive-resident markdown only: deep-link the row into the gmist web editor. */
+        let btnGmist = null;
+        if (!rowIsFolder(row) && rowEligibleForGmist(fp)) {
+          btnGmist = document.createElement('button');
+          btnGmist.type = 'button';
+          btnGmist.className =
+            'btn btn-sm btn-outline-secondary tagfox-scope-bar-icon-btn d-inline-flex align-items-center justify-content-center';
+          btnGmist.title = 'Open in gmist (Google Drive markdown editor)';
+          btnGmist.setAttribute('aria-label', 'Open in gmist');
+          btnGmist.innerHTML = '<i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>';
+          btnGmist.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            await openRowInGmist(fp);
+          });
+        }
         const btnClip = document.createElement('button');
         btnClip.type = 'button';
         btnClip.className =
@@ -12949,6 +12997,7 @@
         });
 
         tdActInner.appendChild(btnOpen);
+        if (btnGmist) tdActInner.appendChild(btnGmist);
         tdActInner.appendChild(btnScopeParent);
         tdActInner.appendChild(btnClip);
         tdActInner.appendChild(btnTags);

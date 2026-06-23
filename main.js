@@ -3647,6 +3647,16 @@ ipcMain.handle('google-drive-api-ping', async () => {
 
 ipcMain.handle('resolve-shell-shortcut', async (_event, { fullPath }) => resolveShellShortcutLnkWin(fullPath));
 
+/** Drive file id for a local mirrored path (same resolver as Open in Google Workspace); used to deep-link the row into gmist. */
+ipcMain.handle('resolve-google-drive-file-id', async (_event, { fullPath } = {}) => {
+  try {
+    const id = await resolveGoogleDriveFileIdForPath(String(fullPath || ''));
+    return { ok: !!id, fileId: id || null };
+  } catch (e) {
+    return { ok: false, fileId: null, error: String(e.message || e) };
+  }
+});
+
 /**
  * Windows shell Recent: newest .lnk files in %AppData%\...\Recent, resolved to their targets in one PS run.
  * pathType is the PowerShell Test-Path filter: 'Container' for folders, 'Leaf' for files. label is for

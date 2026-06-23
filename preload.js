@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   resolveFolderViewerDoc: (payload) => ipcRenderer.invoke('resolve-folder-viewer-doc', payload),
   collectGlobalViewerDocs: (payload) => ipcRenderer.invoke('collect-global-viewer-docs', payload),
   resolveShellShortcut: (payload) => ipcRenderer.invoke('resolve-shell-shortcut', payload),
+  resolveGoogleDriveFileId: (payload) => ipcRenderer.invoke('resolve-google-drive-file-id', payload),
   /** Windows: folder targets from shell Recent (.lnk), newest first (empty on other OS). */
   windowsRecentFolders: () => ipcRenderer.invoke('windows-recent-folders'),
   /** Windows: file targets from shell Recent (.lnk), newest first (empty on other OS). */
