@@ -1200,7 +1200,10 @@
         setStatusMain('Open in gmist: ' + why);
         return;
       }
-      const url = GMIST_BASE_URL + '/open?file=' + encodeURIComponent(r.fileId);
+      /* A harmless, readable breadcrumb the target ignores: the path from the user home, so the URL is legible. */
+      const crumb = String(r.relPath || '').trim();
+      const crumbSuffix = crumb ? '&p=' + crumb.split('/').map(encodeURIComponent).join('/') : '';
+      const url = GMIST_BASE_URL + '/open?file=' + encodeURIComponent(r.fileId) + crumbSuffix;
       const opened = await window.tagBrowser.openUrlDefaultBrowser({ url });
       if (opened && opened.ok === false) setStatusMain(opened.error || 'Could not open browser for gmist.');
       else setStatusMain('Opening in gmist (browser)…');

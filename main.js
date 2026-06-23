@@ -3696,6 +3696,22 @@ ipcMain.handle('google-drive-api-ping', async () => {
 
 ipcMain.handle('resolve-shell-shortcut', async (_event, { fullPath }) => resolveShellShortcutLnkWin(fullPath));
 
+/** Human-readable path relative to the user home (forward slashes); a harmless URL breadcrumb ignored by targets. */
+function sanitisedPathFromUserRoot(fullPath) {
+  const fp = String(fullPath || '').trim();
+  if (!fp) return '';
+  let rel;
+  try {
+    rel = path.relative(os.homedir(), fp);
+  } catch (_) {
+    rel = '';
+  }
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
+    rel = fp.replace(/^[A-Za-z]:[\\/]+/, ''); // outside home: just drop the drive letter
+  }
+  return rel.replace(/\\/g, '/');
+}
+
 /** Robust Drive file id for a local mirrored path (ADS, else parent-scoped/global name lookup); deep-links the row into gmist. */
 ipcMain.handle('resolve-google-drive-file-id', async (_event, { fullPath } = {}) => {
   try {
@@ -3705,6 +3721,7 @@ ipcMain.handle('resolve-google-drive-file-id', async (_event, { fullPath } = {})
       fileId: (r && r.fileId) || null,
       reason: r && r.reason,
       error: r && r.error,
+      relPath: sanitisedPathFromUserRoot(fullPath),
     };
   } catch (e) {
     return { ok: false, fileId: null, error: String(e.message || e) };
