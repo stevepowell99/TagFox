@@ -10997,6 +10997,7 @@
         const rf = localStorage.getItem(LS.recencyFilter);
         setRecencyFilterMode(['all', '1h', '1d', '1w', '1m', '1y'].includes(rf) ? rf : 'all');
       }
+      restoreDeadlineFilter();
       sortColumn = localStorage.getItem(LS.sortBy) || 'name';
       if (sortColumn === 'ext') sortColumn = 'name';
       if (!['name', 'path', 'date_modified', 'size'].includes(sortColumn)) sortColumn = 'name';
@@ -11788,6 +11789,85 @@
       return wrap;
     }
 
+    /* ---- Deadline (xd-) range filter -------------------------------------------------------- */
+    /** Active deadline ranges (overdue|today|thisweek|nextweek); empty = no deadline filter. */
+    let activeDeadlineRanges = new Set();
+    const LS_DEADLINE_FILTER = 'tagfox-deadline-filter';
+    const DEADLINE_RANGE_IDS = ['overdue', 'today', 'thisweek', 'nextweek'];
+
+    function isoLocalDate(d) {
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return d.getFullYear() + '-' + m + '-' + day;
+    }
+    /** Today plus this/next week bounds (Monday-start, UK), as comparable ISO strings. */
+    function deadlineRangeBounds() {
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      const dow = (now.getDay() + 6) % 7; // 0 = Monday
+      const add = (base, n) => {
+        const x = new Date(base);
+        x.setDate(x.getDate() + n);
+        return x;
+      };
+      const thisMon = add(now, -dow);
+      return {
+        today: isoLocalDate(now),
+        thisWeekEnd: isoLocalDate(add(thisMon, 6)),
+        nextWeekStart: isoLocalDate(add(thisMon, 7)),
+        nextWeekEnd: isoLocalDate(add(thisMon, 13)),
+      };
+    }
+    /** ISO date strings compare lexically == chronologically. */
+    function deadlineDateInActiveRange(dateStr, b) {
+      for (const r of activeDeadlineRanges) {
+        if (r === 'overdue' && dateStr < b.today) return true;
+        if (r === 'today' && dateStr === b.today) return true;
+        if (r === 'thisweek' && dateStr >= b.today && dateStr <= b.thisWeekEnd) return true;
+        if (r === 'nextweek' && dateStr >= b.nextWeekStart && dateStr <= b.nextWeekEnd) return true;
+      }
+      return false;
+    }
+    /** Deadline dates (xd- bodies) on a row, from its leaf name and row.name. */
+    function rowDeadlineDates(r) {
+      const seen = new Set();
+      const collect = (name) => {
+        for (const t of T.parseSegmentTags(String(name || '')).tags) {
+          if (/^\d{4}-\d{2}-\d{2}$/.test(t)) seen.add(t);
+        }
+      };
+      collect(T.baseName(fullPathForRow(r) || ''));
+      collect(r && r.name);
+      return [...seen];
+    }
+    function deadlineFilterActive() {
+      return activeDeadlineRanges.size > 0;
+    }
+    function syncDeadlineFilterUi() {
+      for (const id of DEADLINE_RANGE_IDS) {
+        const el = document.getElementById(
+          'optDeadline' + id.charAt(0).toUpperCase() + id.slice(1).replace('week', 'Week')
+        );
+        if (el) el.checked = activeDeadlineRanges.has(id);
+      }
+      const wrap = document.querySelector('.tagfox-deadline-filter-wrap');
+      if (wrap) wrap.classList.toggle('tagfox-deadline-filter-wrap--active', deadlineFilterActive());
+    }
+    function persistDeadlineFilter() {
+      localStorage.setItem(LS_DEADLINE_FILTER, JSON.stringify([...activeDeadlineRanges]));
+    }
+    function restoreDeadlineFilter() {
+      try {
+        const arr = JSON.parse(localStorage.getItem(LS_DEADLINE_FILTER) || '[]');
+        activeDeadlineRanges = new Set(
+          Array.isArray(arr) ? arr.filter((x) => DEADLINE_RANGE_IDS.includes(x)) : []
+        );
+      } catch (_) {
+        activeDeadlineRanges = new Set();
+      }
+      syncDeadlineFilterUi();
+    }
+
     /** Tag pills only (no recency / no Hide special / ~); base row set for “did recency remove anything?”. */
     function filteredRowsAfterTagsOnly() {
       let rows = lastRows.slice();
@@ -11826,6 +11906,10 @@
         } else if (treeRecencyDropRealFolderHits()) {
           rows = rows.filter((r) => !rowIsFolder(r));
         }
+      }
+      if (deadlineFilterActive()) {
+        const b = deadlineRangeBounds();
+        rows = rows.filter((r) => rowDeadlineDates(r).some((d) => deadlineDateInActiveRange(d, b)));
       }
       return rows;
     }
@@ -14022,6 +14106,9 @@
       const recursive = showSub || !hasScope;
       let searchText = composeScopedEverythingSearch(ceilingNorms, rootFolder, query, recursive);
       searchText = appendActiveTagToEverythingQuery(searchText);
+      // Deadline range filter: narrow to files carrying any xd- deadline; the exact range is
+      // applied client-side (\s, never a literal space, so Everything keeps it as one regex term).
+      if (deadlineFilterActive()) searchText = (String(searchText).trim() + ' regex:[\\s\\\\]xd-').trim();
       if (fo) searchText = (String(searchText).trim() + ' folder:').trim();
       else if (fileOnly) searchText = (String(searchText).trim() + ' file: sort-mix:').trim();
       else searchText = (String(searchText).trim() + ' sort-mix:').trim();
@@ -14350,6 +14437,20 @@
         saveSettings();
         commitSearchHistoryNow();
         /* dm: is baked into the HTTP search — must re-run Everything or lastRows stays stale. */
+        void runSearchNow();
+      });
+    });
+    ['optDeadlineOverdue', 'optDeadlineToday', 'optDeadlineThisWeek', 'optDeadlineNextWeek'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('change', () => {
+        const range = el.value;
+        if (el.checked) activeDeadlineRanges.add(range);
+        else activeDeadlineRanges.delete(range);
+        persistDeadlineFilter();
+        syncDeadlineFilterUi();
+        commitSearchHistoryNow();
+        /* xd- narrowing is baked into the Everything query, so re-run rather than client-filter only. */
         void runSearchNow();
       });
     });
@@ -14777,6 +14878,13 @@
         void addModalTagFromInput();
       }
     });
+    document.getElementById('tagModalAddDateBtn')?.addEventListener('click', () => {
+      const di = document.getElementById('tagModalDateInput');
+      const v = (di && di.value || '').trim(); // ISO yyyy-mm-dd; buildTaggedComponent writes it as xd-
+      if (!v) return;
+      di.value = '';
+      void applyModalAddTag(v);
+    });
 
     /** Clipboard image in folder-doc / file markdown editors → `.images/paste-<ts>.png` + link at caret. */
     async function onMarkdownViewerPasteImage(e, which) {
@@ -15035,6 +15143,12 @@
       const inp = document.getElementById('quickTodoTagInput');
       const value = inp ? inp.value : '';
       if (inp) inp.value = '';
+      addQuickTodoTag(value);
+    });
+    document.getElementById('quickTodoAddDateBtn')?.addEventListener('click', () => {
+      const di = document.getElementById('quickTodoDateInput');
+      const value = di ? di.value : ''; // ISO yyyy-mm-dd; stored as xd- on create
+      if (di) di.value = '';
       addQuickTodoTag(value);
     });
     document.getElementById('quickTodoTitleInput')?.addEventListener('keydown', (e) => {

@@ -151,6 +151,27 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 .tagfox-recency-filter-wrap:not(.tagfox-recency-filter-wrap--active) {
   opacity: 0.55;
 }
+/* Deadline filter: quiet amber tray when a range is on; dim until then (mirrors recency). */
+.tagfox-deadline-filter-wrap--active {
+  background-color: rgba(180, 83, 9, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(180, 83, 9, 0.28);
+}
+.tagfox-deadline-filter-wrap--active .tagfox-deadline-lead {
+  color: rgba(146, 64, 14, 0.85) !important;
+}
+[data-bs-theme="dark"] .tagfox-deadline-filter-wrap--active {
+  background-color: rgba(251, 191, 36, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.32);
+}
+[data-bs-theme="dark"] .tagfox-deadline-filter-wrap--active .tagfox-deadline-lead {
+  color: rgba(253, 224, 71, 0.9) !important;
+}
+.tagfox-deadline-filter-wrap {
+  transition: opacity 0.15s ease;
+}
+.tagfox-deadline-filter-wrap:not(.tagfox-deadline-filter-wrap--active) {
+  opacity: 0.55;
+}
 /* Tag row: no filter active — quieter tag lead, pills, and AND/OR (meaningful once ≥1 pill on). */
 .tag-toolbar-row:not(:has(#tagBar .tag-bar-pill-active)) .tagfox-toolbar-lead:has(> .fa-solid.fa-tags) {
   opacity: 0.45;

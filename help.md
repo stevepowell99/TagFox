@@ -146,6 +146,7 @@ Three icon-pair switches next to the search box — combine them freely:
 - To edit a file's tags: select the row and press `Ctrl`+`T`, or use the **Tags** button in the bulk bar. **Add** or removing a chip renames on disk immediately. When a **current folder** is set, renames must stay under that path.
 - Tags are stored as trailing prefixed tokens before the extension, e.g. `Notes xxINFO.md`. A token is a tag only when it is a vocabulary word with its family prefix (e.g. `xkTODO`, `xpGCC`, `xxPUB`); anything else is literal text.
 - Tag files, not folders. Renaming a folder to tag it is risky (it breaks shortcuts, saved paths and shared-folder names). To tag a folder, tag a readme inside it: any `.md` whose name contains `readme` is treated as the folder's doc, so `TreeAid readme xkTODO.md` both tags the folder and still shows as its folder doc. Never rename `CLAUDE.md` to tag it — that name is special and renaming it would hide it from Claude.
+- **Deadlines.** Set a deadline with the date picker in the tag editor or the Add TODO box; it is stored as `xd-2026-07-15`. The deadline buttons on the toolbar (Overdue, Today, This wk, Next wk) filter results to files whose deadline falls in that range; turn several on for the union. Week ranges run Monday to Sunday, and This wk includes today.
 
 ### 📄 Viewer panel
 
