@@ -4821,6 +4821,17 @@ ipcMain.on('start-drag-files', (event, paths) => {
         ? { file: dragList[0], icon: START_DRAG_ICON }
         : { files: dragList, icon: START_DRAG_ICON };
     event.sender.startDrag(payload);
+    /* startDrag is synchronous and routinely leaves Windows keyboard focus parked off the page when the drag
+       ends with TagFox still foreground (drop inside the window, or cancel with Esc): text boxes then look
+       focused but ignore keys until an alt-tab. Run the same blur+focus cycle the modal path uses to re-route
+       the keyboard, but only when we are still the focused window, so an external drop into Explorer does not
+       get focus yanked back to TagFox. */
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win && !win.isDestroyed() && process.platform === 'win32' && win.isFocused()) {
+      win.blur();
+      win.focus();
+      event.sender.focus();
+    }
   } catch (e) {
     console.error('startDrag', e);
   } finally {

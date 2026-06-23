@@ -14233,10 +14233,14 @@
       scheduleSearch();
       scheduleSearchHistoryCommit();
     });
-    // Electron/Windows: sometimes the page keeps rendering but keyboard focus is stuck in window chrome.
-    // Re-focus webContents first so mouse clicks on query always place caret in the box.
+    // Electron/Windows: sometimes the page keeps rendering but keyboard focus is stuck in window chrome
+    // (after a native drag, a child window, or some button clicks). win.focus()/webContents.focus() are
+    // no-ops while the window is already foreground, so the light pull cannot cure it: clicking the box did
+    // nothing and the user had to alt-tab away and back. A genuine click now runs the heavy blur+focus cycle
+    // (the programmatic alt-tab) so the box always becomes editable on click. pointerdown only, because the
+    // focus handler fires programmatically after every search and a heavy cycle there would loop via window.focus.
     document.getElementById('query').addEventListener('pointerdown', () => {
-      pullWebContentsKeyboardFocus();
+      recoverSearchBoxKeyboardFocus();
     });
     document.getElementById('query').addEventListener('focus', () => {
       pullWebContentsKeyboardFocus();
@@ -15051,6 +15055,22 @@
       if (!el) return;
       el.focus({ preventScroll: true });
       if (selectText && typeof el.select === 'function') el.select();
+      forceWebContentsKeyboardFocus();
+    }
+
+    /* Heavy keyboard-focus recovery for a genuine click on the search box. The light pull is a no-op while
+       the window is already foreground, so a stuck keyboard is only cured by the blur+focus cycle (the
+       programmatic form of the alt-tab the user would otherwise do). Throttled so a pointerdown that is
+       followed by a programmatic focus does not cycle twice in quick succession. */
+    let lastSearchBoxFocusRecoverMs = 0;
+    function recoverSearchBoxKeyboardFocus() {
+      if (tagfoxModalBlocksWorkAreaFocus()) return;
+      const now = Date.now();
+      if (now - lastSearchBoxFocusRecoverMs < 400) {
+        pullWebContentsKeyboardFocus();
+        return;
+      }
+      lastSearchBoxFocusRecoverMs = now;
       forceWebContentsKeyboardFocus();
     }
 
