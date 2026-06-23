@@ -197,6 +197,55 @@ async function driveFilesListExactBasename(drive, filePath) {
   }
 }
 
+/** Non-trashed Drive file with this basename INSIDE a specific parent folder (scopes away same-name files elsewhere). */
+async function driveFileIdInFolderByName(drive, folderId, filePath) {
+  const base = path.basename(String(filePath || ''));
+  if (!base || !folderId) return null;
+  const q = `name = '${escapeDriveQueryNameLiteral(base)}' and '${escapeDriveQueryNameLiteral(folderId)}' in parents and trashed = false`;
+  try {
+    const res = await drive.files.list({
+      q,
+      pageSize: 10,
+      fields: 'files(id)',
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+    });
+    const files = (res && res.data && res.data.files) || [];
+    if (files.length === 1 && files[0] && files[0].id) return String(files[0].id).trim();
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Robust Drive file id for a local mirror path, the same escalation as Open in Google Workspace but
+ * collision-safe: the local :user.drive.id stream, else hunt the PARENT folder id via a sibling that does
+ * carry an id and look this file up scoped to that folder, else a unique exact-name match across the Drive.
+ */
+async function resolveGoogleDriveFileIdRobust(fullPath) {
+  const direct = await resolveGoogleDriveFileIdForPath(fullPath); // ADS id, or shortcut JSON for .gdoc/.gsheet/.gslides
+  if (direct) return { ok: true, fileId: direct, reason: 'ads-or-shortcut' };
+  let drive;
+  try {
+    drive = await getGoogleDriveMetadataClientSingleAccount();
+  } catch (e) {
+    return { ok: false, reason: 'no-drive-api', error: String((e && e.message) || e || '') };
+  }
+  const parentDir = path.dirname(String(fullPath || ''));
+  const folder = await inferGoogleDriveFolderIdFromChildItems(parentDir, drive);
+  if (folder && folder.ok && folder.folderId) {
+    const id = await driveFileIdInFolderByName(drive, folder.folderId, fullPath);
+    if (id) return { ok: true, fileId: id, reason: 'parent-scoped-name' };
+  }
+  const byName = await tryResolveDriveFileIdViaDriveNameSearch(drive, fullPath);
+  if (byName && byName.ok && byName.fileId) return { ok: true, fileId: byName.fileId, reason: byName.reason };
+  if (byName && byName.ok === false && byName.reason === 'drive-name-ambiguous') {
+    return { ok: false, reason: 'drive-name-ambiguous' };
+  }
+  return { ok: false, reason: 'unresolved' };
+}
+
 /**
  * When local :user.drive.id is missing, find the file in Drive by exact name and use its parent folder.
  * Only succeeds if exactly one non-trashed file matches (duplicate names → ambiguous).
@@ -3647,11 +3696,16 @@ ipcMain.handle('google-drive-api-ping', async () => {
 
 ipcMain.handle('resolve-shell-shortcut', async (_event, { fullPath }) => resolveShellShortcutLnkWin(fullPath));
 
-/** Drive file id for a local mirrored path (same resolver as Open in Google Workspace); used to deep-link the row into gmist. */
+/** Robust Drive file id for a local mirrored path (ADS, else parent-scoped/global name lookup); deep-links the row into gmist. */
 ipcMain.handle('resolve-google-drive-file-id', async (_event, { fullPath } = {}) => {
   try {
-    const id = await resolveGoogleDriveFileIdForPath(String(fullPath || ''));
-    return { ok: !!id, fileId: id || null };
+    const r = await resolveGoogleDriveFileIdRobust(String(fullPath || ''));
+    return {
+      ok: !!(r && r.ok && r.fileId),
+      fileId: (r && r.fileId) || null,
+      reason: r && r.reason,
+      error: r && r.error,
+    };
   } catch (e) {
     return { ok: false, fileId: null, error: String(e.message || e) };
   }

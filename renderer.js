@@ -1191,7 +1191,13 @@
       setStatusMain('Opening in gmist…');
       const r = await window.tagBrowser.resolveGoogleDriveFileId({ fullPath: fp });
       if (!r || !r.ok || !r.fileId) {
-        setStatusMain('Open in gmist: could not find this file in Google Drive.');
+        const why =
+          r && r.reason === 'drive-name-ambiguous'
+            ? 'several Drive files share this name; rename one or open it from drive.google.com.'
+            : r && r.reason === 'no-drive-api'
+              ? 'Google Drive sign-in is needed first (Settings).'
+              : 'could not find this file in Google Drive.';
+        setStatusMain('Open in gmist: ' + why);
         return;
       }
       const url = GMIST_BASE_URL + '/open?file=' + encodeURIComponent(r.fileId);
