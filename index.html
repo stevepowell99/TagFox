@@ -558,14 +558,17 @@
               <i class="fa-solid fa-calendar-day"></i>
             </span>
             <div class="btn-group tagfox-segmented flex-shrink-0" role="group" aria-label="Deadline">
-              <input type="checkbox" class="btn-check" id="optDeadlineOverdue" value="overdue" autocomplete="off" />
+              <input type="radio" class="btn-check" name="tagFoxDeadlineFilter" id="optDeadlineOverdue" value="overdue" autocomplete="off" />
               <label class="btn btn-outline-secondary btn-sm" for="optDeadlineOverdue" title="Deadline before today">Overdue</label>
-              <input type="checkbox" class="btn-check" id="optDeadlineToday" value="today" autocomplete="off" />
+              <input type="radio" class="btn-check" name="tagFoxDeadlineFilter" id="optDeadlineToday" value="today" autocomplete="off" />
               <label class="btn btn-outline-secondary btn-sm" for="optDeadlineToday" title="Deadline today">Today</label>
-              <input type="checkbox" class="btn-check" id="optDeadlineThisWeek" value="thisweek" autocomplete="off" />
+              <input type="radio" class="btn-check" name="tagFoxDeadlineFilter" id="optDeadlineThisWeek" value="thisweek" autocomplete="off" />
               <label class="btn btn-outline-secondary btn-sm" for="optDeadlineThisWeek" title="Deadline today through Sunday">This wk</label>
-              <input type="checkbox" class="btn-check" id="optDeadlineNextWeek" value="nextweek" autocomplete="off" />
+              <input type="radio" class="btn-check" name="tagFoxDeadlineFilter" id="optDeadlineNextWeek" value="nextweek" autocomplete="off" />
               <label class="btn btn-outline-secondary btn-sm" for="optDeadlineNextWeek" title="Deadline next Mon to Sun">Next wk</label>
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="btnDeadlineClear" title="Clear deadline filter" aria-label="Clear deadline filter">
+                <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+              </button>
             </div>
           </div>
           <div class="position-relative flex-shrink-0 tagfox-advanced-wrap">

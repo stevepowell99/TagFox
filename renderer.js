@@ -11790,10 +11790,16 @@
     }
 
     /* ---- Deadline (xd-) range filter -------------------------------------------------------- */
-    /** Active deadline ranges (overdue|today|thisweek|nextweek); empty = no deadline filter. */
-    let activeDeadlineRanges = new Set();
+    /** Active deadline range (single, radio): overdue|today|thisweek|nextweek; '' = no filter. */
+    let activeDeadlineRange = '';
     const LS_DEADLINE_FILTER = 'tagfox-deadline-filter';
     const DEADLINE_RANGE_IDS = ['overdue', 'today', 'thisweek', 'nextweek'];
+    const DEADLINE_ELEM_ID = {
+      overdue: 'optDeadlineOverdue',
+      today: 'optDeadlineToday',
+      thisweek: 'optDeadlineThisWeek',
+      nextweek: 'optDeadlineNextWeek',
+    };
 
     function isoLocalDate(d) {
       const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -11820,12 +11826,11 @@
     }
     /** ISO date strings compare lexically == chronologically. */
     function deadlineDateInActiveRange(dateStr, b) {
-      for (const r of activeDeadlineRanges) {
-        if (r === 'overdue' && dateStr < b.today) return true;
-        if (r === 'today' && dateStr === b.today) return true;
-        if (r === 'thisweek' && dateStr >= b.today && dateStr <= b.thisWeekEnd) return true;
-        if (r === 'nextweek' && dateStr >= b.nextWeekStart && dateStr <= b.nextWeekEnd) return true;
-      }
+      const r = activeDeadlineRange;
+      if (r === 'overdue') return dateStr < b.today;
+      if (r === 'today') return dateStr === b.today;
+      if (r === 'thisweek') return dateStr >= b.today && dateStr <= b.thisWeekEnd;
+      if (r === 'nextweek') return dateStr >= b.nextWeekStart && dateStr <= b.nextWeekEnd;
       return false;
     }
     /** Deadline dates (xd- bodies) on a row, from its leaf name and row.name. */
@@ -11841,31 +11846,31 @@
       return [...seen];
     }
     function deadlineFilterActive() {
-      return activeDeadlineRanges.size > 0;
+      return !!activeDeadlineRange;
     }
     function syncDeadlineFilterUi() {
       for (const id of DEADLINE_RANGE_IDS) {
-        const el = document.getElementById(
-          'optDeadline' + id.charAt(0).toUpperCase() + id.slice(1).replace('week', 'Week')
-        );
-        if (el) el.checked = activeDeadlineRanges.has(id);
+        const el = document.getElementById(DEADLINE_ELEM_ID[id]);
+        if (el) el.checked = activeDeadlineRange === id;
       }
       const wrap = document.querySelector('.tagfox-deadline-filter-wrap');
       if (wrap) wrap.classList.toggle('tagfox-deadline-filter-wrap--active', deadlineFilterActive());
     }
     function persistDeadlineFilter() {
-      localStorage.setItem(LS_DEADLINE_FILTER, JSON.stringify([...activeDeadlineRanges]));
+      localStorage.setItem(LS_DEADLINE_FILTER, activeDeadlineRange);
     }
     function restoreDeadlineFilter() {
-      try {
-        const arr = JSON.parse(localStorage.getItem(LS_DEADLINE_FILTER) || '[]');
-        activeDeadlineRanges = new Set(
-          Array.isArray(arr) ? arr.filter((x) => DEADLINE_RANGE_IDS.includes(x)) : []
-        );
-      } catch (_) {
-        activeDeadlineRanges = new Set();
-      }
+      const v = localStorage.getItem(LS_DEADLINE_FILTER) || '';
+      activeDeadlineRange = DEADLINE_RANGE_IDS.includes(v) ? v : '';
       syncDeadlineFilterUi();
+    }
+    /** Set the active deadline range ('' clears) and re-run the search. */
+    function setDeadlineRange(range) {
+      activeDeadlineRange = DEADLINE_RANGE_IDS.includes(range) ? range : '';
+      persistDeadlineFilter();
+      syncDeadlineFilterUi();
+      commitSearchHistoryNow();
+      void runSearchNow();
     }
 
     /** Tag pills only (no recency / no Hide special / ~); base row set for “did recency remove anything?”. */
@@ -14440,19 +14445,15 @@
         void runSearchNow();
       });
     });
-    ['optDeadlineOverdue', 'optDeadlineToday', 'optDeadlineThisWeek', 'optDeadlineNextWeek'].forEach((id) => {
-      const el = document.getElementById(id);
-      if (!el) return;
+    document.querySelectorAll('input[name="tagFoxDeadlineFilter"]').forEach((el) => {
       el.addEventListener('change', () => {
-        const range = el.value;
-        if (el.checked) activeDeadlineRanges.add(range);
-        else activeDeadlineRanges.delete(range);
-        persistDeadlineFilter();
-        syncDeadlineFilterUi();
-        commitSearchHistoryNow();
-        /* xd- narrowing is baked into the Everything query, so re-run rather than client-filter only. */
-        void runSearchNow();
+        if (el.checked) setDeadlineRange(el.value);
       });
+    });
+    document.getElementById('btnDeadlineClear')?.addEventListener('click', () => {
+      const cur = document.querySelector('input[name="tagFoxDeadlineFilter"]:checked');
+      if (cur) cur.checked = false;
+      setDeadlineRange('');
     });
     ['optCase', 'optWholeWord', 'optPath', 'optDiacritics', 'optHideSpecial', 'optHideTilde'].forEach((id) => {
       document.getElementById(id).addEventListener('change', () => {
