@@ -66,6 +66,8 @@ TagFox combines **instant search** (powered by Everything) with a **folder tree 
 
 Tags come from a fixed vocabulary in three families: `xk` status (`TODO`, `WAITING`, `LATER`), `xp` person (`GCC`, `STEVE`, `CLAUDE`), and `xx` label (`PUB`, `INFO`, `KEY`). Only these words are treated as tags, which keeps ordinary filenames from being mistaken for tags. Bodies are always uppercase and you do not type the prefix; type `todo` and TagFox writes `xkTODO`. To add a word to the vocabulary, edit `TAG_VOCAB` in `tags.js`.
 
+A fourth family is deadlines: `xd-` plus an ISO date, e.g. `xd-2026-07-15`. Type a date like `2026-07-15` and TagFox writes `xd-2026-07-15`. The `xd-` marks it as a deadline so it stands apart from incidental dates in filenames; filter or search `xd-` to see every deadline.
+
 ### 🤔 The problems TagFox solves
 
 Searching the web feels instant. Searching your own hard drive? Painfully slow — unless you use an index tool like **Voidtools Everything**. But even Everything gives you a flat list of results without showing *where* things fit in your folder structure.

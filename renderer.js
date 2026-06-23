@@ -329,7 +329,7 @@
       document.body.classList.remove('tagfox-internal-path-drag');
       clearAllFavBarDropGaps();
     }
-    /** Last tag scan: Everything r=1 + `[ \\]x[kpx]` so we only index `xk/xp/xx` tag tokens. */
+    /** Last tag scan: Everything r=1 + `[ \\]x[kpxd]` so we only index `xk/xp/xx/xd` tag tokens. */
     let tagDiscoveryRows = [];
     /** Last non-empty scan — keeps tag pills when a later scan fails, returns empty, or races navigation. */
     let tagDiscoveryRowsLastGood = [];
@@ -8906,8 +8906,8 @@
       const mr = Math.max(1, parseInt(document.getElementById('maxResults').value, 10) || 60);
       const countCap = Math.min(50000, Math.max(5000, mr));
       const ui = searchOptionsFromUI();
-      // r=1: a space or path sep before any family prefix (xk/xp/xx) so only tag tokens match.
-      const bracketDiscoveryQuery = '[ \\\\]x[kpx]';
+      // r=1: a space or path sep before any family prefix (xk/xp/xx/xd) so only tag tokens match.
+      const bracketDiscoveryQuery = '[ \\\\]x[kpxd]';
       searchDebugLog('tagDiscovery.request', {
         prune: pruneDeadRemembered,
         searchText: bracketDiscoveryQuery,

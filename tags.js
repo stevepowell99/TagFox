@@ -22,10 +22,16 @@
     PUB: 'xx', INFO: 'xx', KEY: 'xx', // label
   };
 
-  /** Family prefix for a tag name (word, no prefix); unknown words default to a label (xx). */
+  /** Deadline date family `xd-`: an ISO date, e.g. `xd-2026-07-15`. Open (pattern, not vocab). */
+  const DATE_PREFIX = 'xd-';
+  const DATE_BODY_RE = /^\d{4}-\d{2}-\d{2}$/; // 2026-07-15
+  const DATE_TOKEN_RE = /^xd-\d{4}-\d{2}-\d{2}$/; // xd-2026-07-15
+
+  /** Family prefix for a tag name (no prefix): a date -> `xd-`, a vocab word -> its family, else `xx`. */
   function prefixForTag(name) {
-    const u = String(name || '').trim().toUpperCase();
-    return TAG_VOCAB[u] || 'xx';
+    const s = String(name || '').trim();
+    if (DATE_BODY_RE.test(s)) return DATE_PREFIX;
+    return TAG_VOCAB[s.toUpperCase()] || 'xx';
   }
 
   /** Split a component into [stem, ext]; ext is a trailing `.word` (else ''). */
@@ -36,10 +42,13 @@
     return [c, ''];
   }
 
-  /** Tag name for a token, or '' if not a tag. Must be a vocabulary word with its own family
-   *  prefix: `xkTODO`->`TODO`, `xpGCC`->`GCC`. `xxTODO`, `xkeyboard`, `xpITL` etc. are not tags. */
+  /** Tag name for a token, or '' if not a tag. A deadline `xd-2026-07-15`->`2026-07-15`; otherwise a
+   *  vocabulary word with its own family prefix: `xkTODO`->`TODO`, `xpGCC`->`GCC`. `xxTODO`,
+   *  `xkeyboard`, `xpITL` etc. are not tags. */
   function tagNameFromToken(token) {
-    if (!token || token.length <= PREFIX_LEN) return '';
+    if (!token) return '';
+    if (DATE_TOKEN_RE.test(token)) return token.slice(DATE_PREFIX.length);
+    if (token.length <= PREFIX_LEN) return '';
     const body = token.slice(PREFIX_LEN);
     if (TAG_VOCAB[body] !== token.slice(0, PREFIX_LEN)) return '';
     return body;
@@ -106,9 +115,11 @@
     const uniq = [];
     const seen = new Set();
     for (const t of tags || []) {
-      // Only letters/digits in a tag body, so what we write always reads back as a tag
-      // (space is the on-disk delimiter; punctuation/spaces would break recognition).
-      const s = String(t).replace(/[^A-Za-z0-9]/g, '');
+      const trimmed = String(t).trim();
+      // A date keeps its hyphens (xd-2026-07-15); any other tag body is letters/digits only, so
+      // what we write always reads back as a tag (space is the on-disk delimiter).
+      const isDate = DATE_BODY_RE.test(trimmed) || DATE_TOKEN_RE.test(trimmed);
+      const s = isDate ? trimmed.replace(/^xd-/, '') : trimmed.replace(/[^A-Za-z0-9]/g, '');
       if (!s) continue;
       const k = s.toLowerCase();
       if (seen.has(k)) continue;
@@ -116,8 +127,10 @@
       uniq.push(s);
     }
     if (!uniq.length) return base + ext;
-    // Pick the family by word; tag bodies are always uppercase by convention.
-    const tagStr = uniq.map((t) => prefixForTag(t) + t.toUpperCase()).join(' ');
+    // Date bodies stay as-is; other bodies are uppercased by convention.
+    const tagStr = uniq
+      .map((t) => (DATE_BODY_RE.test(t) ? DATE_PREFIX + t : prefixForTag(t) + t.toUpperCase()))
+      .join(' ');
     return (base ? base + ' ' : '') + tagStr + ext;
   }
 
