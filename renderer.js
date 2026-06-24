@@ -14426,14 +14426,11 @@
     });
     document.getElementById('query').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) void runSearchNow();
-      // Leave the field and highlight first hit so ↑/↓/Enter work on the list next.
-      // Tab (forward, no modifiers) does the same as ArrowDown: skip the view-mode
-      // toolbar in tab order and step straight into the active pane. Shift+Tab keeps
-      // its default (back out of the search box).
-      const intoList = e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey);
-      if (intoList && listRowsForUi().length) {
+      // Leave the field and step into the active pane, keeping the current row so ↑/↓/Enter
+      // continue from it (not the first row). Tab keeps its normal tab order.
+      if (e.key === 'ArrowDown' && listRowsForUi().length) {
         e.preventDefault();
-        moveResultsSelectionToEdge(false);
+        enterResultsListKeepingSelection();
         e.target.blur();
       }
     });
@@ -15438,6 +15435,16 @@
       const row = rows[newIdx];
       setSelection(row, fullPathForRow(row));
       scrollActiveResultsRowIntoViewNearest();
+    }
+
+    /** Step into the active pane from the search box: keep the current selection if there is one (just reveal it),
+     *  else pick the first row. Used by Tab / ArrowDown so leaving the box never discards the existing selection. */
+    function enterResultsListKeepingSelection() {
+      const rows = listRowsForUi();
+      if (!rows.length) return false;
+      if (navFocusIndexInFilteredRows(rows) < 0) moveResultsSelectionToEdge(false);
+      else scrollActiveResultsRowIntoViewNearest();
+      return true;
     }
 
     /** Jump selection to first (false) or last (true) visible row. */
