@@ -4832,7 +4832,7 @@
       let winFolders = [];
       try {
         if (window.tagBrowser && typeof window.tagBrowser.windowsRecentFolders === 'function') {
-          const r = await window.tagBrowser.windowsRecentFolders();
+          const r = await perfTimeAsync('windowsRecentFolders', {}, () => window.tagBrowser.windowsRecentFolders());
           if (r && r.ok && Array.isArray(r.folders)) winFolders = r.folders;
         }
       } catch (_) {}
@@ -4900,7 +4900,7 @@
       let winFiles = [];
       try {
         if (window.tagBrowser && typeof window.tagBrowser.windowsRecentFiles === 'function') {
-          const r = await window.tagBrowser.windowsRecentFiles();
+          const r = await perfTimeAsync('windowsRecentFiles', {}, () => window.tagBrowser.windowsRecentFiles());
           if (r && r.ok && Array.isArray(r.files)) winFiles = r.files;
         }
       } catch (_) {}
@@ -5845,7 +5845,9 @@
           '</span></li>';
         if (!window.tagBrowser.listChildFolders) return;
         void (async () => {
-          const r = await window.tagBrowser.listChildFolders({ parentPath: parentForList });
+          const r = await perfTimeAsync('listChildFolders', { path: parentForList }, () =>
+            window.tagBrowser.listChildFolders({ parentPath: parentForList })
+          );
           menu.innerHTML = '';
           function repositionFavMenuIfNeeded() {
             if (opts.favColumnSubmenu) {
@@ -11335,6 +11337,42 @@
       } catch (_) {}
     }
 
+    /* ---- Perf probes: only log to the search-debug buffer, only when something runs slow. ---- */
+    const PERF_SLOW_MS = 120;
+    /** Await fn; log perf.slow {label, ms, ...meta} if it ran past the threshold. Returns fn's value. */
+    async function perfTimeAsync(label, meta, fn) {
+      const t0 = performance.now();
+      try {
+        return await fn();
+      } finally {
+        const ms = Math.round(performance.now() - t0);
+        if (ms >= PERF_SLOW_MS) searchDebugLog('perf.slow', { label, ms, ...(meta || {}) });
+      }
+    }
+    /** Run a synchronous block (e.g. a render); same slow-logging contract. Returns fn's value. */
+    function perfTimeSync(label, meta, fn) {
+      const t0 = performance.now();
+      try {
+        return fn();
+      } finally {
+        const ms = Math.round(performance.now() - t0);
+        if (ms >= PERF_SLOW_MS) searchDebugLog('perf.slow', { label, ms, ...(meta || {}) });
+      }
+    }
+    /** Log any renderer main-thread long task (jank), e.g. a big sort or full table re-render, to the debug buffer. */
+    function installLongTaskMonitor() {
+      if (typeof PerformanceObserver !== 'function') return;
+      try {
+        const obs = new PerformanceObserver((list) => {
+          for (const e of list.getEntries()) {
+            const ms = Math.round(e.duration);
+            if (ms >= PERF_SLOW_MS) searchDebugLog('perf.longtask', { ms });
+          }
+        });
+        obs.observe({ entryTypes: ['longtask'] });
+      } catch (_) {}
+    }
+
     function searchDebugFormatConsoleArgs(args) {
       const parts = [];
       for (let i = 0; i < args.length; i++) {
@@ -11735,7 +11773,9 @@
       if (thumbnailCache.has(key)) return thumbnailCache.get(key);
       let dataUrl = null;
       try {
-        const r = await window.tagBrowser.getThumbnail({ fullPath: fp, size: px });
+        const r = await perfTimeAsync('getThumbnail', { path: fp, px }, () =>
+          window.tagBrowser.getThumbnail({ fullPath: fp, size: px })
+        );
         if (r && r.ok && r.dataUrl) dataUrl = r.dataUrl;
       } catch (_e) { /* keep glyph */ }
       thumbCacheSet(key, dataUrl);
@@ -13809,6 +13849,8 @@
       const fillsViewport = wrap.scrollHeight > wrap.clientHeight + 8;
       const atBottom = resultsScrollNearBottom(140);
       if (fillsViewport && !atBottom) return;
+      if (isSearchDebugOn())
+        searchDebugLog('autofill.page', { chainLeft: left, rows: lastRows.length, fillsViewport, atBottom });
       const offsetBefore = resultsPagingCtx.singleOffset;
       void (async () => {
         await loadMoreResults();
@@ -13865,7 +13907,9 @@
           resultsPagingCtx = { ...ctx, hasMore: false };
         } else {
           lastRows = mergeSearchRowsDedupe(lastRows, add);
-          sortLastRowsForDisplay(!!res.usedFallbackSort);
+          perfTimeSync('loadMore.sort', { rows: lastRows.length }, () =>
+            sortLastRowsForDisplay(!!res.usedFallbackSort)
+          );
           applyTagRenamePendingToLastRows();
           const hasMore = addRawLen === ctx.pageSize;
           resultsPagingCtx = {
@@ -13876,8 +13920,10 @@
           };
         }
         await syncSelectionAfterSearch();
-        renderTagBar();
-        renderTable();
+        perfTimeSync('loadMore.render', { rows: lastRows.length }, () => {
+          renderTagBar();
+          renderTable();
+        });
         updateResultsLoadMoreUi();
         clearBigFolderCapSmartNoteIfStale();
       } finally {
@@ -17072,6 +17118,7 @@
     })();
     bindFolderPathDropTargetBarsOnce();
     bindScopeFolderDropdownDragCaptureOnce();
+    installLongTaskMonitor();
     renderFavFoldersBar();
     renderFavSearchesBar();
     renderTagBar();
