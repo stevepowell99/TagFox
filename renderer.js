@@ -14427,7 +14427,11 @@
     document.getElementById('query').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) void runSearchNow();
       // Leave the field and highlight first hit so ↑/↓/Enter work on the list next.
-      if (e.key === 'ArrowDown' && listRowsForUi().length) {
+      // Tab (forward, no modifiers) does the same as ArrowDown: skip the view-mode
+      // toolbar in tab order and step straight into the active pane. Shift+Tab keeps
+      // its default (back out of the search box).
+      const intoList = e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey);
+      if (intoList && listRowsForUi().length) {
         e.preventDefault();
         moveResultsSelectionToEdge(false);
         e.target.blur();
