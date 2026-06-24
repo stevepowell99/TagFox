@@ -3860,12 +3860,30 @@
        are recoverable from the Windows Recycle Bin (runUndo says so). Bare `z` still sorts by size. ===== */
     let undoEntry = null; // { label, invert: async () => boolean }
 
+    /** Reflect the current undo entry on the toolbar button (enabled + tooltip). */
+    function updateUndoButton() {
+      const b = document.getElementById('btnUndo');
+      if (!b) return;
+      if (undoEntry) {
+        b.disabled = false;
+        b.title = 'Undo: ' + undoEntry.label + ' (Ctrl+Z)';
+      } else {
+        b.disabled = true;
+        b.title = 'Nothing to undo (Ctrl+Z)';
+      }
+    }
+
+    function setUndoEntry(entry) {
+      undoEntry = entry;
+      updateUndoButton();
+    }
+
     /** Record an undo that reverses a batch of renames (to → from). rootPrefix captured as it was at action time. */
     function recordRenameUndo(pairs, label) {
       const valid = (pairs || []).filter((p) => p && p.from && p.to);
       if (!valid.length) return;
       const rootPrefix = rootPrefixValue();
-      undoEntry = {
+      setUndoEntry({
         label,
         invert: async () => {
           let allOk = true;
@@ -3876,20 +3894,20 @@
           }
           return allOk;
         },
-      };
+      });
     }
 
     /** Record an undo that recycles freshly created items (copy/paste/new folder). */
     function recordCreatedPathsUndo(paths, label) {
       const list = (paths || []).map((p) => String(p || '')).filter(Boolean);
       if (!list.length) return;
-      undoEntry = {
+      setUndoEntry({
         label,
         invert: async () => {
           const r = await window.tagBrowser.trashPaths(list, { debugSource: 'undo' });
           return !!(r && r.ok);
         },
-      };
+      });
     }
 
     async function runUndo() {
@@ -3898,7 +3916,7 @@
         setStatusMain('Nothing to undo. (Deleted items are in the Recycle Bin.)');
         return;
       }
-      undoEntry = null; // consume; the undo itself is not re-undoable
+      setUndoEntry(null); // consume; the undo itself is not re-undoable
       setStatusMain('Undoing ' + e.label + '…');
       try {
         const ok = await e.invert();
@@ -16858,6 +16876,8 @@
     document.getElementById('btnScopeFolderHistory').addEventListener('show.bs.dropdown', () => renderScopeFolderHistoryMenu());
     document.getElementById('btnSearchHistBack').addEventListener('click', () => void goSearchHistory(-1));
     document.getElementById('btnSearchHistFwd').addEventListener('click', () => void goSearchHistory(1));
+    document.getElementById('btnUndo')?.addEventListener('click', () => void runUndo());
+    updateUndoButton();
     renderScopeBreadcrumb();
     bindResultsTableDragDrop();
     document.addEventListener(
