@@ -1902,6 +1902,7 @@
           selectedFullPath = toPath;
           renderScopeBreadcrumb();
         }
+        recordRenameUndo([{ from: fp, to: toPath }], 'remove tag');
         setStatusMain('Removed tag.');
         await refreshAfterTagsSaved([{ from: fp, to: toPath }]);
       } finally {
@@ -3852,6 +3853,61 @@
       const el = document.getElementById('statusMain');
       if (el) el.textContent = text == null ? '' : String(text);
       clearStatusSmartNote();
+    }
+
+    /* ===== Single-level undo (Ctrl+Z): rename/tag-edit, move, copy/paste, new folder.
+       One entry only: each new tracked action replaces it. Delete is not undone here — recycled items
+       are recoverable from the Windows Recycle Bin (runUndo says so). Bare `z` still sorts by size. ===== */
+    let undoEntry = null; // { label, invert: async () => boolean }
+
+    /** Record an undo that reverses a batch of renames (to → from). rootPrefix captured as it was at action time. */
+    function recordRenameUndo(pairs, label) {
+      const valid = (pairs || []).filter((p) => p && p.from && p.to);
+      if (!valid.length) return;
+      const rootPrefix = rootPrefixValue();
+      undoEntry = {
+        label,
+        invert: async () => {
+          let allOk = true;
+          // Reverse order so a chain of collision-y renames unwinds cleanly.
+          for (let i = valid.length - 1; i >= 0; i--) {
+            const r = await window.tagBrowser.renamePath({ fromPath: valid[i].to, toPath: valid[i].from, rootPrefix });
+            if (!r || !r.ok) allOk = false;
+          }
+          return allOk;
+        },
+      };
+    }
+
+    /** Record an undo that recycles freshly created items (copy/paste/new folder). */
+    function recordCreatedPathsUndo(paths, label) {
+      const list = (paths || []).map((p) => String(p || '')).filter(Boolean);
+      if (!list.length) return;
+      undoEntry = {
+        label,
+        invert: async () => {
+          const r = await window.tagBrowser.trashPaths(list, { debugSource: 'undo' });
+          return !!(r && r.ok);
+        },
+      };
+    }
+
+    async function runUndo() {
+      const e = undoEntry;
+      if (!e) {
+        setStatusMain('Nothing to undo. (Deleted items are in the Recycle Bin.)');
+        return;
+      }
+      undoEntry = null; // consume; the undo itself is not re-undoable
+      setStatusMain('Undoing ' + e.label + '…');
+      try {
+        const ok = await e.invert();
+        setStatusMain(
+          ok ? 'Undone: ' + e.label : 'Could not fully undo ' + e.label + ' (item moved or changed since?).'
+        );
+      } catch (err) {
+        setStatusMain('Undo failed: ' + String((err && err.message) || err));
+      }
     }
 
     /** First #statusMain segment: raw hit count from Everything (not table row count — path tree may add rows). */
@@ -6867,6 +6923,7 @@
           renderScopeBreadcrumbIfScopeChanged();
         }
         if (mdWas) mdAutosaveTargetPath = toPath;
+        recordRenameUndo([{ from: fp, to: toPath }], 'rename');
         setStatusMain('Renamed.');
         void refreshAfterDiskMutation({ paths: [fp, toPath] });
         refreshTagModalDatalist();
@@ -7020,6 +7077,7 @@
         }
         const st = document.getElementById('statusMain');
         if (pathPairs.length) {
+          recordRenameUndo(pathPairs, 'bulk rename of ' + pathPairs.length + ' item(s)');
           if (st) setStatusMain('Renamed ' + pathPairs.length + ' item(s).');
           if (bulkRenameModalInst) bulkRenameModalInst.hide();
           await refreshAfterTagsSaved(pathPairs);
@@ -7062,6 +7120,7 @@
       const r = await window.tagBrowser.createEmptyFolder({ parentFolder: parent, nameSegment: raw, rootPrefix });
       if (!r || !r.ok) setStatusMain((r && r.error) || 'Could not create folder');
       else {
+        if (r.path) recordCreatedPathsUndo([r.path], 'new folder');
         setStatusMain('Created folder: ' + T.baseName(String(r.path || '')));
         void refreshAfterDiskMutation();
       }
@@ -9434,6 +9493,13 @@
     }
 
     /** Copy/move into scope or Shelf: on name clash, offer replace (retries whole op with replaceExisting). */
+    /** Record undo for a completed copy (recycle the copies) or move (rename each item back to its source). */
+    function recordCopyOrMoveUndo(mode, r) {
+      if (!r || !(r.ok || r.partial)) return;
+      if (mode === 'copy') recordCreatedPathsUndo(r.copied || [], 'copy of ' + (r.copied || []).length + ' item(s)');
+      else recordRenameUndo(r.moved || [], 'move of ' + (r.moved || []).length + ' item(s)');
+    }
+
     async function scopeCopyOrMoveWithConflictPrompt(mode, { sourcePaths, destFolder, rootPrefix }) {
       const base = { sourcePaths, destFolder, rootPrefix };
       const run = (replaceExisting) =>
@@ -9441,7 +9507,10 @@
           ? window.tagBrowser.copyPathsIntoFolder({ ...base, replaceExisting })
           : window.tagBrowser.movePathsIntoFolder({ ...base, replaceExisting });
       let r = await run(false);
-      if (r.ok || r.code !== 'EEXIST') return r;
+      if (r.ok || r.code !== 'EEXIST') {
+        recordCopyOrMoveUndo(mode, r);
+        return r;
+      }
       const name = r.baseName ? String(r.baseName) : 'item';
       if (
         !confirm(
@@ -9452,14 +9521,21 @@
       ) {
         return { ok: false, error: 'Cancelled.' };
       }
-      return run(true);
+      {
+        const r2 = await run(true);
+        recordCopyOrMoveUndo(mode, r2);
+        return r2;
+      }
     }
 
     async function pasteClipboardIntoScopeWithConflictPrompt(destFolder, rootPrefix) {
       const run = (replaceExisting) =>
         window.tagBrowser.pasteClipboardIntoFolder({ destFolder, rootPrefix, replaceExisting });
       let r = await run(false);
-      if (r.ok || r.code !== 'EEXIST') return r;
+      if (r.ok || r.code !== 'EEXIST') {
+        if (r.ok || r.partial) recordCreatedPathsUndo(r.copied || [], 'paste of ' + (r.copied || []).length + ' item(s)');
+        return r;
+      }
       const name = r.baseName ? String(r.baseName) : 'item';
       if (
         !confirm(
@@ -9470,7 +9546,12 @@
       ) {
         return { ok: false, error: 'Cancelled.' };
       }
-      return run(true);
+      {
+        const r2 = await run(true);
+        if (r2 && (r2.ok || r2.partial))
+          recordCreatedPathsUndo(r2.copied || [], 'paste of ' + (r2.copied || []).length + ' item(s)');
+        return r2;
+      }
     }
 
     /** Internal drop: move (default) or copy with Shift — into dest folder. Returns true on success. */
@@ -13341,6 +13422,7 @@
             renderScopeBreadcrumb();
           }
         }
+        recordRenameUndo(pathPairs, 'remove tag from ' + pathPairs.length + ' item(s)');
         setTagApplyFeedback('Saved.');
         await refreshAfterTagsSaved(pathPairs);
         rebuildModalTagsUnion();
@@ -13394,6 +13476,7 @@
         }
         if (!any) setTagApplyFeedback('Tag already on all items.');
         else {
+          recordRenameUndo(pathPairs, 'add tag to ' + pathPairs.length + ' item(s)');
           setTagApplyFeedback('Saved.');
           rememberTag(low, tag);
           await refreshAfterTagsSaved(pathPairs);
@@ -13508,6 +13591,7 @@
           selectedFullPath = toPath;
           renderScopeBreadcrumb();
         }
+        recordRenameUndo([{ from: fromPath, to: toPath }], 'edit tags');
         setTagApplyFeedback('Saved.');
         await refreshAfterTagsSaved([{ from: fromPath, to: toPath }]);
         return true;
@@ -15831,6 +15915,7 @@
           setStatusMain('No change.');
           return true;
         }
+        recordRenameUndo(pathPairs, 'edit tags on ' + pathPairs.length + ' item(s)');
         await refreshAfterTagsSaved(pathPairs);
         setStatusMain(doneHint || 'Tags updated.');
         return true;
@@ -16267,10 +16352,10 @@
       }
       if (modC && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
         if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
+        // Stricter than blockAppShortcutInTextField: also yield in #query, so Ctrl+Z is native text undo in every input.
+        if (isTypingTarget(e.target) || isInMarkdownEditSurface(e.target)) return;
         e.preventDefault();
-        const note = flatViewOnIfTreeForColumnSort();
-        applySortColumnKey('size', note || undefined);
+        void runUndo();
         return;
       }
       if (modC && (e.key === 'l' || e.key === 'L')) {
