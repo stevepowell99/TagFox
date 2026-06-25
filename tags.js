@@ -31,6 +31,13 @@
   const DATE_BODY_RE = /^\d{4}-\d{2}-\d{2}$/; // 2026-07-15
   const DATE_TOKEN_RE = /^xd-\d{4}-\d{2}-\d{2}$/; // xd-2026-07-15
 
+  /** Is this tag a deadline date (body form `2026-07-15` or token form `xd-2026-07-15`)? Deadlines
+   *  are their own dimension with a dedicated range filter, so callers exclude them from the tag bar. */
+  function isDateTag(name) {
+    const s = String(name || '').trim();
+    return DATE_BODY_RE.test(s) || DATE_TOKEN_RE.test(s);
+  }
+
   /** Family prefix for a tag name (no prefix): a date -> `xd-`, a vocab word -> its family, else `xx`. */
   function prefixForTag(name) {
     const s = String(name || '').trim();
@@ -207,6 +214,7 @@
     TAG_PREFIXES,
     TAG_VOCAB,
     prefixForTag,
+    isDateTag,
     splitExt,
     tagNameFromToken,
     parseSegmentTags,

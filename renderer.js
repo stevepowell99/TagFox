@@ -10848,6 +10848,7 @@
                 return { key: k, display: d || k };
               })
               .filter((x) => x.key)
+              .filter((x) => !(T && T.isDateTag && T.isDateTag(x.key))) // drop any deadline saved by older builds
           : [];
         if (knownBracketTagsList.length > KNOWN_BRACKET_TAGS_MAX) {
           knownBracketTagsList = knownBracketTagsList.slice(0, KNOWN_BRACKET_TAGS_MAX);
@@ -10869,6 +10870,7 @@
     function ensureKnownBracketTag(key, display) {
       const k = String(key || '').trim().toLowerCase();
       if (!k) return;
+      if (T && T.isDateTag && T.isDateTag(k)) return; // deadlines have their own filter, not tag-bar pills
       const d = String(display || key).trim() || k;
       if (knownBracketTagsList.some((t) => t.key === k)) return;
       knownBracketTagsList.push({ key: k, display: d });
@@ -10893,6 +10895,7 @@
       let changed = false;
       for (const [k, info] of m) {
         if (have.has(k)) continue;
+        if (T && T.isDateTag && T.isDateTag(k)) continue; // deadlines have their own filter, not tag-bar pills
         have.add(k);
         knownBracketTagsList.push({ key: k, display: info.display });
         added++;
@@ -12466,14 +12469,17 @@
       // Pill set = global knownBracketTagsList order; numbers = tag hits in this result list.
       const entries = [];
       const pillKeys = new Set();
+      const isDateKey = (k) => !!(T && T.isDateTag && T.isDateTag(k));
       for (const t of knownBracketTagsList) {
         if (!t || !t.key) continue;
+        if (isDateKey(t.key)) continue; // deadlines never appear in the tag bar (own range filter)
         pillKeys.add(t.key);
         const hit = counts.get(t.key);
         entries.push({ key: t.key, display: t.display, count: hit ? hit.count : 0 });
       }
       for (const ak of activeTagKeys) {
         if (pillKeys.has(ak)) continue;
+        if (isDateKey(ak)) continue;
         pillKeys.add(ak);
         const hit = counts.get(ak);
         entries.push({ key: ak, display: hit && hit.display ? hit.display : ak, count: hit ? hit.count : 0 });
