@@ -585,7 +585,7 @@ body > .offcanvas-backdrop.show {
 .app-shell { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 .app-main { flex: 1; display: flex; min-height: 0; }
 /* Row: favourite folders | split | main panel (+ shelf beside results) */
-.center-wrap { flex: 1; min-width: 0; display: flex; flex-direction: row; align-items: stretch; min-height: 0; }
+.center-wrap { flex: 1; min-width: 0; display: flex; flex-direction: row; align-items: stretch; min-height: 0; position: relative; }
 .center-panel {
   flex: 1;
   min-width: 0;
@@ -608,10 +608,23 @@ body > .offcanvas-backdrop.show {
 .tagfox-fav-column-inner {
   min-width: 0;
 }
-/* Collapsed state: keep the rail-toggle button visible; heart/save/body return on hover/focus. */
+/* Collapsed state: keep the rail-toggle button visible; heart/save/body return on hover/focus.
+   Peek overlay: the collapsed rail (and its hover-peek expansion) floats over the results as an absolute
+   overlay instead of widening the flex row. Previously the width animation pushed the results pane and
+   reflowed the whole (expensive) results table on every animation frame, which made peek-on-hover crawl.
+   Going absolute means the table never reflows; the next-sibling splitter reserves the 28px rail footprint
+   so the results pane does not shift. Fixed (pinned-open) mode is untouched. */
 .tagfox-fav-column.tagfox-fav-column--collapsed {
   width: 28px;
   padding: 0.25rem 0.1rem;
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  height: auto;
+}
+.tagfox-fav-column.tagfox-fav-column--collapsed + #splitFavFolders {
+  margin-left: 28px;
 }
 .tagfox-fav-column.tagfox-fav-column--collapsed .tagfox-fav-column-inner {
   display: none !important;
@@ -624,6 +637,7 @@ body > .offcanvas-backdrop.show {
 .tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--flyout-peek {
   width: min(var(--tagfox-fav-expanded-w, 220px), calc(100vw - 3rem));
   padding: 0.5rem 0.35rem;
+  box-shadow: 0.5rem 0 1.25rem rgba(0, 0, 0, 0.3);
 }
 .tagfox-fav-column-head {
   min-width: 0;
