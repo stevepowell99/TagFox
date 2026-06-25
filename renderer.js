@@ -5850,6 +5850,8 @@
           const r = await perfTimeAsync('listChildFolders', { path: parentForList }, () =>
             window.tagBrowser.listChildFolders({ parentPath: parentForList })
           );
+          if (r && isSearchDebugOn() && (r.serverMs > 200 || r.readdirMs > 200))
+            searchDebugLog('listChildFolders.server', { serverMs: r.serverMs, readdirMs: r.readdirMs });
           menu.innerHTML = '';
           function repositionFavMenuIfNeeded() {
             if (opts.favColumnSubmenu) {

@@ -29,6 +29,15 @@ const fs = require('fs').promises;
 const fssync = require('fs');
 const os = require('os');
 const path = require('path');
+
+/* Main-process perf probe: append to a temp log we can read after a repro, to localize freezes the
+   renderer sees only as a slow IPC reply. Best-effort; never throws into a hot path. */
+const MAIN_PERF_LOG = path.join(os.tmpdir(), 'tagfox-mainperf.log');
+function mainPerfLog(line) {
+  try {
+    fssync.appendFileSync(MAIN_PERF_LOG, new Date().toISOString() + ' ' + line + '\n');
+  } catch (_) {}
+}
 const { drive: createDriveClient } = require('@googleapis/drive');
 const { OAuth2Client } = require('google-auth-library');
 const MsgReader = require('@kenjiuno/msgreader').default;
@@ -2556,6 +2565,18 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.whenReady().then(() => {
+  /* Event-loop lag sampler: if the main loop stalls (sync work or a saturated threadpool), the renderer
+     only sees IPC replies arrive late. Log stalls so we can tell a slow handler from a blocked loop. */
+  try {
+    const LAG_TICK = 250;
+    let lagLast = Date.now();
+    setInterval(() => {
+      const now = Date.now();
+      const drift = now - lagLast - LAG_TICK;
+      lagLast = now;
+      if (drift > 300) mainPerfLog('eventloop-lag ' + drift + 'ms');
+    }, LAG_TICK).unref();
+  } catch (_) {}
   installApplicationMenu();
   registerSearchScopeFolderIpc();
   registerShelfIpc();
@@ -4555,15 +4576,18 @@ function compareChildFolderDisplayName(a, b) {
 
 /** Subfolders only (breadcrumb sibling picker). */
 ipcMain.handle('list-child-folders', async (_event, { parentPath }) => {
+  const t0 = Date.now();
   let p = path.normalize(String(parentPath || '').trim());
   if (!p) return { ok: false, error: 'No folder', folders: [] };
   if (/^[a-zA-Z]:$/i.test(p)) p += '\\';
   let entries;
+  const tRd = Date.now();
   try {
     entries = await fs.readdir(p, { withFileTypes: true });
   } catch (e) {
     return { ok: false, error: String(e.message || e), folders: [] };
   }
+  const readdirMs = Date.now() - tRd;
   const folders = [];
   for (const d of entries) {
     if (!d.isDirectory()) continue;
@@ -4575,7 +4599,9 @@ ipcMain.handle('list-child-folders', async (_event, { parentPath }) => {
     folders.push({ name, fullPath: path.join(p, name) });
   }
   folders.sort((a, b) => compareChildFolderDisplayName(a.name, b.name));
-  return { ok: true, folders };
+  const serverMs = Date.now() - t0;
+  if (serverMs > 1000) mainPerfLog('list-child-folders ' + serverMs + 'ms readdir=' + readdirMs + 'ms ' + p);
+  return { ok: true, folders, serverMs, readdirMs };
 });
 
 /** Direct local listing for cloud browse fallback (immediate children only). */
