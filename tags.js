@@ -1,8 +1,12 @@
-// TagFox tags: trailing two-letter-prefixed tokens are tags, e.g. `name xkTODO xpGCC xxdraft.ext`.
-// Three families, all two chars wide: xk = status (TODO/WAITING/LATER), xp = person/owner
-// (GCC/STEVE/CLAUDE), xx = label (anything else). Tags are space-separated, sit right before
-// the extension, and the prefix is stripped for display. The family for a typed tag is chosen
-// by word (see prefixForTag). Plain words and `name[foo].ext` are literal text, not tags.
+// TagFox tags: two-letter-prefixed vocabulary tokens anywhere in the name are tags, e.g.
+// `xkTODO name xpGCC.ext` or `name xkTODO xpGCC.ext`. Three families, all two chars wide:
+// xk = status (TODO/WAITING/LATER), xp = person/owner (GCC/STEVE/CLAUDE), xx = label. Tags are
+// space-separated; the prefix is stripped for display and the tag tokens are removed from the
+// pretty name wherever they sit. Recognising any position (not only trailing) matches the hub
+// `xkTODO` convention, where the tag may lead the name (`xkTODO chapter5 GNI tables.md`); it is
+// safe because only the fixed TAG_VOCAB words (plus `xd-` dates) count, so a real word is never
+// mistaken for a tag. The family for a typed tag is chosen by word (see prefixForTag). Plain
+// words and `name[foo].ext` are literal text, not tags.
 (function (global) {
   /** Two-char family prefixes that mark a trailing filename token as a tag. */
   const TAG_PREFIXES = ['xk', 'xp', 'xx'];
@@ -54,17 +58,18 @@
     return body;
   }
 
-  /** Peel trailing `xk…` tokens off a stem; returns { base, tags } with tags in file order. */
-  function peelTrailingTags(stem) {
+  /** Peel `xk…` vocab tokens from anywhere in a stem; returns { base, tags } with tags in file
+   *  order and the remaining words (the pretty base) in their original order. */
+  function peelTags(stem) {
     const tokens = String(stem || '').split(' ');
     const tags = [];
-    while (tokens.length) {
-      const name = tagNameFromToken(tokens[tokens.length - 1]);
-      if (!name) break;
-      tags.unshift(name);
-      tokens.pop();
+    const rest = [];
+    for (const tok of tokens) {
+      const name = tagNameFromToken(tok);
+      if (name) tags.push(name);
+      else rest.push(tok);
     }
-    return { base: tokens.join(' ').replace(/\s+$/, ''), tags };
+    return { base: rest.join(' ').replace(/\s+/g, ' ').trim(), tags };
   }
 
   /** "file xkA xkB.pdf" -> pretty "file.pdf", tags [A,B]. "file.pdf" -> pretty unchanged, tags []. */
@@ -72,7 +77,7 @@
     if (!component) return { pretty: '', tags: [], raw: '' };
     const raw = component;
     const [stem, ext] = splitExt(component);
-    const { base, tags } = peelTrailingTags(stem);
+    const { base, tags } = peelTags(stem);
     if (!tags.length) return { pretty: component, tags: [], raw };
     return { pretty: base + ext, tags, raw };
   }
@@ -108,10 +113,12 @@
     return false;
   }
 
-  /** Replace any trailing `xk…` tags on the component with the given tags (before .ext). */
+  /** Replace any `xk…` tags on the component (wherever they sit) with the given tags, written
+   *  trailing before .ext. Editing a file's tags therefore normalises stray leading/mid tags to
+   *  the trailing position. */
   function buildTaggedComponent(component, tags) {
     const [stem, ext] = splitExt(component);
-    const { base } = peelTrailingTags(stem);
+    const { base } = peelTags(stem);
     const uniq = [];
     const seen = new Set();
     for (const t of tags || []) {
