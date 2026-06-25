@@ -11795,11 +11795,40 @@
       /* Holder may have been replaced by a re-render; only paint if it still maps to this key. */
       if (holder.isConnected && holder.dataset.thumbKey === key) applyThumbnail(holder, dataUrl);
     }
-    /** Swap a file-row glyph for its OS thumbnail; cached hits paint immediately, misses load via the serialised backend. */
+
+    /** Streamed Google Drive content (shared drives / shortcut targets) — a shell thumbnail forces a slow
+        hydrating download (seconds each) and saturates the serialised queue, so keep the file-type glyph. */
+    function isStreamedDrivePathForThumb(fp) {
+      const s = String(fp || '');
+      return /\\\.shortcut-targets-by-id\\/i.test(s) || /\\Shared drives\\/i.test(s);
+    }
+    /* Inline thumbnails load lazily: a search can surface hundreds of rows, but the serialised main-process
+       queue and slow PDF/Office/streamed providers must only ever work on the handful actually on screen.
+       Reset on every renderTable so detached holders are released (the observer holds strong refs). */
+    let thumbIntersectionObserver = null;
+    function ensureThumbObserver() {
+      if (thumbIntersectionObserver || typeof IntersectionObserver !== 'function') return thumbIntersectionObserver;
+      thumbIntersectionObserver = new IntersectionObserver(
+        (entries, obs) => {
+          for (const ent of entries) {
+            if (!ent.isIntersecting) continue;
+            obs.unobserve(ent.target);
+            void loadThumbnail(ent.target);
+          }
+        },
+        { rootMargin: '200px' }
+      );
+      return thumbIntersectionObserver;
+    }
+    function resetThumbObserver() {
+      if (thumbIntersectionObserver) thumbIntersectionObserver.disconnect();
+    }
+    /** Swap a file-row glyph for its OS thumbnail; cached hits paint immediately, misses load lazily on scroll-in. */
     function maybeAttachThumbnail(holder, fp, ext, row) {
       if (!isResultThumbnailsOn()) return;
       if (!THUMBNAIL_EXT.has(ext)) return;
       if (!window.tagBrowser || !window.tagBrowser.getThumbnail) return;
+      if (isStreamedDrivePathForThumb(fp)) return;
       const key = thumbCacheKey(fp, row, THUMBNAIL_REQ_PX);
       holder.dataset.thumbPath = fp;
       holder.dataset.thumbKey = key;
@@ -11807,8 +11836,9 @@
         applyThumbnail(holder, thumbnailCache.get(key));
         return;
       }
-      /* Load directly; the main-process queue serialises the work and the cache makes re-renders free. */
-      void loadThumbnail(holder);
+      const obs = ensureThumbObserver();
+      if (obs) obs.observe(holder);
+      else void loadThumbnail(holder); /* no IntersectionObserver: fall back to eager load */
     }
 
     /* ---- Hover preview: a larger floating thumbnail while the pointer rests on an eligible row. ---- */
@@ -12794,6 +12824,7 @@
         if (tip) tip.dispose();
       });
       clearInternalPathDragDropTargetHints();
+      resetThumbObserver();
       tbody.innerHTML = '';
       applyGoneTombstonesToLastRows();
       pruneCheckedPaths();
