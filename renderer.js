@@ -4723,7 +4723,11 @@
       ddBtn.innerHTML = '<span class="visually-hidden">Subfolders</span>' + breadcrumbDropdownChevronHtml();
       const menu = document.createElement('ul');
       const hl = breadcrumbHighlightChildPathNorm(parentNorm);
-      bindSubfolderDropdownWithFlyouts(ddBtn, menu, ddWrap, parentNorm, hl || '', true, {
+      /* Click-to-open, NOT hover-open: these fav/recent chips point at arbitrary (often Google Drive) folders,
+         and hover-open fired listChildFolders -> fs.readdir on each one a 150ms dwell landed on. On a Drive
+         mirror that makes the Drive filesystem driver hydrate the folder, stalling the whole machine while the
+         mouse just rests on or moves down the favourites list. The ▾ still opens the subfolder list on click. */
+      bindSubfolderDropdownWithFlyouts(ddBtn, menu, ddWrap, parentNorm, hl || '', false, {
         favColumnSubmenu: true,
         menuAlignStart: false,
       });
@@ -4789,7 +4793,11 @@
       ddBtn.innerHTML = '<span class="visually-hidden">Subfolders</span>' + breadcrumbDropdownChevronHtml();
       const menu = document.createElement('ul');
       const hl = breadcrumbHighlightChildPathNorm(parentNorm);
-      bindSubfolderDropdownWithFlyouts(ddBtn, menu, ddWrap, parentNorm, hl || '', true, {
+      /* Click-to-open, NOT hover-open: these fav/recent chips point at arbitrary (often Google Drive) folders,
+         and hover-open fired listChildFolders -> fs.readdir on each one a 150ms dwell landed on. On a Drive
+         mirror that makes the Drive filesystem driver hydrate the folder, stalling the whole machine while the
+         mouse just rests on or moves down the favourites list. The ▾ still opens the subfolder list on click. */
+      bindSubfolderDropdownWithFlyouts(ddBtn, menu, ddWrap, parentNorm, hl || '', false, {
         favColumnSubmenu: true,
         menuAlignStart: false,
       });
