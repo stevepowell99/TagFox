@@ -9,6 +9,7 @@ const { marked } = require('marked');
 const root = path.join(__dirname, '..');
 const srcPath = path.join(root, 'help.md');
 const outPath = path.join(root, 'help.html');
+const appVersion = require(path.join(root, 'package.json')).version;
 
 const src = fs.readFileSync(srcPath, 'utf8');
 
@@ -105,7 +106,7 @@ const out = `${preamble}
   <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style="max-width: 56rem">
     <div class="modal-content help-modal-content">
       <div class="modal-header py-2">
-        <h2 class="modal-title fs-5" id="helpModalLabel">&#x1F98A; TagFox Help</h2>
+        <h2 class="modal-title fs-5" id="helpModalLabel">&#x1F98A; TagFox Help <span class="text-secondary fw-normal fs-6 ms-2">v${appVersion}</span></h2>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body p-0 d-flex help-modal-body">

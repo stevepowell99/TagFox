@@ -1,6 +1,6 @@
 {
   "name": "tagbrowser",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "TagFox — local Everything search UI (Electron)",
   "main": "main.js",
   "scripts": {
@@ -35,6 +35,7 @@
       "did-you-know-tips.js",
       "renderer.js",
       "package.json",
+      "google-oauth-client.json",
       "vendor/**/*"
     ],
     "win": {
