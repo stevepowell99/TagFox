@@ -5623,12 +5623,14 @@
     /** Open one scope ▾ and close the others (Bootstrap). Used by hover and by dragover — DnD does not fire mouseenter. */
     function showScopeSubfolderDropdownToggle(toggleEl) {
       if (!toggleEl || toggleEl.getAttribute('data-bs-toggle') !== 'dropdown') return;
-      document.querySelectorAll(SCOPE_FOLDER_SUBMENU_DD_TOGGLE_SEL).forEach((btn) => {
-        if (btn === toggleEl) return;
-        const o = bootstrap.Dropdown.getInstance(btn);
-        if (o) o.hide();
+      perfTimeSync('dropdown.show', { dom: document.getElementById('tbody')?.childElementCount || 0 }, () => {
+        document.querySelectorAll(SCOPE_FOLDER_SUBMENU_DD_TOGGLE_SEL).forEach((btn) => {
+          if (btn === toggleEl) return;
+          const o = bootstrap.Dropdown.getInstance(btn);
+          if (o) o.hide();
+        });
+        bootstrap.Dropdown.getOrCreateInstance(toggleEl).show();
       });
-      bootstrap.Dropdown.getOrCreateInstance(toggleEl).show();
     }
 
     /**
@@ -12414,6 +12416,9 @@
     }
 
     function renderTagBar() {
+      return perfTimeSync('render.tagBar', { rows: lastRows.length }, renderTagBarImpl);
+    }
+    function renderTagBarImpl() {
       const el = document.getElementById('tagBar');
       el.innerHTML = '';
       // Icon-only tag-bar controls (tooltips + aria-labels carry the text).
@@ -12816,6 +12821,16 @@
     }
 
     function renderTable() {
+      const t0 = performance.now();
+      try {
+        renderTableImpl();
+      } finally {
+        const ms = Math.round(performance.now() - t0);
+        const dom = document.getElementById('tbody')?.childElementCount || 0;
+        if (ms >= PERF_SLOW_MS) searchDebugLog('perf.slow', { label: 'render.table', ms, rows: lastRows.length, dom });
+      }
+    }
+    function renderTableImpl() {
       const tbody = document.getElementById('tbody');
       const status = document.getElementById('statusMain');
       /* Do not clear #statusSmartNote here — e.g. “Big folder!” must survive checkbox/selection redraws. Cleared by setStatusMain, smartAfterPaint, or empty chip. */
