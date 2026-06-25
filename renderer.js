@@ -13345,7 +13345,7 @@
       updateEmptyResultsPulseHints(rowsForDisplay.length);
       updateResultsLoadMoreUi();
       scheduleFolderChildCountsForVisibleResultsRows();
-      runAfterNextLayoutPaint(() => maybeAutoFillResultsUntilScrollable(25));
+      runAfterNextLayoutPaint(() => maybeAutoFillResultsUntilScrollable());
     }
 
     function rebuildModalTagsUnion() {
@@ -13888,23 +13888,33 @@
      * Hide filters (and other client-side drops) can leave too few tbody rows to fill #resultsScroll — no scrollbar, so scroll paging never fires.
      * After layout, if more ES pages exist and the list is still “short” or already at virtual bottom, fetch again (capped).
      */
-    function maybeAutoFillResultsUntilScrollable(chainLeft) {
-      const left = typeof chainLeft === 'number' ? chainLeft : 25;
-      if (left <= 0) return;
+    /* Per-search page budget, NOT a recursion counter: renderTable re-arms this after every paint (including
+       loadMore's own re-render), so a passed-down counter was reset to full on every page and the autofill
+       paged the entire subtree. The budget is keyed to searchRunSeq, so it caps total auto-pages per search
+       (a new search resets it) regardless of how many times renderTable re-arms it. Heavy client-side filters
+       (Hide Special / Hide ~) can keep the viewport short forever; the cap stops us chewing the whole disk to
+       fill it — the user can still scroll to page further. */
+    const AUTOFILL_MAX_PAGES = 6;
+    let autofillBudgetRunId = -1;
+    let autofillPagesLeft = 0;
+    function maybeAutoFillResultsUntilScrollable() {
+      if (autofillBudgetRunId !== searchRunSeq) {
+        autofillBudgetRunId = searchRunSeq;
+        autofillPagesLeft = AUTOFILL_MAX_PAGES;
+      }
+      if (autofillPagesLeft <= 0) return;
       if (!resultsPagingCtx?.hasMore || resultsLoadMoreBusy || searchInFlight) return;
       const wrap = document.getElementById('resultsScroll');
       if (!wrap) return;
       const fillsViewport = wrap.scrollHeight > wrap.clientHeight + 8;
       const atBottom = resultsScrollNearBottom(140);
       if (fillsViewport && !atBottom) return;
+      autofillPagesLeft--;
       if (isSearchDebugOn())
-        searchDebugLog('autofill.page', { chainLeft: left, rows: lastRows.length, fillsViewport, atBottom });
-      const offsetBefore = resultsPagingCtx.singleOffset;
-      void (async () => {
-        await loadMoreResults();
-        if (!resultsPagingCtx || resultsPagingCtx.singleOffset === offsetBefore) return;
-        runAfterNextLayoutPaint(() => maybeAutoFillResultsUntilScrollable(left - 1));
-      })();
+        searchDebugLog('autofill.page', { pagesLeft: autofillPagesLeft, rows: lastRows.length, fillsViewport, atBottom });
+      /* loadMore's success path re-renders, which schedules the next autofill after paint (when the busy flag
+         has cleared). The budget above bounds that chain; no separate recursion needed. */
+      void loadMoreResults();
     }
 
     /** Next Everything offset page; same query/sort as resultsPagingCtx. */
