@@ -13897,7 +13897,9 @@
     const AUTOFILL_MAX_PAGES = 6;
     let autofillBudgetRunId = -1;
     let autofillPagesLeft = 0;
-    function maybeAutoFillResultsUntilScrollable() {
+    let autofillRunning = false;
+    async function maybeAutoFillResultsUntilScrollable() {
+      if (autofillRunning) return; // a cascade is already draining the budget
       if (autofillBudgetRunId !== searchRunSeq) {
         autofillBudgetRunId = searchRunSeq;
         autofillPagesLeft = AUTOFILL_MAX_PAGES;
@@ -13909,16 +13911,43 @@
       const fillsViewport = wrap.scrollHeight > wrap.clientHeight + 8;
       const atBottom = resultsScrollNearBottom(140);
       if (fillsViewport && !atBottom) return;
-      autofillPagesLeft--;
-      if (isSearchDebugOn())
-        searchDebugLog('autofill.page', { pagesLeft: autofillPagesLeft, rows: lastRows.length, fillsViewport, atBottom });
-      /* loadMore's success path re-renders, which schedules the next autofill after paint (when the busy flag
-         has cleared). The budget above bounds that chain; no separate recursion needed. */
-      void loadMoreResults();
+      /* Fetch up to the page budget without rendering each page: renderTable rebuilds the whole growing list,
+         so per-page rendering is O(n^2) and was the bulk of the per-search jank. Render once when it settles. */
+      autofillRunning = true;
+      const runId = searchRunSeq;
+      let pagedAny = false;
+      try {
+        while (autofillPagesLeft > 0 && runId === searchRunSeq && resultsPagingCtx?.hasMore && !searchInFlight) {
+          autofillPagesLeft--;
+          if (isSearchDebugOn())
+            searchDebugLog('autofill.page', { pagesLeft: autofillPagesLeft, rows: lastRows.length });
+          const before = resultsPagingCtx.singleOffset;
+          await loadMoreResults({ deferRender: true });
+          if (runId !== searchRunSeq) return; // a newer search superseded us; don't paint stale rows
+          if (!resultsPagingCtx || resultsPagingCtx.singleOffset === before) {
+            autofillPagesLeft = 0; // no progress (no further rows): stop and don't re-arm
+            break;
+          }
+          pagedAny = true;
+        }
+      } finally {
+        autofillRunning = false;
+        if (pagedAny && runId === searchRunSeq) {
+          perfTimeSync('autofill.render', { rows: lastRows.length }, () => {
+            renderTagBar();
+            renderTable();
+          });
+          updateResultsLoadMoreUi();
+          clearBigFolderCapSmartNoteIfStale();
+        }
+      }
     }
 
-    /** Next Everything offset page; same query/sort as resultsPagingCtx. */
-    async function loadMoreResults() {
+    /** Next Everything offset page; same query/sort as resultsPagingCtx.
+        opts.deferRender: merge + persist rows but skip the table/tag-bar render (the autofill cascade renders
+        once when it settles, instead of re-rendering the whole growing list on every page). */
+    async function loadMoreResults(opts) {
+      const deferRender = !!(opts && opts.deferRender);
       if (!resultsPagingCtx || !resultsPagingCtx.hasMore || resultsLoadMoreBusy) return;
       if (searchInFlight) {
         const hint = document.getElementById('resultsLoadMoreHint');
@@ -13978,10 +14007,12 @@
           };
         }
         await syncSelectionAfterSearch();
-        perfTimeSync('loadMore.render', { rows: lastRows.length }, () => {
-          renderTagBar();
-          renderTable();
-        });
+        if (!deferRender) {
+          perfTimeSync('loadMore.render', { rows: lastRows.length }, () => {
+            renderTagBar();
+            renderTable();
+          });
+        }
         updateResultsLoadMoreUi();
         clearBigFolderCapSmartNoteIfStale();
       } finally {
