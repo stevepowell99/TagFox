@@ -594,21 +594,25 @@ function windowsPowerShellExe() {
  * Returns { ok, status, stdout, stderr, error }. error is null on success, else a message string
  * (spawn failure, or stderr/stdout on non-zero exit). The single home for the PowerShell spawn pattern.
  */
+/** Flags shared by the sync and async PowerShell runners; the script file path + its args follow. */
+const PS_FILE_FLAGS = ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File'];
+/** Shape one spawn result (sync or async) into our { ok, status, stdout, stderr, error } contract. */
+function shapePowershellResult(status, stdout, stderr, failMsgPrefix) {
+  const out = String(stdout || '');
+  const err = String(stderr || '');
+  const ok = status === 0;
+  const error = ok ? null : [err, out].filter(Boolean).join(' ').trim() || `${failMsgPrefix} (exit ${status}).`;
+  return { ok, status, stdout: out, stderr: err, error };
+}
+
 function runPowershellScriptFile(ps1Body, args = [], failMsgPrefix = 'PowerShell script failed') {
   const psExe = windowsPowerShellExe();
   const tmpPs1 = path.join(os.tmpdir(), `tagbrowser-ps-${process.pid}-${Date.now()}.ps1`);
   try {
     fssync.writeFileSync(tmpPs1, ps1Body, 'utf8');
-    const r = spawnSync(psExe, ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', tmpPs1, ...args], {
-      windowsHide: true,
-      encoding: 'utf8',
-    });
+    const r = spawnSync(psExe, [...PS_FILE_FLAGS, tmpPs1, ...args], { windowsHide: true, encoding: 'utf8' });
     if (r.error) return { ok: false, status: null, stdout: '', stderr: '', error: String(r.error.message || r.error) };
-    const stdout = String(r.stdout || '');
-    const stderr = String(r.stderr || '');
-    const ok = r.status === 0;
-    const error = ok ? null : [stderr, stdout].filter(Boolean).join(' ').trim() || `${failMsgPrefix} (exit ${r.status}).`;
-    return { ok, status: r.status, stdout, stderr, error };
+    return shapePowershellResult(r.status, r.stdout, r.stderr, failMsgPrefix);
   } catch (e) {
     return { ok: false, status: null, stdout: '', stderr: '', error: String(e.message || e) };
   } finally {
@@ -616,6 +620,33 @@ function runPowershellScriptFile(ps1Body, args = [], failMsgPrefix = 'PowerShell
       fssync.unlinkSync(tmpPs1);
     } catch (_) {}
   }
+}
+
+/** Async sibling: same contract as runPowershellScriptFile but never blocks the main event loop (spawnSync
+    stalls everything for the whole PowerShell run; use this on hot paths like the fav-column Recent scan). */
+function runPowershellScriptFileAsync(ps1Body, args = [], failMsgPrefix = 'PowerShell script failed') {
+  return new Promise((resolve) => {
+    const psExe = windowsPowerShellExe();
+    const tmpPs1 = path.join(os.tmpdir(), `tagbrowser-ps-${process.pid}-${Date.now()}.ps1`);
+    const finish = (res) => {
+      try { fssync.unlinkSync(tmpPs1); } catch (_) {}
+      resolve(res);
+    };
+    let stdout = '';
+    let stderr = '';
+    try {
+      fssync.writeFileSync(tmpPs1, ps1Body, 'utf8');
+      const child = spawn(psExe, [...PS_FILE_FLAGS, tmpPs1, ...args], { windowsHide: true });
+      child.stdout.setEncoding('utf8');
+      child.stderr.setEncoding('utf8');
+      child.stdout.on('data', (d) => { stdout += d; });
+      child.stderr.on('data', (d) => { stderr += d; });
+      child.on('error', (e) => finish({ ok: false, status: null, stdout: '', stderr: '', error: String(e.message || e) }));
+      child.on('close', (status) => finish(shapePowershellResult(status, stdout, stderr, failMsgPrefix)));
+    } catch (e) {
+      finish({ ok: false, status: null, stdout: '', stderr: '', error: String(e.message || e) });
+    }
+  });
 }
 
 /** Run a one-arg PowerShell script for its success/failure only: null on success, else an error string. */
@@ -3754,7 +3785,18 @@ ipcMain.handle('resolve-google-drive-file-id', async (_event, { fullPath } = {})
  * pathType is the PowerShell Test-Path filter: 'Container' for folders, 'Leaf' for files. label is for
  * error messages. Returns { ok, error, items } where items is [{ path, mtimeMs }] deduped by lowercased path.
  */
+/* Resolving .lnk targets shells out to PowerShell (~1.5s startup), and the fav column re-renders often, so
+   cache the result briefly: cuts repeated spawns to one per TTL per kind. Keyed by pathType. */
+const recentLnkScanCache = new Map();
+const RECENT_LNK_SCAN_TTL_MS = 60 * 1000;
+
 async function scanWindowsRecentLnkTargets(pathType, label) {
+  const cached = recentLnkScanCache.get(pathType);
+  if (cached && Date.now() - cached.at < RECENT_LNK_SCAN_TTL_MS) return cached.result;
+  const cacheOk = (result) => {
+    if (result.ok) recentLnkScanCache.set(pathType, { at: Date.now(), result });
+    return result;
+  };
   const recentDir = path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Recent');
   let names;
   try {
@@ -3775,7 +3817,7 @@ async function scanWindowsRecentLnkTargets(pathType, label) {
     })
   );
   const valid = withStat.filter(Boolean).sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 28);
-  if (!valid.length) return { ok: true, error: null, items: [] };
+  if (!valid.length) return cacheOk({ ok: true, error: null, items: [] });
   const jsonIn = path.join(os.tmpdir(), `tagfox-winrecent-${pathType}-${process.pid}-${Date.now()}.json`);
   const ps1Body = `param([Parameter(Mandatory)][string]$JsonPath)
 $ErrorActionPreference = 'Stop'
@@ -3804,7 +3846,7 @@ if ($out.Count -lt 1) { Write-Output '[]' } else { $out | ConvertTo-Json -Compre
 `;
   try {
     await fs.writeFile(jsonIn, JSON.stringify({ items: valid }), 'utf8');
-    const r = runPowershellScriptFile(ps1Body, [jsonIn], `Recent ${label} script failed`);
+    const r = await runPowershellScriptFileAsync(ps1Body, [jsonIn], `Recent ${label} script failed`);
     if (!r.ok) return { ok: false, error: r.error, items: [] };
     let arr;
     try {
@@ -3828,7 +3870,7 @@ if ($out.Count -lt 1) { Write-Output '[]' } else { $out | ConvertTo-Json -Compre
       const mtimeMs = typeof row.mtimeMs === 'number' ? row.mtimeMs : 0;
       items.push({ path: p, mtimeMs });
     }
-    return { ok: true, error: null, items };
+    return cacheOk({ ok: true, error: null, items });
   } catch (e) {
     return { ok: false, error: String(e.message || e), items: [] };
   } finally {
