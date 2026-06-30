@@ -1397,6 +1397,12 @@
         <div class="modal-body">
           <p class="small text-break text-muted mb-2" id="tagModalPath"></p>
           <p id="tagModalBulkHint" class="small text-muted mb-2 d-none">Several items: active tags are on at least one selected item. Click an inactive tag to add it to all selected items; click an active tag to remove it from every selected item.</p>
+          <!-- Rename the file itself (base name, tags excluded). Single-item rename only; hidden in bulk/draft. -->
+          <div class="input-group input-group-sm mb-2" id="tagModalNameRow">
+            <span class="input-group-text" title="File name without the xk/xp/xx tags">Name</span>
+            <input type="text" id="tagModalBaseName" class="form-control" placeholder="File name (tags excluded)" autocomplete="off" />
+            <button type="button" class="btn btn-outline-primary" id="tagModalRenameBtn">Rename</button>
+          </div>
           <!-- Current xk/xp/xx tags as removable chips (renderer: renderModalChips) -->
           <div id="tagModalChips" class="d-flex flex-wrap gap-1 mb-2" aria-label="Tags on this item"></div>
           <div id="tagModalQuickTags" class="d-flex flex-wrap gap-1 mb-2" role="group" aria-label="Toggle tags on or off"></div>

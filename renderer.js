@@ -13387,6 +13387,12 @@
       if (modalTargetPaths.length > 1) el.textContent = modalTargetPaths.length + ' items selected';
       else if (modalTargetPaths.length === 1) el.textContent = modalTargetPaths[0];
       else el.textContent = '';
+      // The Name (rename) field only makes sense for a single existing file, not bulk or drafts.
+      const nameRow = document.getElementById('tagModalNameRow');
+      if (nameRow) {
+        const singleRename = !tagModalIsNameDraft() && modalTargetPaths.length === 1;
+        nameRow.classList.toggle('d-none', !singleRename);
+      }
     }
 
     function renderModalChips() {
@@ -13444,7 +13450,10 @@
       setTagApplyFeedback('');
       updateTagModalPathLabel();
       const base = T.baseName(fp);
-      modalTags = [...T.parseSegmentTags(base).tags];
+      const parsed = T.parseSegmentTags(base);
+      modalTags = [...parsed.tags];
+      const ni = document.getElementById('tagModalBaseName');
+      if (ni) ni.value = T.splitExt(parsed.pretty)[0];
       renderModalChips();
       refreshTagModalDatalist();
       if (!tagModalInst) {
@@ -13633,6 +13642,12 @@
       const raw = String(v || '').trim();
       if (!raw) return;
       const low = raw.toLowerCase();
+      // One deadline per file: adding a date drops any existing deadline first (replace, not append).
+      if (T.isDateTag && T.isDateTag(raw)) {
+        for (let i = modalTags.length - 1; i >= 0; i--) {
+          if (T.isDateTag(modalTags[i]) && modalTags[i].toLowerCase() !== low) modalTags.splice(i, 1);
+        }
+      }
       if (tagModalIsNameDraft()) {
         if (modalTags.some((t) => t.toLowerCase() === low)) return;
         modalTags.push(raw);
@@ -13651,7 +13666,8 @@
       renderModalChips();
       const ok = await performTagRename('Adding tag…');
       if (!ok) {
-        modalTags.pop();
+        // Restore chips to the real on-disk state (also undoes any deadline strip above).
+        modalTags = [...T.parseSegmentTags(T.baseName(modalTargetPaths[0])).tags];
         renderModalChips();
       } else {
         rememberTag(low, raw);
@@ -13680,7 +13696,17 @@
       }
       const parent = T.parentDir(modalPath);
       const base = T.baseName(modalPath);
-      const newBase = T.buildTaggedComponent(base, modalTags);
+      let newBase;
+      const nameInput = document.getElementById('tagModalBaseName');
+      if (!tagModalIsNameDraft() && modalTargetPaths.length === 1 && nameInput) {
+        // Rename modal: build from the (possibly edited) Name field stem, keeping the extension.
+        const parsed = T.parseSegmentTags(base);
+        const [curStem, ext0] = T.splitExt(parsed.pretty);
+        const editedStem = String(nameInput.value || '').trim();
+        newBase = T.buildTaggedComponent((editedStem || curStem) + ext0, modalTags);
+      } else {
+        newBase = T.buildTaggedComponent(base, modalTags);
+      }
       const sep = modalPath.includes('/') ? '/' : '\\';
       const toPath = parent ? parent + sep + newBase : newBase;
       const fromN = modalPath.replace(/[/\\]+$/, '').toLowerCase();
@@ -13707,6 +13733,12 @@
         const oldSel = selectedFullPath && selectedFullPath.replace(/[/\\]+$/, '').toLowerCase() === fromN;
         modalTargetPaths[0] = toPath;
         updateTagModalPathLabel();
+        // Re-derive chips + Name field from the real on-disk name (also collapses any duplicate deadline).
+        const nb = T.parseSegmentTags(T.baseName(toPath));
+        modalTags = [...nb.tags];
+        renderModalChips();
+        const niAfter = document.getElementById('tagModalBaseName');
+        if (niAfter) niAfter.value = T.splitExt(nb.pretty)[0];
         if (oldSel) {
           selectedFullPath = toPath;
           renderScopeBreadcrumb();
@@ -15187,6 +15219,13 @@
       if (e.key === 'Enter') {
         e.preventDefault();
         void addModalTagFromInput();
+      }
+    });
+    document.getElementById('tagModalRenameBtn')?.addEventListener('click', () => void performTagRename('Renaming…'));
+    document.getElementById('tagModalBaseName')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        void performTagRename('Renaming…');
       }
     });
     document.getElementById('tagModalAddDateBtn')?.addEventListener('click', () => {

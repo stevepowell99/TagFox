@@ -128,6 +128,7 @@
     const { base } = peelTags(stem);
     const uniq = [];
     const seen = new Set();
+    let lastDate = ''; // only one deadline per file; the last xd- given wins, written trailing
     for (const t of tags || []) {
       const trimmed = String(t).trim();
       // A date keeps its hyphens (xd-2026-07-15); any other tag body is letters/digits only, so
@@ -135,11 +136,13 @@
       const isDate = DATE_BODY_RE.test(trimmed) || DATE_TOKEN_RE.test(trimmed);
       const s = isDate ? trimmed.replace(/^xd-/, '') : trimmed.replace(/[^A-Za-z0-9]/g, '');
       if (!s) continue;
+      if (isDate) { lastDate = s; continue; } // collected, appended once below
       const k = s.toLowerCase();
       if (seen.has(k)) continue;
       seen.add(k);
       uniq.push(s);
     }
+    if (lastDate) uniq.push(lastDate);
     if (!uniq.length) return base + ext;
     // Date bodies stay as-is; other bodies are uppercased by convention.
     const tagStr = uniq
