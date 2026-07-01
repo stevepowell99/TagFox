@@ -12240,9 +12240,9 @@
       return applyAdvancedPathHides(treeRows);
     }
 
-    /** True when any Advanced toggle (case / path / whole-word / diacritics / hide special / hide ~) is checked. */
+    /** True when a popover-only toggle (case / whole-word / diacritics) is checked. Path + hide are exposed icons with their own active state. */
     function anyAdvancedSwitchOn() {
-      return ['optCase', 'optWholeWord', 'optPath', 'optDiacritics', 'optHideSpecial', 'optHideTilde'].some(
+      return ['optCase', 'optWholeWord', 'optDiacritics'].some(
         (id) => document.getElementById(id)?.checked
       );
     }
@@ -12285,6 +12285,10 @@
       const advBtn = document.getElementById('btnToggleSearchOptsAdvanced');
       advBtn?.classList.remove('pulse-hint', 'pulse-hint--sparse');
       advBtn?.style.removeProperty('--empty-pulse-frac');
+      [document.querySelector('label[for="optHideSpecial"]'), document.querySelector('label[for="optHideTilde"]')].forEach((el) => {
+        el?.classList.remove('pulse-hint', 'pulse-hint--sparse');
+        el?.style.removeProperty('--empty-pulse-frac');
+      });
       const rvLbl = resultsViewPulseLabels();
       [rvLbl.showSubfolders, rvLbl.foldersOnly, rvLbl.filesOnly].forEach((el) => {
         el?.classList.remove('pulse-hint', 'pulse-hint--sparse');
@@ -12342,6 +12346,10 @@
       const wantTag = inBand && activeTagKeys.size > 0;
       const wantRecency = isEmpty && recencyMode !== 'all';
       const wantAdv = inBand && anyAdvancedSwitchOn();
+      const hideSpecialBtn = document.querySelector('label[for="optHideSpecial"]');
+      const hideTildeBtn = document.querySelector('label[for="optHideTilde"]');
+      const wantHideSpecial = isEmpty && !!document.getElementById('optHideSpecial')?.checked;
+      const wantHideTilde = isEmpty && !!document.getElementById('optHideTilde')?.checked;
       const rvLbl = resultsViewPulseLabels();
       const wantRvFoldersOnly = isEmpty && isFoldersOnly();
       const wantRvFilesOnly = isEmpty && isFilesOnly();
@@ -12378,6 +12386,8 @@
         restartPulseHint(qWrap, wantQ, mode, sparseFrac);
         restartPulseHint(recencyGrp, wantRecency, mode, sparseFrac);
         restartPulseHint(advBtn, wantAdv, mode, sparseFrac);
+        restartPulseHint(hideSpecialBtn, wantHideSpecial, mode, sparseFrac);
+        restartPulseHint(hideTildeBtn, wantHideTilde, mode, sparseFrac);
         restartPulseHint(rvLbl.foldersOnly, wantRvFoldersOnly, mode, sparseFrac);
         restartPulseHint(rvLbl.filesOnly, wantRvFilesOnly, mode, sparseFrac);
         restartPulseHint(rvLbl.showSubfolders, wantRvShowSub, mode, sparseFrac);
@@ -12408,6 +12418,8 @@
         if (want && mode === 'sparse') el?.style.setProperty('--empty-pulse-frac', String(sparseFrac));
         else if (!want || mode === 'empty') el?.style.removeProperty('--empty-pulse-frac');
       };
+      toggleRvPulse(hideSpecialBtn, wantHideSpecial);
+      toggleRvPulse(hideTildeBtn, wantHideTilde);
       toggleRvPulse(rvLbl.foldersOnly, wantRvFoldersOnly);
       toggleRvPulse(rvLbl.filesOnly, wantRvFilesOnly);
       toggleRvPulse(rvLbl.showSubfolders, wantRvShowSub);
@@ -15875,11 +15887,15 @@
     }
 
     /** Advanced → Whole word: flip + schedule search (same as clicking the checkbox). */
-    function toggleWholeWordMatch() {
-      const el = document.getElementById('optWholeWord');
+    /** Flip a search-option checkbox and fire its change handler (whole word, match path, hide special, hide ~). */
+    function toggleSearchOptCheckbox(id) {
+      const el = document.getElementById(id);
       if (!el) return;
       el.checked = !el.checked;
       el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    function toggleWholeWordMatch() {
+      toggleSearchOptCheckbox('optWholeWord');
     }
 
     /** True when scope has a parent path we can navigate to. */
@@ -16485,6 +16501,27 @@
         toggleWholeWordMatch();
         return;
       }
+      if (modC && !e.shiftKey && (e.key === 'p' || e.key === 'P')) {
+        if (document.querySelector('.modal.show')) return;
+        if (blockAppShortcutInTextField(e.target)) return;
+        e.preventDefault();
+        toggleSearchOptCheckbox('optPath');
+        return;
+      }
+      if (modC && !e.shiftKey && (e.key === '.' || e.code === 'Period')) {
+        if (document.querySelector('.modal.show')) return;
+        if (blockAppShortcutInTextField(e.target)) return;
+        e.preventDefault();
+        toggleSearchOptCheckbox('optHideSpecial');
+        return;
+      }
+      if (modC && !e.shiftKey && (e.key === 't' || e.key === 'T')) {
+        if (document.querySelector('.modal.show')) return;
+        if (blockAppShortcutInTextField(e.target)) return;
+        e.preventDefault();
+        toggleSearchOptCheckbox('optHideTilde');
+        return;
+      }
       if (modC && !e.shiftKey && (e.key === 'i' || e.key === 'I')) {
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
@@ -16829,6 +16866,9 @@
         toggleWholeWordMatch();
         return;
       }
+      if (e.key === 'p' || e.key === 'P') { e.preventDefault(); toggleSearchOptCheckbox('optPath'); return; }
+      if (e.key === '.' || e.code === 'Period') { e.preventDefault(); toggleSearchOptCheckbox('optHideSpecial'); return; }
+      if (e.key === 't' || e.key === 'T') { e.preventDefault(); toggleSearchOptCheckbox('optHideTilde'); return; }
       if (e.key === 'r') {
         e.preventDefault();
         const order = ['1h', '1d', '1w', '1m', '1y', 'all'];

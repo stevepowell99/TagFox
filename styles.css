@@ -2471,7 +2471,7 @@ ul.breadcrumb-folder-flyout .dropdown-item,
   right: 0;
   left: auto;
   margin-top: 0.35rem;
-  min-width: min(22rem, calc(100vw - 2rem));
+  min-width: min(13rem, calc(100vw - 2rem));
   max-width: min(34rem, calc(100vw - 1rem));
   z-index: 1055;
 }

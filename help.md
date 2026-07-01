@@ -106,7 +106,7 @@ Meanwhile, tools like Google Drive train you to type a word and expect the right
 - Type in the search box — results update as you type. Press `Enter` to force a refresh.
 - Tip: `foo|bar` matches either word. `!foo` excludes files matching “foo”.
 - Next to the search row, **Both** / **Folders only** / **Files only** narrow what Everything returns (`folder:` / `file:` when narrowed). See [Everything searching](https://www.voidtools.com/support/everything/searching/).
-- The **Advanced** button opens extra options: match case, match path, whole word, diacritics, **Hide special**, **Hide ~**. Toggle **whole word** with `w` or `Ctrl`+`W` (see Shortcuts). **Hide special** removes rows whose path has a segment starting with `.` or `$`, or equals `desktop.ini` (`..` is ignored; `.shortcut-targets-by-id` is kept). **Hide ~** removes rows with any segment starting with `~` (e.g. profile junctions). Both are **table only**; Everything still fetches up to **Results per page** before filtering — if the list looks empty, raise that limit, use **Load more**, or narrow scope/query. When those rows are still shown (toggles off), **Hide special** matches fade more (lower opacity) than **~** matches.
+- Three toggles sit as standalone icons next to the search row: **Match path** (folder-tree icon, `p` / `Ctrl`+`P`), **Hide special** (eye-slash, `.` / `Ctrl`+`.`) and **Hide ~** (wave icon, `t` / `Ctrl`+`T`). The **More match options** button (font icon) holds the rest: match case, whole word (`w` / `Ctrl`+`W`), respect accents. **Hide special** removes rows whose path has a segment starting with `.` or `$`, or equals `desktop.ini` (`..` is ignored; `.shortcut-targets-by-id` is kept). **Hide ~** removes rows with any segment starting with `~` (e.g. profile junctions). Both are **table only**; Everything still fetches up to **Results per page** before filtering — if the list looks empty, raise that limit, use **Load more**, or narrow scope/query. When those rows are still shown (toggles off), **Hide special** matches fade more (lower opacity) than **~** matches.
 - **Tree** / **Smart** / **Flat** (`l` cycles; `x` → Smart): Tree hides the Path column and groups by folder; Tree mode keeps path sort A→Z. Size/Modified/Name sorts switch to Flat (status bar note).
 
 ### 👁️ View toggles
@@ -238,7 +238,10 @@ Things that might trip you up:
 <tr><td><kbd>F5</kbd></td><td>Refresh results</td></tr>
 <tr><td><kbd>i</kbd> / <kbd>Ctrl</kbd>+<kbd>I</kbd></td><td>Cycle layout</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd></td><td>Reset to Smart view defaults (subfolders on, files + folders; not Flat), plus clear tag filters, recency <strong>All</strong>, whole word off</td></tr>
-<tr><td><kbd>w</kbd> / <kbd>Ctrl</kbd>+<kbd>W</kbd></td><td>Toggle whole word (Advanced)</td></tr>
+<tr><td><kbd>w</kbd> / <kbd>Ctrl</kbd>+<kbd>W</kbd></td><td>Toggle whole word</td></tr>
+<tr><td><kbd>p</kbd> / <kbd>Ctrl</kbd>+<kbd>P</kbd></td><td>Toggle match path</td></tr>
+<tr><td><kbd>.</kbd> / <kbd>Ctrl</kbd>+<kbd>.</kbd></td><td>Toggle hide special (dot / <kbd>$</kbd> paths)</td></tr>
+<tr><td><kbd>t</kbd> / <kbd>Ctrl</kbd>+<kbd>T</kbd></td><td>Toggle hide ~ paths</td></tr>
 <tr><td><kbd>s</kbd> / <kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Toggle subfolders</td></tr>
 <tr><td><kbd>f</kbd> / <kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>Cycle content mode</td></tr>
 <tr><td><kbd>r</kbd> / <kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>Cycle recency</td></tr>
