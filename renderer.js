@@ -11151,10 +11151,9 @@
         }
         setResultsViewRadios(layout, showSubs, content);
       }
-      {
-        const rf = localStorage.getItem(LS.recencyFilter);
-        setRecencyFilterMode(['all', '1h', '1d', '1w', '1m', '1y'].includes(rf) ? rf : 'all');
-      }
+      /* Recency is a "right now" filter: always launch at All rather than restoring a persisted time window.
+         A stale 1h/1d would otherwise silently cap every search after a restart (looks like search is broken). */
+      setRecencyFilterMode('all');
       restoreDeadlineFilter();
       sortColumn = localStorage.getItem(LS.sortBy) || 'name';
       if (sortColumn === 'ext') sortColumn = 'name';
@@ -11230,7 +11229,7 @@
       localStorage.setItem(LS.showSubfolders, isShowSubfolders() ? '1' : '0');
       localStorage.setItem(LS.hideFiles, isFoldersOnly() ? '1' : '0');
       localStorage.setItem(LS.treeView, isFlatView() ? '0' : '1');
-      localStorage.setItem(LS.recencyFilter, recencyFilterMode());
+      /* Recency intentionally not persisted (see loadSettings): it always launches at All. */
       localStorage.setItem(LS.sortBy, sortColumn);
       localStorage.setItem(LS.optAsc, sortAsc ? '1' : '0');
       localStorage.setItem(LS.treeFolding, document.getElementById('optTreeFolding').checked ? '1' : '0');
@@ -17310,6 +17309,8 @@
     {
       const savedB = loadPaneBSearchStateFromStorage();
       resultsPaneState.B.searchState = savedB || resultsPaneState.B.searchState || resultsPaneState.A.searchState;
+      /* Same rule as pane A (loadSettings): recency always launches at All, never restored from last session. */
+      if (resultsPaneState.B.searchState) resultsPaneState.B.searchState.recencyFilter = 'all';
       resultsPaneState.B.lastRows = Array.isArray(resultsPaneState.A.lastRows) ? resultsPaneState.A.lastRows.slice() : [];
       resultsPaneState.B.resultsPagingCtx = cloneResultsPagingCtx(resultsPaneState.A.resultsPagingCtx);
     }
