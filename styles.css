@@ -374,6 +374,16 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   background-color: var(--bs-btn-active-bg);
   border-color: var(--bs-btn-active-border-color);
 }
+/* Faint background groups the four search-option icon toggles (match path, hide special, hide ~, more options); overridden by checked / filled / hover states. */
+.tagfox-search-opt-icon {
+  background-color: var(--bs-secondary-bg);
+}
+/* Literal ~ glyph styled to sit like a Font Awesome icon in its 2rem button. */
+.tagfox-search-opt-glyph {
+  font-weight: 700;
+  font-size: 1.05rem;
+  line-height: 1;
+}
 /* Tinted background to visually group each icon pair. */
 .tagfox-view-pair {
   background: var(--bs-secondary-bg);
