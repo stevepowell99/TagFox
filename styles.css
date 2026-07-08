@@ -2448,6 +2448,12 @@ ul.breadcrumb-folder-flyout .dropdown-item,
 .search-opts-advanced-popover:not([hidden]) {
   display: flex;
 }
+/* Deadline popover holds one non-wrapping row of range buttons; size it to fit them, not the 13rem default. */
+#deadlineFilterPanel {
+  flex-wrap: nowrap;
+  min-width: max-content;
+  max-width: none;
+}
 /* Keyboard focus lands here after list selection / chrome clicks (see focusQueryBox / focusMainWorkingArea). */
 #resultsWrap:focus {
   outline: 2px solid var(--tb-accent);
