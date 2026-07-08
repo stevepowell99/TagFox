@@ -1163,6 +1163,12 @@
     const GMIST_BASE_URL = 'https://mist.broad-smoke-cc64.workers.dev';
     const GMIST_EXT = new Set(['md', 'qmd']);
 
+    /** True when the path is under a Google Drive mount (own My Drive mirror, or a shared shortcut target). */
+    function pathUnderGoogleDrive(fp) {
+      const s = String(fp || '');
+      return /[\\/]My Drive [(]/i.test(s) || /\.shortcut-targets-by-id|\.shortcuts-by-id/i.test(s);
+    }
+
     /** A markdown file living under a Google Drive mount: the only rows gmist can open. */
     function rowEligibleForGmist(fp) {
       const s = String(fp || '');
@@ -1170,7 +1176,7 @@
       const dot = base.lastIndexOf('.');
       const ext = dot >= 0 ? base.slice(dot + 1).toLowerCase() : '';
       if (!GMIST_EXT.has(ext)) return false;
-      return /[\\/]My Drive [(]/i.test(s) || /\.shortcut-targets-by-id|\.shortcuts-by-id/i.test(s);
+      return pathUnderGoogleDrive(s);
     }
 
     async function openRowInGmist(fp) {
@@ -1197,6 +1203,74 @@
       const opened = await window.tagBrowser.openUrlDefaultBrowser({ url });
       if (opened && opened.ok === false) setStatusMain(opened.error || 'Could not open browser for gmist.');
       else setStatusMain('Opening in gmist (browser)…');
+    }
+
+    /* Open in Google Workspace (edit online): Office and Google-native docs on Drive. The edit (pen) icon uses
+       this for anything that isn't md/qmd (those go to gmist). Google-native shortcuts reuse the existing
+       shortcut resolver; Office files resolve their Drive file id and open the matching Google editor window. */
+    const WORKSPACE_DOC_EXT = new Set(['doc', 'docx', 'rtf', 'odt']);
+    const WORKSPACE_SHEET_EXT = new Set(['xls', 'xlsx', 'ods', 'csv', 'tsv']);
+    const WORKSPACE_SLIDES_EXT = new Set(['ppt', 'pptx', 'odp']);
+
+    /** File types the pen icon can open in Google Workspace (Office files + Google-native shortcuts), on Drive. */
+    function rowEligibleForWorkspaceEdit(fp) {
+      const s = String(fp || '');
+      const base = T.baseName(s);
+      const dot = base.lastIndexOf('.');
+      const ext = dot >= 0 ? base.slice(dot + 1).toLowerCase() : '';
+      const known =
+        GOOGLE_SHORTCUT_EXT.has(ext) ||
+        WORKSPACE_DOC_EXT.has(ext) ||
+        WORKSPACE_SHEET_EXT.has(ext) ||
+        WORKSPACE_SLIDES_EXT.has(ext);
+      return known && pathUnderGoogleDrive(s);
+    }
+
+    function googleEditorUrlForExt(ext, id) {
+      if (WORKSPACE_DOC_EXT.has(ext)) return 'https://docs.google.com/document/d/' + id + '/edit';
+      if (WORKSPACE_SHEET_EXT.has(ext)) return 'https://docs.google.com/spreadsheets/d/' + id + '/edit';
+      if (WORKSPACE_SLIDES_EXT.has(ext)) return 'https://docs.google.com/presentation/d/' + id + '/edit';
+      return null;
+    }
+
+    async function openRowInGoogleWorkspace(fp) {
+      const base = T.baseName(fp);
+      const dot = base.lastIndexOf('.');
+      const ext = dot >= 0 ? base.slice(dot + 1).toLowerCase() : '';
+      // Google-native shortcut (.gdoc/.gsheet/.gslides): the existing path opens it in the Workspace window.
+      if (GOOGLE_SHORTCUT_EXT.has(ext)) {
+        await openFileDefaultOrGoogleWorkspace(fp);
+        return;
+      }
+      // Office file on Drive: resolve its Drive id and open the matching Google editor in a Workspace window.
+      if (
+        !window.tagBrowser ||
+        typeof window.tagBrowser.resolveGoogleDriveFileId !== 'function' ||
+        !window.tagBrowser.openGoogleWorkspaceWindow
+      ) {
+        setStatusMain('Open in Google Workspace is not available.');
+        return;
+      }
+      setStatusMain('Opening in Google Workspace…');
+      const r = await window.tagBrowser.resolveGoogleDriveFileId({ fullPath: fp });
+      if (!r || !r.ok || !r.fileId) {
+        const why =
+          r && r.reason === 'drive-name-ambiguous'
+            ? 'several Drive files share this name; rename one or open it from drive.google.com.'
+            : r && r.reason === 'no-drive-api'
+              ? 'Google Drive sign-in is needed first (Settings).'
+              : 'could not find this file in Google Drive.';
+        setStatusMain('Open in Google Workspace: ' + why);
+        return;
+      }
+      const url = googleEditorUrlForExt(ext, r.fileId);
+      if (!url) {
+        setStatusMain('No Google editor for this file type.');
+        return;
+      }
+      const opened = await window.tagBrowser.openGoogleWorkspaceWindow({ url });
+      if (opened && opened.ok === false) setStatusMain(opened.error || 'Open in Google Workspace failed.');
+      else setStatusMain('Opening in Google Workspace…');
     }
 
     /** Text files opened in the RHS viewer editor. Special rendered previews are deliberately bypassed here so these are editable. */
@@ -11692,7 +11766,8 @@
         if (img) img.removeAttribute('src');
       }
     }
-    /** Anchor near the entry cursor position, flipping/clamping so the popup stays on screen. */
+    /** Anchor near the entry cursor position, flipping/clamping so the popup stays on screen and, crucially,
+     *  never covers the hovered row's action buttons (the .results-td-actions cell revealed on hover). */
     function positionHoverPreview(el, x, y) {
       const margin = 16;
       const vw = window.innerWidth;
@@ -11700,8 +11775,17 @@
       el.classList.remove('d-none');
       const w = el.offsetWidth;
       const h = el.offsetHeight;
-      let left = x + margin;
-      if (left + w > vw - 8) left = x - margin - w;
+      // Right boundary the preview must not cross: default the viewport edge, but pull it left of the hovered
+      // row's action buttons so the preview can never obscure them.
+      let maxRight = vw - 8;
+      const actCell = document.querySelector('#resultsTable tbody tr:hover td.results-td-actions');
+      if (actCell) {
+        const r = actCell.getBoundingClientRect();
+        if (r.width > 0) maxRight = Math.min(maxRight, r.left - 12);
+      }
+      let left = x + margin; // prefer right of the cursor
+      if (left + w > maxRight) left = x - margin - w; // no room → flip to the left of the cursor
+      if (left + w > maxRight) left = maxRight - w; // still overlapping the buttons → pin right edge just left of them
       if (left < 8) left = 8;
       let top = y - h / 2;
       if (top < 8) top = 8;
@@ -12974,19 +13058,22 @@
           }
           await openFileDefaultOrGoogleWorkspace(fp);
         });
-        /* Drive-resident markdown only: deep-link the row into the gmist web editor. */
+        /* Edit online (pen): Drive-resident markdown → gmist; other Drive docs (Office / Google-native) → Google Workspace. */
         let btnGmist = null;
-        if (!rowIsFolder(row) && rowEligibleForGmist(fp)) {
+        const gmistOk = !rowIsFolder(row) && rowEligibleForGmist(fp);
+        const wsEditOk = !rowIsFolder(row) && !gmistOk && rowEligibleForWorkspaceEdit(fp);
+        if (gmistOk || wsEditOk) {
           btnGmist = document.createElement('button');
           btnGmist.type = 'button';
           btnGmist.className =
             'btn btn-sm btn-outline-secondary tagfox-scope-bar-icon-btn d-inline-flex align-items-center justify-content-center';
-          btnGmist.title = 'Open in gmist (Google Drive markdown editor)';
-          btnGmist.setAttribute('aria-label', 'Open in gmist');
+          btnGmist.title = gmistOk ? 'Open in gmist (Google Drive markdown editor)' : 'Open in Google Workspace (edit online)';
+          btnGmist.setAttribute('aria-label', gmistOk ? 'Open in gmist' : 'Open in Google Workspace');
           btnGmist.innerHTML = '<i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>';
           btnGmist.addEventListener('click', async (e) => {
             e.stopPropagation();
-            await openRowInGmist(fp);
+            if (gmistOk) await openRowInGmist(fp);
+            else await openRowInGoogleWorkspace(fp);
           });
         }
         const btnClip = document.createElement('button');
