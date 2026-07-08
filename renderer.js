@@ -7002,6 +7002,7 @@
       const raw = document.getElementById('newMdTitleInput').value.trim();
       const created = await createTodoMdAt(folder, raw, {});
       if (created) document.getElementById('newMdTitleInput').value = '';
+      return created;
     }
 
     function hideQuickTodoPop() {
@@ -14616,18 +14617,46 @@
     document.getElementById('btnNewTodoMdTags').addEventListener('click', () => openTagModalNewTodoDraft());
     document.getElementById('btnReadmeFolderDocTags').addEventListener('click', () => openTagModalFolderDocDraft());
     document.getElementById('readmeFolderDocStemInput').addEventListener('input', () => folderDocOnFilenameUiChanged());
-    document.getElementById('btnCreateTodoMd').addEventListener('click', () => void createTodoMdInScope());
+    document.getElementById('btnCreateTodoMd').addEventListener('click', () => {
+      void createTodoMdInScope().then((ok) => { if (ok) closeAddTodoPanel(); });
+    });
     document.getElementById('btnCancelTodoMd').addEventListener('click', () => {
       const inp = document.getElementById('newMdTitleInput');
-      if (!inp) return;
-      inp.value = '';
-      inp.focus();
+      if (inp) inp.value = '';
+      closeAddTodoPanel();
     });
     document.getElementById('newMdTitleInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); closeAddTodoPanel(); return; }
       if (e.key !== 'Enter') return;
       e.preventDefault();
       document.getElementById('btnCreateTodoMd').click();
     });
+
+    /* Add TODO pop-out (header +TODO icon): click toggles; typing lives inside, so no hover-open. */
+    function closeAddTodoPanel() {
+      const panel = document.getElementById('addTodoPanel');
+      const btn = document.getElementById('btnToggleAddTodo');
+      if (!panel || panel.hasAttribute('hidden')) return;
+      panel.setAttribute('hidden', '');
+      btn?.setAttribute('aria-expanded', 'false');
+    }
+    (function wireAddTodoPopover() {
+      const wrap = document.querySelector('.tagfox-addtodo-wrap');
+      const panel = document.getElementById('addTodoPanel');
+      const btn = document.getElementById('btnToggleAddTodo');
+      if (!wrap || !panel || !btn) return;
+      const open = () => {
+        if (!panel.hasAttribute('hidden')) return;
+        panel.removeAttribute('hidden');
+        btn.setAttribute('aria-expanded', 'true');
+        const inp = document.getElementById('newMdTitleInput');
+        if (inp) { inp.focus(); inp.select(); }
+      };
+      btn.addEventListener('click', () => { panel.hasAttribute('hidden') ? open() : closeAddTodoPanel(); });
+      document.addEventListener('pointerdown', (e) => {
+        if (!panel.hasAttribute('hidden') && !wrap.contains(e.target)) closeAddTodoPanel();
+      });
+    })();
 
     document.querySelectorAll('input[name="tagFoxRecencyFilter"]').forEach((el) => {
       el.addEventListener('change', () => {

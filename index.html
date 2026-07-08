@@ -910,6 +910,64 @@
             >
               <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
             </button>
+            <!-- Add TODO folds into a header pop-out (was a bulky bottom row) to save vertical space; shown in theater too. -->
+            <div class="position-relative d-inline-flex tagfox-addtodo-wrap">
+              <button
+                type="button"
+                id="btnToggleAddTodo"
+                class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0"
+                style="width: 2rem; height: 2rem"
+                aria-expanded="false"
+                aria-controls="addTodoPanel"
+                title="Add a TODO file (xkTODO.md) in the current folder"
+                aria-label="Add TODO"
+              >
+                <i class="fa-solid fa-square-plus" aria-hidden="true"></i>
+              </button>
+              <div id="addTodoPanel" class="search-opts-advanced-popover border rounded p-2 bg-body shadow-sm flex-column gap-2" role="group" aria-label="Add TODO" hidden>
+                <label class="text-muted mb-0 small text-truncate min-w-0" id="labelNewMdTitle" for="newMdTitleInput" title="Creates Title xkTODO.md in the current folder">Add TODO here</label>
+                <div class="d-flex align-items-center gap-2">
+                  <input
+                    type="text"
+                    id="newMdTitleInput"
+                    class="form-control form-control-sm flex-grow-1"
+                    style="min-width: 9rem"
+                    placeholder="Title"
+                    autocomplete="off"
+                  />
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
+                    style="width: 2rem; height: 2rem"
+                    id="btnNewTodoMdTags"
+                    title="Tags applied to the new file name (xk/xp/xx)"
+                    aria-label="Edit tags for new TODO file"
+                  >
+                    <i class="fa-solid fa-tags" aria-hidden="true"></i>
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
+                    style="width: 2rem; height: 2rem"
+                    id="btnCancelTodoMd"
+                    title="Cancel new TODO title"
+                    aria-label="Cancel new TODO title"
+                  >
+                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline-primary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
+                    style="width: 2rem; height: 2rem"
+                    id="btnCreateTodoMd"
+                    title="Creates Title xkTODO.md in the current folder"
+                    aria-label="Create TODO markdown file in the current folder"
+                  >
+                    <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
             <button
               type="button"
               class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0"
@@ -1136,48 +1194,6 @@
             ></pre>
           </div>
         </div>
-      </div>
-      <!-- Add TODO: Title xkTODO.md in the current folder. Pinned to the sidebar bottom (below #propsScroll); hidden in theater/overview mode via CSS. -->
-      <div id="propsAddTodoRow" class="px-2 py-2 border-top d-flex align-items-center gap-2 flex-shrink-0 small min-w-0">
-        <label class="text-muted mb-0 text-truncate min-w-0" id="labelNewMdTitle" for="newMdTitleInput" title="Creates Title xkTODO.md in the current folder">Add TODO here</label>
-        <input
-          type="text"
-          id="newMdTitleInput"
-          class="form-control form-control-sm flex-grow-1"
-          style="min-width: 7rem"
-          placeholder="Title"
-          autocomplete="off"
-        />
-        <button
-          type="button"
-          class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
-          style="width: 2rem; height: 2rem"
-          id="btnNewTodoMdTags"
-          title="Tags applied to the new file name (xk/xp/xx)"
-          aria-label="Edit tags for new TODO file"
-        >
-          <i class="fa-solid fa-tags" aria-hidden="true"></i>
-        </button>
-        <button
-          type="button"
-          class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
-          style="width: 2rem; height: 2rem"
-          id="btnCancelTodoMd"
-          title="Cancel new TODO title"
-          aria-label="Cancel new TODO title"
-        >
-          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-        </button>
-        <button
-          type="button"
-          class="btn btn-sm btn-outline-primary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
-          style="width: 2rem; height: 2rem"
-          id="btnCreateTodoMd"
-          title="Creates Title xkTODO.md in the current folder"
-          aria-label="Create TODO markdown file in the current folder"
-        >
-          <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
-        </button>
       </div>
     </aside>
     </div>
