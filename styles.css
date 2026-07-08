@@ -2526,6 +2526,10 @@ ul.breadcrumb-folder-flyout .dropdown-item,
 #propsAside.props-theater #htmlPreviewFrame {
   min-height: 72vh;
 }
+/* Overview (theater) mode is for reading, not authoring: hide the Add TODO row. */
+#propsAside.props-theater #propsAddTodoRow {
+  display: none;
+}
 /* Bootstrap tooltips for toolbar chrome (see refreshTagFoxChromeTooltips). */
 .tooltip.tagfox-ui-tooltip .tooltip-inner {
   text-align: left;

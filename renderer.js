@@ -7286,12 +7286,7 @@
       document.getElementById('propsEmpty').classList.remove('d-none');
       document.getElementById('propsDetails').classList.add('d-none');
       const propTitleBlock = document.getElementById('propTitleBlock');
-      if (propTitleBlock) {
-        propTitleBlock.classList.add('d-none');
-        propTitleBlock.style.order = '';
-      }
-      const addTodoRow = document.getElementById('propsAddTodoRow');
-      if (addTodoRow) addTodoRow.style.order = '';
+      if (propTitleBlock) propTitleBlock.classList.add('d-none');
       const iconMount = document.getElementById('propTitleIconMount');
       if (iconMount) iconMount.innerHTML = '';
       const secTitle = document.getElementById('propsPanelSectionTitle');
@@ -7552,11 +7547,7 @@
       details.classList.remove('d-none');
       const propTitleBlock = document.getElementById('propTitleBlock');
       if (propTitleBlock) propTitleBlock.classList.remove('d-none');
-      const addTodoRow = document.getElementById('propsAddTodoRow');
       const isFolder = rowIsFolder(propRow);
-      /* Folder: title above Add TODO; file: Add TODO above title. */
-      if (propTitleBlock) propTitleBlock.style.order = isFolder ? '0' : '1';
-      if (addTodoRow) addTodoRow.style.order = isFolder ? '1' : '0';
       const secTitle = document.getElementById('propsPanelSectionTitle');
       if (secTitle) secTitle.textContent = isFolder ? 'View/edit text files in folder' : 'Viewer';
       const todoLbl = document.getElementById('labelNewMdTitle');
