@@ -12547,28 +12547,40 @@
         else applyTagBarPillStyle(b, key);
         const label = (neg ? '¬' : '') + info.display; // ¬ marks a negated (not-tag) filter
         b.textContent = info.count > 0 ? label + ' (' + info.count + ')' : label;
-        b.title = neg
-          ? 'Excluding ' + info.display + ' — click to clear'
-          : on
-            ? info.display + ' — click to exclude (not ' + info.display + ')'
-            : 'Filter by ' + info.display + ' — click again to exclude';
-        b.addEventListener('click', () => {
+        b.title = 'Left-click: filter by ' + info.display + '. Right-click: exclude (not ' + info.display + '). Same button again clears.';
+        const applyTagFilterChange = (mutate) => {
           void (async () => {
-            // Cycle: off → include → exclude → off
-            if (!activeTagKeys.has(key)) {
-              rememberTag(key, info.display);
-              activeTagKeys.add(key);
-            } else if (!excludedTagKeys.has(key)) {
-              excludedTagKeys.add(key);
-            } else {
-              activeTagKeys.delete(key);
-              excludedTagKeys.delete(key);
-            }
+            mutate();
             persistActiveTagFilter();
-
             await runSearchNow();
             commitSearchHistoryNow();
           })();
+        };
+        // Left-click: include (off or excluded → include; include → off). One search per click.
+        b.addEventListener('click', () =>
+          applyTagFilterChange(() => {
+            if (activeTagKeys.has(key) && !excludedTagKeys.has(key)) {
+              activeTagKeys.delete(key);
+            } else {
+              rememberTag(key, info.display);
+              activeTagKeys.add(key);
+              excludedTagKeys.delete(key);
+            }
+          })
+        );
+        // Right-click: exclude / not-tag (off or included → exclude; exclude → off).
+        b.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          applyTagFilterChange(() => {
+            if (excludedTagKeys.has(key)) {
+              activeTagKeys.delete(key);
+              excludedTagKeys.delete(key);
+            } else {
+              rememberTag(key, info.display);
+              activeTagKeys.add(key);
+              excludedTagKeys.add(key);
+            }
+          });
         });
         el.appendChild(b);
       };
