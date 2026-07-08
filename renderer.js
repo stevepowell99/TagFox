@@ -9363,6 +9363,56 @@
       return head + '\n\n' + lines.join('\n') + more;
     }
 
+    /** Delete-confirm escape: once "don't ask again this session" is chosen, deletes skip the modal until restart. */
+    let skipDeleteConfirmThisSession = false;
+    let recycleConfirmOpen = false;
+
+    /** Recycle confirm modal with a "don't ask again this session" option. Resolves true to proceed, false to cancel. */
+    function confirmRecycle(paths) {
+      if (skipDeleteConfirmThisSession) return Promise.resolve(true);
+      if (recycleConfirmOpen) return Promise.resolve(false); // a confirm is already showing; ignore re-entry (e.g. Del pressed twice)
+      return new Promise((resolve) => {
+        const modalEl = document.getElementById('recycleConfirmModal');
+        if (!modalEl || !window.bootstrap) {
+          resolve(confirm(recycleBinConfirmMessage(paths)));
+          return;
+        }
+        document.getElementById('recycleConfirmMsg').textContent = recycleBinConfirmMessage(paths);
+        const btnOk = document.getElementById('btnRecycleConfirmOk');
+        const btnAlways = document.getElementById('btnRecycleConfirmAlways');
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        recycleConfirmOpen = true;
+        let decided = false;
+        const cleanup = () => {
+          recycleConfirmOpen = false;
+          btnOk.removeEventListener('click', onOk);
+          btnAlways.removeEventListener('click', onAlways);
+          modalEl.removeEventListener('hidden.bs.modal', onHidden);
+        };
+        const finish = (val, always) => {
+          if (decided) return;
+          decided = true;
+          if (always) skipDeleteConfirmThisSession = true;
+          cleanup();
+          resolve(val);
+          modal.hide();
+        };
+        const onOk = () => finish(true, false);
+        const onAlways = () => finish(true, true);
+        const onHidden = () => {
+          if (decided) return;
+          decided = true;
+          cleanup();
+          resolve(false);
+        };
+        btnOk.addEventListener('click', onOk);
+        btnAlways.addEventListener('click', onAlways);
+        modalEl.addEventListener('hidden.bs.modal', onHidden);
+        modal.show();
+        requestAnimationFrame(() => btnOk.focus());
+      });
+    }
+
     /** Status waiter while Recycle Bin operation runs. */
     function setDeletingStatus(count) {
       const n = Math.max(1, Number(count) || 1);
@@ -15133,7 +15183,7 @@
         searchDebugLog('recycle.ui', { source: 'bulkBar', phase: 'noopNoSelection' });
         return;
       }
-      if (!confirm(recycleBinConfirmMessage(p))) {
+      if (!(await confirmRecycle(p))) {
         searchDebugLog('recycle.ui', { source: 'bulkBar', phase: 'confirmCancel', count: p.length });
         return;
       }
@@ -16146,7 +16196,7 @@
         searchDebugLog('recycle.ui', { source: 'deleteKey', phase: 'noopNoSelection' });
         return;
       }
-      if (!confirm(recycleBinConfirmMessage(p))) {
+      if (!(await confirmRecycle(p))) {
         searchDebugLog('recycle.ui', { source: 'deleteKey', phase: 'confirmCancel', count: p.length });
         return;
       }
