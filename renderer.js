@@ -12540,18 +12540,26 @@
         const b = document.createElement('button');
         b.type = 'button';
         b.dataset.tagKey = key;
-        const on = activeTagKeys.has(key);
-        const neg = on && excludedTagKeys.has(key);
-        b.className = 'btn btn-sm tag-bar-pill' + (on ? ' tag-bar-pill-active' : '') + (neg ? ' tag-bar-pill-exclude' : '');
-        if (neg) applyTagBarPillExcludeStyle(b);
-        else applyTagBarPillStyle(b, key);
-        const label = (neg ? '¬' : '') + info.display; // ¬ marks a negated (not-tag) filter
-        b.textContent = info.count > 0 ? label + ' (' + info.count + ')' : label;
+        const paintPill = () => {
+          const on = activeTagKeys.has(key);
+          const neg = on && excludedTagKeys.has(key);
+          b.className = 'btn btn-sm tag-bar-pill' + (on ? ' tag-bar-pill-active' : '') + (neg ? ' tag-bar-pill-exclude' : '');
+          b.style.cssText = '';
+          if (neg) applyTagBarPillExcludeStyle(b);
+          else applyTagBarPillStyle(b, key);
+          const label = (neg ? '¬' : '') + info.display; // ¬ marks a negated (not-tag) filter
+          b.textContent = info.count > 0 ? label + ' (' + info.count + ')' : label;
+        };
+        paintPill();
         b.title = 'Left-click: filter by ' + info.display + '. Right-click: exclude (not ' + info.display + '). Same button again clears.';
         const applyTagFilterChange = (mutate) => {
+          mutate();
+          // Instant feedback before the async Everything round-trip: recolour the clicked pill and re-filter
+          // the already-loaded rows client-side. runSearchNow() then reconciles (may pull more matches).
+          paintPill();
+          persistActiveTagFilter();
+          renderTable();
           void (async () => {
-            mutate();
-            persistActiveTagFilter();
             await runSearchNow();
             commitSearchHistoryNow();
           })();
