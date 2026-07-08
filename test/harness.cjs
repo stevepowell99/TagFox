@@ -4,6 +4,7 @@
 
 const { spawn } = require('child_process');
 const http = require('http');
+const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
@@ -71,6 +72,9 @@ async function connect({ port, profile, maxResults = 60, scope = SCOPES.repo, di
   if (!port || !profile) throw new Error('connect needs { port, profile }');
   const baseUrl = await resolveEverythingUrl();
   const userData = path.join(os.tmpdir(), profile);
+  // Wipe the profile so every run starts fresh (deterministic startup: no tabsState/settings carried
+  // over from a prior run — otherwise e.g. persisted tabs would break the "1 tab at startup" assertion).
+  try { fs.rmSync(userData, { recursive: true, force: true }); } catch (_) {}
   // TAGFOX_TEST_HIDDEN keeps the window offscreen (never shown) so test runs do not flash up onscreen;
   // the hidden window still renders and drives through the #tagfoxtest hook over CDP.
   const child = spawn(ELECTRON, [APP_DIR, `--remote-debugging-port=${port}`, `--user-data-dir=${userData}`], {

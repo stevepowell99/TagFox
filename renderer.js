@@ -514,7 +514,6 @@
       if (clearFilters) {
         activeTagKeys.clear();
         setRecencyFilterMode('all');
-        tagFilterSelectionRestoreSnapshot = null;
         const ww = document.getElementById('optWholeWord');
         if (ww) ww.checked = false;
         syncAdvancedSearchIconFilledState();
@@ -582,8 +581,6 @@
     /** Tag bar: these bodies (lowercase keys) always show; the rest hide behind "More" (active hidden ones still show). */
     const TAG_BAR_PRIMARY = ['todo', 'gcc', 'waiting', 'later'];
     let tagBarShowAll = false;
-    /** Saved when Ctrl+Shift+T clears active tag filters; next Ctrl+Shift+T restores. */
-    let tagFilterSelectionRestoreSnapshot = null;
     /** Tag modal targets (length 1 = single-name edit, &gt;1 = union add/remove on each). */
     let modalTargetPaths = [];
     let modalTags = [];
@@ -2246,7 +2243,6 @@
       document.getElementById('rootFolder').value = '';
       activeTagKeys.clear();
       persistActiveTagFilter();
-      tagFilterSelectionRestoreSnapshot = null;
       setRecencyFilterMode('all');
       saveSettings();
       renderScopeBreadcrumb();
@@ -16014,45 +16010,6 @@
       return keyboardReplaceCheckedTagsExact([], 'Removing tags...', 'Tags removed.');
     }
 
-    /** Ctrl+Shift+T: clear active tag filters (save snapshot) or restore last snapshot. */
-    async function keyboardToggleTagFilterClearRestore() {
-      if (activeTagKeys.size) {
-        tagFilterSelectionRestoreSnapshot = {
-          keys: [...activeTagKeys].sort(),
-          combineOr: tagFilterCombineOr,
-        };
-        activeTagKeys.clear();
-        persistActiveTagFilter();
-        await runSearchNow();
-        commitSearchHistoryNow();
-        renderTagBar();
-        updateEmptyResultsPulseHints(listRowsForUi().length);
-        setStatusMain('Tag filter cleared (Ctrl+Shift+T to restore).');
-        return;
-      }
-      if (tagFilterSelectionRestoreSnapshot && tagFilterSelectionRestoreSnapshot.keys.length) {
-        const snap = tagFilterSelectionRestoreSnapshot;
-        activeTagKeys = new Set();
-        for (const k of snap.keys) {
-          const k2 = String(k).trim().toLowerCase();
-          if (!k2) continue;
-          activeTagKeys.add(k2);
-          const kn = knownBracketTagsList.find((t) => t.key === k2);
-          rememberTag(k2, kn ? kn.display : k2);
-        }
-        tagFilterCombineOr = !!snap.combineOr;
-        persistActiveTagFilter();
-        saveSettings();
-        await runSearchNow();
-        commitSearchHistoryNow();
-        renderTagBar();
-        updateEmptyResultsPulseHints(listRowsForUi().length);
-        setStatusMain('Tag filter restored.');
-        return;
-      }
-      setStatusMain('No tag filter to restore.');
-    }
-
     function toggleKeyboardRowCheckbox() {
       if (!selectedFullPath) return;
       resultsShiftRangeAnchorIdx = null;
@@ -16475,7 +16432,14 @@
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
         e.preventDefault();
-        void keyboardToggleTagFilterClearRestore();
+        void openNewTab();
+        return;
+      }
+      if (modC && e.shiftKey && (e.key === 'w' || e.key === 'W')) {
+        if (document.querySelector('.modal.show')) return;
+        if (blockAppShortcutInTextField(e.target)) return;
+        e.preventDefault();
+        void closeTab(activeTabId);
         return;
       }
       if (modC && !e.shiftKey && (e.key === 't' || e.key === 'T')) {
