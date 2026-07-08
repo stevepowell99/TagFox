@@ -863,62 +863,68 @@
     <div class="split-v" id="splitProps" role="separator" aria-label="Resize viewer column" title="Drag"></div>
     <!-- Viewer: details + previews / readme -->
     <aside class="props-panel border-start bg-body d-flex flex-column" id="propsAside">
-      <!-- File/folder title block. The Add TODO row is pinned to the sidebar bottom (after #propsScroll), not here. -->
+      <!-- Viewer header (kept as #propsChromeStack for tooltip refresh): file icon + name, folder/section
+           label, and viewer actions on one row. Tags band sits just below and collapses when empty. The
+           Add TODO row is pinned to the sidebar bottom (after #propsScroll), not here. -->
       <div id="propsChromeStack" class="d-flex flex-column flex-shrink-0">
-      <div id="propTitleBlock" class="d-none px-2 py-2 border-bottom flex-shrink-0">
-        <!-- Icon + title on one flex row (center-aligned like Name column); tags below -->
-        <div class="min-w-0">
-          <div class="d-flex align-items-center gap-2 min-w-0">
+        <div class="px-2 py-2 border-bottom d-flex align-items-center justify-content-between gap-2 flex-shrink-0">
+          <div class="d-flex align-items-center gap-2 min-w-0 flex-grow-1">
             <span id="propTitleIconMount" class="flex-shrink-0" aria-hidden="true"></span>
-            <div id="propDisplayName" class="fs-5 fw-semibold text-break min-w-0 flex-grow-1"></div>
-          </div>
-          <div id="propTitleTags" class="d-flex flex-wrap gap-1 mt-1"></div>
-        </div>
-      </div>
-      </div>
-      <div class="p-2 border-bottom small fw-semibold d-flex align-items-center justify-content-between gap-2 flex-shrink-0 flex-wrap">
-        <div class="d-flex align-items-center gap-2 flex-wrap min-w-0">
-          <span id="propsPanelSectionTitle">Viewer</span>
-          <!-- Folder rows only: nested readme aggregate (renderer toggles visibility) -->
-          <div id="propsNestedReadmeToggleWrap" class="d-none small flex-shrink-0 ms-0" style="min-width: min(100%, 18rem)">
-            <div class="btn-group btn-group-sm tagfox-segmented" role="group" aria-label="Viewer doc mode">
-              <input type="radio" class="btn-check" name="viewerDocMode" id="optViewerDocSingle" value="single" autocomplete="off" checked />
-              <label class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center" for="optViewerDocSingle" title="Single doc">
-                <i class="fa-solid fa-file-lines fa-fw" aria-hidden="true"></i>
-                <span class="visually-hidden">Single doc</span>
-              </label>
-              <input type="radio" class="btn-check" name="viewerDocMode" id="optViewerDocNested" value="nested" autocomplete="off" />
-              <label class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center" for="optViewerDocNested" title="All nested docs">
-                <i class="fa-solid fa-folder-tree fa-fw" aria-hidden="true"></i>
-                <span class="visually-hidden">All nested docs</span>
-              </label>
+            <div id="propDisplayName" class="fw-semibold text-truncate min-w-0"></div>
+            <span id="propsPanelSectionTitle" class="small fw-semibold text-muted flex-shrink-0">Viewer</span>
+            <!-- Folder rows only: nested readme aggregate (renderer toggles visibility) -->
+            <div id="propsNestedReadmeToggleWrap" class="d-none small flex-shrink-0 ms-0" style="min-width: min(100%, 14rem)">
+              <div class="btn-group btn-group-sm tagfox-segmented" role="group" aria-label="Viewer doc mode">
+                <input type="radio" class="btn-check" name="viewerDocMode" id="optViewerDocSingle" value="single" autocomplete="off" checked />
+                <label class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center" for="optViewerDocSingle" title="Single doc">
+                  <i class="fa-solid fa-file-lines fa-fw" aria-hidden="true"></i>
+                  <span class="visually-hidden">Single doc</span>
+                </label>
+                <input type="radio" class="btn-check" name="viewerDocMode" id="optViewerDocNested" value="nested" autocomplete="off" />
+                <label class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center" for="optViewerDocNested" title="All nested docs">
+                  <i class="fa-solid fa-folder-tree fa-fw" aria-hidden="true"></i>
+                  <span class="visually-hidden">All nested docs</span>
+                </label>
+              </div>
             </div>
           </div>
+          <div class="d-inline-flex align-items-center gap-1 flex-shrink-0">
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary d-none d-inline-flex align-items-center justify-content-center p-0"
+              style="width: 2rem; height: 2rem"
+              id="btnPropsCopyText"
+              title="Copy viewer text"
+              aria-label="Copy viewer text"
+            >
+              <i class="fa-solid fa-clipboard" aria-hidden="true"></i>
+            </button>
+            <!-- PDF refresh lives in the header (shown only while a PDF preview is loaded). -->
+            <button
+              type="button"
+              id="btnPdfRefresh"
+              class="btn btn-sm btn-outline-secondary d-none d-inline-flex align-items-center justify-content-center p-0"
+              style="width: 2rem; height: 2rem"
+              title="Refresh PDF output from disk"
+              aria-label="Refresh PDF output from disk"
+            >
+              <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0"
+              style="width: 2rem; height: 2rem"
+              id="btnPropsTheaterToggle"
+              title="Near full screen (Shift+Space)"
+              aria-expanded="false"
+              aria-controls="propsAside"
+              aria-label="Expand viewer panel"
+            >
+              <i class="fa-solid fa-up-right-and-down-left-from-center" aria-hidden="true"></i>
+            </button>
+          </div>
         </div>
-        <div class="d-inline-flex align-items-center gap-1 flex-shrink-0">
-          <button
-            type="button"
-            class="btn btn-sm btn-outline-secondary d-none d-inline-flex align-items-center justify-content-center p-0"
-            style="width: 2rem; height: 2rem"
-            id="btnPropsCopyText"
-            title="Copy viewer text"
-            aria-label="Copy viewer text"
-          >
-            <i class="fa-solid fa-clipboard" aria-hidden="true"></i>
-          </button>
-          <button
-            type="button"
-            class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0"
-            style="width: 2rem; height: 2rem"
-            id="btnPropsTheaterToggle"
-            title="Near full screen (Shift+Space)"
-            aria-expanded="false"
-            aria-controls="propsAside"
-            aria-label="Expand viewer panel"
-          >
-            <i class="fa-solid fa-up-right-and-down-left-from-center" aria-hidden="true"></i>
-          </button>
-        </div>
+        <div id="propTitleTags" class="d-none flex-wrap gap-1 px-2 pb-1 flex-shrink-0"></div>
       </div>
       <div id="propsScroll" class="flex-grow-1 overflow-y-auto p-2 small">
         <p id="propsEmpty" class="text-muted mb-0">Set the current folder in Settings — or select a row.</p>
@@ -945,19 +951,6 @@
           </div>
 
           <div id="pdfBlock" class="d-none border-top pt-2 d-flex flex-column flex-grow-1">
-            <div class="d-flex align-items-center gap-2 mb-1 flex-shrink-0">
-              <div class="fw-semibold flex-grow-1">PDF</div>
-              <button
-                type="button"
-                id="btnPdfRefresh"
-                class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
-                style="width: 2rem; height: 2rem"
-                title="Refresh PDF output from disk"
-                aria-label="Refresh PDF output from disk"
-              >
-                <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
-              </button>
-            </div>
             <!-- Idle: srcdoc only — never iframe.src='' (that loads about:blank → Chromium debug_utils scenario 4 spam / jank, Electron #44368). -->
             <iframe id="pdfFrame" class="rounded" title="PDF preview" srcdoc="<!DOCTYPE html><html><head><meta charset='utf-8'></head><body style='margin:0;background:#f8f9fa'></body></html>"></iframe>
           </div>

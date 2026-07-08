@@ -7074,6 +7074,7 @@
       const videoBlock = document.getElementById('videoBlock');
       const audioBlock = document.getElementById('audioBlock');
       if (pdfBlock) pdfBlock.classList.add('d-none');
+      document.getElementById('btnPdfRefresh')?.classList.add('d-none');
       if (htmlBlock) htmlBlock.classList.add('d-none');
       if (officeBlock) officeBlock.classList.add('d-none');
       if (imageBlock) imageBlock.classList.add('d-none');
@@ -7093,12 +7094,14 @@
       }
       document.getElementById('propsEmpty').classList.remove('d-none');
       document.getElementById('propsDetails').classList.add('d-none');
-      const propTitleBlock = document.getElementById('propTitleBlock');
-      if (propTitleBlock) propTitleBlock.classList.add('d-none');
+      const dn = document.getElementById('propDisplayName');
+      if (dn) dn.textContent = '';
+      const tt = document.getElementById('propTitleTags');
+      if (tt) { tt.innerHTML = ''; tt.classList.add('d-none'); tt.classList.remove('d-flex'); }
       const iconMount = document.getElementById('propTitleIconMount');
       if (iconMount) iconMount.innerHTML = '';
       const secTitle = document.getElementById('propsPanelSectionTitle');
-      if (secTitle) secTitle.textContent = 'Viewer';
+      if (secTitle) { secTitle.textContent = 'Viewer'; secTitle.classList.remove('d-none'); }
       const todoLbl = document.getElementById('labelNewMdTitle');
       if (todoLbl) {
         todoLbl.textContent = 'Add TODO here';
@@ -7353,11 +7356,13 @@
       revokePreviewBlobs();
       empty.classList.add('d-none');
       details.classList.remove('d-none');
-      const propTitleBlock = document.getElementById('propTitleBlock');
-      if (propTitleBlock) propTitleBlock.classList.remove('d-none');
       const isFolder = rowIsFolder(propRow);
       const secTitle = document.getElementById('propsPanelSectionTitle');
-      if (secTitle) secTitle.textContent = isFolder ? 'View/edit text files in folder' : 'Viewer';
+      if (secTitle) {
+        secTitle.textContent = isFolder ? 'View/edit text files in folder' : 'Viewer';
+        // File: the filename already labels the panel, so hide the "Viewer" word; folder: keep the label.
+        secTitle.classList.toggle('d-none', !isFolder);
+      }
       const todoLbl = document.getElementById('labelNewMdTitle');
       if (todoLbl) {
         if (isFolder) {
@@ -7384,6 +7389,7 @@
       mdFileBlock.classList.add('d-none');
       if (gdocWorkspaceBlock) gdocWorkspaceBlock.classList.add('d-none');
       if (pdfBlock) pdfBlock.classList.add('d-none');
+      document.getElementById('btnPdfRefresh')?.classList.add('d-none');
       const htmlBlockQuick = document.getElementById('htmlBlock');
       if (htmlBlockQuick) htmlBlockQuick.classList.add('d-none');
       if (officeBlock) officeBlock.classList.add('d-none');
@@ -7410,6 +7416,9 @@
       const tagBand = document.getElementById('propTitleTags');
       tagBand.innerHTML = '';
       for (const tag of parsedTitle.tags) appendTagPillWithRemove(tagBand, tag, propPath);
+      const hasTitleTags = tagBand.children.length > 0; // collapse the band when there are no tags
+      tagBand.classList.toggle('d-none', !hasTitleTags);
+      tagBand.classList.toggle('d-flex', hasTitleTags);
       const iconMount = document.getElementById('propTitleIconMount');
       if (iconMount) {
         iconMount.innerHTML = '';
@@ -7683,6 +7692,7 @@
         if (!propsViewStill(targetFp)) return;
         if (r.ok) {
           pdfBlock.classList.remove('d-none');
+          document.getElementById('btnPdfRefresh')?.classList.remove('d-none');
           const pdfFrame = document.getElementById('pdfFrame');
           pdfFrame.removeAttribute('srcdoc');
           pdfFrame.src = base64ToBlobUrl(r.base64, 'application/pdf');
