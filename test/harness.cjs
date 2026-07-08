@@ -126,13 +126,13 @@ function structuralProblems(s) {
   const probs = [];
   if (!s) return ['no state'];
   if (s.dupBaseIds && s.dupBaseIds.length) probs.push(`dup/missing base ids: ${s.dupBaseIds.join(',')}`);
-  if (s.baseIdTbodyPane !== s.activeResultsPane) probs.push(`base #tbody in pane ${s.baseIdTbodyPane}, active=${s.activeResultsPane}`);
-  if (s.activeClassPane !== s.activeResultsPane) probs.push(`css active ${s.activeClassPane} != logical ${s.activeResultsPane}`);
   if (s.topLevelSearchDepth !== 0 || s.searchInFlight) probs.push(`not settled depth=${s.topLevelSearchDepth} inFlight=${s.searchInFlight}`);
-  const activeState = s.activeResultsPane === 'A' ? s.paneA_state : s.paneB_state;
-  if (s.lastRows !== activeState) probs.push(`active-state desync lastRows=${s.lastRows} paneState=${activeState}`);
+  // global lastRows must equal the active tab's stored rows.
+  if (s.lastRows !== s.activeTabRows) probs.push(`active-tab desync lastRows=${s.lastRows} tabRows=${s.activeTabRows}`);
   // recency / folders-only / files-only legitimately hide rows client-side; only assert render==data otherwise
   if (s.recency === 'all' && !s.foldersOnly && !s.filesOnly && (s.lastRows > 0) !== (s.tbodyBase > 0)) probs.push(`render!=data lastRows=${s.lastRows} tbody=${s.tbodyBase}`);
+  if (s.tabCount < 1) probs.push('no tabs');
+  if (s.tabCount > 10) probs.push(`too many tabs: ${s.tabCount}`);
   return probs;
 }
 

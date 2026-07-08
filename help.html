@@ -125,10 +125,10 @@ Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when
               <li>🏷️ <strong>Filename tags</strong> — add, remove and filter by <code>xk</code>/<code>xp</code>/<code>xx</code> tags. Tags scan your folder automatically; click them to filter results.</li>
               <li>📋 <strong>Add TODO</strong> — create a small markdown file tagged <code>xkTODO</code> in the current folder, right from the Viewer panel.</li>
               <li>📝 <strong>Folder docs</strong> — Viewer loads the first of <code>-readme.md</code> → <code>-readme.txt</code> → <code>readme.md</code> → <code>readme.txt</code> → <code>claude.md</code> → <code>agents.md</code> → <code>about.md</code> → <code>about.txt</code> → <code>context.md</code> → <code>context.txt</code> → <code>index.md</code> → <code>index.txt</code> (details under <strong>📁 Files &amp; folders</strong>).</li>
-              <li>📦 <strong>Shelf</strong> — a visual staging area for files, like a kind of clipboard. Copy items onto the Shelf, navigate to another folder, paste them. No tabs or split panes needed.</li>
+              <li>📦 <strong>Shelf</strong> — a visual staging area for files, like a kind of clipboard. Copy items onto the Shelf, navigate to another folder, paste them. The Shelf keeps them as you move around.</li>
               <li>🔄 <strong>Bulk rename</strong> — check several files (or highlight one), press <code>Ctrl</code>+<code>H</code>, use wildcards (<code>*</code> / <code>?</code>) on the <strong>last path segment only</strong>; live preview shows the first 200 rows but <strong>Rename</strong> still applies to the whole batch captured when the dialog opened. <strong>Match case</strong> follows the search row toggle.</li>
               <li>📏 <strong>Layout</strong> — drag the splitter between results and the Viewer (width saved).</li>
-              <li>↕️ <strong>Split results panes</strong> — drag the horizontal separator inside results to split into top/bottom panes. Each pane remembers its own filters/search state; clicking a pane restores that pane’s state.</li>
+              <li>🗂️ <strong>Result tabs</strong> — open throwaway scratch tabs above the results (the <code>+</code> button, up to 10), each with its own search, scope and filters. Switch with a click, <code>Ctrl</code>+<code>Tab</code> / <code>Ctrl</code>+<code>Shift</code>+<code>Tab</code>, or by dragging a file onto a tab to spring it open. Drag tabs to reorder; middle-click or × to close. Tabs are kept for the session.</li>
               <li>☁️ <strong>Mixed local + Google Docs</strong> — local Office files preview inline; Google Workspace shortcuts (<code>.gdoc</code>, <code>.gsheet</code>, <code>.gslides</code>) open in a popup window. On Windows with Google Drive for Desktop, TagFox resolves the Doc URL from the shortcut file or from the <code>user.drive.id</code> virtual stream when the stub JSON cannot be read (including many <code>.shortcut-targets-by-id</code> paths). That path usually works for <strong>streamed</strong> (on-demand) files too, not only fully mirrored ones.</li>
               <li>🔗 <strong>Google Drive shortcut folders</strong> — Google Drive for Desktop stores shared-folder shortcuts under <code>.shortcut-targets-by-id\&lt;long ID&gt;</code>. TagFox auto-resolves the real folder name: the Name column shows 🔗 plus the actual name, and the breadcrumb and Path column collapse the ugly ID segments. Hover any collapsed path for the full raw path. The resolved names are cached across restarts.</li>
               </ul>
@@ -225,7 +225,7 @@ Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when
               <ul>
               <li>The 💾 on the <strong>saved searches</strong> row saves your entire search state — query, folder, tags, filters, sort, and view mode.</li>
               <li><strong>Drag</strong> a numbered chip (not ×) to reorder; the <strong>highlighted gap</strong> is the drop target. <code>Ctrl</code>+<code>1</code>…<code>9</code> restores the search in that slot, or click the chip.</li>
-              <li>Together, favourite folders and saved searches replace browser-style tabs — you get instant switching without the clutter.</li>
+              <li>Favourite folders and saved searches are your <strong>persistent</strong> bookmarks (<code>Ctrl</code>+<code>1</code>…<code>9</code>); result tabs (see <strong>✨ Features</strong>) are for <strong>throwaway</strong> working views you open and close.</li>
               </ul>
 
             </div>
@@ -334,6 +334,7 @@ Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when
               <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Home</kbd></td><td>Clear current folder, active tag filters, and recency (set to <strong>All</strong>)</td></tr>
               <tr><td><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>→</kbd></td><td>History back / forward</td></tr>
               <tr><td><kbd>Ctrl</kbd>+<kbd>L</kbd></td><td>Recent folders list</td></tr>
+              <tr><td><kbd>Ctrl</kbd>+<kbd>Tab</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd></td><td>Next / previous result tab</td></tr>
               </tbody></table></div>
 
               <h5 class="help-md-section-title">Selection &amp; file operations</h5>

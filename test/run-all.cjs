@@ -8,8 +8,8 @@ const path = require('path');
 const NODE = process.execPath;
 const runs = [
   { name: 'smoke', args: ['smoke.cjs'] },
-  { name: 'crud pane-isolation', args: ['crud-pane-isolation.cjs'] },
-  { name: 'pane stale badge', args: ['pane-stale.cjs'] },
+  { name: 'tab lifecycle', args: ['tab-lifecycle.cjs'] },
+  { name: 'crud tab-isolation', args: ['crud-pane-isolation.cjs'] },
   { name: 'load-more regression', args: ['loadmore-regression.cjs'] },
   { name: 'fuzz seed 999', args: ['fuzz.cjs', '40', '999'] },
   { name: 'fuzz seed 7', args: ['fuzz.cjs', '40', '7'] },

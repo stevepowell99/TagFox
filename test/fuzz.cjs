@@ -1,7 +1,7 @@
-// Randomized dual-pane fuzz: a random sequence of user actions (type, refresh, pane switch, recency,
-// view, scope, inactive-pane dance, auto-refresh tick), settling and checking invariants after each burst:
-//   - structural (harness.structuralProblems): id integrity, base #tbody in active pane, render==data,
-//     active-pane-state in sync, no deadlock
+// Randomized tab fuzz: a random sequence of user actions (type, refresh, new/close/cycle tab, recency,
+// view, scope, auto-refresh tick), settling and checking invariants after each burst:
+//   - structural (harness.structuralProblems): id integrity, render==data, active-tab-state in sync,
+//     tab count in range, no deadlock
 //   - consistency: re-running the same search gives the same count, UNLESS smart view changed the
 //     subfolders/content toggles between the two searches (smart auto narrow/widen is non-idempotent).
 // Run: node test/fuzz.cjs [iterations] [seed]
@@ -35,12 +35,13 @@ async function main() {
     const actions = [
       () => T('setQuery', pick(QUERIES)),
       () => T('refreshNow'),
-      () => T('activatePane', pick(['A', 'B'])),
+      () => T('newTab'),
+      () => T('cycleTab', pick([1, -1])),
+      async () => { const st = await state(); if (st.tabCount > 1) await T('closeTab', st.activeTabId); },
       () => T('setRecency', pick(['all', '1y', '1w'])),
       () => T('setView', rnd() > 0.5, pick(['all', 'folders', 'files'])),
       () => T('setScope', pick(SCOPE_LIST)),
       () => T('scheduleSearch', 'identity'),
-      () => T('refreshInactivePane', { singlePaneOnly: true }),
       () => T('autoTick'),
     ];
 

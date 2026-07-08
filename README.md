@@ -45,12 +45,12 @@ If search feels slow, open **Advanced** and turn off **Folder-contents highlight
 - **Three view switches.** Flat or Tree, subfolders on or off, files and folders or folders only, combined freely. Recency buttons (1h, 1d, 1w, 1m, 1y) filter to what changed recently.
 - **Fast previews.** Images, PDFs, Word, Excel, PowerPoint, text, JSON, markdown and more in the Viewer panel. For a folder it shows a folder readme you can edit in place.
 - **Smart view.** The default layout adjusts which results you see relative to **Max results**, so you rarely touch the subfolder and file toggles by hand.
-- **Favourite folders and saved searches.** Bookmark a folder or a whole search, reorder by drag, and jump back with `Ctrl`+`1` to `9` (searches) or `Ctrl`+`Shift`+`1` to `9` (folders). Together they replace browser-style tabs.
+- **Favourite folders and saved searches.** Bookmark a folder or a whole search, reorder by drag, and jump back with `Ctrl`+`1` to `9` (searches) or `Ctrl`+`Shift`+`1` to `9` (folders). These are your persistent bookmarks; tabs (below) are for throwaway working views.
 - **The Shelf.** A staging strip beside the results. Collect files from several folders, navigate elsewhere, then paste or drag them in. A clipboard for files that does not empty when you move.
 - **Bulk rename.** Check several files, press `Ctrl`+`H`, and use wildcards on the last path segment with a live preview.
 - **Add TODO.** Create a small markdown file tagged `xkTODO` in the current folder from the Viewer panel.
 - **Folder docs.** The Viewer loads the first of `-readme.md`, `readme.md`, `claude.md`, `agents.md`, `about.md`, `index.md` and similar, so each folder can describe itself.
-- **Split result panes.** Drag the horizontal separator to split the results into top and bottom panes, each remembering its own filters and search.
+- **Result tabs.** Open throwaway scratch tabs above the results (the `+` button, up to 10), each holding its own search, scope and filters. Switch by clicking, `Ctrl`+`Tab` / `Ctrl`+`Shift`+`Tab`, or by dragging a file onto a tab to spring it open. Drag tabs to reorder; middle-click or the `×` to close. Tabs are kept for the session.
 - **Paste from Explorer and screenshots.** Paste copied files into the current folder, or paste a screenshot to save `Clipboard image.png` there.
 - **Mixed local and Google Docs.** Local Office files preview inline. Google Workspace shortcuts (`.gdoc`, `.gsheet`, `.gslides`) open in a popup, resolved from the shortcut or the Drive stream, including streamed (on-demand) files.
 - **Google Drive shortcut folders.** Shared-folder shortcuts under `.shortcut-targets-by-id` are resolved to their real names in the breadcrumb and Name column, cached across restarts.
@@ -89,7 +89,7 @@ The build bundles `google-oauth-client.json` (it is in the `build.files` allowli
 npm test
 ```
 
-This runs the dual-pane and refresh regression suite. The tests launch the real app under the Chrome
+This runs the result-tabs and refresh regression suite. The tests launch the real app under the Chrome
 DevTools Protocol and drive it through a hidden `#tagfoxtest` hook (inert in normal runs), so they exercise
 the actual `renderer.js`. Everything must be running, the same as for the app. Full detail, including the
 invariants checked and how to add a test, is in [`test/README.md`](test/README.md).
@@ -117,57 +117,38 @@ Everything's HTTP API returns all folders before all files for a given sort. Wit
 
 Active tag filters are sent to Everything as a regex clause, so matches exist before results load. The tag bar refresh control runs a full-index scan for `xk…` tag tokens and prunes tags that no longer appear; ordinary searches do not. **Hide special** and **Hide ~** are client-side filters in `filteredRows()`; the Everything query is unchanged, so paging still counts raw hits per page.
 
-### Search concurrency and dual panes
+### Search concurrency and result tabs
 
-The results area is two panes (A and B). Only one is active; the active pane owns the canonical DOM ids
-(`tbody`, `resultsTable`, and so on) and the global status bar. `swapCanonicalResultsIds()` moves those ids
-onto whichever pane is active, so `renderTable()` (which writes to `#tbody`) always targets the active pane.
-Each pane's filter state and last results are stored in `resultsPaneState`; switching panes saves the live
-UI into the leaving pane and restores the entering one.
+The results area is a set of scratch tabs above one visible results pane. That single pane always owns the
+canonical DOM ids (`tbody`, `resultsTable`, and so on), so `renderTable()` (which writes to `#tbody`) always
+targets it. Each tab holds its own `searchState`, `lastRows` and paging context in the `tabs` array;
+switching tabs saves the live UI into the leaving tab (`saveActiveTabStateFromUi`) and loads the entering
+one (`restoreTabStateIntoUi`). Only the active tab has DOM: **inactive tabs are pure state snapshots** with
+no rendered rows, re-searched when you activate them (`activateTab`).
 
-One search flow runs at a time. `searchMutex` serialises top-level flows; genuinely nested calls (smart
-narrow / probe re-searches, and the inactive-pane refresh launched from inside a `runSearchNow`) skip the
-mutex by passing `nested: true`. Nesting is marked explicitly, not inferred from a depth counter: a fresh
-event-loop task (the debounced search, F5, a disk-mutation retry) that fires while another flow is mid-await
-must wait for the mutex, not run concurrently.
+This is why the results code is simple to reason about: there is never a second pane rendering in the
+background. A search, F5, auto-refresh or CRUD refresh only ever touches the active tab. The old two-pane
+split kept both panes rendered at once, and every historical bug (searches rendering into the hidden pane,
+load-more rows lost on a background refresh, a copy/delete in one pane bleeding into the other) came from a
+background flow re-rendering the *other* pane. Removing simultaneous rendering removed that whole bug class.
 
-**The inactive pane is a passive snapshot.** It is not refreshed in the background on a search, F5,
-auto-refresh or disk mutation. Only the active pane is live; the inactive pane re-runs its own search the
-instant you activate it (`activateResultsPane()`). This is the single most important rule for keeping the
-dual-pane code sane: a background flow that re-renders the *other* pane while the active flow runs is the
-source of every dual-pane race and of the cross-pane CRUD bleed (a file copied from one pane into the other
-appeared in both, and deleting either removed both, because the refresh path mirrored the active pane onto
-the inactive one and applied the active pane's delete tombstones to it). Removed June 2026; guarded by
-`crud-pane-isolation.cjs`.
+One search flow still runs at a time. `searchMutex` serialises top-level flows; truly nested calls
+(smart narrow / probe re-searches fired synchronously inside an outer `runSearch`) skip the mutex by passing
+`nested: true`. Nesting is marked explicitly: a fresh event-loop task (the debounced search, F5, a
+disk-mutation retry) that fires while another flow is mid-await waits for the mutex rather than running
+concurrently. Activating a tab re-runs its search through the same mutex, so it serialises behind any
+in-flight search.
 
-The id-swap "dance" in `refreshInactiveResultsPane()` (swap the canonical ids onto the inactive pane,
-restore its state, run its search so `renderTable()` writes to its tbody, then swap back) still exists, but
-now runs only on explicit, serialized actions: first-load seeding of pane B, inactive-pane breadcrumb
-navigation, and the test hook. It never fires automatically from a search or a CRUD refresh, so it can no
-longer race a concurrent flow.
-
-Two earlier faults here were fixed in June 2026, and the [tests](test/README.md) guard both:
-
-- **Searches rendering into the hidden pane.** Nesting was inferred from a global depth counter, so the
-  startup debounced search, firing while the inactive-pane dance held the counter up, mistook itself for a
-  nested call, skipped the mutex, and rendered into the id-swapped (hidden) pane. The active pane looked
-  empty until a pane switch repainted it. Fixed by making `nested` explicit (`runSearchNow`,
-  `refreshInactiveResultsPane`).
-- **Load-more rows lost on a background refresh.** `loadMoreResults()` grew `lastRows` but did not save it
-  to the active pane's stored state, so the dance's restore reverted to the pre-load-more page. Fixed by
-  persisting the active pane state at the end of `loadMoreResults()`.
+`loadMoreResults()` grows `lastRows` and must persist it to the active tab in its `finally`; otherwise a
+later tab switch (which restores from stored state) reverts to the pre-load-more page. Guarded by
+`loadmore-regression.cjs`; cross-tab CRUD isolation by `crud-pane-isolation.cjs`; the tab lifecycle by
+`tab-lifecycle.cjs`.
 
 ### Refresh after CRUD (delete fast-path)
 
-Every CRUD refresh acts on the active pane only (`singlePaneOnly`); the inactive pane stays as it was until
-you switch to it (see the passive-snapshot rule above). So a copy, move or delete in one pane never changes
-the other.
-
-Because the inactive pane is a frozen snapshot, a disk change that touches its folder (a file dropped into
-it, or a delete/move/copy under its scope) would otherwise leave it silently out of date. When that happens
-in split view, the pane is flagged stale (`markInactivePaneStaleIfAffected`, scope test in
-`diskMutationAffectsPaneScope`) and its breadcrumb shows an "out of date" badge; clicking it (or activating
-the pane) re-runs that pane's search and clears the flag. Guarded by `pane-stale.cjs`.
+Every CRUD refresh acts on the active tab only; other tabs stay as they were until you switch to one, which
+re-runs its search against disk. So a copy, move or delete in one tab never changes another, and there is no
+stale-snapshot problem to surface: an inactive tab is always refreshed on activation.
 
 A delete only removes rows. `removeGonePathsFromUiNow()` tombstones the deleted paths and repaints once, so
 the rows vanish immediately. Because no new content can appear, `refreshAfterDiskMutation()` detects a pure

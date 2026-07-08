@@ -63,8 +63,7 @@
       globalViewerBasenames: 'tagBrowserGlobalViewerBasenames',
       viewerDocSplitPct: 'tagBrowserViewerDocSplitPct',
       viewerDocSplitPctTheater: 'tagBrowserViewerDocSplitPctTheater',
-      resultsSplitRatio: 'tagBrowserResultsSplitRatio',
-      paneBSearchState: 'tagBrowserPaneBSearchState',
+      tabsState: 'tagBrowserTabsState',
     };
 
     /** One-time copy when upgrading from the old app name (everythang* keys). */
@@ -358,27 +357,14 @@
     let resultsLoadMoreBusy = false;
     /** Offset paging: replay same query with higher Everything offset (null = no further pages for current search). */
     let resultsPagingCtx = null;
-    /** Horizontal split panes in results area: active pane owns canonical #results* ids + global filter controls. */
-    let activeResultsPane = 'A';
-    let resultsSplitRatio = 0.5;
-    const RESULTS_SPLIT_COLLAPSE_EPS = 0.012;
-    /** One top-level search flow at a time: serializes runSearchNow (active runSearch + inactive refresh dance) and stand-alone refreshInactiveResultsPane. Nested calls (smart-narrow runSearchNow inside outer runSearch's smartBeforePaint, dance's inner runSearch inside refreshInactiveResultsPane) see topLevelSearchDepth>0 and skip mutex acquire to avoid deadlock. */
+    /** One top-level search flow at a time: serializes runSearchNow. Nested calls (smart-narrow / smart-probe re-search fired synchronously inside an outer runSearch) pass opts.nested and skip the mutex to avoid self-deadlock. */
     let searchMutex = Promise.resolve();
     let topLevelSearchDepth = 0;
-    const RESULT_DOM_ID_MAP = Object.freeze([
-      { base: 'resultsWrap', A: 'resultsWrapA', B: 'resultsWrapB' },
-      { base: 'resultsScroll', A: 'resultsScrollA', B: 'resultsScrollB' },
-      { base: 'resultsTable', A: 'resultsTableA', B: 'resultsTableB' },
-      { base: 'tbody', A: 'tbodyA', B: 'tbodyB' },
-      { base: 'resultsLoadMoreWrap', A: 'resultsLoadMoreWrapA', B: 'resultsLoadMoreWrapB' },
-      { base: 'btnLoadMoreResults', A: 'btnLoadMoreResultsA', B: 'btnLoadMoreResultsB' },
-      { base: 'resultsLoadMoreHint', A: 'resultsLoadMoreHintA', B: 'resultsLoadMoreHintB' },
-      { base: 'chkSelectAllResults', A: 'chkSelectAllResultsA', B: 'chkSelectAllResultsB' },
-    ]);
-    const resultsPaneState = {
-      A: { searchState: null, lastRows: [], resultsPagingCtx: null, stale: false },
-      B: { searchState: null, lastRows: [], resultsPagingCtx: null, stale: false },
-    };
+    /** Scratch result tabs. One tab is visible in the single results pane; the rest are passive state snapshots that re-run their own search when activated. Each tab: { id, searchState, lastRows, resultsPagingCtx }. Capped at MAX_TABS. */
+    const MAX_TABS = 10;
+    let tabs = [];
+    let activeTabId = null;
+    let nextTabId = 1;
     /** Smart view event kind for the current search: identity|refresh|manual|smart-narrow|smart-probe|null. */
     let smartEvent = null;
     /** Before a Smart probe-widen: saved {subs, content} to revert if cap exceeded. */
@@ -2816,81 +2802,51 @@
       }
     }
 
-    function cloneSearchStateObject(s) {
-      if (!s || typeof s !== 'object') return null;
-      try {
-        return JSON.parse(JSON.stringify(s));
-      } catch (_) {
-        return null;
+    // -------------------------------------------------------------------------
+    // Result tabs (replaced the A/B split panes). One results pane is visible; the
+    // active tab owns the live UI + canonical #results* ids. Inactive tabs are pure
+    // state snapshots — no DOM — that re-run their own search when activated.
+    // -------------------------------------------------------------------------
+
+    function makeTabId() { return nextTabId++; }
+    function activeTab() { return tabs.find((t) => t.id === activeTabId) || null; }
+    function tabIndexById(id) { return tabs.findIndex((t) => t.id === id); }
+    function newBlankTab(searchState) {
+      return { id: makeTabId(), searchState: searchState || null, lastRows: [], resultsPagingCtx: null };
+    }
+
+    /** Short label for a tab chip: scope-folder leaf, else the query text, else a default. */
+    function tabTitle(tab) {
+      const st = tab && tab.searchState;
+      if (st) {
+        const root = String(st.rootFolder || '').trim().replace(/[/\\]+$/, '');
+        if (root) {
+          const leaf = segmentPretty(T.baseName(root));
+          if (leaf) return leaf;
+        }
+        const q = String(st.query || '').trim();
+        if (q) return q;
       }
+      return 'New tab';
     }
 
-    function copyPaneState(fromPaneKey, toPaneKey) {
-      const from = resultsPaneState[fromPaneKey];
-      const to = resultsPaneState[toPaneKey];
-      if (!from || !to) return;
-      to.searchState = cloneSearchStateObject(from.searchState);
-      to.lastRows = Array.isArray(from.lastRows) ? from.lastRows.slice() : [];
-      to.resultsPagingCtx = cloneResultsPagingCtx(from.resultsPagingCtx);
-      repaintPaneFromSavedState(toPaneKey);
-      persistPaneBSearchStateToStorage();
+    function saveActiveTabStateFromUi() {
+      const tab = activeTab();
+      if (!tab) return;
+      tab.searchState = serializeSearchState();
+      tab.lastRows = Array.isArray(lastRows) ? lastRows.slice() : [];
+      tab.resultsPagingCtx = cloneResultsPagingCtx(resultsPagingCtx);
+      persistTabsToStorage();
+      renderTabStrip();
     }
 
-    function swapPaneStates() {
-      const a = resultsPaneState.A;
-      const b = resultsPaneState.B;
-      const snapA = {
-        searchState: cloneSearchStateObject(a.searchState),
-        lastRows: Array.isArray(a.lastRows) ? a.lastRows.slice() : [],
-        resultsPagingCtx: cloneResultsPagingCtx(a.resultsPagingCtx),
-      };
-      a.searchState = cloneSearchStateObject(b.searchState);
-      a.lastRows = Array.isArray(b.lastRows) ? b.lastRows.slice() : [];
-      a.resultsPagingCtx = cloneResultsPagingCtx(b.resultsPagingCtx);
-      b.searchState = snapA.searchState;
-      b.lastRows = snapA.lastRows;
-      b.resultsPagingCtx = snapA.resultsPagingCtx;
-      restorePaneStateIntoUi(activeResultsPane);
-      repaintPaneFromSavedState(paneStateKeyOfOther(activeResultsPane));
-      persistPaneBSearchStateToStorage();
-    }
-
-    function paneStateKeyOfOther(paneKey) {
-      return paneKey === 'B' ? 'A' : 'B';
-    }
-
-    function saveActivePaneStateFromUi() {
-      const pane = resultsPaneState[activeResultsPane];
-      if (!pane) return;
-      pane.searchState = serializeSearchState();
-      pane.lastRows = Array.isArray(lastRows) ? lastRows.slice() : [];
-      pane.resultsPagingCtx = cloneResultsPagingCtx(resultsPagingCtx);
-      /* Only persist B when B was actually mutated (active = B during the inactive-refresh dance, or user is in pane B). Persisting on every save-of-A would wipe the LS key on first startup before init has a chance to load it. */
-      if (activeResultsPane === 'B') persistPaneBSearchStateToStorage();
-    }
-
-    /* Pane A is implicit in the live UI (persisted via per-control LS keys). Pane B has no live UI when inactive — persist its searchState as a JSON blob so it survives restart. lastRows/resultsPagingCtx are search results (stale after restart) and intentionally not persisted; the init-time refreshInactiveResultsPane re-runs B's search to rebuild them. */
-    function persistPaneBSearchStateToStorage() {
-      try {
-        const s = resultsPaneState.B && resultsPaneState.B.searchState;
-        if (s) localStorage.setItem(LS.paneBSearchState, JSON.stringify(s));
-        else localStorage.removeItem(LS.paneBSearchState);
-      } catch (_) {
-        /* ignore quota / serialize errors — pane B will fall back to mirroring A on next restart */
-      }
-    }
-    function loadPaneBSearchStateFromStorage() {
-      const obj = lsGetJson(LS.paneBSearchState, null);
-      return obj && typeof obj === 'object' ? obj : null;
-    }
-
-    function restorePaneStateIntoUi(paneKey) {
-      const pane = resultsPaneState[paneKey];
-      if (!pane) return;
-      lastRows = Array.isArray(pane.lastRows) ? pane.lastRows.slice() : [];
-      resultsPagingCtx = cloneResultsPagingCtx(pane.resultsPagingCtx);
-      if (pane.searchState) {
-        applySearchState(pane.searchState);
+    /** Load a tab's saved state into the single live pane (no id swapping — one pane only). */
+    function restoreTabStateIntoUi(tab) {
+      if (!tab) return;
+      lastRows = Array.isArray(tab.lastRows) ? tab.lastRows.slice() : [];
+      resultsPagingCtx = cloneResultsPagingCtx(tab.resultsPagingCtx);
+      if (tab.searchState) {
+        applySearchState(tab.searchState);
         updateQueryPlaceholder();
         persistActiveTagFilter();
         saveSettings();
@@ -2903,393 +2859,227 @@
       bindResultsDomListeners();
     }
 
-    function swapCanonicalResultsIds(nextPaneKey) {
-      if (nextPaneKey === activeResultsPane) return;
-      const prevPaneKey = activeResultsPane;
-      for (const pair of RESULT_DOM_ID_MAP) {
-        const activeEl = document.getElementById(pair.base);
-        const targetId = nextPaneKey === 'A' ? pair.A : pair.B;
-        const inactiveId = prevPaneKey === 'A' ? pair.A : pair.B;
-        const targetEl = document.getElementById(targetId);
-        if (!activeEl || !targetEl) continue;
-        activeEl.id = inactiveId;
-        targetEl.id = pair.base;
+    /* Tabs persist their searchState (filter / scope / view) across restart as one JSON blob.
+       lastRows / resultsPagingCtx are search results (stale after restart) and intentionally not
+       persisted; the active tab's search re-runs at startup and others re-run when activated. */
+    function persistTabsToStorage() {
+      try {
+        const blob = {
+          activeIndex: Math.max(0, tabIndexById(activeTabId)),
+          tabs: tabs.map((t) => ({ searchState: t.searchState || null })),
+        };
+        localStorage.setItem(LS.tabsState, JSON.stringify(blob));
+      } catch (_) {
+        /* ignore quota / serialize errors — tabs fall back to a single default tab next restart */
       }
-      activeResultsPane = nextPaneKey;
-      document.querySelectorAll('.results-pane').forEach((el) => {
-        el.classList.toggle('results-pane-active', el.getAttribute('data-results-pane') === activeResultsPane);
-      });
+    }
+    function loadTabsFromStorage() {
+      const obj = lsGetJson(LS.tabsState, null);
+      if (!obj || !Array.isArray(obj.tabs) || !obj.tabs.length) return null;
+      return obj;
     }
 
-    async function activateResultsPane(paneKey, opts = {}) {
-      const next = paneKey === 'B' ? 'B' : 'A';
-      if (next === activeResultsPane) return;
-      saveActivePaneStateFromUi();
-      swapCanonicalResultsIds(next);
-      restorePaneStateIntoUi(next);
-      updateInactivePaneBreadcrumb();
-      resultsPaneState[next].stale = false; // newly active pane is the live one
+    async function activateTab(id, opts = {}) {
+      if (id === activeTabId) return;
+      const target = tabs.find((t) => t.id === id);
+      if (!target) return;
+      saveActiveTabStateFromUi();
+      activeTabId = id;
+      restoreTabStateIntoUi(target);
+      renderTabStrip();
+      persistTabsToStorage();
       if (opts && opts.skipSearch) return;
-      await runSearchNow('identity', { singlePaneOnly: true });
-      saveActivePaneStateFromUi();
+      await runSearchNow('identity');
+      saveActiveTabStateFromUi();
     }
 
-    /* Active pane "owns" the global status bar (#statusMain + #statusSmartNote). Inactive pane's runSearch (in the dance below) would otherwise clobber both with its own data; snapshot before, restore after. */
-    function snapshotGlobalStatusBar() {
-      const main = document.getElementById('statusMain');
-      const smart = document.getElementById('statusSmartNote');
-      return {
-        mainHtml: main ? main.innerHTML : '',
-        smartHtml: smart ? smart.innerHTML : '',
-        smartHidden: smart ? smart.classList.contains('d-none') : true,
-        smartWarn: smart ? smart.classList.contains('tagfox-status-hidden-hint--warn') : false,
-      };
-    }
-    function restoreGlobalStatusBar(snap) {
-      if (!snap) return;
-      const main = document.getElementById('statusMain');
-      const smart = document.getElementById('statusSmartNote');
-      if (main) main.innerHTML = snap.mainHtml;
-      if (smart) {
-        smart.innerHTML = snap.smartHtml;
-        smart.classList.toggle('d-none', snap.smartHidden);
-        smart.classList.toggle('tagfox-status-hidden-hint--warn', snap.smartWarn);
+    /** Open a new scratch tab (seeded from the current search) and activate it. Refuses past MAX_TABS. */
+    async function openNewTab(opts = {}) {
+      if (tabs.length >= MAX_TABS) {
+        setStatusMain('Tab limit reached (' + MAX_TABS + '). Close a tab first.');
+        return null;
       }
+      saveActiveTabStateFromUi();
+      const seed = opts.seedFromCurrent === false ? null : serializeSearchState();
+      const tab = newBlankTab(seed);
+      const at = tabIndexById(activeTabId);
+      tabs.splice(at >= 0 ? at + 1 : tabs.length, 0, tab);
+      activeTabId = tab.id;
+      restoreTabStateIntoUi(tab);
+      renderTabStrip();
+      persistTabsToStorage();
+      if (!opts.skipSearch) { await runSearchNow('identity'); saveActiveTabStateFromUi(); }
+      return tab;
     }
 
-    /* Background refresh of the inactive pane: swap canonical #results* ids onto its DOM, restore its saved filter UI, run a fresh search (renderTable writes to its tbody), then swap back and restore active pane UI + status bar. Acquires searchMutex when called outside an existing search flow (e.g. initial load) so the dance can't race a concurrent F5. */
-    async function refreshInactiveResultsPane(eventKind = 'identity', opts = {}) {
-      const inactive = paneStateKeyOfOther(activeResultsPane);
-      const inactivePane = resultsPaneState[inactive];
-      if (!inactivePane || !inactivePane.searchState) return;
-      /* Explicit nesting (see runSearchNow): only the in-flow refresh at the end of a top-level runSearchNow
-         passes nested. A standalone call (init, breadcrumb navigation of the inactive pane) acquires the mutex. */
-      const isNested = !!(opts && opts.nested);
-      let releaseMutex = null;
-      if (!isNested) {
-        const prev = searchMutex;
-        searchMutex = new Promise((r) => {
-          releaseMutex = r;
-        });
-        await prev;
-      }
-      topLevelSearchDepth++;
-      const activePaneKey = activeResultsPane;
-      const activeUiSnapshot = serializeSearchState();
-      const statusSnapshot = snapshotGlobalStatusBar();
-      try {
-        swapCanonicalResultsIds(inactive);
-        restorePaneStateIntoUi(inactive);
-        await runSearch(eventKind, { ...opts, singlePaneOnly: true });
-        saveActivePaneStateFromUi();
-        inactivePane.stale = false; // just re-searched against disk; the finally repaints its breadcrumb
-      } finally {
-        swapCanonicalResultsIds(activePaneKey);
-        resultsPaneState[activePaneKey].searchState = activeUiSnapshot;
-        restorePaneStateIntoUi(activePaneKey);
-        restoreGlobalStatusBar(statusSnapshot);
-        updateInactivePaneBreadcrumb();
-        topLevelSearchDepth--;
-        if (!isNested && releaseMutex) releaseMutex();
-      }
-    }
-
-    /* Repaint inactive pane DOM from its saved state (no fresh Everything search). Used after divider copy/swap so the inactive pane's tbody reflects newly-assigned state. */
-    function repaintPaneFromSavedState(paneKey) {
-      if (paneKey === activeResultsPane) {
-        restorePaneStateIntoUi(paneKey);
+    /** Close a tab. Activates a neighbour; never drops below one tab (the last one resets to blank). */
+    async function closeTab(id) {
+      const idx = tabIndexById(id);
+      if (idx < 0) return;
+      if (tabs.length <= 1) {
+        const only = tabs[0];
+        only.searchState = null;
+        only.lastRows = [];
+        only.resultsPagingCtx = null;
+        restoreTabStateIntoUi(only);
+        renderTabStrip();
+        persistTabsToStorage();
+        await runSearchNow('identity');
+        saveActiveTabStateFromUi();
         return;
       }
-      const pane = resultsPaneState[paneKey];
-      if (!pane) return;
-      const activePaneKey = activeResultsPane;
-      const activeUiSnapshot = serializeSearchState();
-      const statusSnapshot = snapshotGlobalStatusBar();
-      try {
-        swapCanonicalResultsIds(paneKey);
-        restorePaneStateIntoUi(paneKey);
-      } finally {
-        swapCanonicalResultsIds(activePaneKey);
-        resultsPaneState[activePaneKey].searchState = activeUiSnapshot;
-        restorePaneStateIntoUi(activePaneKey);
-        restoreGlobalStatusBar(statusSnapshot);
-        updateInactivePaneBreadcrumb();
+      const wasActive = id === activeTabId;
+      tabs.splice(idx, 1);
+      if (!wasActive) {
+        renderTabStrip();
+        persistTabsToStorage();
+        return;
       }
+      const next = tabs[Math.min(idx, tabs.length - 1)];
+      activeTabId = next.id;
+      restoreTabStateIntoUi(next);
+      renderTabStrip();
+      persistTabsToStorage();
+      await runSearchNow('identity');
+      saveActiveTabStateFromUi();
     }
 
-    function bindResultsPaneActivation() {
-      document.querySelectorAll('.results-pane[data-results-pane]').forEach((paneEl) => {
-        if (paneEl.dataset.paneActivationBound === '1') return;
-        paneEl.dataset.paneActivationBound = '1';
-        paneEl.addEventListener('pointerdown', (e) => {
-          /* Breadcrumb strip handles its own activate + navigate on click; activating here on pointerdown would re-render and remove the button before the click lands. */
-          if (e.target && e.target.closest && e.target.closest('.pane-inactive-breadcrumb')) return;
-          const paneKey = paneEl.getAttribute('data-results-pane') === 'B' ? 'B' : 'A';
-          if (paneKey === activeResultsPane) return;
-          void activateResultsPane(paneKey);
-        });
+    /** Cycle to the next (dir=1) or previous (dir=-1) tab with wraparound. */
+    function cycleTab(dir) {
+      if (tabs.length < 2) return;
+      const at = tabIndexById(activeTabId);
+      const nextIdx = (((at + dir) % tabs.length) + tabs.length) % tabs.length;
+      void activateTab(tabs[nextIdx].id);
+    }
+
+    /** Move a tab within the strip (drag reorder). */
+    function reorderTab(fromIdx, toIdx) {
+      if (fromIdx < 0 || fromIdx >= tabs.length) return;
+      const to = Math.max(0, Math.min(tabs.length - 1, toIdx));
+      if (fromIdx === to) return;
+      const [moved] = tabs.splice(fromIdx, 1);
+      tabs.splice(to, 0, moved);
+      renderTabStrip();
+      persistTabsToStorage();
+    }
+
+    function renderTabStrip() {
+      const list = document.getElementById('resultsTabList');
+      if (!list) return;
+      list.textContent = '';
+      tabs.forEach((tab, idx) => {
+        const chip = document.createElement('div');
+        chip.className = 'results-tab' + (tab.id === activeTabId ? ' results-tab-active' : '');
+        chip.setAttribute('data-tab-id', String(tab.id));
+        chip.setAttribute('data-tab-idx', String(idx));
+        chip.setAttribute('draggable', 'true');
+        chip.title = tabTitle(tab);
+        const label = document.createElement('span');
+        label.className = 'results-tab-label';
+        label.textContent = tabTitle(tab);
+        chip.appendChild(label);
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'results-tab-close';
+        close.setAttribute('aria-label', 'Close tab');
+        close.innerHTML = '<i class="fa-solid fa-xmark fa-xs" aria-hidden="true"></i>';
+        chip.appendChild(close);
+        list.appendChild(chip);
       });
+      const addBtn = document.getElementById('btnNewTab');
+      if (addBtn) addBtn.disabled = tabs.length >= MAX_TABS;
     }
 
-    function normalizeResultsSplitRatio(raw) {
-      let r = Math.max(0, Math.min(1, Number(raw)));
-      if (!Number.isFinite(r)) r = 0.5;
-      if (r <= RESULTS_SPLIT_COLLAPSE_EPS) return 0;
-      if (r >= 1 - RESULTS_SPLIT_COLLAPSE_EPS) return 1;
-      return r;
+    /* Spring-load: a file/Shelf drag that hovers a tab opens that tab after a short hold, so the
+       user can drop into it. Timer cleared on leave / drop / dragend. */
+    let tabSpringHoverTimer = null;
+    let tabSpringHoverId = null;
+    function clearTabSpringHover() {
+      if (tabSpringHoverTimer) { clearTimeout(tabSpringHoverTimer); tabSpringHoverTimer = null; }
+      tabSpringHoverId = null;
     }
+    function bindTabStripOnce() {
+      const strip = document.getElementById('resultsTabStrip');
+      if (!strip || strip.dataset.tabStripBound === '1') return;
+      strip.dataset.tabStripBound = '1';
+      let dragFromIdx = -1;
 
-    function applyResultsSplitLayout() {
-      const stack = document.getElementById('resultsSplitStack');
-      const split = document.getElementById('splitResultsH');
-      const splitTop = document.getElementById('splitResultsTop');
-      const splitBottom = document.getElementById('splitResultsBottom');
-      const paneA = document.querySelector('.results-pane[data-results-pane="A"]');
-      const paneB = document.querySelector('.results-pane[data-results-pane="B"]');
-      if (!stack || !split || !paneA || !paneB || !splitTop || !splitBottom) return;
-      const r = normalizeResultsSplitRatio(resultsSplitRatio);
-      resultsSplitRatio = r;
-      const singlePane = r === 0 || r === 1;
-      paneA.style.display = '';
-      paneB.style.display = '';
-      split.classList.toggle('d-none', singlePane);
-      splitTop.classList.toggle('d-none', !singlePane);
-      splitBottom.classList.toggle('d-none', !singlePane);
-      if (r === 0) {
-        paneA.style.display = 'none';
-        paneA.style.flex = '0 0 0%';
-        paneB.style.flex = '1 1 auto';
-        return;
-      }
-      if (r === 1) {
-        paneB.style.display = 'none';
-        paneB.style.flex = '0 0 0%';
-        paneA.style.flex = '1 1 auto';
-        return;
-      }
-      const topPct = Math.max(0, Math.min(100, r * 100));
-      const bottomPct = 100 - topPct;
-      paneA.style.flex = `0 1 ${topPct}%`;
-      paneB.style.flex = `0 1 ${bottomPct}%`;
-      updateInactivePaneBreadcrumb();
-    }
-
-    /* Two-pane view: clickable breadcrumb of the inactive pane's scope, above its table. The active pane keeps the full #breadcrumbBar (with sibling/subfolder flyouts) at the top of the results area; this is a lighter version, plain segment pills with no dropdowns. Clicking a segment activates that pane, then navigates it via the same applySearchScopeAndRefresh path the live bar uses (scope-max clamp handled there). Keyed by stable data-pane-breadcrumb (A/B), not by id, so the canonical-id swap dance leaves these alone. */
-    function fillInactivePaneBreadcrumb(el, paneKey, searchState) {
-      el.textContent = '';
-      const raw = searchState
-        ? String(searchState.rootFolder || '').trim() || String(searchState.searchScopeMax || '').trim()
-        : '';
-      if (!raw) return false;
-      const norm = normalizeFolderPathForEverything(raw).replace(/[/\\]+$/, '');
-      const sep = norm.includes('/') ? '/' : '\\';
-      const parts = norm.split(/[/\\]/).filter((p) => p !== '');
-      if (!parts.length) return false;
-      const folderIcon = document.createElement('i');
-      folderIcon.className = 'fa-solid fa-folder fa-fw tagfox-pane-bc-folder';
-      folderIcon.setAttribute('aria-hidden', 'true');
-      el.appendChild(folderIcon);
-      let acc = '';
-      let shownCount = 0;
-      parts.forEach((part, i) => {
-        acc = i === 0 ? part : acc + sep + part;
-        /* Hide Google Drive shortcut-targets wrapper segment, but keep it in acc so the click path stays valid. */
-        if (isGoogleDriveShortcutTargetsSegment(part)) return;
-        const folderForSearch = normalizeFolderPathForEverything(acc);
-        const isGDriveShortcutId = i > 0 && isGoogleDriveShortcutTargetsSegment(parts[i - 1]);
-        const isLast = i === parts.length - 1;
-        if (shownCount > 0) {
-          const chev = document.createElement('i');
-          chev.className = 'fa-solid fa-chevron-right fa-xs tagfox-pane-bc-sep';
-          chev.setAttribute('aria-hidden', 'true');
-          el.appendChild(chev);
-        }
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className =
-          'btn btn-link btn-sm p-0 align-baseline breadcrumb-folder-seg' +
-          (isLast ? ' breadcrumb-folder-seg-current' : '');
-        if (isGDriveShortcutId) {
-          btn.innerHTML = '<i class="fa-solid fa-link fa-xs" aria-hidden="true"></i>';
-          btn.setAttribute('aria-label', 'Google Drive shortcut: ' + folderForSearch);
-        } else {
-          btn.textContent = segmentPretty(part);
-        }
-        btn.addEventListener('click', async (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          /* Navigate the inactive pane in place, leaving the active pane active: seed its saved scope, then re-run its search via the inactive-refresh dance (which restores state into the off-screen UI, searches its tbody, swaps back, and rebuilds this strip). */
-          if (paneKey === activeResultsPane) return;
-          const target = resultsPaneState[paneKey];
-          if (!target || !target.searchState) return;
-          target.searchState = { ...target.searchState, rootFolder: folderForSearch };
-          if (paneKey === 'B') persistPaneBSearchStateToStorage();
-          await refreshInactiveResultsPane('identity');
-        });
-        el.appendChild(btn);
-        shownCount++;
-      });
-      if (shownCount > 0 && resultsPaneState[paneKey] && resultsPaneState[paneKey].stale) {
-        const staleBtn = document.createElement('button');
-        staleBtn.type = 'button';
-        staleBtn.className = 'btn btn-sm py-0 px-1 ms-2 align-baseline tagfox-pane-stale-badge';
-        staleBtn.innerHTML = '<i class="fa-solid fa-arrows-rotate fa-xs" aria-hidden="true"></i> out of date';
-        staleBtn.title = 'This pane changed on disk but is showing an older view. Click to refresh it.';
-        staleBtn.addEventListener('click', async (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          if (paneKey === activeResultsPane) return;
-          await refreshInactiveResultsPane('refresh'); // refresh in place; clears stale, keeps the active pane active
-        });
-        el.appendChild(staleBtn);
-      }
-      return shownCount > 0;
-    }
-
-    function updateInactivePaneBreadcrumb() {
-      const r = normalizeResultsSplitRatio(resultsSplitRatio);
-      const splitActive = r !== 0 && r !== 1;
-      const inactiveKey = paneStateKeyOfOther(activeResultsPane);
-      document.querySelectorAll('.pane-inactive-breadcrumb[data-pane-breadcrumb]').forEach((el) => {
-        const isInactivePane = splitActive && el.getAttribute('data-pane-breadcrumb') === inactiveKey;
-        if (!isInactivePane) {
-          el.textContent = '';
-          el.classList.add('d-none');
+      strip.addEventListener('click', (e) => {
+        if (e.target.closest('#btnNewTab')) { e.preventDefault(); void openNewTab(); return; }
+        const closeBtn = e.target.closest('.results-tab-close');
+        if (closeBtn) {
+          e.preventDefault(); e.stopPropagation();
+          const chip = closeBtn.closest('.results-tab');
+          if (chip) void closeTab(Number(chip.getAttribute('data-tab-id')));
           return;
         }
-        const pane = resultsPaneState[inactiveKey];
-        const shown = fillInactivePaneBreadcrumb(el, inactiveKey, pane && pane.searchState);
-        el.classList.toggle('d-none', !shown);
+        const chip = e.target.closest('.results-tab');
+        if (chip) void activateTab(Number(chip.getAttribute('data-tab-id')));
       });
-    }
+      /* Middle-click closes a tab (browser convention). */
+      strip.addEventListener('auxclick', (e) => {
+        if (e.button !== 1) return;
+        const chip = e.target.closest('.results-tab');
+        if (chip) { e.preventDefault(); void closeTab(Number(chip.getAttribute('data-tab-id'))); }
+      });
 
-    /** True if a disk-mutation payload touches paths under (or containing) a pane's scope folder. */
-    function diskMutationAffectsPaneScope(payload, paneKey) {
-      const st = resultsPaneState[paneKey] && resultsPaneState[paneKey].searchState;
-      const root = normalizeFolderPathForEverything(String((st && st.rootFolder) || '').trim());
-      if (!root) return true; // no scope folder ~ whole index: assume affected
-      const p = payload && typeof payload === 'object' ? payload : {};
-      const raw = [];
-      if (Array.isArray(p.paths)) raw.push(...p.paths);
-      if (p.destFolder) raw.push(p.destFolder);
-      if (Array.isArray(p.copied)) raw.push(...p.copied);
-      if (Array.isArray(p.moved)) for (const m of p.moved) { if (m && m.from) raw.push(m.from); if (m && m.to) raw.push(m.to); }
-      const norms = raw.map((x) => normalizeFolderPathForEverything(String(x || '').trim())).filter(Boolean);
-      if (!norms.length) return true;
-      return norms.some((n) => pathIsUnderOrEqualFolder(n, root) || pathIsUnderOrEqualFolder(root, n));
-    }
-
-    /** Mark a pane's snapshot stale (it changed on disk but is not the live pane) and repaint its breadcrumb. */
-    function setPaneStale(paneKey, stale) {
-      const pane = resultsPaneState[paneKey];
-      if (!pane || pane.stale === !!stale) return;
-      pane.stale = !!stale;
-      updateInactivePaneBreadcrumb();
-    }
-
-    /* After a disk mutation, flag the inactive pane stale if the change touched its scope. Only the active pane
-       is refreshed (see the passive-snapshot rule), so a drop / copy / delete into the inactive pane's folder
-       would otherwise leave it silently showing the old view. Split view only (inactive pane not visible else). */
-    function markInactivePaneStaleIfAffected(payload) {
-      const r = normalizeResultsSplitRatio(resultsSplitRatio);
-      if (r === 0 || r === 1) return;
-      const inactive = paneStateKeyOfOther(activeResultsPane);
-      if (resultsPaneState[inactive] && resultsPaneState[inactive].stale) return;
-      if (!diskMutationAffectsPaneScope(payload, inactive)) return;
-      setPaneStale(inactive, true);
-    }
-
-    function loadResultsSplitLayoutFromStorage() {
-      const raw = parseFloat(localStorage.getItem(LS.resultsSplitRatio) || '');
-      if (Number.isFinite(raw)) resultsSplitRatio = normalizeResultsSplitRatio(raw);
-      applyResultsSplitLayout();
-    }
-
-    function persistResultsSplitLayout() {
-      localStorage.setItem(LS.resultsSplitRatio, String(resultsSplitRatio));
-    }
-
-    function bindResultsHorizontalSplitter() {
-      const split = document.getElementById('splitResultsH');
-      const splitTop = document.getElementById('splitResultsTop');
-      const splitBottom = document.getElementById('splitResultsBottom');
-      const stack = document.getElementById('resultsSplitStack');
-      const btnCopyTopToBottom = document.getElementById('btnSplitCopyTopToBottom');
-      const btnCopyBottomToTop = document.getElementById('btnSplitCopyBottomToTop');
-      const btnSwap = document.getElementById('btnSplitSwapPanes');
-      const btnClose = document.getElementById('btnSplitClose');
-      if (!split || !splitTop || !splitBottom || !stack) return;
-      const splitActions = split.querySelector('.split-h-actions');
-
-      function startDragFromHandle(e) {
-        if (e.button !== 0) return;
-        if (e.target && e.target.closest && e.target.closest('.split-h-actions')) return;
+      strip.addEventListener('dragstart', (e) => {
+        const chip = e.target.closest('.results-tab');
+        if (!chip) return;
+        dragFromIdx = Number(chip.getAttribute('data-tab-idx'));
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', 'tab:' + chip.getAttribute('data-tab-id')); } catch (_) {}
+        chip.classList.add('results-tab-dragging');
+      });
+      strip.addEventListener('dragend', (e) => {
+        const chip = e.target.closest('.results-tab');
+        if (chip) chip.classList.remove('results-tab-dragging');
+        dragFromIdx = -1;
+        clearTabSpringHover();
+      });
+      strip.addEventListener('dragover', (e) => {
+        if (dragFromIdx >= 0) {
+          if (e.target.closest('.results-tab') || e.target.closest('#resultsTabList')) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+          }
+          return;
+        }
+        if (!dataTransferHasTagBrowserOrFiles(e.dataTransfer)) return;
+        const chip = e.target.closest('.results-tab');
+        if (!chip) { clearTabSpringHover(); return; }
         e.preventDefault();
-        const rect = stack.getBoundingClientRect();
-        if (!Number.isFinite(rect.height) || rect.height < 10) return;
-        function move(ev) {
-          const raw = (ev.clientY - rect.top) / rect.height;
-          resultsSplitRatio = normalizeResultsSplitRatio(raw);
-          applyResultsSplitLayout();
+        e.dataTransfer.dropEffect = e.shiftKey ? 'copy' : 'move';
+        const id = Number(chip.getAttribute('data-tab-id'));
+        if (id === activeTabId) { clearTabSpringHover(); return; }
+        if (id !== tabSpringHoverId) {
+          clearTabSpringHover();
+          tabSpringHoverId = id;
+          tabSpringHoverTimer = setTimeout(() => { tabSpringHoverTimer = null; void activateTab(id); }, 550);
         }
-        function up() {
-          document.removeEventListener('mousemove', move);
-          document.removeEventListener('mouseup', up);
-          persistResultsSplitLayout();
-        }
-        document.addEventListener('mousemove', move);
-        document.addEventListener('mouseup', up);
-      }
-
-      split.addEventListener('mousedown', startDragFromHandle);
-      splitTop.addEventListener('mousedown', startDragFromHandle);
-      splitBottom.addEventListener('mousedown', startDragFromHandle);
-      splitActions?.addEventListener('mousedown', (e) => {
-        e.stopPropagation();
       });
-      /* Edge-bar "restore split" pills: shown when one pane is collapsed (ratio 0 or 1); click springs back to 50/50. Mousedown stopPropagation so the drag-from-handle path never fires. */
-      for (const edgeEl of [splitTop, splitBottom]) {
-        edgeEl.querySelector('.split-h-edge-actions')?.addEventListener('mousedown', (e) => {
-          e.stopPropagation();
-        });
-        edgeEl.querySelector('[data-split-reopen]')?.addEventListener('click', (e) => {
+      strip.addEventListener('dragleave', (e) => {
+        if (!strip.contains(e.relatedTarget)) clearTabSpringHover();
+      });
+      strip.addEventListener('drop', (e) => {
+        const chip = e.target.closest('.results-tab');
+        if (dragFromIdx >= 0) {
           e.preventDefault();
-          e.stopPropagation();
-          resultsSplitRatio = 0.5;
-          applyResultsSplitLayout();
-          persistResultsSplitLayout();
-        });
-      }
-
-      /* Divider buttons: copyPaneState / swapPaneStates handle both active re-render and inactive repaint via the swap-canonical-IDs dance. */
-      btnCopyTopToBottom?.addEventListener('click', (e) => {
+          const toIdx = chip ? Number(chip.getAttribute('data-tab-idx')) : tabs.length - 1;
+          reorderTab(dragFromIdx, toIdx);
+          dragFromIdx = -1;
+          return;
+        }
+        if (!dataTransferHasTagBrowserOrFiles(e.dataTransfer)) return;
+        clearTabSpringHover();
+        if (!chip) return;
         e.preventDefault();
-        e.stopPropagation();
-        saveActivePaneStateFromUi();
-        copyPaneState('A', 'B');
-        setStatusMain('Bottom pane copied from top pane.');
-      });
-      btnCopyBottomToTop?.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        saveActivePaneStateFromUi();
-        copyPaneState('B', 'A');
-        setStatusMain('Top pane copied from bottom pane.');
-      });
-      btnSwap?.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        saveActivePaneStateFromUi();
-        swapPaneStates();
-        setStatusMain('Swapped top and bottom panes.');
-      });
-      /* Close split: collapse to the currently active pane (keep what the user is working in). */
-      btnClose?.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        resultsSplitRatio = activeResultsPane === 'A' ? 1 : 0;
-        applyResultsSplitLayout();
-        persistResultsSplitLayout();
+        const tab = tabs.find((t) => t.id === Number(chip.getAttribute('data-tab-id')));
+        const paths = collectPathsForShelfDrop(e.dataTransfer);
+        if (!tab || !paths.length) return;
+        const dest = normalizeFolderPathForEverything(String((tab.searchState && tab.searchState.rootFolder) || '').trim());
+        if (!dest) { setStatusMain('That tab has no folder scope to drop into.'); return; }
+        void applyInternalPathsDrop(dest, paths, e.shiftKey ? 'copy' : 'move');
       });
     }
 
@@ -3367,12 +3157,11 @@
           searchDebounceTimer = null;
         }
         await runSearch(eventKind, opts);
-        saveActivePaneStateFromUi();
-        /* The inactive pane is a passive snapshot. It is NOT refreshed in the background on F5 / auto-refresh
-           / disk mutation: doing so meant every search/CRUD ran a second flow against the other pane (the
-           id-swap "dance", or a copyPaneState mirror when the two panes shared a search), which is where the
-           dual-pane races and the cross-pane copy/delete bleed lived. Only the active pane is live; the
-           inactive pane re-runs its own search the instant it is activated (see activateResultsPane). */
+        saveActiveTabStateFromUi();
+        /* The active tab is the only one with DOM. Inactive tabs are passive state snapshots re-searched on
+           activation, so F5 / auto-refresh / disk mutation only ever touch the active tab. There is no
+           background flow against another pane, which is where the old dual-pane races and cross-pane bleed
+           lived. */
       } finally {
         topLevelSearchDepth--;
         if (!isNested && releaseMutex) releaseMutex();
@@ -9661,8 +9450,7 @@
         }
 
         function paneScopeFolderForDrop() {
-          const paneKey = wrap.getAttribute('data-results-pane') === 'B' ? 'B' : 'A';
-          const s = resultsPaneState[paneKey] && resultsPaneState[paneKey].searchState;
+          const s = activeTab() && activeTab().searchState;
           const paneRoot = normalizeFolderPathForEverything(String((s && s.rootFolder) || '').trim());
           if (paneRoot) return paneRoot;
           return currentScopeFolderPath();
@@ -14065,10 +13853,9 @@
         clearBigFolderCapSmartNoteIfStale();
       } finally {
         resultsLoadMoreBusy = false;
-        /* loadMore mutates lastRows + resultsPagingCtx; persist them to the active pane or a later pane
-           switch / inactive-pane refresh (restorePaneStateIntoUi) reverts to the pre-load-more page and
-           the extra rows vanish. */
-        if (runId === searchRunSeq) saveActivePaneStateFromUi();
+        /* loadMore mutates lastRows + resultsPagingCtx; persist them to the active tab or a later tab
+           switch (restoreTabStateIntoUi) reverts to the pre-load-more page and the extra rows vanish. */
+        if (runId === searchRunSeq) saveActiveTabStateFromUi();
         updateResultsLoadMoreUi();
       }
     }
@@ -15444,7 +15231,6 @@
         removeGonePathsFromUiNow(p.moved.map((m) => m && m.from));
       }
       if (Array.isArray(p.copied) && p.copied.length) clearGoneTombstones(p.copied);
-      markInactivePaneStaleIfAffected(payload);
       void refreshAfterDiskMutation(payload);
     }
     window.tagBrowser.setPathsMutatedHandler(onPathsMutated);
@@ -16674,6 +16460,15 @@
         void applyFavouriteSearchState(list[idx]);
         return;
       }
+      /* Ctrl+Tab / Ctrl+Shift+Tab cycle result tabs (browser convention). Not an OS-level accelerator, so
+         preventDefault here keeps the renderer in control. */
+      if (modC && (e.key === 'Tab' || e.code === 'Tab')) {
+        if (document.querySelector('.modal.show')) return;
+        if (blockAppShortcutInTextField(e.target)) return;
+        e.preventDefault();
+        cycleTab(e.shiftKey ? -1 : 1);
+        return;
+      }
 
       if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === ' ' || e.code === 'Space')) {
         if (document.querySelector('.modal.show')) return;
@@ -17222,7 +17017,6 @@
     loadPaneWidthsFromStorage();
     loadViewerDocSplitFromStorage();
     loadFavFoldersColFromStorage();
-    loadResultsSplitLayoutFromStorage();
     loadColWidthsFromStorage();
     applyResultsTablePathColumnVisibility();
     if (treeViewDefaultsFreshProfile) {
@@ -17254,9 +17048,8 @@
 
     seedSearchHistoryFromCurrent();
     bindVerticalSplitters();
-    bindResultsHorizontalSplitter();
     bindViewerDocSplitters();
-    bindResultsPaneActivation();
+    bindTabStripOnce();
     bindFavFoldersSplitter();
     bindFavFoldersCollapseButton();
     bindFavColumnCollapsedHoverExit();
@@ -17295,17 +17088,29 @@
     renderFavSearchesBar();
     renderTagBar();
     renderTable();
-    saveActivePaneStateFromUi();
-    /* Restore pane B's saved searchState (filter / scope / view) from last session; fall back to mirroring A on first run. lastRows + resultsPagingCtx are stale after restart, so seed them from A and let the init refresh dance below repopulate B with a fresh search using its own state. */
+    /* Initialise result tabs from last session (or a single default tab). The live UI already reflects the
+       loaded per-control settings, so it becomes the active tab's state. Other tabs carry only their saved
+       searchState and re-run their own search when first activated. lastRows / resultsPagingCtx are not
+       persisted (stale after restart); the active tab's scheduleSearch() below rebuilds its rows. */
     {
-      const savedB = loadPaneBSearchStateFromStorage();
-      resultsPaneState.B.searchState = savedB || resultsPaneState.B.searchState || resultsPaneState.A.searchState;
-      /* Same rule as pane A (loadSettings): recency always launches at All, never restored from last session. */
-      if (resultsPaneState.B.searchState) resultsPaneState.B.searchState.recencyFilter = 'all';
-      resultsPaneState.B.lastRows = Array.isArray(resultsPaneState.A.lastRows) ? resultsPaneState.A.lastRows.slice() : [];
-      resultsPaneState.B.resultsPagingCtx = cloneResultsPagingCtx(resultsPaneState.A.resultsPagingCtx);
+      const saved = loadTabsFromStorage();
+      const activeState = serializeSearchState();
+      if (saved) {
+        const activeIndex = Math.min(Math.max(0, saved.activeIndex | 0), saved.tabs.length - 1);
+        tabs = saved.tabs.map((t, i) => {
+          const st = i === activeIndex ? activeState : (t.searchState || null);
+          /* Same rule as the live UI (loadSettings): recency always launches at All, never restored. */
+          if (st) st.recencyFilter = 'all';
+          return newBlankTab(st);
+        });
+        activeTabId = tabs[activeIndex].id;
+      } else {
+        tabs = [newBlankTab(activeState)];
+        activeTabId = tabs[0].id;
+      }
+      renderTabStrip();
+      persistTabsToStorage();
     }
-    void refreshInactiveResultsPane('identity', { singlePaneOnly: true });
     scheduleSearch();
     startDidYouKnowTips();
     /** Drive API hello-world (navbar tick after New dbg). */
@@ -17328,15 +17133,7 @@
        harness in _tmp/ sets it). Exposes the closure-private search/pane orchestration + a state snapshot
        so an external CDP driver can exercise the loop/refresh/dual-pane flows and assert invariants. */
     if (location.hash.includes('tagfoxtest')) {
-      const baseIdTbodyPane = () => {
-        const tb = document.getElementById('tbody');
-        const pane = tb && tb.closest && tb.closest('.results-pane[data-results-pane]');
-        return pane ? pane.getAttribute('data-results-pane') : null;
-      };
-      const activeClassPane = () => {
-        const el = document.querySelector('.results-pane.results-pane-active[data-results-pane]');
-        return el ? el.getAttribute('data-results-pane') : null;
-      };
+      const BASE_RESULT_IDS = ['resultsWrap', 'resultsScroll', 'resultsTable', 'tbody', 'resultsLoadMoreWrap', 'btnLoadMoreResults', 'resultsLoadMoreHint', 'chkSelectAllResults'];
       const rowCount = (id) => {
         const el = document.getElementById(id);
         return el ? el.querySelectorAll('tr').length : -1;
@@ -17344,8 +17141,6 @@
       window.__tagfoxTest = {
         runSearchNow: (kind, opts) => runSearchNow(kind, opts),
         refreshNow: () => runSearchNow('refresh', { uiHint: 'f5' }),
-        refreshInactivePane: (opts) => refreshInactiveResultsPane('identity', opts || { singlePaneOnly: true }),
-        activatePane: (key) => activateResultsPane(key),
         scheduleSearch: (kind) => scheduleSearch(kind),
         setQuery: (q) => {
           const el = document.getElementById('query');
@@ -17356,13 +17151,18 @@
         setScope: (root) => { const e = document.getElementById('rootFolder'); if (e) e.value = String(root || ''); void runSearchNow('identity'); },
         autoTick: () => maybeAutoRefreshSearchTick(),
         loadMore: () => loadMoreResults(),
-        /* Force the split ratio (0/1 = single pane, between = split) so a test can exercise the stale-badge path. */
-        setSplit: (ratio) => { resultsSplitRatio = Number(ratio); applyResultsSplitLayout(); updateInactivePaneBreadcrumb(); },
-        /* Drive the real disk-mutation handler (the IPC callback) so tests can assert the inactive-pane stale flag. */
+        /* Tab drivers. springHoverTab models the spring-load result: a drag hovering a tab activates it. */
+        newTab: () => openNewTab(),
+        closeTab: (id) => closeTab(Number(id)),
+        activateTab: (id) => activateTab(Number(id)),
+        cycleTab: (dir) => cycleTab(Number(dir) || 1),
+        reorderTab: (from, to) => reorderTab(Number(from), Number(to)),
+        springHoverTab: (id) => activateTab(Number(id)),
+        tabIds: () => tabs.map((t) => t.id),
+        /* Drive the real disk-mutation handler (the IPC callback) so tests can assert refresh behaviour. */
         mutate: (payload) => onPathsMutated(payload),
-        /* Simulate the renderer side of a delete (what setPathsMutatedHandler does for a trashed payload):
-           tombstone the paths + repaint the active pane. Used by crud-pane-isolation to prove a delete in
-           the active pane never touches the inactive pane's stored rows. */
+        /* Simulate the renderer side of a delete: tombstone the paths + repaint the active pane. Used by
+           crud-pane-isolation to prove a delete in the active tab never touches other tabs' stored rows. */
         tombstone: (paths) => removeGonePathsFromUiNow(Array.isArray(paths) ? paths : [paths]),
         disableAutofill: () => { maybeAutoFillResultsUntilScrollable = () => {}; },
         autoStart: (sec) => { const e = document.getElementById('autoRefreshSec'); if (e) { e.value = String(sec); } syncAutoRefreshTimer(); },
@@ -17391,28 +17191,22 @@
           rows: lastRows.slice(0, 8).map((r) => ({ path: fullPathForRow(r), folder: rowIsFolder(r), mtime: modifiedTimeMs(r) })),
         }),
         state: () => ({
-          activeResultsPane,
-          activeClassPane: activeClassPane(),
-          baseIdTbodyPane: baseIdTbodyPane(),
+          activeTabId,
+          activeTabIndex: tabIndexById(activeTabId),
+          tabCount: tabs.length,
+          tabs: tabs.map((t) => ({ id: t.id, rows: Array.isArray(t.lastRows) ? t.lastRows.length : 0 })),
+          activeTabRows: activeTab() && Array.isArray(activeTab().lastRows) ? activeTab().lastRows.length : 0,
           topLevelSearchDepth,
           searchInFlight,
           pendingDebounce: !!searchDebounceTimer,
           searchRunSeq,
           lastRows: lastRows.length,
-          paneA_state: resultsPaneState.A.lastRows.length,
-          paneB_state: resultsPaneState.B.lastRows.length,
-          paneA_stale: !!resultsPaneState.A.stale,
-          paneB_stale: !!resultsPaneState.B.stale,
-          staleBadgeShown: !!document.querySelector('.pane-inactive-breadcrumb:not(.d-none) .tagfox-pane-stale-badge'),
           tbodyBase: rowCount('tbody'),
-          tbodyA: rowCount('tbodyA'),
-          tbodyB: rowCount('tbodyB'),
-          dupBaseIds: RESULT_DOM_ID_MAP.filter((p) => document.querySelectorAll('[id="' + p.base + '"]').length !== 1).map((p) => p.base),
+          dupBaseIds: BASE_RESULT_IDS.filter((id) => document.querySelectorAll('[id="' + id + '"]').length !== 1),
           status: (document.getElementById('statusMain')?.textContent || '').trim().slice(0, 120),
           recency: recencyFilterMode(),
           foldersOnly: isFoldersOnly(),
           filesOnly: isFilesOnly(),
-          splitRatio: resultsSplitRatio,
         }),
       };
       try { window.tagBrowser && window.tagBrowser.setSearchDebugEnabled && window.tagBrowser.setSearchDebugEnabled(false); } catch (_) {}

@@ -254,7 +254,7 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   color: var(--bs-primary);
   background-color: color-mix(in srgb, var(--bs-primary) 14%, transparent);
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody .results-td-actions .tagfox-scope-bar-icon-btn {
+#resultsTable tbody .results-td-actions .tagfox-scope-bar-icon-btn {
   background-color: transparent;
   border: none;
   box-shadow: none;
@@ -271,7 +271,7 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 .scope-breadcrumb-row .tagfox-scope-bar-row-actions .tagfox-scope-bar-icon-btn.btn-outline-primary {
   color: var(--bs-primary);
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody .results-td-actions .tagfox-scope-bar-icon-btn.btn-outline-primary {
+#resultsTable tbody .results-td-actions .tagfox-scope-bar-icon-btn.btn-outline-primary {
   color: var(--bs-primary);
 }
 .scope-breadcrumb-row .tagfox-scope-bar-row-actions .tagfox-scope-bar-icon-btn:hover:not(:disabled) {
@@ -279,10 +279,10 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   background-color: color-mix(in srgb, var(--bs-body-color) 9%, transparent);
   color: var(--bs-body-color);
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr:hover .results-td-actions .tagfox-scope-bar-icon-btn:not(:disabled) {
+#resultsTable tbody tr:hover .results-td-actions .tagfox-scope-bar-icon-btn:not(:disabled) {
   opacity: 0.62;
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody .results-td-actions .tagfox-scope-bar-icon-btn:hover:not(:disabled) {
+#resultsTable tbody .results-td-actions .tagfox-scope-bar-icon-btn:hover:not(:disabled) {
   opacity: 1;
   background-color: color-mix(in srgb, var(--bs-body-color) 9%, transparent);
   color: var(--bs-body-color);
@@ -292,7 +292,7 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   color: var(--bs-primary);
   background-color: color-mix(in srgb, var(--bs-primary) 14%, transparent);
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody .results-td-actions .tagfox-scope-bar-icon-btn.btn-outline-primary:hover:not(:disabled) {
+#resultsTable tbody .results-td-actions .tagfox-scope-bar-icon-btn.btn-outline-primary:hover:not(:disabled) {
   opacity: 1;
   color: var(--bs-primary);
   background-color: color-mix(in srgb, var(--bs-primary) 14%, transparent);
@@ -300,17 +300,17 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 .scope-breadcrumb-row .tagfox-scope-bar-row-actions .tagfox-scope-bar-icon-btn:disabled {
   opacity: 0.18;
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody .results-td-actions .tagfox-scope-bar-icon-btn:disabled {
+#resultsTable tbody .results-td-actions .tagfox-scope-bar-icon-btn:disabled {
   opacity: 0.18;
 }
 .scope-breadcrumb-row .tagfox-scope-bar-row-actions .tagfox-scope-bar-icon-btn:focus-visible {
   opacity: 1;
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody .results-td-actions .tagfox-scope-bar-icon-btn:focus-visible {
+#resultsTable tbody .results-td-actions .tagfox-scope-bar-icon-btn:focus-visible {
   opacity: 1;
 }
 /* Flex lives on inner div — display:flex on <td> caused partial-width white hairlines between rows (Chrome). */
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody .results-td-actions-inner {
+#resultsTable tbody .results-td-actions-inner {
   display: flex;
   align-items: center;
   flex-wrap: nowrap;
@@ -318,7 +318,7 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   min-width: 0;
 }
 /* Path-sorted folder tint: row rule was #f0f0f3 — reads as bright gaps vs orange cells */
-:is(#resultsTable, #resultsTableA, #resultsTableB).results-sort-path tbody tr.results-folder-row {
+#resultsTable.results-sort-path tbody tr.results-folder-row {
   border-bottom-color: rgba(217, 119, 6, 0.22);
 }
 /* Last-crumb pill: open / ◀ ▲ ▶ / clip / tags / ⋯ between folder label and ▾ (same scope as that folder). */
@@ -458,9 +458,9 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 .form-check-input:checked { background-color: var(--tb-accent); border-color: var(--tb-accent); }
 /* Widths from <colgroup> only — auto layout re-measures every cell on each pane resize (splitter jank). */
 /* separate + 0 spacing: sticky th works; collapse breaks sticky in Chromium */
-:is(#resultsTable, #resultsTableA, #resultsTableB) { table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+#resultsTable { table-layout: fixed; border-collapse: separate; border-spacing: 0; }
 /* Sticky per th (thead sticky is flaky); scroll is #resultsScroll so top:0 clears “toolbar” clipping */
-:is(#resultsTable, #resultsTableA, #resultsTableB) thead th {
+#resultsTable thead th {
   position: sticky;
   top: 0;
   /* Above tbody rows / buttons so header labels aren’t covered when sticky */
@@ -472,65 +472,65 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   box-shadow: 0 1px 0 var(--bs-border-color);
 }
 /* Vertical column lines in header (table border-collapse: separate — row borders don’t divide cols). */
-:is(#resultsTable, #resultsTableA, #resultsTableB) thead th:not(:first-child) {
+#resultsTable thead th:not(:first-child) {
   border-left: 1px solid var(--bs-border-color);
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr { border-bottom-color: #f0f0f3; }
+#resultsTable tbody tr { border-bottom-color: #f0f0f3; }
 /* Folder rows: light orange tint only while Path is the active sort (path/tree cues). */
-:is(#resultsTable, #resultsTableA, #resultsTableB).results-sort-path tbody tr.results-folder-row td {
+#resultsTable.results-sort-path tbody tr.results-folder-row td {
   background-color: var(--tagfox-folder-row-bg);
 }
 /* Size column heat: ≥1 GB .text-danger; ≥100 MB orange; ≥10 MB amber; ≥1 MB teal; ≥100 KB lime (renderer.js). */
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody td.results-td-size.tagfox-size-heat-orange {
+#resultsTable tbody td.results-td-size.tagfox-size-heat-orange {
   color: #ea580c;
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody td.results-td-size.tagfox-size-heat-amber {
+#resultsTable tbody td.results-td-size.tagfox-size-heat-amber {
   color: #d97706;
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody td.results-td-size.tagfox-size-heat-mb1 {
+#resultsTable tbody td.results-td-size.tagfox-size-heat-mb1 {
   color: #0e7490;
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody td.results-td-size.tagfox-size-heat-kb100 {
+#resultsTable tbody td.results-td-size.tagfox-size-heat-kb100 {
   color: #4d7c0f;
 }
 /* no hover highlight — selection: row tint + left bar + dotted ring (clearer than pale bg alone) */
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active {
+#resultsTable tbody tr.table-active {
   --bs-table-bg-state: var(--bs-primary-bg-subtle);
   box-shadow: inset 3px 0 0 var(--tb-accent);
   outline: 2px dotted var(--bs-primary);
   outline-offset: -2px;
 }
 /* Focused folder + descendants: one solid outer box (see syncResultsSelectionHighlight group classes). */
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active.table-active-group-member {
+#resultsTable tbody tr.table-active.table-active-group-member {
   outline: none;
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active-group-member td:first-child {
+#resultsTable tbody tr.table-active-group-member td:first-child {
   border-left: 2px solid rgba(var(--bs-primary-rgb), 0.75);
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active-group-member td:last-child {
+#resultsTable tbody tr.table-active-group-member td:last-child {
   border-right: 2px solid rgba(var(--bs-primary-rgb), 0.75);
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active-group-top td {
+#resultsTable tbody tr.table-active-group-top td {
   border-top: 2px solid rgba(var(--bs-primary-rgb), 0.75);
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active-group-bottom td {
+#resultsTable tbody tr.table-active-group-bottom td {
   border-bottom: 2px solid rgba(var(--bs-primary-rgb), 0.75);
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active-group-top td:first-child {
+#resultsTable tbody tr.table-active-group-top td:first-child {
   border-top-left-radius: var(--bs-border-radius-sm);
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active-group-top td:last-child {
+#resultsTable tbody tr.table-active-group-top td:last-child {
   border-top-right-radius: var(--bs-border-radius-sm);
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active-group-bottom td:first-child {
+#resultsTable tbody tr.table-active-group-bottom td:first-child {
   border-bottom-left-radius: var(--bs-border-radius-sm);
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active-group-bottom td:last-child {
+#resultsTable tbody tr.table-active-group-bottom td:last-child {
   border-bottom-right-radius: var(--bs-border-radius-sm);
 }
 /* Stronger fill inside the group frame (folder row uses .table-active; descendants .table-active-child). */
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active-group-member.table-active td,
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.table-active-child td {
+#resultsTable tbody tr.table-active-group-member.table-active td,
+#resultsTable tbody tr.table-active-child td {
   background-color: rgba(var(--bs-primary-rgb), 0.11);
 }
 .results-wrap.card {
@@ -1033,157 +1033,117 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   align-items: stretch;
   gap: 6px; /* space between results card and shelf */
 }
-.results-split-stack {
+.results-tab-stack {
   flex: 1;
   min-height: 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 4px;
+  gap: 0;
 }
 .results-pane {
   min-height: 0;
   min-width: 0;
   position: relative;
-  transition:
-    opacity 0.16s ease,
-    border-color 0.16s ease,
-    box-shadow 0.16s ease,
-    background-color 0.16s ease;
 }
-.results-pane:not(.results-pane-active) {
-  opacity: 0.74;
-  border-color: color-mix(in srgb, var(--bs-border-color) 88%, transparent);
-  background-color: color-mix(in srgb, var(--bs-tertiary-bg) 65%, var(--bs-body-bg) 35%);
-}
-.results-pane:not(.results-pane-active)::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.03), rgba(0, 0, 0, 0.05));
-}
-.results-pane.results-pane-active {
-  border-color: rgba(var(--bs-primary-rgb), 0.9);
-  box-shadow:
-    0 0 0 2px rgba(var(--bs-primary-rgb), 0.95),
-    0 0 0 4px rgba(var(--bs-primary-rgb), 0.18);
-  opacity: 1;
-}
-/* Two-pane view: clickable scope breadcrumb above the inactive pane (plain segments, no dropdowns). */
-.pane-inactive-breadcrumb {
+/* Tab strip: scratch result tabs above the single results pane. */
+.results-tab-strip {
   flex-shrink: 0;
   display: flex;
+  align-items: flex-end;
+  gap: 0.25rem;
+  min-width: 0;
+  padding: 0.15rem 0.15rem 0;
+}
+.results-tab-list {
+  display: flex;
+  align-items: stretch;
+  gap: 0.2rem;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.results-tab {
+  display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.25rem 0.6rem;
-  font-size: 0.75rem;
+  gap: 0.35rem;
+  max-width: 14rem;
+  min-width: 0;
+  padding: 0.2rem 0.3rem 0.2rem 0.6rem;
+  font-size: 0.8rem;
   line-height: 1.2;
+  cursor: pointer;
+  user-select: none;
   color: var(--bs-secondary-color);
   background: var(--bs-tertiary-bg);
-  border-bottom: 1px solid var(--bs-border-color);
+  border: 1px solid var(--bs-border-color);
+  border-bottom: none;
+  border-top-left-radius: 0.4rem;
+  border-top-right-radius: 0.4rem;
   white-space: nowrap;
-  overflow: hidden;
 }
-.pane-inactive-breadcrumb .tagfox-pane-bc-folder {
-  opacity: 0.7;
+.results-tab:hover {
+  background: color-mix(in srgb, var(--bs-tertiary-bg) 70%, var(--bs-body-bg) 30%);
 }
-.pane-inactive-breadcrumb .tagfox-pane-bc-sep {
+.results-tab-active {
+  color: var(--bs-body-color);
+  background: var(--bs-body-bg);
+  border-color: rgba(var(--bs-primary-rgb), 0.9);
+  font-weight: 600;
+}
+.results-tab-dragging {
   opacity: 0.5;
 }
-.pane-inactive-breadcrumb .breadcrumb-folder-seg:hover {
-  filter: brightness(0.96);
-}
-/* "Out of date" pill: the inactive pane changed on disk but is showing an older snapshot. */
-.tagfox-pane-stale-badge {
-  flex-shrink: 0;
-  font-size: 0.7rem;
-  line-height: 1.1;
-  color: #664d03;
-  background: var(--bs-warning-bg-subtle, #fff3cd);
-  border: 1px solid var(--bs-warning-border-subtle, #ffe69c);
-  border-radius: 0.8rem;
+.results-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
-.tagfox-pane-stale-badge:hover {
-  filter: brightness(0.97);
-}
-.tagfox-pane-stale-badge .fa-arrows-rotate {
-  margin-right: 0.15rem;
-}
-.split-h {
-  position: relative;
-  height: 4px;
+.results-tab-close {
   flex-shrink: 0;
-  align-self: stretch;
-  cursor: row-resize;
-  background: var(--bs-border-color);
-  touch-action: none;
-  transform-origin: center;
-  transition: background 0.15s ease, transform 0.15s ease;
-}
-.split-h::before {
-  content: '';
-  position: absolute;
-  top: -6px;
-  bottom: -6px;
-  left: 0;
-  right: 0;
-}
-.split-h:hover {
-  background: var(--tb-accent);
-  transform: scaleY(2.3);
-}
-.split-h.d-none { display: none !important; height: 0 !important; }
-.split-h#splitResultsH {
-  min-height: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.split-h#splitResultsH:hover {
-  transform: none;
-}
-.split-h#splitResultsH::before {
-  pointer-events: none;
-}
-.split-h-edge {
-  height: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: visible;
-}
-/* Pill sits on top of the 6px edge bar; pointer-events enabled so clicks hit the button, not the drag area. */
-.split-h-edge-actions {
-  padding: 0.06rem 0.14rem;
-}
-.split-h-actions {
-  pointer-events: auto;
-  position: relative;
-  z-index: 2;
   display: inline-flex;
   align-items: center;
-  gap: 0.2rem;
-  padding: 0.12rem 0.2rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--bs-body-bg) 92%, var(--bs-border-color));
-  border: 1px solid var(--bs-border-color);
-}
-.split-h-action-btn {
-  width: 1.25rem;
-  height: 1.25rem;
-  min-width: 1.25rem;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
   padding: 0;
+  border: none;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
   cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   line-height: 1;
 }
-.split-h-action-btn i {
-  font-size: 0.62rem;
+.results-tab-close:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--bs-danger) 20%, transparent);
+}
+.results-tab-new {
+  flex-shrink: 0;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.5rem;
+  padding: 0;
+  color: var(--bs-secondary-color);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0.4rem;
+  cursor: pointer;
+}
+.results-tab-new:hover:not(:disabled) {
+  color: var(--bs-body-color);
+  background: var(--bs-tertiary-bg);
+}
+.results-tab-new:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 .app-shelf {
   flex-shrink: 0;
@@ -1807,10 +1767,10 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
   opacity: 1;
 }
 /* ~ segments: slightly less fade so users can tell the two “special” kinds apart. */
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.tagfox-row-tilde-path {
+#resultsTable tbody tr.tagfox-row-tilde-path {
   opacity: 0.78;
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr.tagfox-row-tilde-path.table-active {
+#resultsTable tbody tr.tagfox-row-tilde-path.table-active {
   opacity: 1;
 }
 /* Current-folder drop highlight: on scroll wrapper so empty area below last row is a valid target. */
@@ -1819,48 +1779,48 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
   outline-offset: -4px;
   background: rgba(var(--bs-primary-rgb), 0.06);
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) { table-layout: fixed; width: 100%; font-size: 0.875rem; }
-:is(#resultsTable, #resultsTableA, #resultsTableB) td { vertical-align: middle; }
-:is(#resultsTable, #resultsTableA, #resultsTableB) td { padding-top: 0 !important; padding-bottom: 0 !important; }
-:is(#resultsTable, #resultsTableA, #resultsTableB) td { margin-top: 0 !important; margin-bottom: 0 !important; }
+#resultsTable { table-layout: fixed; width: 100%; font-size: 0.875rem; }
+#resultsTable td { vertical-align: middle; }
+#resultsTable td { padding-top: 0 !important; padding-bottom: 0 !important; }
+#resultsTable td { margin-top: 0 !important; margin-bottom: 0 !important; }
 /* Modified: nowrap + ellipsis. Actions: no overflow:hidden (was compounding flex-td seam glitches). */
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody td:nth-child(6) {
+#resultsTable tbody td:nth-child(6) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) col:nth-child(5),
-:is(#resultsTable, #resultsTableA, #resultsTableB) thead th:nth-child(5),
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody td.results-td-size {
+#resultsTable col:nth-child(5),
+#resultsTable thead th:nth-child(5),
+#resultsTable tbody td.results-td-size {
   min-width: 6.75rem;
 }
 /* Row icon strip (col 4): min = six compact btns; max = don’t waste horizontal space on wide windows */
-:is(#resultsTable, #resultsTableA, #resultsTableB) col:nth-child(4),
-:is(#resultsTable, #resultsTableA, #resultsTableB) thead th:nth-child(4),
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody td.results-td-actions {
+#resultsTable col:nth-child(4),
+#resultsTable thead th:nth-child(4),
+#resultsTable tbody td.results-td-actions {
   min-width: 12rem;
   max-width: 15rem;
 }
 /* Checkbox only: keep a small but stable first column so narrow panes do not crush the checkbox. */
-:is(#resultsTable, #resultsTableA, #resultsTableB) col:first-child {
+#resultsTable col:first-child {
   min-width: 1.85rem;
 }
 /* Denser than Bootstrap table-sm (row height driver with middle vertical-align) */
-:is(#resultsTable, #resultsTableA, #resultsTableB).table-sm > :not(caption) > * > * {
+#resultsTable.table-sm > :not(caption) > * > * {
   padding-top: 0.02rem;
   padding-bottom: 0.02rem;
 }
 /* First col: checkbox flush left; vertical-align middle + tight line box so it lines up with name/icons */
-:is(#resultsTable, #resultsTableA, #resultsTableB) thead th:first-child,
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody td:first-child {
+#resultsTable thead th:first-child,
+#resultsTable tbody td:first-child {
   padding-left: 0.2rem;
   padding-right: 0.45rem;
   vertical-align: middle;
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) thead th.results-th-cb,
-:is(#resultsTable, #resultsTableA, #resultsTableB) tbody td.results-td-cb {
+#resultsTable thead th.results-th-cb,
+#resultsTable tbody td.results-td-cb {
   line-height: 1;
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) .results-row-cb-wrap {
+#resultsTable .results-row-cb-wrap {
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
@@ -1869,7 +1829,7 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
   gap: 0;
 }
 /* Slightly larger, higher-contrast box so it reads clearly as a checkbox */
-:is(#resultsTable, #resultsTableA, #resultsTableB) .results-cb {
+#resultsTable .results-cb {
   width: 0.9375rem;
   height: 0.9375rem;
   flex-shrink: 0;
@@ -1878,7 +1838,7 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
   border-radius: 0.22rem;
   background-color: var(--bs-body-bg, #fff);
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) .results-cb:checked {
+#resultsTable .results-cb:checked {
   border-color: var(--tb-accent, var(--bs-primary));
   background-color: var(--tb-accent, var(--bs-primary));
 }
@@ -1894,12 +1854,12 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
 }
 .path-ellip-start bdi { direction: ltr; unicode-bidi: isolate; }
 /* Path column: parent trail vs final segment (file name or immediate parent folder name). */
-:is(#resultsTable, #resultsTableA, #resultsTableB) td.col-path .path-col-tail {
+#resultsTable td.col-path .path-col-tail {
   color: var(--bs-body-color);
   font-weight: 500;
 }
 /* Search box text: faint hits in name + path (mark keeps truncation/ellipsis behavior). */
-:is(#resultsTable, #resultsTableA, #resultsTableB) mark.tagfox-query-hit {
+#resultsTable mark.tagfox-query-hit {
   padding: 0;
   margin: 0;
   background-color: rgba(var(--bs-warning-rgb), 0.38);
@@ -1974,23 +1934,23 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
 #tagBar .tag-bar-pill:focus-visible,
 #tagModalQuickTags .tag-bar-pill:focus-visible { box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.35); }
 /* sticky comes from #resultsTable thead th — don’t use position:relative here (kills sticky) */
-:is(#resultsTable, #resultsTableA, #resultsTableB) thead th.sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
-:is(#resultsTable, #resultsTableA, #resultsTableB) thead th.sortable-th:hover { background-color: var(--bs-secondary-bg); }
-:is(#resultsTable, #resultsTableA, #resultsTableB) thead th .th-resize {
+#resultsTable thead th.sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
+#resultsTable thead th.sortable-th:hover { background-color: var(--bs-secondary-bg); }
+#resultsTable thead th .th-resize {
   position: absolute; top: 0; right: 0; bottom: 0; width: 12px; margin-right: -6px; z-index: 2;
   cursor: col-resize; touch-action: none;
   /* Visible strip (hover darkens) — was fully transparent so divisions looked missing. */
   background: rgba(0, 0, 0, 0.06);
 }
 /* Actions|Size: strip on left of Size th so it isn’t painted under the next column (right-edge + negative margin was untargetable). */
-:is(#resultsTable, #resultsTableA, #resultsTableB) thead th .th-resize-leading {
+#resultsTable thead th .th-resize-leading {
   left: 0;
   right: auto;
   margin-left: -6px;
   margin-right: 0;
 }
-:is(#resultsTable, #resultsTableA, #resultsTableB) thead th .th-resize:hover { background: rgba(13, 110, 253, 0.22); }
-:is(#resultsTable, #resultsTableA, #resultsTableB) thead th .th-resize.th-resize-active { background: rgba(13, 110, 253, 0.28); }
+#resultsTable thead th .th-resize:hover { background: rgba(13, 110, 253, 0.22); }
+#resultsTable thead th .th-resize.th-resize-active { background: rgba(13, 110, 253, 0.28); }
 body.tagfox-table-col-resize-active,
 body.tagfox-table-col-resize-active * {
   cursor: col-resize !important;
@@ -2640,44 +2600,37 @@ body > .tooltip {
   color: #e4e4e7;
 }
 [data-bs-theme="dark"] .props-panel { background: #1e1e22 !important; }
-[data-bs-theme="dark"] .results-pane:not(.results-pane-active) {
-  opacity: 0.78;
-  background-color: color-mix(in srgb, var(--bs-tertiary-bg) 74%, var(--bs-body-bg) 26%);
-}
-[data-bs-theme="dark"] .results-pane:not(.results-pane-active)::after {
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.015), rgba(0, 0, 0, 0.1));
-}
-[data-bs-theme="dark"] :is(#resultsTable, #resultsTableA, #resultsTableB) thead th {
+[data-bs-theme="dark"] #resultsTable thead th {
   background: #27272a;
   color: #a1a1aa;
 }
-[data-bs-theme="dark"] :is(#resultsTable, #resultsTableA, #resultsTableB) thead th:not(:first-child) {
+[data-bs-theme="dark"] #resultsTable thead th:not(:first-child) {
   border-left-color: #3f3f46;
 }
-[data-bs-theme="dark"] :is(#resultsTable, #resultsTableA, #resultsTableB) thead th .th-resize {
+[data-bs-theme="dark"] #resultsTable thead th .th-resize {
   background: rgba(255, 255, 255, 0.08);
 }
-[data-bs-theme="dark"] :is(#resultsTable, #resultsTableA, #resultsTableB) thead th .th-resize:hover {
+[data-bs-theme="dark"] #resultsTable thead th .th-resize:hover {
   background: rgba(99, 102, 241, 0.28);
 }
-[data-bs-theme="dark"] :is(#resultsTable, #resultsTableA, #resultsTableB) tbody tr { border-bottom-color: #3f3f46; }
-[data-bs-theme="dark"] :is(#resultsTable, #resultsTableA, #resultsTableB).results-sort-path tbody tr.results-folder-row {
+[data-bs-theme="dark"] #resultsTable tbody tr { border-bottom-color: #3f3f46; }
+[data-bs-theme="dark"] #resultsTable.results-sort-path tbody tr.results-folder-row {
   border-bottom-color: rgba(251, 146, 60, 0.3);
 }
 [data-bs-theme="dark"] .name-badges .folder-child-count.folder-child-count-over {
   background-color: rgba(248, 113, 113, 0.16);
   color: #fecdd3 !important;
 }
-[data-bs-theme="dark"] :is(#resultsTable, #resultsTableA, #resultsTableB) tbody td.results-td-size.tagfox-size-heat-orange {
+[data-bs-theme="dark"] #resultsTable tbody td.results-td-size.tagfox-size-heat-orange {
   color: #fb923c;
 }
-[data-bs-theme="dark"] :is(#resultsTable, #resultsTableA, #resultsTableB) tbody td.results-td-size.tagfox-size-heat-amber {
+[data-bs-theme="dark"] #resultsTable tbody td.results-td-size.tagfox-size-heat-amber {
   color: #fbbf24;
 }
-[data-bs-theme="dark"] :is(#resultsTable, #resultsTableA, #resultsTableB) tbody td.results-td-size.tagfox-size-heat-mb1 {
+[data-bs-theme="dark"] #resultsTable tbody td.results-td-size.tagfox-size-heat-mb1 {
   color: #2dd4bf;
 }
-[data-bs-theme="dark"] :is(#resultsTable, #resultsTableA, #resultsTableB) tbody td.results-td-size.tagfox-size-heat-kb100 {
+[data-bs-theme="dark"] #resultsTable tbody td.results-td-size.tagfox-size-heat-kb100 {
   color: #bef264;
 }
 [data-bs-theme="dark"] .results-wrap.card {

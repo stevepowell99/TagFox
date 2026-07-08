@@ -13,6 +13,7 @@
     "dist": "node scripts/run-dist.js",
     "test": "node test/run-all.cjs",
     "test:smoke": "node test/smoke.cjs",
+    "test:tabs": "node test/tab-lifecycle.cjs",
     "test:loadmore": "node test/loadmore-regression.cjs",
     "test:fuzz": "node test/fuzz.cjs"
   },

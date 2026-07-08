@@ -1,15 +1,18 @@
 # TagFox tests
 
-Automated regression tests for the search and dual-pane logic in `renderer.js`. They launch the real app
+Automated regression tests for the search and result-tabs logic in `renderer.js`. They launch the real app
 under the Chrome DevTools Protocol (CDP) and drive it through a hidden test hook, so they exercise the
-actual renderer, not a reimplementation.
+actual renderer rather than a reimplementation.
 
-These guard the concurrency bugs fixed in June 2026 (see [Search concurrency and dual panes](../README.md#search-concurrency-and-dual-panes)):
+The results area is a set of scratch tabs (see [Result tabs](../README.md#result-tabs)). Only the active
+tab has DOM and is refreshed; inactive tabs are passive state snapshots re-searched on activation. The tests
+guard:
 
-- Searches rendering into the hidden pane during the startup / refresh pane dance.
-- Load-more rows being dropped when the background inactive-pane refresh ran.
-- A copy or delete in one pane bleeding into the other (the inactive pane is now a passive snapshot,
-  refreshed only on activation).
+- The single canonical results DOM (`tbody`, `resultsTable`, and so on) stays present and unique.
+- Load-more rows are stored on the active tab and rendered (the load-more desync bug).
+- A copy or delete in the active tab never mutates another tab's stored rows.
+- Tab lifecycle: open to the cap, refuse past it, close down to one (never zero), cycle with wraparound,
+  reorder, and spring-hover activation.
 
 ## Prerequisites
 
@@ -22,9 +25,10 @@ These guard the concurrency bugs fixed in June 2026 (see [Search concurrency and
 ## Running
 
 ```
-npm test                      # whole suite (smoke + crud-isolation + pane-stale + load-more + 3 fuzz seeds)
+npm test                      # whole suite (smoke + tab-lifecycle + tab-isolation + load-more + 3 fuzz seeds)
 npm run test:smoke            # readable walkthrough of the main flows
-npm run test:loadmore         # focused load-more / pane-state regression
+npm run test:tabs             # tab lifecycle: open/close/cap/cycle/reorder/spring-hover
+npm run test:loadmore         # focused load-more / tab-state regression
 npm run test:fuzz             # randomized fuzz, default 60 iterations
 node test/fuzz.cjs 100 31337  # fuzz: <iterations> <seed>
 ```
@@ -42,11 +46,11 @@ runs are unaffected: `main.js` only skips `show()` when that env var is set.
 | File | Covers |
 |------|--------|
 | `harness.cjs` | Shared library: launch Electron under CDP, the `#tagfoxtest` driver, `settle()`, and `structuralProblems()` (the invariants below). Not a test itself. |
-| `smoke.cjs` | Startup, a 10x F5 refresh loop, type+refresh races, pane switches, rapid A/B toggles, and the inactive-pane dance racing a scheduled search. Checks the structural invariants after each step. |
-| `crud-pane-isolation.cjs` | A delete in the active pane must leave the inactive pane's stored rows untouched (the copy/delete cross-pane bleed). Guards the passive-inactive-pane rule. |
-| `pane-stale.cjs` | A disk mutation into the inactive pane's scope flags it stale and shows the "out of date" badge; a refresh clears it; an unrelated mutation does not flag it. |
-| `loadmore-regression.cjs` | Loads a second page, runs the background dance, and checks the loaded rows survive (the load-more desync bug). |
-| `fuzz.cjs` | Random bursts of actions (type, refresh, pane switch, recency, view, scope, dance, auto-refresh tick) with a structural check plus a consistency re-search after every burst. |
+| `smoke.cjs` | Startup, a 10x F5 refresh loop, type+refresh races, opening a 2nd/3rd tab and searching different scopes, cycling tabs, and closing the active tab. Checks the structural invariants after each step. |
+| `tab-lifecycle.cjs` | Open to the cap, refuse the 11th, cycle with wraparound, reorder by index, spring-hover activation, and close down to one (never zero). |
+| `crud-pane-isolation.cjs` | A delete in the active tab must leave another tab's stored rows untouched (cross-tab CRUD bleed). Guards the passive-inactive-tab rule. |
+| `loadmore-regression.cjs` | Loads two extra pages and checks the rows are stored on the active tab and rendered (the load-more desync bug). |
+| `fuzz.cjs` | Random bursts of actions (type, refresh, new/close/cycle tab, recency, view, scope, auto-refresh tick) with a structural check plus a consistency re-search after every burst. |
 | `run-all.cjs` | Runs the above in sequence and prints a pass/fail summary. |
 
 ## Invariants checked (`structuralProblems` in `harness.cjs`)
@@ -54,10 +58,9 @@ runs are unaffected: `main.js` only skips `show()` when that env var is set.
 After every settle:
 
 - **id integrity:** each canonical results id (`tbody`, `resultsTable`, and so on) appears exactly once.
-- **base `#tbody` is in the active pane:** the canonical id never strands on the hidden pane.
-- **CSS active matches logical active:** `.results-pane-active` matches `activeResultsPane`.
 - **settled:** no search depth, nothing in flight, no pending debounce (no deadlock).
-- **active-pane state in sync:** global `lastRows` equals the active pane's stored `lastRows`.
+- **active-tab state in sync:** global `lastRows` equals the active tab's stored rows.
+- **tab count in range:** at least one tab, at most ten.
 - **render matches data:** when no recency / folders-only / files-only filter is hiding rows, the visible
   tbody is non-empty exactly when `lastRows` is non-empty.
 
@@ -71,11 +74,14 @@ non-idempotent, so that case is expected and skipped).
 (TagFox never loads with that hash) and only activates when a test loads the page with `#tagfoxtest`. It
 exposes `window.__tagfoxTest` with:
 
-- drivers: `runSearchNow`, `refreshNow`, `refreshInactivePane`, `activatePane`, `scheduleSearch`,
-  `setQuery`, `setRecency`, `setView`, `setScope`, `loadMore`, `autoTick`, `configure`.
-- test controls: `disableAutofill` (headless viewport makes auto-paging nondeterministic).
-- inspectors: `state()` (active pane, depth, in-flight, per-pane row counts, id integrity, status) and
-  `diag()` (filter-stage counts and the current rows).
+- search drivers: `runSearchNow`, `refreshNow`, `scheduleSearch`, `setQuery`, `setRecency`, `setView`,
+  `setScope`, `loadMore`, `autoTick`, `configure`.
+- tab drivers: `newTab`, `closeTab(id)`, `activateTab(id)`, `cycleTab(dir)`, `reorderTab(from,to)`,
+  `springHoverTab(id)`, `tabIds()`.
+- test controls: `disableAutofill` (headless viewport makes auto-paging nondeterministic), `mutate`,
+  `tombstone`.
+- inspectors: `state()` (active tab, tab list + per-tab row counts, depth, in-flight, id integrity, status)
+  and `diag()` (filter-stage counts and the current rows).
 
 The hook is the only test-specific code in the shipped app and adds no behaviour to normal runs.
 

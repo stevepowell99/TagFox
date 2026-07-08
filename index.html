@@ -767,24 +767,21 @@
           </div>
         </div>
         <div class="results-with-shelf">
-        <div id="resultsSplitStack" class="results-split-stack flex-grow-1 min-w-0 min-h-0">
-        <div class="split-h split-h-edge d-none" id="splitResultsTop" role="separator" aria-label="Create split from top" title="Drag to split">
-          <div class="split-h-actions split-h-edge-actions" role="group" aria-label="Restore split panes">
-            <button type="button" class="btn btn-sm btn-outline-secondary split-h-action-btn" data-split-reopen="1" title="Restore split (50/50)" aria-label="Restore split (50/50)">
-              <i class="fa-solid fa-up-down" aria-hidden="true"></i>
-            </button>
-          </div>
+        <div id="resultsTabStack" class="results-tab-stack flex-grow-1 min-w-0 min-h-0">
+        <!-- Scratch result tabs: open/close (max 10), drag to reorder, Ctrl+Tab / Ctrl+Shift+Tab to cycle. Drag a file onto a tab to spring it open, then drop. Rendered by renderTabStrip(). -->
+        <div id="resultsTabStrip" class="results-tab-strip" role="tablist" aria-label="Result tabs">
+          <div id="resultsTabList" class="results-tab-list" role="presentation"></div>
+          <button type="button" id="btnNewTab" class="results-tab-new flex-shrink-0" title="New tab" aria-label="New tab">
+            <i class="fa-solid fa-plus fa-sm" aria-hidden="true"></i>
+          </button>
         </div>
         <div
           id="resultsWrap"
-          data-results-pane="A"
-          class="results-wrap results-pane results-pane-active card shadow-sm flex-grow-1 min-w-0 min-h-0"
+          class="results-wrap results-pane card shadow-sm flex-grow-1 min-w-0 min-h-0"
           tabindex="-1"
           role="region"
-          aria-label="Search results pane A"
+          aria-label="Search results"
         >
-        <!-- Two-pane view only: read-only scope breadcrumb shown when this pane is inactive. -->
-        <div class="pane-inactive-breadcrumb d-none" data-pane-breadcrumb="A" aria-hidden="true"></div>
         <!-- Scroll only the table (+ load more) -->
         <div id="resultsScroll" class="results-table-scroll flex-grow-1 min-h-0">
           <table class="table table-sm mb-0" id="resultsTable">
@@ -833,84 +830,6 @@
           <span id="resultsLoadMoreHint" class="small text-muted ms-2" aria-live="polite"></span>
         </div>
         </div>
-        </div>
-        <div class="split-h" id="splitResultsH" role="separator" aria-label="Resize split results panes" title="Drag">
-          <div class="split-h-actions" role="group" aria-label="Split pane actions">
-            <button type="button" class="btn btn-sm btn-outline-secondary split-h-action-btn" id="btnSplitCopyTopToBottom" title="Make bottom pane same as top pane" aria-label="Make bottom pane same as top pane">
-              <i class="fa-solid fa-arrow-down" aria-hidden="true"></i>
-            </button>
-            <button type="button" class="btn btn-sm btn-outline-secondary split-h-action-btn" id="btnSplitSwapPanes" title="Swap top and bottom panes" aria-label="Swap top and bottom panes">
-              <i class="fa-solid fa-right-left" aria-hidden="true"></i>
-            </button>
-            <button type="button" class="btn btn-sm btn-outline-secondary split-h-action-btn" id="btnSplitCopyBottomToTop" title="Make top pane same as bottom pane" aria-label="Make top pane same as bottom pane">
-              <i class="fa-solid fa-arrow-up" aria-hidden="true"></i>
-            </button>
-            <button type="button" class="btn btn-sm btn-outline-secondary split-h-action-btn" id="btnSplitClose" title="Close split (keep active pane only)" aria-label="Close split (keep active pane only)">
-              <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-            </button>
-          </div>
-        </div>
-        <div
-          id="resultsWrapB"
-          data-results-pane="B"
-          class="results-wrap results-pane card shadow-sm flex-grow-1 min-w-0 min-h-0"
-          tabindex="-1"
-          role="region"
-          aria-label="Search results pane B"
-        >
-        <!-- Two-pane view only: read-only scope breadcrumb shown when this pane is inactive. -->
-        <div class="pane-inactive-breadcrumb d-none" data-pane-breadcrumb="B" aria-hidden="true"></div>
-        <div id="resultsScrollB" class="results-table-scroll flex-grow-1 min-h-0">
-          <table class="table table-sm mb-0" id="resultsTableB">
-          <colgroup>
-            <col style="width:3%" />
-            <col style="width:43%" />
-            <col style="width:24%" />
-            <col style="width:14%" />
-            <col style="width:6%" />
-            <col style="width:10%" />
-          </colgroup>
-          <thead class="table-light">
-            <tr>
-              <th class="align-middle text-start results-th-cb" title="Select rows — Space toggles row, Ctrl+A all. Drag = in-app. Shelf OS drag or Alt+drag = Explorer files.">
-                <input type="checkbox" class="form-check-input m-0 results-cb" id="chkSelectAllResultsB" autocomplete="off" aria-label="Select all in list" />
-                <span class="th-resize" data-resize-left="0" data-resize-right="1" data-resize-mode="always" title="Drag to resize"></span>
-              </th>
-              <th class="sortable-th" data-sort="name" title="Sort by name — n">
-                <span class="sort-label">Name</span>
-                <span class="th-resize" data-resize-left="1" data-resize-right="2" data-resize-mode="flat" title="Drag to resize"></span>
-                <span class="th-resize" data-resize-left="2" data-resize-right="3" data-resize-mode="tree" title="Drag to resize"></span>
-              </th>
-              <th class="sortable-th" data-sort="path" title="Sort by path">
-                <span class="sort-label">Path</span>
-                <span class="th-resize" data-resize-left="2" data-resize-right="3" data-resize-mode="flat" title="Drag to resize"></span>
-              </th>
-              <th class="align-middle" aria-label="Row actions"></th>
-              <th class="sortable-th text-end" data-sort="size" title="Sort by size — z">
-                <span class="th-resize th-resize-leading" data-resize-left="3" data-resize-right="4" data-resize-mode="always" title="Drag to resize"></span>
-                <span class="sort-label">Size</span>
-                <span class="th-resize" data-resize-left="4" data-resize-right="5" data-resize-mode="always" title="Drag to resize"></span>
-              </th>
-              <th class="sortable-th" data-sort="date_modified" title="Sort by modified — m"><span class="sort-label">Modified</span></th>
-            </tr>
-          </thead>
-          <tbody id="tbodyB"></tbody>
-        </table>
-        <div
-          id="resultsLoadMoreWrapB"
-          class="results-load-more-wrap border-top px-2 py-2 bg-body-secondary d-none"
-        >
-          <button type="button" class="btn btn-sm btn-outline-primary" id="btnLoadMoreResultsB">Load more</button>
-          <span id="resultsLoadMoreHintB" class="small text-muted ms-2" aria-live="polite"></span>
-        </div>
-        </div>
-        </div>
-        <div class="split-h split-h-edge d-none" id="splitResultsBottom" role="separator" aria-label="Create split from bottom" title="Drag to split">
-          <div class="split-h-actions split-h-edge-actions" role="group" aria-label="Restore split panes">
-            <button type="button" class="btn btn-sm btn-outline-secondary split-h-action-btn" data-split-reopen="1" title="Restore split (50/50)" aria-label="Restore split (50/50)">
-              <i class="fa-solid fa-up-down" aria-hidden="true"></i>
-            </button>
-          </div>
         </div>
         </div>
         <aside id="appShelf" class="app-shelf app-shelf--rhs border-start bg-body-secondary small" aria-label="Shelf staging area">
