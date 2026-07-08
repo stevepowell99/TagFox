@@ -141,7 +141,7 @@ Three icon-pair switches next to the search box — combine them freely:
 
 ### 🏷️ Tags
 
-- Tags appear as coloured chips in the tag bar (below the breadcrumb). Click a tag to filter results; click again to remove the filter. Counts in parentheses reflect the current result list (after filters), capped by **Max results**.
+- Tags appear as coloured chips in the tag bar (below the breadcrumb). Each click cycles the chip: **include** (coloured) → **exclude** (red, struck-through, shown as `¬TAG`) → off. Exclude means "not this tag", so you can build filters like `TODO` and `¬CLAUDE` (TODOs that are not Claude's). The **AND / OR** switch combines all chips, mixing includes and excludes. Counts in parentheses reflect the current result list (after filters), capped by **Max results**.
 - The **↻** control at the end of the tag row re-runs the main search and rescans the whole index for `xk`/`xp`/`xx` tag tokens, pruning remembered/active tags that no longer appear — use if the bar looks stale or after bulk renames outside TagFox. Ordinary searches do not do that full scan.
 - To edit a file's tags: select the row and press `Ctrl`+`T`, or use the **Tags** button in the bulk bar. **Add** or removing a chip renames on disk immediately. When a **current folder** is set, renames must stay under that path.
 - Tags are stored as trailing prefixed tokens before the extension, e.g. `Notes xxINFO.md`. A token is a tag only when it is a vocabulary word with its family prefix (e.g. `xkTODO`, `xpGCC`, `xxPUB`); anything else is literal text.

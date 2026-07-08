@@ -44,6 +44,7 @@
       tagStore: 'tagBrowserTagStore',
       knownBracketTags: 'tagBrowserKnownBracketTags',
       activeTagFilter: 'tagBrowserActiveTag',
+      excludedTagFilter: 'tagBrowserExcludedTag',
       tagFilterCombineOr: 'tagBrowserTagCombineOr',
       recencyFilter: 'tagBrowserRecencyFilter',
       searchDebug: 'tagBrowserSearchDebug',
@@ -114,6 +115,7 @@
         tagStore: tagStoreOrder.slice(0, TAG_STORE_MAX),
         knownBracketTags: knownBracketTagsList.slice(0, KNOWN_BRACKET_TAGS_MAX),
         activeFilter: [...activeTagKeys].sort(),
+        excludedFilter: [...excludedTagKeys].sort(),
         tagCombineOr: !!tagFilterCombineOr,
       };
     }
@@ -195,6 +197,8 @@
       }
       if (Array.isArray(snap.activeFilter)) {
         activeTagKeys = new Set(snap.activeFilter.map((x) => String(x).trim().toLowerCase()).filter(Boolean));
+        const exc = Array.isArray(snap.excludedFilter) ? snap.excludedFilter.map((x) => String(x).trim().toLowerCase()) : [];
+        excludedTagKeys = new Set(exc.filter((k) => activeTagKeys.has(k)));
         persistActiveTagFilter();
       }
       if (typeof snap.tagCombineOr === 'boolean') {
@@ -513,6 +517,7 @@
       smartProbePrior = null;
       if (clearFilters) {
         activeTagKeys.clear();
+        excludedTagKeys.clear();
         setRecencyFilterMode('all');
         const ww = document.getElementById('optWholeWord');
         if (ww) ww.checked = false;
@@ -574,8 +579,10 @@
       return localStorage.getItem(LS.highlightMatchedNames) !== '0';
     }
 
-    /** @type {Set<string>} lowercase keys; tag bar filters with AND (click toggles each). */
+    /** @type {Set<string>} lowercase keys; tag bar filters with AND (click cycles off → include → exclude → off). */
     let activeTagKeys = new Set();
+    /** @type {Set<string>} subset of activeTagKeys that are negated (not-B); a pill's 3rd click state. */
+    let excludedTagKeys = new Set();
     /** Multiple tag filters: false = AND (default), true = OR (Everything regex + client filter). */
     let tagFilterCombineOr = false;
     /** Tag bar: these bodies (lowercase keys) always show; the rest hide behind "More" (active hidden ones still show). */
@@ -1935,6 +1942,14 @@
       el.style.setProperty('border-color', 'hsl(' + hue + ', 38%, 58%)', 'important');
     }
 
+    /** Negated (not-tag) pill: red tint + strike-through, overriding the per-tag hue style. */
+    function applyTagBarPillExcludeStyle(el) {
+      el.style.setProperty('background-color', 'hsl(0, 70%, 90%)', 'important');
+      el.style.setProperty('color', '#842029', 'important');
+      el.style.setProperty('border-color', 'hsl(0, 60%, 60%)', 'important');
+      el.style.setProperty('text-decoration', 'line-through', 'important');
+    }
+
     /** Remove one tag chip from segment via rename (results / props; no modal). */
     async function removeTagFromPathOneItem(fullPath, tagDisplay) {
       if (tagRenameBusy) return;
@@ -2316,6 +2331,7 @@
       leaveScopePathEditChrome();
       document.getElementById('rootFolder').value = '';
       activeTagKeys.clear();
+      excludedTagKeys.clear();
       persistActiveTagFilter();
       setRecencyFilterMode('all');
       saveSettings();
@@ -9046,11 +9062,17 @@
       return '[\\s\\\\]' + T.prefixForTag(inner) + esc + '(?:[\\s.][^\\\\]*)?$';
     }
 
-    /** Narrow Everything: AND (space) or OR (|) of regex: clauses per active tag. */
+    /** Narrow Everything: AND (space) or OR (|) of regex: clauses per active tag. Only positive (include) tags
+     *  narrow the server query; negation is applied by the client filter. In OR mode a negative term matches
+     *  rows that merely LACK a tag, so Everything cannot pre-narrow safely — send no tag clause and let the
+     *  client filter do it all. In AND mode, narrowing by the positives is always a correct superset. */
     function appendActiveTagToEverythingQuery(searchText) {
       if (!activeTagKeys.size) return searchText;
       let out = String(searchText || '').trim();
+      const anyNegative = [...activeTagKeys].some((k) => excludedTagKeys.has(k));
+      if (tagFilterCombineOr && anyNegative) return out;
       const res = [...activeTagKeys]
+        .filter((k) => !excludedTagKeys.has(k))
         .sort()
         .map((k) => tagKeyToEverythingBracketRegex(k))
         .filter(Boolean);
@@ -10872,6 +10894,8 @@
     function persistActiveTagFilter() {
       if (activeTagKeys.size) localStorage.setItem(LS.activeTagFilter, JSON.stringify([...activeTagKeys].sort()));
       else localStorage.removeItem(LS.activeTagFilter);
+      if (excludedTagKeys.size) localStorage.setItem(LS.excludedTagFilter, JSON.stringify([...excludedTagKeys].sort()));
+      else localStorage.removeItem(LS.excludedTagFilter);
       scheduleTagPrefsDiskSync();
     }
 
@@ -11109,6 +11133,8 @@
         } catch (_) { /* ignore bad JSON */ }
       }
       activeTagKeys = activeTagKeysFromStored(localStorage.getItem(LS.activeTagFilter));
+      // Excluded ⊆ active (drop any stale exclusion whose tag is no longer an active filter).
+      excludedTagKeys = new Set([...activeTagKeysFromStored(localStorage.getItem(LS.excludedTagFilter))].filter((k) => activeTagKeys.has(k)));
       tagFilterCombineOr = localStorage.getItem(LS.tagFilterCombineOr) === '1';
       tagBarShowAll = localStorage.getItem(LS.tagBarShowAll) === '1';
       applyTagPrefsFromUserDataFile();
@@ -11450,6 +11476,7 @@
         rootFolder: document.getElementById('rootFolder').value,
         searchScopeMax: getSearchScopeMaxFolderNorm(),
         activeTagKeys: [...activeTagKeys].sort(),
+        excludedTagKeys: [...excludedTagKeys].sort(),
         tagFilterCombineOr: !!tagFilterCombineOr,
         flatView: isFlatView(),
         smartView: isSmartView(),
@@ -11536,6 +11563,8 @@
       } else {
         activeTagKeys = new Set();
       }
+      const excArr = Array.isArray(s.excludedTagKeys) ? s.excludedTagKeys.map((x) => String(x).trim().toLowerCase()) : [];
+      excludedTagKeys = new Set(excArr.filter((k) => activeTagKeys.has(k)));
       tagFilterCombineOr = !!s.tagFilterCombineOr;
       {
         if (s.resultsLayout && ['tree', 'smart', 'flat'].includes(s.resultsLayout)) {
@@ -12049,20 +12078,16 @@
     function filteredRowsAfterTagsOnly() {
       let rows = lastRows.slice();
       if (activeTagKeys.size) {
-        if (tagFilterCombineOr && activeTagKeys.size > 1) {
-          rows = rows.filter((r) => {
-            for (const k of activeTagKeys) {
-              if (T.rowHasTag(r, k, fullPathForRow)) return true;
-            }
-            return false;
-          });
+        // Each term is "has tag" (include) or "lacks tag" (exclude, in excludedTagKeys), combined by AND / OR.
+        const terms = [...activeTagKeys].map((k) => ({ k, neg: excludedTagKeys.has(k) }));
+        const satisfies = (r, t) => {
+          const has = T.rowHasTag(r, t.k, fullPathForRow);
+          return t.neg ? !has : has;
+        };
+        if (tagFilterCombineOr && terms.length > 1) {
+          rows = rows.filter((r) => terms.some((t) => satisfies(r, t)));
         } else {
-          rows = rows.filter((r) => {
-            for (const k of activeTagKeys) {
-              if (!T.rowHasTag(r, k, fullPathForRow)) return false;
-            }
-            return true;
-          });
+          rows = rows.filter((r) => terms.every((t) => satisfies(r, t)));
         }
       }
       return rows;
@@ -12516,15 +12541,28 @@
         b.type = 'button';
         b.dataset.tagKey = key;
         const on = activeTagKeys.has(key);
-        b.className = 'btn btn-sm tag-bar-pill' + (on ? ' tag-bar-pill-active' : '');
-        applyTagBarPillStyle(b, key);
-        b.textContent = info.count > 0 ? info.display + ' (' + info.count + ')' : info.display;
+        const neg = on && excludedTagKeys.has(key);
+        b.className = 'btn btn-sm tag-bar-pill' + (on ? ' tag-bar-pill-active' : '') + (neg ? ' tag-bar-pill-exclude' : '');
+        if (neg) applyTagBarPillExcludeStyle(b);
+        else applyTagBarPillStyle(b, key);
+        const label = (neg ? '¬' : '') + info.display; // ¬ marks a negated (not-tag) filter
+        b.textContent = info.count > 0 ? label + ' (' + info.count + ')' : label;
+        b.title = neg
+          ? 'Excluding ' + info.display + ' — click to clear'
+          : on
+            ? info.display + ' — click to exclude (not ' + info.display + ')'
+            : 'Filter by ' + info.display + ' — click again to exclude';
         b.addEventListener('click', () => {
           void (async () => {
-            if (activeTagKeys.has(key)) activeTagKeys.delete(key);
-            else {
+            // Cycle: off → include → exclude → off
+            if (!activeTagKeys.has(key)) {
               rememberTag(key, info.display);
               activeTagKeys.add(key);
+            } else if (!excludedTagKeys.has(key)) {
+              excludedTagKeys.add(key);
+            } else {
+              activeTagKeys.delete(key);
+              excludedTagKeys.delete(key);
             }
             persistActiveTagFilter();
 
@@ -12575,6 +12613,7 @@
         clearTags.addEventListener('click', () => {
           void (async () => {
             activeTagKeys.clear();
+            excludedTagKeys.clear();
             persistActiveTagFilter();
             await runSearchNow();
             commitSearchHistoryNow();
