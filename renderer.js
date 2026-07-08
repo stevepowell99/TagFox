@@ -7347,7 +7347,7 @@
         } else {
           const par = T.parentDir(propPath);
           const leaf = segmentPretty(T.baseName(String(par || '').replace(/[/\\]+$/, '')));
-          todoLbl.textContent = leaf ? 'Add TODO in current folder: ' + leaf : 'Add TODO in current folder';
+          todoLbl.textContent = leaf ? 'Add TODO in ' + leaf : 'Add TODO here';
           todoLbl.title = 'Creates Title xkTODO.md in ' + (leaf ? leaf : 'this folder');
         }
       }

@@ -1147,11 +1147,12 @@
       </div>
       <!-- Add TODO: Title xkTODO.md in the current folder. Pinned to the sidebar bottom (below #propsScroll); hidden in theater/overview mode via CSS. -->
       <div id="propsAddTodoRow" class="px-2 py-2 border-top d-flex align-items-center gap-2 flex-shrink-0 small min-w-0">
-        <label class="text-muted mb-0 flex-shrink-0" id="labelNewMdTitle" for="newMdTitleInput" title="Creates Title xkTODO.md in the current folder">Add TODO here</label>
+        <label class="text-muted mb-0 text-truncate min-w-0" id="labelNewMdTitle" for="newMdTitleInput" title="Creates Title xkTODO.md in the current folder">Add TODO here</label>
         <input
           type="text"
           id="newMdTitleInput"
-          class="form-control form-control-sm flex-grow-1 min-w-0"
+          class="form-control form-control-sm flex-grow-1"
+          style="min-width: 7rem"
           placeholder="Title"
           autocomplete="off"
         />
