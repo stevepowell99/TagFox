@@ -13254,6 +13254,26 @@
           e.stopPropagation();
           openTagModal(fp);
         });
+        const btnDelete = document.createElement('button');
+        btnDelete.type = 'button';
+        btnDelete.className =
+          'btn btn-sm btn-outline-danger tagfox-scope-bar-icon-btn d-inline-flex align-items-center justify-content-center';
+        btnDelete.title = 'Delete (to Recycle Bin)';
+        btnDelete.setAttribute('aria-label', 'Delete to Recycle Bin');
+        btnDelete.innerHTML = '<i class="fa-solid fa-trash" aria-hidden="true"></i>';
+        btnDelete.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (!(await confirmRecycle([fp]))) return;
+          detachViewerEditorsForTrashedPaths([fp]);
+          setDeletingStatus(1);
+          const { r, threw } = await trashPathsInvokeWithSearchDebug([fp], 'rowBtn');
+          if (threw) {
+            setStatusMain('Delete failed');
+            return;
+          }
+          if (!r || !r.ok) setStatusMain((r && r.error) || 'Delete failed');
+          else void refreshAfterDiskMutation({ paths: [fp], trashed: true });
+        });
 
         tdActInner.appendChild(btnOpen);
         if (btnGmist) tdActInner.appendChild(btnGmist);
@@ -13262,6 +13282,7 @@
         tdActInner.appendChild(btnTags);
         tdActInner.appendChild(btnTerminal);
         tdActInner.appendChild(btnCopyQuoted);
+        tdActInner.appendChild(btnDelete);
         tdActInner.appendChild(btnMore);
         tdAct.appendChild(tdActInner);
 

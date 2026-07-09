@@ -386,6 +386,17 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 .tag-toolbar-row .tagfox-view-pair + .tagfox-view-pair {
   margin-left: 0.25rem;
 }
+/* Group the match-option toggles (match path / hide special / hide ~ / more) into one tray. */
+.tagfox-match-opts-group {
+  background: var(--bs-secondary-bg);
+  border-radius: var(--bs-border-radius);
+  padding: 2px;
+  gap: 2px;
+}
+/* Inside the tray the shared background does the grouping, so drop each toggle's own faint fill (checked / hover / filled states still stand out). */
+.tagfox-match-opts-group .tagfox-search-opt-icon {
+  background-color: transparent;
+}
 /* Smart view on: visually quiet the other layout modes + subs/content (still fully clickable). */
 .tagfox-search-opts-rhs:has(#optRvSmart:checked) .tagfox-rv-layout-trio > .btn-check:not(:checked) + .btn {
   opacity: 0.42;
@@ -1794,8 +1805,8 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
 #resultsTable col:nth-child(4),
 #resultsTable thead th:nth-child(4),
 #resultsTable tbody td.results-td-actions {
-  min-width: 12rem;
-  max-width: 15rem;
+  min-width: 13rem;
+  max-width: 17rem;
 }
 /* Checkbox only: keep a small but stable first column so narrow panes do not crush the checkbox. */
 #resultsTable col:first-child {
