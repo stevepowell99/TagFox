@@ -1568,6 +1568,16 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
 .folder-thumb figcaption {
   font-size: 0.72rem;
 }
+/* Nested thumbnails: per-folder section header spanning the grid; click opens the folder. */
+.folder-thumbs-sec {
+  grid-column: 1 / -1;
+  margin-top: 0.25rem;
+  cursor: pointer;
+}
+.folder-thumbs-sec:hover,
+.folder-thumbs-sec:focus-visible {
+  text-decoration: underline;
+}
 /* Theater (expanded viewer): more room, bigger tiles. */
 #propsAside.props-theater .folder-thumbs-grid {
   grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));

@@ -872,24 +872,29 @@
             <span id="propTitleIconMount" class="flex-shrink-0" aria-hidden="true"></span>
             <div id="propDisplayName" class="fw-semibold text-truncate min-w-0"></div>
             <span id="propsPanelSectionTitle" class="small fw-semibold text-muted flex-shrink-0">Viewer</span>
-            <!-- Folder rows only: nested readme aggregate (renderer toggles visibility) -->
+            <!-- Folder rows only (renderer toggles visibility). Two dimensions: depth (this folder / nested)
+                 applies to whichever content is on (folder doc or thumbnails); thumbnails is a separate on/off. -->
             <div id="propsNestedReadmeToggleWrap" class="d-none small flex-shrink-0 ms-0" style="min-width: min(100%, 14rem)">
-              <div class="btn-group btn-group-sm tagfox-segmented" role="group" aria-label="Viewer doc mode">
-                <input type="radio" class="btn-check" name="viewerDocMode" id="optViewerDocSingle" value="single" autocomplete="off" checked />
-                <label class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center" for="optViewerDocSingle" title="Single doc">
-                  <i class="fa-solid fa-file-lines fa-fw" aria-hidden="true"></i>
-                  <span class="visually-hidden">Single doc</span>
-                </label>
-                <input type="radio" class="btn-check" name="viewerDocMode" id="optViewerDocNested" value="nested" autocomplete="off" />
-                <label class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center" for="optViewerDocNested" title="All nested docs">
-                  <i class="fa-solid fa-folder-tree fa-fw" aria-hidden="true"></i>
-                  <span class="visually-hidden">All nested docs</span>
-                </label>
-                <input type="radio" class="btn-check" name="viewerDocMode" id="optViewerDocThumbs" value="thumbs" autocomplete="off" />
-                <label class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center" for="optViewerDocThumbs" title="Thumbnails in this folder">
-                  <i class="fa-solid fa-images fa-fw" aria-hidden="true"></i>
-                  <span class="visually-hidden">Thumbnails in this folder</span>
-                </label>
+              <div class="d-inline-flex align-items-center gap-1">
+                <div class="btn-group btn-group-sm tagfox-segmented" role="group" aria-label="Viewer folder depth">
+                  <input type="radio" class="btn-check" name="viewerDocMode" id="optViewerDocSingle" value="single" autocomplete="off" checked />
+                  <label class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center" for="optViewerDocSingle" title="This folder only">
+                    <i class="fa-solid fa-folder fa-fw" aria-hidden="true"></i>
+                    <span class="visually-hidden">This folder only</span>
+                  </label>
+                  <input type="radio" class="btn-check" name="viewerDocMode" id="optViewerDocNested" value="nested" autocomplete="off" />
+                  <label class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center" for="optViewerDocNested" title="Include subfolders">
+                    <i class="fa-solid fa-folder-tree fa-fw" aria-hidden="true"></i>
+                    <span class="visually-hidden">Include subfolders</span>
+                  </label>
+                </div>
+                <div class="btn-group btn-group-sm tagfox-segmented" role="group" aria-label="Viewer thumbnails">
+                  <input type="checkbox" class="btn-check" id="optViewerDocThumbs" autocomplete="off" />
+                  <label class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center" for="optViewerDocThumbs" title="Thumbnails instead of folder doc">
+                    <i class="fa-solid fa-images fa-fw" aria-hidden="true"></i>
+                    <span class="visually-hidden">Thumbnails instead of folder doc</span>
+                  </label>
+                </div>
               </div>
             </div>
           </div>

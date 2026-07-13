@@ -8425,7 +8425,7 @@
       const nested = document.getElementById('optViewerDocNested');
       const thumbs = document.getElementById('optViewerDocThumbs');
       const prev = document.getElementById('readmePreview');
-      if (single) single.checked = !globalNestedReadmeView && !folderThumbsView;
+      if (single) single.checked = !globalNestedReadmeView;
       if (nested) nested.checked = globalNestedReadmeView;
       if (thumbs) thumbs.checked = folderThumbsView;
       if (wrap) wrap.classList.toggle('d-none', globalNestedReadmeView);
@@ -8670,10 +8670,70 @@
       lastReadmeFolderPathLoose = pathKeyLoose(folderPath);
     }
 
+    /* Guards for nested thumbnails: stop scanning at these caps so a huge tree cannot grind the viewer
+       (the note above the grid says what was cut — no silent truncation). */
     const FOLDER_THUMBS_MAX = 400;
+    const FOLDER_THUMBS_WALK_MAX_FOLDERS = 250;
+    const FOLDER_THUMBS_WALK_MAX_DEPTH = 6;
     const FOLDER_THUMB_REQ_PX = 256;
 
-    /** Thumbnails mode: grid of shell thumbnails for the folder's files (reuses the row-thumbnail cache/queue). */
+    function thumbExtOf(name) {
+      const n = String(name || '');
+      return /\.[^.]+$/.test(n) ? n.slice(n.lastIndexOf('.') + 1).toLowerCase() : '';
+    }
+
+    /** BFS walk under rootNorm collecting thumbnailable files; aborts (null) if the selection moves. */
+    async function collectNestedThumbFiles(rootNorm, viewAnchor) {
+      const byName = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+      const files = [];
+      const queue = [{ p: rootNorm, depth: 0 }];
+      let visited = 0;
+      let stopped = '';
+      while (queue.length) {
+        if (!propsViewStill(viewAnchor)) return null;
+        if (files.length >= FOLDER_THUMBS_MAX) {
+          stopped = 'files';
+          break;
+        }
+        if (visited >= FOLDER_THUMBS_WALK_MAX_FOLDERS) {
+          stopped = 'folders';
+          break;
+        }
+        const { p, depth } = queue.shift();
+        visited++;
+        let r;
+        try {
+          r = await window.tagBrowser.listFolderEntries({ parentPath: p });
+        } catch (_e) {
+          continue;
+        }
+        if (!r || !r.ok || !Array.isArray(r.entries)) continue;
+        const own = [];
+        const subs = [];
+        for (const e of r.entries) {
+          if (e.type === 'file' && THUMBNAIL_EXT.has(thumbExtOf(e.name))) own.push(e.name);
+          else if (e.type === 'folder') subs.push(e.name);
+        }
+        own.sort(byName);
+        for (const n of own) {
+          if (files.length >= FOLDER_THUMBS_MAX) break;
+          files.push({ folder: p, name: n });
+        }
+        if (depth >= FOLDER_THUMBS_WALK_MAX_DEPTH) continue;
+        subs.sort(byName);
+        for (const n of subs) {
+          /* Dotfolders (.git…), node_modules, and streamed Drive content (hydrating downloads) are never walked. */
+          if (n.startsWith('.') || n.toLowerCase() === 'node_modules') continue;
+          const child = joinFolderAndFileName(p, n);
+          if (isStreamedDrivePathForThumb(child)) continue;
+          queue.push({ p: child, depth: depth + 1 });
+        }
+      }
+      return { files, visited, stopped };
+    }
+
+    /** Thumbnails mode: grid of shell thumbnails for the folder's files (reuses the row-thumbnail cache/queue).
+        The depth toggle applies here too: nested walks subfolders (capped) with a section header per folder. */
     async function loadFolderThumbnails(folderPath, viewAnchorPath) {
       const viewAnchor = viewAnchorPath != null && viewAnchorPath !== '' ? viewAnchorPath : folderPath;
       const block = document.getElementById('folderThumbsBlock');
@@ -8682,16 +8742,31 @@
       const noteEl = document.getElementById('folderThumbsNote');
       if (!block || !grid || typeof window.tagBrowser.listFolderEntries !== 'function') return;
       const norm = String(folderPath).replace(/[/\\]+$/, '');
-      const r = await window.tagBrowser.listFolderEntries({ parentPath: norm });
+      const nested = globalNestedReadmeView;
+      let files = [];
+      let note = '';
+      if (nested) {
+        const walk = await collectNestedThumbFiles(norm, viewAnchor);
+        if (!walk) return; /* selection moved mid-walk */
+        files = walk.files;
+        if (walk.stopped === 'files')
+          note = 'Showing the first ' + files.length + ' files — stopped scanning after ' + walk.visited + ' folders.';
+        else if (walk.stopped === 'folders')
+          note = 'Scanned the first ' + walk.visited + ' folders (' + files.length + ' files) — more not shown.';
+      } else {
+        const r = await window.tagBrowser.listFolderEntries({ parentPath: norm });
+        if (!propsViewStill(viewAnchor)) return;
+        const all = ((r && r.ok && r.entries) || [])
+          .filter((e) => e.type === 'file' && THUMBNAIL_EXT.has(thumbExtOf(e.name)))
+          .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+        files = all.slice(0, FOLDER_THUMBS_MAX).map((e) => ({ folder: norm, name: e.name }));
+        if (all.length > files.length) note = 'Showing the first ' + files.length + ' of ' + all.length + ' files.';
+      }
       if (!propsViewStill(viewAnchor)) return;
-      const extOf = (n) => (/\.[^.]+$/.test(n) ? n.slice(n.lastIndexOf('.') + 1).toLowerCase() : '');
-      const files = ((r && r.ok && r.entries) || [])
-        .filter((e) => e.type === 'file' && THUMBNAIL_EXT.has(extOf(e.name)))
-        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-      const capped = files.slice(0, FOLDER_THUMBS_MAX);
       lastReadmeFolderPathLoose = pathKeyLoose(folderPath);
       block.classList.remove('d-none');
-      const sig = pathKeyLoose(norm) + '|' + capped.map((f) => f.name).join('\n');
+      const sig =
+        pathKeyLoose(norm) + '|' + (nested ? 'n' : 'f') + '|' + files.map((f) => f.folder + '\\' + f.name).join('\n');
       /* Auto-refresh with an unchanged file list: keep the rendered grid (and its scroll position). */
       if (sig === folderThumbsRenderedSig && grid.childElementCount) return;
       folderThumbsRenderedSig = sig;
@@ -8700,23 +8775,46 @@
         folderThumbsObserver = null;
       }
       grid.innerHTML = '';
-      if (emptyEl) emptyEl.classList.toggle('d-none', capped.length > 0);
+      if (emptyEl) emptyEl.classList.toggle('d-none', files.length > 0);
       if (noteEl) {
-        const over = files.length > capped.length;
-        noteEl.classList.toggle('d-none', !over);
-        if (over) noteEl.textContent = 'Showing the first ' + capped.length + ' of ' + files.length + ' files.';
+        noteEl.classList.toggle('d-none', !note);
+        noteEl.textContent = note;
       }
-      if (!capped.length) return;
+      if (!files.length) return;
+      const relLabel = (folder) => {
+        const rel = String(folder).slice(norm.length).replace(/^[/\\]+/, '');
+        if (!rel) return '';
+        return rel.split(/[/\\]+/).map(segmentPretty).join('\\');
+      };
       const frag = document.createDocumentFragment();
       const tiles = [];
-      for (const f of capped) {
-        const fp = joinFolderAndFileName(norm, f.name);
-        const ext = extOf(f.name);
+      let prevFolder = norm;
+      for (const f of files) {
+        if (nested && pathKeyLoose(f.folder) !== pathKeyLoose(prevFolder)) {
+          prevFolder = f.folder;
+          const sec = document.createElement('div');
+          sec.className = 'folder-thumbs-sec small fw-semibold text-muted text-truncate';
+          sec.textContent = relLabel(f.folder) || segmentPretty(T.baseName(f.folder));
+          sec.setAttribute('role', 'button');
+          sec.tabIndex = 0;
+          sec.title = 'Open folder';
+          const fldr = f.folder;
+          sec.addEventListener('click', () => void window.tagBrowser.openPath(fldr));
+          sec.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              void window.tagBrowser.openPath(fldr);
+            }
+          });
+          frag.appendChild(sec);
+        }
+        const fp = joinFolderAndFileName(f.folder, f.name);
+        const ext = thumbExtOf(f.name);
         const fig = document.createElement('figure');
         fig.className = 'folder-thumb';
         fig.setAttribute('role', 'button');
         fig.tabIndex = 0;
-        fig.title = 'Open ' + f.name;
+        fig.title = 'Open ' + (nested && relLabel(f.folder) ? relLabel(f.folder) + '\\' : '') + f.name;
         const box = document.createElement('div');
         box.className = 'folder-thumb-imgwrap';
         box.appendChild(fileIconEl(ext)); /* glyph stays if the shell has no thumbnail */
@@ -15620,24 +15718,19 @@
       const list = normalizeGlobalViewerBasenamesList(inp.value);
       localStorage.setItem(LS.globalViewerBasenames, list.join(', '));
       inp.value = list.join(', ');
-      if (!globalNestedReadmeView) return;
+      if (!globalNestedReadmeView || folderThumbsView) return;
       const selPath = propsTargetPath();
       const row = propsTargetRowForDisplay();
       const root = readmeAggregateRootFolderFromSelection(selPath, row);
       if (root) void loadReadmeForFolder(root, selPath);
     });
-    function onViewerDocModeChanged(mode) {
-      const m = mode === 'nested' || mode === 'thumbs' ? mode : 'single';
-      if (m !== 'single') {
-        const rw = document.getElementById('readmeEditorWrap');
-        if (rw && !rw.classList.contains('d-none')) {
-          globalNestedReadmeView = false;
-          folderThumbsView = false;
-          syncReadmeNestedDocsUi();
-          setStatusMain('Finish editing folder doc first.');
-          return;
-        }
-      }
+    /** Leaving the single-doc view while its editor is open would drop unsaved edits — block and revert controls. */
+    function viewerFolderModeBlockedByOpenEditor() {
+      const rw = document.getElementById('readmeEditorWrap');
+      return !!(rw && !rw.classList.contains('d-none'));
+    }
+    /** Re-route the current selection through loadReadmeForFolder after a depth/thumbs change. */
+    function applyViewerFolderView() {
       const selPath = propsTargetPath();
       const row = propsTargetRowForDisplay();
       const root = readmeAggregateRootFolderFromSelection(selPath, row);
@@ -15647,25 +15740,46 @@
         syncReadmeNestedDocsUi();
         return;
       }
-      globalNestedReadmeView = m === 'nested';
-      folderThumbsView = m === 'thumbs';
-      if (folderThumbsView) folderThumbsRenderedSig = ''; /* re-list on entry; stale grid must not survive a mode switch */
       void loadReadmeForFolder(root, selPath);
+    }
+    function onViewerDepthChanged(wantNested) {
+      const want = !!wantNested;
+      if (want === globalNestedReadmeView) return;
+      if (want && !folderThumbsView && viewerFolderModeBlockedByOpenEditor()) {
+        syncReadmeNestedDocsUi();
+        setStatusMain('Finish editing folder doc first.');
+        return;
+      }
+      globalNestedReadmeView = want;
+      if (folderThumbsView) folderThumbsRenderedSig = ''; /* depth change re-lists; stale grid must not survive */
+      applyViewerFolderView();
+    }
+    function onViewerThumbsToggled(on) {
+      const want = !!on;
+      if (want === folderThumbsView) return;
+      if (want && viewerFolderModeBlockedByOpenEditor()) {
+        syncReadmeNestedDocsUi();
+        setStatusMain('Finish editing folder doc first.');
+        return;
+      }
+      folderThumbsView = want;
+      folderThumbsRenderedSig = '';
+      applyViewerFolderView();
     }
     document.getElementById('optViewerDocSingle')?.addEventListener('change', (e) => {
       const t = e.target;
       if (!t || t.id !== 'optViewerDocSingle' || !t.checked) return;
-      onViewerDocModeChanged('single');
+      onViewerDepthChanged(false);
     });
     document.getElementById('optViewerDocNested')?.addEventListener('change', (e) => {
       const t = e.target;
       if (!t || t.id !== 'optViewerDocNested' || !t.checked) return;
-      onViewerDocModeChanged('nested');
+      onViewerDepthChanged(true);
     });
     document.getElementById('optViewerDocThumbs')?.addEventListener('change', (e) => {
       const t = e.target;
-      if (!t || t.id !== 'optViewerDocThumbs' || !t.checked) return;
-      onViewerDocModeChanged('thumbs');
+      if (!t || t.id !== 'optViewerDocThumbs') return;
+      onViewerThumbsToggled(!!t.checked);
     });
     document.getElementById('btnMdFileRefresh')?.addEventListener('click', () => void refreshMdFileViewerFromDisk());
     document.getElementById('btnPdfRefresh')?.addEventListener('click', () => void refreshPdfViewerFromDisk());
