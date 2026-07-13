@@ -1535,6 +1535,44 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   flex: 1 1 auto;
   min-height: 0;
 }
+/* Folder thumbnails mode: uniform square tiles, filename caption below; #propsScroll provides the scrolling. */
+.folder-thumbs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+  gap: 0.5rem;
+}
+.folder-thumb {
+  margin: 0;
+  min-width: 0;
+  cursor: pointer;
+}
+.folder-thumb-imgwrap {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.375rem;
+  background: var(--bs-tertiary-bg);
+}
+.folder-thumb-imgwrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.folder-thumb:hover .folder-thumb-imgwrap,
+.folder-thumb:focus-visible .folder-thumb-imgwrap {
+  border-color: var(--bs-secondary-color);
+}
+.folder-thumb figcaption {
+  font-size: 0.72rem;
+}
+/* Theater (expanded viewer): more room, bigger tiles. */
+#propsAside.props-theater .folder-thumbs-grid {
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.75rem;
+}
 /* Folder doc / .md-. viewer: editor wrapped — hidden until Edit or double-click preview */
 .viewer-doc-split {
   flex: 1 1 0;

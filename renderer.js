@@ -641,6 +641,10 @@
     let lastReadmeFolderPathLoose = '';
     /** Session-only: nested doc aggregate from selected folder (or parent of a trigger file). */
     let globalNestedReadmeView = false;
+    /** Third viewer-doc mode: thumbnail grid of the current folder's files (mutually exclusive with nested). */
+    let folderThumbsView = false;
+    let folderThumbsRenderedSig = '';
+    let folderThumbsObserver = null;
     /** Click handler on #readmePreview for per-section Edit/Save/Cancel in nested mode. */
     let nestedReadmePreviewClickHandler = null;
     /** Shallow copies of section records for cancel/save sync (mutate .text on save). */
@@ -962,11 +966,11 @@
       }
       return null;
     }
-    /** Matches lastReadmeFolderPathLoose across quick refresh (folder row, or trigger file + nested toggle). */
+    /** Matches lastReadmeFolderPathLoose across quick refresh (folder row, or trigger file + nested/thumbs toggle). */
     function readmeBlockQuickVisibleFolderKey(propPath, propRow) {
       if (!propPath || !propRow) return '';
       if (rowIsFolder(propRow)) return pathKeyLoose(propPath);
-      if (globalNestedReadmeView && isGlobalViewerMarkdownFilePath(propPath)) {
+      if ((globalNestedReadmeView || folderThumbsView) && isGlobalViewerMarkdownFilePath(propPath)) {
         const par = T.parentDir(propPath);
         return par ? pathKeyLoose(par) : '';
       }
@@ -7207,10 +7211,15 @@
       readmeSaveTargetVerifiedOnDisk = false;
       lastReadmeFolderPathLoose = '';
       globalNestedReadmeView = false;
+      folderThumbsView = false;
+      folderThumbsRenderedSig = '';
+      document.getElementById('folderThumbsBlock')?.classList.add('d-none');
       const single = document.getElementById('optViewerDocSingle');
       const nested = document.getElementById('optViewerDocNested');
+      const thumbsOpt = document.getElementById('optViewerDocThumbs');
       if (single) single.checked = true;
       if (nested) nested.checked = false;
+      if (thumbsOpt) thumbsOpt.checked = false;
       document.getElementById('propsNestedReadmeToggleWrap')?.classList.add('d-none');
       activeMdPath = null;
       detachNestedReadmePreviewHandler();
@@ -7366,7 +7375,7 @@
         const aggK = aggKey ? pathKeyLoose(aggKey) : '';
         const needFolderDocResync =
           (rowIsFolder(row) && (!lastReadmeFolderPathLoose || kSel !== lastReadmeFolderPathLoose)) ||
-          (globalNestedReadmeView &&
+          ((globalNestedReadmeView || folderThumbsView) &&
             isGlobalViewerMarkdownFilePath(pathForSig) &&
             (!lastReadmeFolderPathLoose || aggK !== lastReadmeFolderPathLoose));
         if (prevSig === nextSig || suppressViewerResyncForTimerSearch) {
@@ -7474,6 +7483,15 @@
         kReadmeQuick === lastReadmeFolderPathLoose &&
         !readmeBlock.classList.contains('d-none');
       if (!isSameFolderReadme) readmeBlock.classList.add('d-none');
+      const thumbsBlockQuick = document.getElementById('folderThumbsBlock');
+      const isSameFolderThumbs =
+        folderThumbsView &&
+        !!kReadmeQuick &&
+        !!lastReadmeFolderPathLoose &&
+        kReadmeQuick === lastReadmeFolderPathLoose &&
+        !!thumbsBlockQuick &&
+        !thumbsBlockQuick.classList.contains('d-none');
+      if (!isSameFolderThumbs && thumbsBlockQuick) thumbsBlockQuick.classList.add('d-none');
       mdFileBlock.classList.add('d-none');
       if (gdocWorkspaceBlock) gdocWorkspaceBlock.classList.add('d-none');
       if (pdfBlock) pdfBlock.classList.add('d-none');
@@ -7485,7 +7503,7 @@
       if (videoBlock) videoBlock.classList.add('d-none');
       if (audioBlock) audioBlock.classList.add('d-none');
       if (textFileBlock) textFileBlock.classList.add('d-none');
-      if (isSameFolderReadme) propPh.classList.add('d-none');
+      if (isSameFolderReadme || isSameFolderThumbs) propPh.classList.add('d-none');
       else {
         propPh.classList.remove('d-none');
         propPh.textContent = 'Loading preview…';
@@ -7549,7 +7567,7 @@
         return;
       }
 
-      if (isGlobalViewerMarkdownFilePath(targetFp) && globalNestedReadmeView) {
+      if (isGlobalViewerMarkdownFilePath(targetFp) && (globalNestedReadmeView || folderThumbsView)) {
         const par = T.parentDir(targetFp);
         if (!par) {
           activeReadmePath = null;
@@ -8405,9 +8423,11 @@
       const wrap = document.getElementById('readmeFolderDocControlsWrap');
       const single = document.getElementById('optViewerDocSingle');
       const nested = document.getElementById('optViewerDocNested');
+      const thumbs = document.getElementById('optViewerDocThumbs');
       const prev = document.getElementById('readmePreview');
-      if (single) single.checked = !globalNestedReadmeView;
+      if (single) single.checked = !globalNestedReadmeView && !folderThumbsView;
       if (nested) nested.checked = globalNestedReadmeView;
+      if (thumbs) thumbs.checked = folderThumbsView;
       if (wrap) wrap.classList.toggle('d-none', globalNestedReadmeView);
       if (!prev) return;
       if (globalNestedReadmeView) {
@@ -8650,6 +8670,103 @@
       lastReadmeFolderPathLoose = pathKeyLoose(folderPath);
     }
 
+    const FOLDER_THUMBS_MAX = 400;
+    const FOLDER_THUMB_REQ_PX = 256;
+
+    /** Thumbnails mode: grid of shell thumbnails for the folder's files (reuses the row-thumbnail cache/queue). */
+    async function loadFolderThumbnails(folderPath, viewAnchorPath) {
+      const viewAnchor = viewAnchorPath != null && viewAnchorPath !== '' ? viewAnchorPath : folderPath;
+      const block = document.getElementById('folderThumbsBlock');
+      const grid = document.getElementById('folderThumbsGrid');
+      const emptyEl = document.getElementById('folderThumbsEmpty');
+      const noteEl = document.getElementById('folderThumbsNote');
+      if (!block || !grid || typeof window.tagBrowser.listFolderEntries !== 'function') return;
+      const norm = String(folderPath).replace(/[/\\]+$/, '');
+      const r = await window.tagBrowser.listFolderEntries({ parentPath: norm });
+      if (!propsViewStill(viewAnchor)) return;
+      const extOf = (n) => (/\.[^.]+$/.test(n) ? n.slice(n.lastIndexOf('.') + 1).toLowerCase() : '');
+      const files = ((r && r.ok && r.entries) || [])
+        .filter((e) => e.type === 'file' && THUMBNAIL_EXT.has(extOf(e.name)))
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+      const capped = files.slice(0, FOLDER_THUMBS_MAX);
+      lastReadmeFolderPathLoose = pathKeyLoose(folderPath);
+      block.classList.remove('d-none');
+      const sig = pathKeyLoose(norm) + '|' + capped.map((f) => f.name).join('\n');
+      /* Auto-refresh with an unchanged file list: keep the rendered grid (and its scroll position). */
+      if (sig === folderThumbsRenderedSig && grid.childElementCount) return;
+      folderThumbsRenderedSig = sig;
+      if (folderThumbsObserver) {
+        folderThumbsObserver.disconnect();
+        folderThumbsObserver = null;
+      }
+      grid.innerHTML = '';
+      if (emptyEl) emptyEl.classList.toggle('d-none', capped.length > 0);
+      if (noteEl) {
+        const over = files.length > capped.length;
+        noteEl.classList.toggle('d-none', !over);
+        if (over) noteEl.textContent = 'Showing the first ' + capped.length + ' of ' + files.length + ' files.';
+      }
+      if (!capped.length) return;
+      const frag = document.createDocumentFragment();
+      const tiles = [];
+      for (const f of capped) {
+        const fp = joinFolderAndFileName(norm, f.name);
+        const ext = extOf(f.name);
+        const fig = document.createElement('figure');
+        fig.className = 'folder-thumb';
+        fig.setAttribute('role', 'button');
+        fig.tabIndex = 0;
+        fig.title = 'Open ' + f.name;
+        const box = document.createElement('div');
+        box.className = 'folder-thumb-imgwrap';
+        box.appendChild(fileIconEl(ext)); /* glyph stays if the shell has no thumbnail */
+        const cap = document.createElement('figcaption');
+        cap.className = 'small text-truncate text-muted';
+        cap.textContent = segmentPretty(f.name);
+        fig.appendChild(box);
+        fig.appendChild(cap);
+        const open = () => void window.tagBrowser.openPath(fp);
+        fig.addEventListener('click', open);
+        fig.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            open();
+          }
+        });
+        frag.appendChild(fig);
+        tiles.push({ box, fp });
+      }
+      grid.appendChild(frag);
+      const paint = async (t) => {
+        if (isStreamedDrivePathForThumb(t.fp)) return; /* same guard as row thumbs: no hydrating downloads */
+        const key = thumbKey(t.fp, '', FOLDER_THUMB_REQ_PX);
+        const dataUrl = await fetchThumbnail(t.fp, key, FOLDER_THUMB_REQ_PX);
+        if (!dataUrl || !t.box.isConnected) return;
+        const img = document.createElement('img');
+        img.alt = '';
+        img.src = dataUrl;
+        t.box.innerHTML = '';
+        t.box.appendChild(img);
+      };
+      if (typeof IntersectionObserver === 'function') {
+        const byBox = new Map(tiles.map((t) => [t.box, t]));
+        folderThumbsObserver = new IntersectionObserver(
+          (entries, obs) => {
+            for (const ent of entries) {
+              if (!ent.isIntersecting) continue;
+              obs.unobserve(ent.target);
+              const t = byBox.get(ent.target);
+              if (t) void paint(t);
+            }
+          },
+          { rootMargin: '300px' }
+        );
+        for (const t of tiles) folderThumbsObserver.observe(t.box);
+      } else {
+        for (const t of tiles) void paint(t);
+      }
+    }
+
     /** Folder row / current folder: first match from shared Viewer docs basename list; else empty editor → Save creates default stem + .md. */
     async function loadReadmeForFolder(folderPath, viewAnchorPath) {
       detachNestedReadmePreviewHandler();
@@ -8672,6 +8789,13 @@
         readmeSaveTargetVerifiedOnDisk = false;
       }
 
+      if (folderThumbsView) {
+        readmeBlock.classList.add('d-none');
+        syncReadmeNestedDocsUi();
+        await loadFolderThumbnails(folderPath, viewAnchor);
+        return;
+      }
+      document.getElementById('folderThumbsBlock')?.classList.add('d-none');
       readmeBlock.classList.remove('d-none');
       syncReadmeNestedDocsUi();
       if (globalNestedReadmeView) {
@@ -15502,15 +15626,14 @@
       const root = readmeAggregateRootFolderFromSelection(selPath, row);
       if (root) void loadReadmeForFolder(root, selPath);
     });
-    function onViewerDocModeChanged(wantNested) {
-      const want = !!wantNested;
-      if (want) {
+    function onViewerDocModeChanged(mode) {
+      const m = mode === 'nested' || mode === 'thumbs' ? mode : 'single';
+      if (m !== 'single') {
         const rw = document.getElementById('readmeEditorWrap');
         if (rw && !rw.classList.contains('d-none')) {
-          const single = document.getElementById('optViewerDocSingle');
-          const nested = document.getElementById('optViewerDocNested');
-          if (single) single.checked = true;
-          if (nested) nested.checked = false;
+          globalNestedReadmeView = false;
+          folderThumbsView = false;
+          syncReadmeNestedDocsUi();
           setStatusMain('Finish editing folder doc first.');
           return;
         }
@@ -15519,25 +15642,30 @@
       const row = propsTargetRowForDisplay();
       const root = readmeAggregateRootFolderFromSelection(selPath, row);
       if (!root || !row) {
-        const single = document.getElementById('optViewerDocSingle');
-        const nested = document.getElementById('optViewerDocNested');
-        if (single) single.checked = true;
-        if (nested) nested.checked = false;
         globalNestedReadmeView = false;
+        folderThumbsView = false;
+        syncReadmeNestedDocsUi();
         return;
       }
-      globalNestedReadmeView = want;
+      globalNestedReadmeView = m === 'nested';
+      folderThumbsView = m === 'thumbs';
+      if (folderThumbsView) folderThumbsRenderedSig = ''; /* re-list on entry; stale grid must not survive a mode switch */
       void loadReadmeForFolder(root, selPath);
     }
     document.getElementById('optViewerDocSingle')?.addEventListener('change', (e) => {
       const t = e.target;
       if (!t || t.id !== 'optViewerDocSingle' || !t.checked) return;
-      onViewerDocModeChanged(false);
+      onViewerDocModeChanged('single');
     });
     document.getElementById('optViewerDocNested')?.addEventListener('change', (e) => {
       const t = e.target;
       if (!t || t.id !== 'optViewerDocNested' || !t.checked) return;
-      onViewerDocModeChanged(true);
+      onViewerDocModeChanged('nested');
+    });
+    document.getElementById('optViewerDocThumbs')?.addEventListener('change', (e) => {
+      const t = e.target;
+      if (!t || t.id !== 'optViewerDocThumbs' || !t.checked) return;
+      onViewerDocModeChanged('thumbs');
     });
     document.getElementById('btnMdFileRefresh')?.addEventListener('click', () => void refreshMdFileViewerFromDisk());
     document.getElementById('btnPdfRefresh')?.addEventListener('click', () => void refreshPdfViewerFromDisk());

@@ -885,6 +885,11 @@
                   <i class="fa-solid fa-folder-tree fa-fw" aria-hidden="true"></i>
                   <span class="visually-hidden">All nested docs</span>
                 </label>
+                <input type="radio" class="btn-check" name="viewerDocMode" id="optViewerDocThumbs" value="thumbs" autocomplete="off" />
+                <label class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center" for="optViewerDocThumbs" title="Thumbnails in this folder">
+                  <i class="fa-solid fa-images fa-fw" aria-hidden="true"></i>
+                  <span class="visually-hidden">Thumbnails in this folder</span>
+                </label>
               </div>
             </div>
           </div>
@@ -1127,6 +1132,13 @@
                 tabindex="0"
               ></div>
             </div>
+          </div>
+
+          <!-- Folder thumbnails mode (third viewerDocMode option): shell-thumbnail grid of the folder's files. -->
+          <div id="folderThumbsBlock" class="d-none border-top pt-2">
+            <p id="folderThumbsNote" class="small text-muted mb-2 d-none"></p>
+            <div id="folderThumbsGrid" class="folder-thumbs-grid" aria-label="Thumbnails in this folder"></div>
+            <p id="folderThumbsEmpty" class="text-muted small mb-0 d-none">No thumbnailable files in this folder.</p>
           </div>
 
           <!-- No block header: the panel header (filename + copy/refresh/edit) is the header for a single text file. -->
