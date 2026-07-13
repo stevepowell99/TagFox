@@ -7377,7 +7377,10 @@
           (rowIsFolder(row) && (!lastReadmeFolderPathLoose || kSel !== lastReadmeFolderPathLoose)) ||
           ((globalNestedReadmeView || folderThumbsView) &&
             isGlobalViewerMarkdownFilePath(pathForSig) &&
-            (!lastReadmeFolderPathLoose || aggK !== lastReadmeFolderPathLoose));
+            (!lastReadmeFolderPathLoose || aggK !== lastReadmeFolderPathLoose)) ||
+          /* Thumbs grid mirrors the search filters, so any completed search re-queries it (sig check
+             inside loadFolderThumbnails keeps the DOM/scroll when nothing actually changed). */
+          (folderThumbsView && !!aggK);
         if (prevSig === nextSig || suppressViewerResyncForTimerSearch) {
           if (needFolderDocResync) await refreshPropsPanel();
           else cancelPropsPreviewSchedule();
@@ -8670,11 +8673,9 @@
       lastReadmeFolderPathLoose = pathKeyLoose(folderPath);
     }
 
-    /* Guards for nested thumbnails: stop scanning at these caps so a huge tree cannot grind the viewer
-       (the note above the grid says what was cut — no silent truncation). */
+    /* Guard for thumbnails: one bounded Everything query per render, so a huge tree cannot grind the viewer
+       (the note above the grid says when the cap was hit — no silent truncation). */
     const FOLDER_THUMBS_MAX = 400;
-    const FOLDER_THUMBS_WALK_MAX_FOLDERS = 250;
-    const FOLDER_THUMBS_WALK_MAX_DEPTH = 6;
     const FOLDER_THUMB_REQ_PX = 256;
 
     function thumbExtOf(name) {
@@ -8682,92 +8683,73 @@
       return /\.[^.]+$/.test(n) ? n.slice(n.lastIndexOf('.') + 1).toLowerCase() : '';
     }
 
-    /** BFS walk under rootNorm collecting thumbnailable files; aborts (null) if the selection moves. */
-    async function collectNestedThumbFiles(rootNorm, viewAnchor) {
-      const byName = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
-      const files = [];
-      const queue = [{ p: rootNorm, depth: 0 }];
-      let visited = 0;
-      let stopped = '';
-      while (queue.length) {
-        if (!propsViewStill(viewAnchor)) return null;
-        if (files.length >= FOLDER_THUMBS_MAX) {
-          stopped = 'files';
-          break;
-        }
-        if (visited >= FOLDER_THUMBS_WALK_MAX_FOLDERS) {
-          stopped = 'folders';
-          break;
-        }
-        const { p, depth } = queue.shift();
-        visited++;
-        let r;
-        try {
-          r = await window.tagBrowser.listFolderEntries({ parentPath: p });
-        } catch (_e) {
-          continue;
-        }
-        if (!r || !r.ok || !Array.isArray(r.entries)) continue;
-        const own = [];
-        const subs = [];
-        for (const e of r.entries) {
-          if (e.type === 'file' && THUMBNAIL_EXT.has(thumbExtOf(e.name))) own.push(e.name);
-          else if (e.type === 'folder') subs.push(e.name);
-        }
-        own.sort(byName);
-        for (const n of own) {
-          if (files.length >= FOLDER_THUMBS_MAX) break;
-          files.push({ folder: p, name: n });
-        }
-        if (depth >= FOLDER_THUMBS_WALK_MAX_DEPTH) continue;
-        subs.sort(byName);
-        for (const n of subs) {
-          /* Dotfolders (.git…), node_modules, and streamed Drive content (hydrating downloads) are never walked. */
-          if (n.startsWith('.') || n.toLowerCase() === 'node_modules') continue;
-          const child = joinFolderAndFileName(p, n);
-          if (isStreamedDrivePathForThumb(child)) continue;
-          queue.push({ p: child, depth: depth + 1 });
-        }
-      }
-      return { files, visited, stopped };
+    /** Thumbs grid query: the current search filters (text, tags, recency, deadline) scoped to the viewer
+        folder; depth from the viewer toggle (ceiling stays recursive); server-side ext filter for thumb types. */
+    function everythingSearchTextForFolderThumbs(normFolder, recursive) {
+      const ceil = combineFolderScopeGroup(getSearchScopeCeilingFoldersNorms(), true);
+      const slice = combineFolderScopeGroup([normFolder], recursive);
+      const qRaw = (document.getElementById('query')?.value || '').trim();
+      const q = qRaw ? filenameOnlyUserQueryForScopedSearch(qRaw) : '';
+      let t = [ceil, slice, q].filter(Boolean).join(' ');
+      t = appendActiveTagToEverythingQuery(t);
+      if (deadlineFilterActive()) t = (String(t).trim() + ' regex:[\\s\\\\]xd-').trim();
+      t = (String(t).trim() + ' ext:' + [...THUMBNAIL_EXT].join(';')).trim();
+      t = appendRecencyToEverythingQuery(t);
+      return t;
     }
 
-    /** Thumbnails mode: grid of shell thumbnails for the folder's files (reuses the row-thumbnail cache/queue).
-        The depth toggle applies here too: nested walks subfolders (capped) with a section header per folder. */
+    /** Thumbnails mode: grid of shell thumbnails for the viewer folder, mirroring the search filters and sort
+        (reuses the row-thumbnail cache/queue). Nested groups by folder with a section header that scopes TagFox. */
     async function loadFolderThumbnails(folderPath, viewAnchorPath) {
       const viewAnchor = viewAnchorPath != null && viewAnchorPath !== '' ? viewAnchorPath : folderPath;
       const block = document.getElementById('folderThumbsBlock');
       const grid = document.getElementById('folderThumbsGrid');
       const emptyEl = document.getElementById('folderThumbsEmpty');
       const noteEl = document.getElementById('folderThumbsNote');
-      if (!block || !grid || typeof window.tagBrowser.listFolderEntries !== 'function') return;
+      if (!block || !grid) return;
       const norm = String(folderPath).replace(/[/\\]+$/, '');
       const nested = globalNestedReadmeView;
-      let files = [];
-      let note = '';
-      if (nested) {
-        const walk = await collectNestedThumbFiles(norm, viewAnchor);
-        if (!walk) return; /* selection moved mid-walk */
-        files = walk.files;
-        if (walk.stopped === 'files')
-          note = 'Showing the first ' + files.length + ' files — stopped scanning after ' + walk.visited + ' folders.';
-        else if (walk.stopped === 'folders')
-          note = 'Scanned the first ' + walk.visited + ' folders (' + files.length + ' files) — more not shown.';
-      } else {
-        const r = await window.tagBrowser.listFolderEntries({ parentPath: norm });
-        if (!propsViewStill(viewAnchor)) return;
-        const all = ((r && r.ok && r.entries) || [])
-          .filter((e) => e.type === 'file' && THUMBNAIL_EXT.has(thumbExtOf(e.name)))
-          .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-        files = all.slice(0, FOLDER_THUMBS_MAX).map((e) => ({ folder: norm, name: e.name }));
-        if (all.length > files.length) note = 'Showing the first ' + files.length + ' of ' + all.length + ' files.';
-      }
+      const searchText = everythingSearchTextForFolderThumbs(norm, nested);
+      const res = await everythingSearchOnce({
+        searchText,
+        count: FOLDER_THUMBS_MAX + 1,
+        options: { ...everythingOptionsForRequest(), pathSearch: true, offset: 0 },
+      });
       if (!propsViewStill(viewAnchor)) return;
+      let rows = res && res.ok && Array.isArray(res.rows) ? res.rows.slice() : [];
+      rows = rows.filter((r) => !rowIsFolder(r) && THUMBNAIL_EXT.has(thumbExtOf(String(r.name || ''))));
+      /* Same client-side narrowing as the results table: exact deadline range, Hide special / Hide ~. */
+      if (deadlineFilterActive()) {
+        const b = deadlineRangeBounds();
+        rows = rows.filter((r) => rowDeadlineDates(r).some((d) => deadlineDateInActiveRange(d, b)));
+      }
+      rows = applyAdvancedPathHides(rows);
+      const over = rows.length > FOLDER_THUMBS_MAX;
+      rows = rows.slice(0, FOLDER_THUMBS_MAX);
+      let files;
+      if (nested) {
+        /* Group by folder; folders in first-seen (current sort) order, root files hoisted first. */
+        const rootK = pathKeyLoose(norm);
+        const groups = new Map();
+        for (const r of rows) {
+          const folder = String(T.parentDir(fullPathForRow(r)) || '').replace(/[/\\]+$/, '');
+          if (!groups.has(folder)) groups.set(folder, []);
+          groups.get(folder).push({ folder, name: String(r.name || '') });
+        }
+        const entries = [...groups.entries()];
+        entries.sort((a, b) => (pathKeyLoose(a[0]) === rootK ? -1 : 0) - (pathKeyLoose(b[0]) === rootK ? -1 : 0));
+        files = [];
+        for (const [, arr] of entries) files.push(...arr);
+      } else {
+        files = rows.map((r) => ({ folder: norm, name: String(r.name || '') }));
+      }
+      const note = over ? 'Showing the first ' + FOLDER_THUMBS_MAX + ' matches — more exist.' : '';
       lastReadmeFolderPathLoose = pathKeyLoose(folderPath);
       block.classList.remove('d-none');
       const sig =
-        pathKeyLoose(norm) + '|' + (nested ? 'n' : 'f') + '|' + files.map((f) => f.folder + '\\' + f.name).join('\n');
-      /* Auto-refresh with an unchanged file list: keep the rendered grid (and its scroll position). */
+        pathKeyLoose(norm) + '|' + (nested ? 'n' : 'f') + '|' + searchText + '|' +
+        files.map((f) => f.folder + '\\' + f.name).join('\n');
+      /* Auto-refresh with unchanged query + file list: keep the rendered grid (and its scroll position). */
       if (sig === folderThumbsRenderedSig && grid.childElementCount) return;
       folderThumbsRenderedSig = sig;
       if (folderThumbsObserver) {
@@ -8797,13 +8779,13 @@
           sec.textContent = relLabel(f.folder) || segmentPretty(T.baseName(f.folder));
           sec.setAttribute('role', 'button');
           sec.tabIndex = 0;
-          sec.title = 'Open folder';
+          sec.title = 'Focus TagFox on this folder';
           const fldr = f.folder;
-          sec.addEventListener('click', () => void window.tagBrowser.openPath(fldr));
+          sec.addEventListener('click', () => void applySearchScopeAndRefresh(fldr));
           sec.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
-              void window.tagBrowser.openPath(fldr);
+              void applySearchScopeAndRefresh(fldr);
             }
           });
           frag.appendChild(sec);
