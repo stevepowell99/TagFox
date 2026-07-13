@@ -11283,6 +11283,12 @@
       if (!on) void refreshQuickTodoHotkeyFromMain();
     }
 
+    /* saveSettings is a no-op until loadSettings completes: a partial load (exception mid-way, e.g. a
+       live-reload against a half-edited DOM) leaves later checkboxes at their unchecked defaults, and
+       persisting those would silently overwrite the user's stored settings with defaults. That is how
+       Hover preview turned itself off in July 2026. */
+    let settingsLoadCompleted = false;
+
     function loadSettings() {
       migrateLocalStorageFromLegacy();
       loadTagStore();
@@ -11384,9 +11390,11 @@
       void refreshQuickTodoHotkeyFromMain();
       renderQuickTodoFolderUi();
       syncAdvancedSearchIconFilledState();
+      settingsLoadCompleted = true;
     }
 
     function saveSettings() {
+      if (!settingsLoadCompleted) return;
       localStorage.setItem(LS.baseUrl, document.getElementById('baseUrl').value.trim());
       localStorage.setItem(LS.rootFolder, document.getElementById('rootFolder').value.trim());
       {
