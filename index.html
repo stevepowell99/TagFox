@@ -1058,6 +1058,8 @@
             <div id="readmeFolderDocControlsWrap" class="d-flex flex-column gap-2 flex-shrink-0">
               <div class="d-flex flex-wrap align-items-center gap-2 w-100">
                 <span class="small text-muted flex-shrink-0">Folder doc</span>
+                <!-- Found on disk: name is a plain label (create/rename chrome below is for the no-doc-yet state only). -->
+                <span id="readmeFolderDocNameLabel" class="small fw-semibold text-truncate min-w-0 d-none"></span>
                 <label class="visually-hidden" for="readmeFolderDocStemInput">Folder doc base name</label>
                 <input
                   type="text"
@@ -1066,7 +1068,7 @@
                   style="width: 7.5rem; max-width: min(46vw, 14rem)"
                   value="-readme"
                   autocomplete="off"
-                  title="Changing the name starts a new folder doc here; body clears until you edit and Save"
+                  title="No folder doc here yet — this names the one created when you edit and Save"
                 />
                 <span id="readmeFolderDocExt" class="small text-nowrap fw-semibold flex-shrink-0">.md</span>
                 <button

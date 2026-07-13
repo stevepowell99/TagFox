@@ -7200,6 +7200,7 @@
       if (readmeExt) readmeExt.textContent = '.md';
       folderDocMdTags = [];
       syncFolderDocTagPillsDisplay();
+      syncFolderDocHeaderExists(false);
       folderDocViewerOverridePath = null;
       folderDocHeaderLastSyncedKey = '';
       activeReadmePath = null;
@@ -8260,6 +8261,7 @@
       activeReadmePath = writePath;
       folderDocViewerOverridePath = writePath;
       readmeSaveTargetVerifiedOnDisk = true;
+      syncFolderDocHeaderExists(true);
       if (status) setStatusMain(label + ' saved.');
       setViewerDocEditorOpen('readme', false);
       folderChildCountCache.clear();
@@ -8341,6 +8343,25 @@
         b.textContent = t;
         wrap.appendChild(b);
       }
+    }
+
+    /** Doc found on disk → read-only name label; no doc yet → editable stem + tags (Save creates it). */
+    function syncFolderDocHeaderExists(existsOnDisk) {
+      const found = !!existsOnDisk;
+      const stemInp = document.getElementById('readmeFolderDocStemInput');
+      const extEl = document.getElementById('readmeFolderDocExt');
+      const tagsBtn = document.getElementById('btnReadmeFolderDocTags');
+      const nameEl = document.getElementById('readmeFolderDocNameLabel');
+      if (nameEl) {
+        const name =
+          ((stemInp && stemInp.value) || DEFAULT_FOLDER_DOC_STEM) + ((extEl && extEl.textContent) || '.md');
+        nameEl.textContent = name;
+        nameEl.title = name;
+        nameEl.classList.toggle('d-none', !found);
+      }
+      stemInp?.classList.toggle('d-none', found);
+      extEl?.classList.toggle('d-none', found);
+      tagsBtn?.classList.toggle('d-none', found);
     }
 
     /** Sync stem input, extension label, and folderDocMdTags from a resolved doc path (or defaults when null). */
@@ -8644,6 +8665,7 @@
         document.getElementById('readmePreview').innerHTML = mdPreviewHtml('');
         syncReadmePreviewChrome({ pulse: false });
         syncFolderDocTitleControlsFromPath(null);
+        syncFolderDocHeaderExists(false);
         folderDocViewerOverridePath = null;
         folderDocHeaderLastSyncedKey = '';
         activeReadmePath = null;
@@ -8692,6 +8714,7 @@
         activeReadmePath = null;
         readmeSaveTargetVerifiedOnDisk = false;
         syncFolderDocTitleControlsFromPath(null);
+        syncFolderDocHeaderExists(false);
         folderDocHeaderLastSyncedKey = '';
         setViewerMdValue('readme', '/* read error: ' + (pick.error || '') + ' */');
         document.getElementById('readmePreview').innerHTML = mdPreviewHtml(getViewerMdValue('readme'));
@@ -8711,6 +8734,7 @@
             folderDocHeaderLastSyncedKey = ndk;
           }
         }
+        syncFolderDocHeaderExists(false);
         setViewerMdValue('readme', '');
         document.getElementById('readmePreview').innerHTML = mdPreviewHtml(getViewerMdValue('readme'), { mdSourcePath: readmeOnlyPath });
         syncReadmePreviewChrome({ pulse: true });
@@ -8734,6 +8758,7 @@
       if (!propsViewStill(viewAnchor)) return;
 
       readmeSaveTargetVerifiedOnDisk = !!r.ok;
+      syncFolderDocHeaderExists(!!r.ok);
       if (r.ok) {
         setViewerMdValue('readme', r.text);
       } else if (r.code === 'ENOENT') {
