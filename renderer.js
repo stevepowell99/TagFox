@@ -645,6 +645,9 @@
     let folderThumbsView = false;
     let folderThumbsRenderedSig = '';
     let folderThumbsObserver = null;
+    /** Newest loadFolderThumbnails run wins: a toggle and a search-completion refresh can overlap, and
+        without this the slower (older) run finishes last and clobbers the grid with its stale result. */
+    let folderThumbsRunSeq = 0;
     /** Click handler on #readmePreview for per-section Edit/Save/Cancel in nested mode. */
     let nestedReadmePreviewClickHandler = null;
     /** Shallow copies of section records for cancel/save sync (mutate .text on save). */
@@ -8676,6 +8679,8 @@
     /* Guard for thumbnails: one bounded Everything query per render, so a huge tree cannot grind the viewer
        (the note above the grid says when the cap was hit — no silent truncation). */
     const FOLDER_THUMBS_MAX = 400;
+    /** At or below this many tiles, fetch all thumbnails at once instead of lazily on scroll. */
+    const FOLDER_THUMBS_EAGER_MAX = 60;
     const FOLDER_THUMB_REQ_PX = 256;
 
     function thumbExtOf(name) {
@@ -8707,6 +8712,7 @@
       const emptyEl = document.getElementById('folderThumbsEmpty');
       const noteEl = document.getElementById('folderThumbsNote');
       if (!block || !grid) return;
+      const runId = ++folderThumbsRunSeq;
       const norm = String(folderPath).replace(/[/\\]+$/, '');
       const nested = globalNestedReadmeView;
       const searchText = everythingSearchTextForFolderThumbs(norm, nested);
@@ -8715,6 +8721,7 @@
         count: FOLDER_THUMBS_MAX + 1,
         options: { ...everythingOptionsForRequest(), pathSearch: true, offset: 0 },
       });
+      if (runId !== folderThumbsRunSeq) return; /* a newer run started while this query was out */
       if (!propsViewStill(viewAnchor)) return;
       let rows = res && res.ok && Array.isArray(res.rows) ? res.rows.slice() : [];
       rows = rows.filter((r) => !rowIsFolder(r) && THUMBNAIL_EXT.has(thumbExtOf(String(r.name || ''))));
@@ -8828,23 +8835,26 @@
         t.box.innerHTML = '';
         t.box.appendChild(img);
       };
-      if (typeof IntersectionObserver === 'function') {
-        const byBox = new Map(tiles.map((t) => [t.box, t]));
-        folderThumbsObserver = new IntersectionObserver(
-          (entries, obs) => {
-            for (const ent of entries) {
-              if (!ent.isIntersecting) continue;
-              obs.unobserve(ent.target);
-              const t = byBox.get(ent.target);
-              if (t) void paint(t);
-            }
-          },
-          { rootMargin: '300px' }
-        );
-        for (const t of tiles) folderThumbsObserver.observe(t.box);
-      } else {
+      /* Small folders: paint everything up front. Lazy-loading 20 tiles only bought a grid of glyph
+         placeholders that filled in as you scrolled, which reads as "some thumbnails are missing". */
+      if (tiles.length <= FOLDER_THUMBS_EAGER_MAX || typeof IntersectionObserver !== 'function') {
         for (const t of tiles) void paint(t);
+        return;
       }
+      const byBox = new Map(tiles.map((t) => [t.box, t]));
+      folderThumbsObserver = new IntersectionObserver(
+        (entries, obs) => {
+          for (const ent of entries) {
+            if (!ent.isIntersecting) continue;
+            obs.unobserve(ent.target);
+            const t = byBox.get(ent.target);
+            if (t) void paint(t);
+          }
+        },
+        /* Root is the viewer scroller; preload ~2 screens ahead so scrolling lands on painted tiles. */
+        { root: document.getElementById('propsScroll') || null, rootMargin: '1200px' }
+      );
+      for (const t of tiles) folderThumbsObserver.observe(t.box);
     }
 
     /** Folder row / current folder: first match from shared Viewer docs basename list; else empty editor → Save creates default stem + .md. */
@@ -11957,9 +11967,15 @@
     const THUMBNAIL_REQ_PX = 64;
     const HOVER_PREVIEW_REQ_PX = 320;
     const HOVER_PREVIEW_DELAY_MS = 320;
-    /** Cap so a long browsing session does not retain unbounded data URLs. value null = tried, no thumbnail. */
+    /** Cap so a long browsing session does not retain unbounded data URLs. Entry: a data-URL string on
+        success, or { failedAt } for a miss. Misses are NOT cached for ever: the Windows thumbnail cache
+        fails intermittently (see makeThumbnail's retry loop in main.js), and a permanently cached null
+        left that file showing a bare glyph in the grid and no hover popup until restart. */
     const THUMBNAIL_CACHE_MAX = 2000;
+    const THUMBNAIL_NEGATIVE_TTL_MS = 30000;
     const thumbnailCache = new Map();
+    /** In-flight dedup: a tile scrolling in while its hover fetch runs must not fire a second shell call. */
+    const thumbnailInFlight = new Map();
 
     /** Cache key folds in mtime (busts on edit) and px (inline 64 and hover 320 are separate entries). */
     function thumbKey(fp, mtime, px) {
@@ -11975,18 +11991,33 @@
       }
       thumbnailCache.set(key, val);
     }
-    /** One shell call per (path, mtime, px); null cached so a missing provider is not retried. */
+    /** Cached data URL, or undefined when we should ask the shell (never tried, or a stale miss). */
+    function thumbCacheGet(key) {
+      const v = thumbnailCache.get(key);
+      if (typeof v === 'string') return v;
+      if (v && Date.now() - v.failedAt < THUMBNAIL_NEGATIVE_TTL_MS) return null; /* recent miss: keep the glyph */
+      return undefined;
+    }
+    /** One shell call per (path, mtime, px); a miss is retried after THUMBNAIL_NEGATIVE_TTL_MS. */
     async function fetchThumbnail(fp, key, px) {
-      if (thumbnailCache.has(key)) return thumbnailCache.get(key);
-      let dataUrl = null;
-      try {
-        const r = await perfTimeAsync('getThumbnail', { path: fp, px }, () =>
-          window.tagBrowser.getThumbnail({ fullPath: fp, size: px })
-        );
-        if (r && r.ok && r.dataUrl) dataUrl = r.dataUrl;
-      } catch (_e) { /* keep glyph */ }
-      thumbCacheSet(key, dataUrl);
-      return dataUrl;
+      const cached = thumbCacheGet(key);
+      if (cached !== undefined) return cached;
+      const running = thumbnailInFlight.get(key);
+      if (running) return running;
+      const job = (async () => {
+        let dataUrl = null;
+        try {
+          const r = await perfTimeAsync('getThumbnail', { path: fp, px }, () =>
+            window.tagBrowser.getThumbnail({ fullPath: fp, size: px })
+          );
+          if (r && r.ok && r.dataUrl) dataUrl = r.dataUrl;
+        } catch (_e) { /* keep glyph */ }
+        thumbCacheSet(key, dataUrl || { failedAt: Date.now() });
+        thumbnailInFlight.delete(key);
+        return dataUrl;
+      })();
+      thumbnailInFlight.set(key, job);
+      return job;
     }
     function applyThumbnail(holder, dataUrl) {
       if (!dataUrl) return; /* keep the file-type glyph */
@@ -12023,7 +12054,7 @@
             void loadThumbnail(ent.target);
           }
         },
-        { rootMargin: '200px' }
+        { rootMargin: '800px' } /* preload well ahead: a row scrolled to must already have its thumb */
       );
       return thumbIntersectionObserver;
     }
@@ -12039,8 +12070,9 @@
       const key = thumbCacheKey(fp, row, THUMBNAIL_REQ_PX);
       holder.dataset.thumbPath = fp;
       holder.dataset.thumbKey = key;
-      if (thumbnailCache.has(key)) {
-        applyThumbnail(holder, thumbnailCache.get(key));
+      const cached = thumbCacheGet(key);
+      if (cached !== undefined) {
+        applyThumbnail(holder, cached);
         return;
       }
       const obs = ensureThumbObserver();
