@@ -7569,8 +7569,6 @@
       if (editableTextKind) {
         activeReadmePath = null;
         mdFileBlock.classList.remove('d-none');
-        const titleEl = document.getElementById('mdFileTitle');
-        if (titleEl) titleEl.textContent = editableTextKind.markdown ? 'Markdown file' : 'Text file';
         const mdWrap = document.getElementById('mdFileEditorWrap');
         /* Poll/search refresh changes mtime → full heavy run used to reset UI; keep editing session if same file + editor open. */
         const sameMdEditing =
@@ -8072,14 +8070,20 @@
       return '';
     }
 
+    /** Header refresh + edit buttons follow the text-file block (same header-only pattern as btnPdfRefresh). */
     function syncMdFileViewerButtons() {
       const block = document.getElementById('mdFileBlock');
-      const visible = !!(block && !block.classList.contains('d-none'));
-      const text = getViewerMdValue('mdFile');
-      const copyBtn = document.getElementById('btnMdFileCopyText');
+      const details = document.getElementById('propsDetails');
+      const visible =
+        !!(block && !block.classList.contains('d-none')) &&
+        !!(details && !details.classList.contains('d-none'));
       const refreshBtn = document.getElementById('btnMdFileRefresh');
-      if (copyBtn) copyBtn.disabled = !visible || !text.length;
-      if (refreshBtn) refreshBtn.disabled = !visible || !propsTargetPath();
+      const editBtn = document.getElementById('btnMdFileEdit');
+      if (refreshBtn) {
+        refreshBtn.classList.toggle('d-none', !visible);
+        refreshBtn.disabled = !visible || !propsTargetPath();
+      }
+      if (editBtn) editBtn.classList.toggle('d-none', !visible);
     }
 
     function syncViewerCopyButton() {
@@ -8090,13 +8094,6 @@
         btn.disabled = !text;
       }
       syncMdFileViewerButtons();
-    }
-
-    async function copyMdFileViewerText() {
-      const text = getViewerMdValue('mdFile');
-      if (!text.length) return;
-      const ok = await copyPlainTextToClipboard(text);
-      setStatusMain(ok ? 'Copied file text.' : 'Could not copy file text.');
     }
 
     async function refreshMdFileViewerFromDisk() {
@@ -15517,7 +15514,6 @@
       if (!t || t.id !== 'optViewerDocNested' || !t.checked) return;
       onViewerDocModeChanged(true);
     });
-    document.getElementById('btnMdFileCopyText')?.addEventListener('click', () => void copyMdFileViewerText());
     document.getElementById('btnMdFileRefresh')?.addEventListener('click', () => void refreshMdFileViewerFromDisk());
     document.getElementById('btnPdfRefresh')?.addEventListener('click', () => void refreshPdfViewerFromDisk());
     document.getElementById('btnMdFileEdit').addEventListener('click', () => toggleViewerDocEditor('mdFile'));

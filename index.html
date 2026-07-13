@@ -910,6 +910,29 @@
             >
               <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
             </button>
+            <!-- Text/markdown file refresh + edit live here too (shown only while a text file is loaded). -->
+            <button
+              type="button"
+              id="btnMdFileRefresh"
+              class="btn btn-sm btn-outline-secondary d-none d-inline-flex align-items-center justify-content-center p-0"
+              style="width: 2rem; height: 2rem"
+              title="Refresh file text from disk"
+              aria-label="Refresh file text from disk"
+            >
+              <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
+            </button>
+            <button
+              type="button"
+              id="btnMdFileEdit"
+              class="btn btn-sm btn-outline-secondary d-none d-inline-flex align-items-center justify-content-center p-0"
+              style="width: 2rem; height: 2rem"
+              aria-expanded="false"
+              aria-controls="mdFileEditorWrap"
+              title="Edit file"
+              aria-label="Edit file"
+            >
+              <i class="fa-solid fa-pen" aria-hidden="true"></i>
+            </button>
             <!-- Add TODO folds into a header pop-out (was a bulky bottom row) to save vertical space; shown in theater too. -->
             <div class="position-relative d-inline-flex tagfox-addtodo-wrap">
               <button
@@ -1104,42 +1127,8 @@
             </div>
           </div>
 
+          <!-- No block header: the panel header (filename + copy/refresh/edit) is the header for a single text file. -->
           <div id="mdFileBlock" class="d-none border-top pt-2 d-flex flex-column flex-grow-1 gap-1 min-h-0">
-            <div class="d-flex align-items-center gap-2 flex-shrink-0">
-              <div class="fw-semibold flex-grow-1 mb-0" id="mdFileTitle">Text file</div>
-              <button
-                type="button"
-                id="btnMdFileCopyText"
-                class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
-                style="width: 2rem; height: 2rem"
-                title="Copy file text"
-                aria-label="Copy file text"
-              >
-                <i class="fa-solid fa-clipboard" aria-hidden="true"></i>
-              </button>
-              <button
-                type="button"
-                id="btnMdFileRefresh"
-                class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
-                style="width: 2rem; height: 2rem"
-                title="Refresh file text from disk"
-                aria-label="Refresh file text from disk"
-              >
-                <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
-              </button>
-              <button
-                type="button"
-                id="btnMdFileEdit"
-                class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
-                style="width: 2rem; height: 2rem"
-                aria-expanded="false"
-                aria-controls="mdFileEditorWrap"
-                title="Edit file"
-                aria-label="Edit file"
-              >
-                <i class="fa-solid fa-pen" aria-hidden="true"></i>
-              </button>
-            </div>
             <div class="viewer-doc-split flex-grow-1 min-h-0" id="mdFileDocSplit">
               <div id="mdFileEditorWrap" class="viewer-doc-editor-wrap d-none">
                 <textarea id="mdFileEditor" class="form-control form-control-sm font-monospace"></textarea>
