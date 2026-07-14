@@ -1458,6 +1458,17 @@
     ]);
 
     const MARKDOWN_EDIT_EXT = new Set(['md', 'markdown', 'mdx', 'rmd', 'qmd']);
+    /** Prose files with no markup language of their own: rendered as markdown too (plain text is valid markdown). */
+    const PROSE_PREVIEW_EXT = new Set(['txt', 'text']);
+    const PROSE_PREVIEW_BASENAME = new Set([
+      'readme',
+      'license',
+      'notice',
+      'authors',
+      'contributors',
+      'changelog',
+      'copying',
+    ]);
 
     function editableTextKindForBase(base) {
       const lower = String(base || '').toLowerCase();
@@ -1471,7 +1482,11 @@
       ) {
         return null;
       }
-      return { ext, markdown: MARKDOWN_EDIT_EXT.has(ext) };
+      const markdown =
+        MARKDOWN_EDIT_EXT.has(ext) ||
+        (!TEXT_EDIT_BASENAME.has(lower) && PROSE_PREVIEW_EXT.has(ext)) || // cmakelists.txt is a build file, not prose
+        (!ext && PROSE_PREVIEW_BASENAME.has(lower));
+      return { ext, markdown };
     }
 
     const TEXT_PREVIEW_MAX_BYTES = 2 * 1024 * 1024;
