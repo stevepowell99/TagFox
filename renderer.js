@@ -3154,11 +3154,27 @@
       if (k === 'Home') { e.preventDefault(); e.stopPropagation(); tabSwitcherSel = 0; renderTabSwitcher(); return; }
       if (k === 'End') { e.preventDefault(); e.stopPropagation(); tabSwitcherSel = tabSwitcherItems().length - 1; renderTabSwitcher(); return; }
       if (k === 'Enter') { e.preventDefault(); e.stopPropagation(); activateTabSwitcherIndex(tabSwitcherSel); return; }
-      // Digit 1-9 jumps straight to that tab (1 = first tab, not the New-tab row).
-      if (/^[1-9]$/.test(k)) {
-        const target = Number(k); // items index: 0 is New tab, so tab N is index N
-        if (target < tabSwitcherItems().length) { e.preventDefault(); e.stopPropagation(); activateTabSwitcherIndex(target); }
+      // Any printable character: dismiss and start a fresh search in a new tab, seeding the query with it.
+      if (k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        void openNewTabForTypedSearch(k);
       }
+    }
+
+    /** Switcher shortcut: open a fresh tab (evicting the oldest at the cap) and type into the search box. */
+    async function openNewTabForTypedSearch(firstChar) {
+      hideTabSwitcher();
+      const tab = await openNewTab({ evictOldest: true, skipSearch: true });
+      if (!tab) return;
+      const q = document.getElementById('query');
+      if (!q) return;
+      q.value = firstChar;
+      q.focus();
+      try { q.setSelectionRange(q.value.length, q.value.length); } catch (_) {}
+      syncQueryGhostUi();
+      scheduleSearch();
+      scheduleSearchHistoryCommit();
     }
 
     function showTabSwitcher() {
