@@ -66,6 +66,7 @@
       viewerDocSplitPctTheater: 'tagBrowserViewerDocSplitPctTheater',
       tabsState: 'tagBrowserTabsState',
       tagBarShowAll: 'tagBrowserTagBarShowAll',
+      switcherOnToggle: 'tagBrowserSwitcherOnToggle',
     };
 
     /** One-time copy when upgrading from the old app name (everythang* keys). */
@@ -3008,13 +3009,19 @@
       saveActiveTabStateFromUi();
     }
 
-    /** Open a new scratch tab (seeded from the current search) and activate it. Refuses past MAX_TABS. */
+    /** Open a new scratch tab (seeded from the current search) and activate it. At MAX_TABS it
+        refuses, unless opts.evictOldest, in which case it drops the oldest tab (lowest id) first. */
     async function openNewTab(opts = {}) {
-      if (tabs.length >= MAX_TABS) {
-        setStatusMain('Tab limit reached (' + MAX_TABS + '). Close a tab first.');
-        return null;
-      }
       saveActiveTabStateFromUi();
+      if (tabs.length >= MAX_TABS) {
+        if (!opts.evictOldest) {
+          setStatusMain('Tab limit reached (' + MAX_TABS + '). Close a tab first.');
+          return null;
+        }
+        const oldest = tabs.reduce((a, b) => (a.id < b.id ? a : b));
+        const oi = tabIndexById(oldest.id);
+        if (oi >= 0) tabs.splice(oi, 1);
+      }
       const seed = opts.seedFromCurrent === false ? null : serializeSearchState();
       const tab = newBlankTab(seed);
       const at = tabIndexById(activeTabId);
@@ -3065,6 +3072,137 @@
       const at = tabIndexById(activeTabId);
       const nextIdx = (((at + dir) % tabs.length) + tabs.length) % tabs.length;
       void activateTab(tabs[nextIdx].id);
+    }
+
+    // ---- Tab switcher overlay (opened by the global show/hide hotkey) --------
+    // A keyboard-driven picker: first row opens a new tab (evicting the oldest at
+    // the cap), the rest jump to an existing tab. Esc dismisses to the current tab.
+    let tabSwitcherOpen = false;
+    let tabSwitcherSel = 0;
+
+    /** Overlay items: index 0 = "New tab", then one per tab in strip order. */
+    function tabSwitcherItems() {
+      const items = [{ kind: 'new' }];
+      tabs.forEach((t) => items.push({ kind: 'tab', id: t.id }));
+      return items;
+    }
+
+    function renderTabSwitcher() {
+      const list = document.getElementById('tabSwitcherList');
+      if (!list) return;
+      const items = tabSwitcherItems();
+      list.textContent = '';
+      items.forEach((it, idx) => {
+        const row = document.createElement('div');
+        row.className = 'tab-switcher-item' + (idx === tabSwitcherSel ? ' tab-switcher-item-selected' : '');
+        row.setAttribute('role', 'option');
+        row.setAttribute('data-switch-idx', String(idx));
+        row.setAttribute('aria-selected', idx === tabSwitcherSel ? 'true' : 'false');
+        const icon = document.createElement('span');
+        icon.className = 'tab-switcher-item-icon';
+        const label = document.createElement('span');
+        label.className = 'tab-switcher-item-label';
+        if (it.kind === 'new') {
+          row.classList.add('tab-switcher-item-new');
+          icon.innerHTML = '<i class="fa-solid fa-plus" aria-hidden="true"></i>';
+          label.textContent = tabs.length >= MAX_TABS ? 'New tab (replaces the oldest)' : 'New tab';
+        } else {
+          const tab = tabs.find((t) => t.id === it.id);
+          icon.innerHTML = '<i class="fa-regular fa-folder-open" aria-hidden="true"></i>';
+          label.textContent = tabTitle(tab);
+          if (it.id === activeTabId) {
+            const badge = document.createElement('span');
+            badge.className = 'tab-switcher-item-badge';
+            badge.textContent = 'current';
+            row.appendChild(icon);
+            row.appendChild(label);
+            row.appendChild(badge);
+            list.appendChild(row);
+            return;
+          }
+        }
+        row.appendChild(icon);
+        row.appendChild(label);
+        list.appendChild(row);
+      });
+    }
+
+    function moveTabSwitcherSel(delta) {
+      const n = tabSwitcherItems().length;
+      if (!n) return;
+      tabSwitcherSel = (((tabSwitcherSel + delta) % n) + n) % n;
+      renderTabSwitcher();
+      const sel = document.querySelector('.tab-switcher-item-selected');
+      if (sel && typeof sel.scrollIntoView === 'function') sel.scrollIntoView({ block: 'nearest' });
+    }
+
+    function activateTabSwitcherIndex(idx) {
+      const items = tabSwitcherItems();
+      const it = items[idx];
+      hideTabSwitcher();
+      if (!it) return;
+      if (it.kind === 'new') { void openNewTab({ evictOldest: true }); return; }
+      void activateTab(it.id); // no-op if already active → keeps the current tab
+    }
+
+    function onTabSwitcherKeydown(e) {
+      if (!tabSwitcherOpen) return;
+      const k = e.key;
+      if (k === 'Escape') { e.preventDefault(); e.stopPropagation(); hideTabSwitcher(); return; }
+      if (k === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); moveTabSwitcherSel(1); return; }
+      if (k === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); moveTabSwitcherSel(-1); return; }
+      if (k === 'Home') { e.preventDefault(); e.stopPropagation(); tabSwitcherSel = 0; renderTabSwitcher(); return; }
+      if (k === 'End') { e.preventDefault(); e.stopPropagation(); tabSwitcherSel = tabSwitcherItems().length - 1; renderTabSwitcher(); return; }
+      if (k === 'Enter') { e.preventDefault(); e.stopPropagation(); activateTabSwitcherIndex(tabSwitcherSel); return; }
+      // Digit 1-9 jumps straight to that tab (1 = first tab, not the New-tab row).
+      if (/^[1-9]$/.test(k)) {
+        const target = Number(k); // items index: 0 is New tab, so tab N is index N
+        if (target < tabSwitcherItems().length) { e.preventDefault(); e.stopPropagation(); activateTabSwitcherIndex(target); }
+      }
+    }
+
+    function showTabSwitcher() {
+      const overlay = document.getElementById('tabSwitcherOverlay');
+      if (!overlay) return;
+      // Respect the setting and only bother when there is a real choice.
+      if (localStorage.getItem(LS.switcherOnToggle) === '0') return;
+      if (tabs.length < 2) return;
+      if (tabSwitcherOpen) { renderTabSwitcher(); return; }
+      // Save the live pane into the active tab so titles/state are current.
+      saveActiveTabStateFromUi();
+      tabSwitcherOpen = true;
+      const at = tabIndexById(activeTabId);
+      tabSwitcherSel = at >= 0 ? at + 1 : 0; // start on the current tab
+      renderTabSwitcher();
+      overlay.classList.remove('d-none');
+      document.addEventListener('keydown', onTabSwitcherKeydown, true);
+      pullWebContentsKeyboardFocus();
+      requestAnimationFrame(() => document.getElementById('tabSwitcherPanel')?.focus());
+    }
+
+    function hideTabSwitcher() {
+      const overlay = document.getElementById('tabSwitcherOverlay');
+      if (overlay) overlay.classList.add('d-none');
+      if (tabSwitcherOpen) document.removeEventListener('keydown', onTabSwitcherKeydown, true);
+      tabSwitcherOpen = false;
+    }
+
+    function bindTabSwitcherOnce() {
+      const overlay = document.getElementById('tabSwitcherOverlay');
+      if (!overlay || overlay.dataset.switcherBound === '1') return;
+      overlay.dataset.switcherBound = '1';
+      overlay.addEventListener('click', (e) => {
+        // Click on the dimmed backdrop (outside the panel) dismisses to the current tab.
+        if (!e.target.closest('#tabSwitcherPanel')) { hideTabSwitcher(); return; }
+        const row = e.target.closest('.tab-switcher-item');
+        if (row) activateTabSwitcherIndex(Number(row.getAttribute('data-switch-idx')));
+      });
+      overlay.addEventListener('mousemove', (e) => {
+        const row = e.target.closest('.tab-switcher-item');
+        if (!row) return;
+        const idx = Number(row.getAttribute('data-switch-idx'));
+        if (idx !== tabSwitcherSel) { tabSwitcherSel = idx; renderTabSwitcher(); }
+      });
     }
 
     /** Move a tab within the strip (drag reorder). */
@@ -11373,6 +11511,10 @@
       document.getElementById('optTreeFolding').checked = localStorage.getItem(LS.treeFolding) !== '0';
       document.getElementById('optTreeGroupHL').checked = localStorage.getItem(LS.treeGroupHighlight) !== '0';
       {
+        const sw = document.getElementById('optSwitcherOnToggle');
+        if (sw) sw.checked = localStorage.getItem(LS.switcherOnToggle) !== '0';
+      }
+      {
         const hm = document.getElementById('optHighlightMatchedNames');
         if (hm) hm.checked = localStorage.getItem(LS.highlightMatchedNames) !== '0';
         const th = document.getElementById('optResultThumbnails');
@@ -11449,6 +11591,10 @@
       localStorage.setItem(LS.optAsc, sortAsc ? '1' : '0');
       localStorage.setItem(LS.treeFolding, document.getElementById('optTreeFolding').checked ? '1' : '0');
       localStorage.setItem(LS.treeGroupHighlight, document.getElementById('optTreeGroupHL').checked ? '1' : '0');
+      {
+        const sw = document.getElementById('optSwitcherOnToggle');
+        if (sw) localStorage.setItem(LS.switcherOnToggle, sw.checked ? '1' : '0');
+      }
       {
         const hm = document.getElementById('optHighlightMatchedNames');
         if (hm) localStorage.setItem(LS.highlightMatchedNames, hm.checked ? '1' : '0');
@@ -15472,6 +15618,9 @@
       saveSettings();
       if (!isHoverPreviewOn()) hideHoverPreview();
     });
+    document.getElementById('optSwitcherOnToggle')?.addEventListener('change', () => {
+      saveSettings();
+    });
     /* Hover preview: delegated so it spans both panes and survives re-renders; hidden on scroll / leaving the window. */
     document.addEventListener('mouseover', onResultRowHoverOver);
     document.addEventListener('mouseout', onResultRowHoverOut);
@@ -15884,6 +16033,9 @@
     }
     if (typeof window.tagBrowser.setQuickTodoOpenHandler === 'function') {
       window.tagBrowser.setQuickTodoOpenHandler(() => showQuickTodoPop());
+    }
+    if (typeof window.tagBrowser.setTabSwitcherOpenHandler === 'function') {
+      window.tagBrowser.setTabSwitcherOpenHandler(() => showTabSwitcher());
     }
     document.getElementById('btnQuickTodoPopClose')?.addEventListener('click', () => hideQuickTodoPop());
     document.getElementById('btnQuickTodoPopCancel')?.addEventListener('click', () => {
@@ -17645,6 +17797,7 @@
     bindVerticalSplitters();
     bindViewerDocSplitters();
     bindTabStripOnce();
+    bindTabSwitcherOnce();
     bindFavFoldersSplitter();
     bindFavFoldersCollapseButton();
     bindFavColumnCollapsedHoverExit();

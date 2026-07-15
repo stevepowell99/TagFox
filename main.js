@@ -2214,6 +2214,10 @@ function toggleMainWindowFromGlobalShortcut() {
     if (w.isMinimized()) w.restore();
     w.show();
     w.focus();
+    // Offer the tab switcher (renderer decides whether to show it: setting on + >1 tab).
+    try {
+      w.webContents.send('tagfox-open-tab-switcher');
+    } catch (_) {}
   }
 }
 

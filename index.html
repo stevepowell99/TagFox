@@ -235,6 +235,10 @@
               </button>
             </div>
             <div id="globalToggleHotkeyHelp" class="form-text text-muted small">Default <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> so <kbd>Ctrl</kbd>+<kbd>Space</kbd> is free for global show/hide if you record it. Hold <kbd>Ctrl</kbd>, <kbd>Alt</kbd>, or <kbd>Shift</kbd> when recording.</div>
+            <div class="form-check form-switch mt-2">
+              <input class="form-check-input" type="checkbox" id="optSwitcherOnToggle" checked />
+              <label class="form-check-label small" for="optSwitcherOnToggle">Show the tab switcher when toggling in with the global hotkey (only when more than one tab is open). <kbd>Esc</kbd> keeps the current tab.</label>
+            </div>
           </div>
           <div class="col-12 col-lg-8">
             <label class="form-label small mb-0" for="quickTodoHotkeyDisplay">Quick TODO hotkey -- save notes from anywhere in Windows</label>
@@ -1216,6 +1220,14 @@
     <span id="statusMain" class="min-w-0"></span>
     <span id="statusSmartNote" class="d-none tagfox-status-hidden-hint flex-shrink-0"></span>
   </footer>
+
+  <!-- Tab switcher: global-hotkey overlay to jump to a tab or open a new one. Built by renderTabSwitcher(); keyboard-driven (↑/↓, Enter, Esc). -->
+  <div id="tabSwitcherOverlay" class="tab-switcher-overlay d-none" role="dialog" aria-modal="true" aria-label="Switch tab">
+    <div id="tabSwitcherPanel" class="tab-switcher-panel shadow" role="listbox" aria-label="Open tabs" tabindex="-1">
+      <div class="tab-switcher-title text-muted small px-3 pt-2 pb-1">Switch tab <span class="tab-switcher-hint">&nbsp;·&nbsp; ↑ ↓ to move, Enter to open, Esc to keep current</span></div>
+      <div id="tabSwitcherList" class="tab-switcher-list"></div>
+    </div>
+  </div>
 
   <!-- Quick TODO: fixed strip (z-index in styles.css — below modal backdrop 1100 so #tagModal stays on top). -->
   <div
