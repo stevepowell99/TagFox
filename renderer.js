@@ -3105,7 +3105,8 @@
         if (it.kind === 'new') {
           row.classList.add('tab-switcher-item-new');
           icon.innerHTML = '<i class="fa-solid fa-plus" aria-hidden="true"></i>';
-          label.textContent = tabs.length >= MAX_TABS ? 'New tab (replaces the oldest)' : 'New tab';
+          label.textContent =
+            tabs.length >= MAX_TABS && !findReusableNewTab() ? 'New tab (replaces the oldest)' : 'New tab';
         } else {
           const tab = tabs.find((t) => t.id === it.id);
           icon.innerHTML = '<i class="fa-regular fa-folder-open" aria-hidden="true"></i>';
@@ -3141,8 +3142,20 @@
       const it = items[idx];
       hideTabSwitcher();
       if (!it) return;
-      if (it.kind === 'new') { void openNewTab({ evictOldest: true }); return; }
+      if (it.kind === 'new') {
+        const reuse = findReusableNewTab();
+        if (reuse) { void activateTab(reuse.id); return; } // no-op if it is already active
+        void openNewTab({ evictOldest: true });
+        return;
+      }
       void activateTab(it.id); // no-op if already active → keeps the current tab
+    }
+
+    /** An existing empty tab still labelled "New tab" (no query/scope), preferring the active one. */
+    function findReusableNewTab() {
+      const act = activeTab();
+      if (act && tabTitle(act) === 'New tab') return act;
+      return tabs.find((t) => tabTitle(t) === 'New tab') || null;
     }
 
     function onTabSwitcherKeydown(e) {
@@ -3162,10 +3175,17 @@
       }
     }
 
-    /** Switcher shortcut: open a fresh tab (evicting the oldest at the cap) and type into the search box. */
+    /** Switcher shortcut: open (or reuse) a blank tab, evicting the oldest at the cap, and type into the search box. */
     async function openNewTabForTypedSearch(firstChar) {
       hideTabSwitcher();
-      const tab = await openNewTab({ evictOldest: true, skipSearch: true });
+      const reuse = findReusableNewTab();
+      let tab;
+      if (reuse) {
+        if (reuse.id !== activeTabId) await activateTab(reuse.id, { skipSearch: true });
+        tab = reuse;
+      } else {
+        tab = await openNewTab({ evictOldest: true, skipSearch: true });
+      }
       if (!tab) return;
       const q = document.getElementById('query');
       if (!q) return;
