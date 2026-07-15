@@ -3076,15 +3076,49 @@
 
     // ---- Tab switcher overlay (opened by the global show/hide hotkey) --------
     // A keyboard-driven picker: first row opens a new tab (evicting the oldest at
-    // the cap), the rest jump to an existing tab. Esc dismisses to the current tab.
+    // the cap), the tab rows jump to an existing tab, then two optional sections —
+    // saved searches and saved folders — each opening in a reused-blank or new tab.
+    // Header rows are skipped by navigation. Esc dismisses to the current tab.
     let tabSwitcherOpen = false;
     let tabSwitcherSel = 0;
 
-    /** Overlay items: index 0 = "New tab", then one per tab in strip order. */
+    /** Overlay items: "New tab", then one per tab, then Saved searches, then Saved folders (each with a header). */
     function tabSwitcherItems() {
       const items = [{ kind: 'new' }];
       tabs.forEach((t) => items.push({ kind: 'tab', id: t.id }));
+      const searches = loadFavouriteSearches();
+      if (searches.length) {
+        items.push({ kind: 'header', label: 'Saved searches' });
+        searches.forEach((s, i) => items.push({ kind: 'search', slot: i, data: s }));
+      }
+      const folders = loadFavouriteFolders();
+      if (folders.length) {
+        items.push({ kind: 'header', label: 'Saved folders' });
+        folders.forEach((fp, i) => items.push({ kind: 'folder', slot: i, path: fp }));
+      }
       return items;
+    }
+
+    /** Header rows are labels only; every other kind is a selectable/openable row. */
+    function switcherItemSelectable(it) {
+      return !!it && it.kind !== 'header';
+    }
+
+    /** Switcher label for a saved search: its query, else the scope leaf, else its tags. */
+    function favouriteSearchLabel(s) {
+      const q = s && s.query != null ? String(s.query).trim() : '';
+      if (q) return q;
+      const sc = s && s.rootFolder != null ? String(s.rootFolder).trim().replace(/[/\\]+$/, '') : '';
+      if (sc) return segmentPretty(T.baseName(sc)) || T.baseName(sc) || sc;
+      const tags = Array.isArray(s && s.activeTagKeys) ? s.activeTagKeys.filter(Boolean) : [];
+      if (tags.length) return 'Tags: ' + tags.join(', ');
+      return '(saved search)';
+    }
+
+    /** Switcher label for a saved folder: its prettified leaf name. */
+    function favouriteFolderLabel(fp) {
+      const n = String(fp || '').trim().replace(/[/\\]+$/, '');
+      return segmentPretty(T.baseName(n)) || T.baseName(n) || n;
     }
 
     function renderTabSwitcher() {
@@ -3093,6 +3127,14 @@
       const items = tabSwitcherItems();
       list.textContent = '';
       items.forEach((it, idx) => {
+        if (it.kind === 'header') {
+          const h = document.createElement('div');
+          h.className = 'tab-switcher-header';
+          h.setAttribute('role', 'presentation');
+          h.textContent = it.label;
+          list.appendChild(h);
+          return;
+        }
         const row = document.createElement('div');
         row.className = 'tab-switcher-item' + (idx === tabSwitcherSel ? ' tab-switcher-item-selected' : '');
         row.setAttribute('role', 'option');
@@ -3102,36 +3144,48 @@
         icon.className = 'tab-switcher-item-icon';
         const label = document.createElement('span');
         label.className = 'tab-switcher-item-label';
+        let badgeText = '';
         if (it.kind === 'new') {
           row.classList.add('tab-switcher-item-new');
           icon.innerHTML = '<i class="fa-solid fa-plus" aria-hidden="true"></i>';
           label.textContent =
             tabs.length >= MAX_TABS && !findReusableNewTab() ? 'New tab (replaces the oldest)' : 'New tab';
-        } else {
+        } else if (it.kind === 'tab') {
           const tab = tabs.find((t) => t.id === it.id);
           icon.innerHTML = '<i class="fa-regular fa-folder-open" aria-hidden="true"></i>';
           label.textContent = tabTitle(tab);
-          if (it.id === activeTabId) {
-            const badge = document.createElement('span');
-            badge.className = 'tab-switcher-item-badge';
-            badge.textContent = 'current';
-            row.appendChild(icon);
-            row.appendChild(label);
-            row.appendChild(badge);
-            list.appendChild(row);
-            return;
-          }
+          if (it.id === activeTabId) badgeText = 'current';
+        } else if (it.kind === 'search') {
+          icon.innerHTML = '<i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>';
+          label.textContent = favouriteSearchLabel(it.data);
+          row.title = favouriteSearchTooltip(it.data, it.slot);
+        } else if (it.kind === 'folder') {
+          icon.innerHTML = '<i class="fa-solid fa-folder" aria-hidden="true"></i>';
+          label.textContent = favouriteFolderLabel(it.path);
+          row.title = it.path;
         }
         row.appendChild(icon);
         row.appendChild(label);
+        if (badgeText) {
+          const badge = document.createElement('span');
+          badge.className = 'tab-switcher-item-badge';
+          badge.textContent = badgeText;
+          row.appendChild(badge);
+        }
         list.appendChild(row);
       });
     }
 
     function moveTabSwitcherSel(delta) {
-      const n = tabSwitcherItems().length;
+      const items = tabSwitcherItems();
+      const n = items.length;
       if (!n) return;
-      tabSwitcherSel = (((tabSwitcherSel + delta) % n) + n) % n;
+      const step = delta >= 0 ? 1 : -1;
+      let i = tabSwitcherSel;
+      for (let guard = 0; guard < n; guard++) {
+        i = (((i + step) % n) + n) % n;
+        if (switcherItemSelectable(items[i])) { tabSwitcherSel = i; break; }
+      }
       renderTabSwitcher();
       const sel = document.querySelector('.tab-switcher-item-selected');
       if (sel && typeof sel.scrollIntoView === 'function') sel.scrollIntoView({ block: 'nearest' });
@@ -3141,13 +3195,15 @@
       const items = tabSwitcherItems();
       const it = items[idx];
       hideTabSwitcher();
-      if (!it) return;
+      if (!switcherItemSelectable(it)) return;
       if (it.kind === 'new') {
         const reuse = findReusableNewTab();
         if (reuse) { void activateTab(reuse.id); return; } // no-op if it is already active
         void openNewTab({ evictOldest: true });
         return;
       }
+      if (it.kind === 'search') { void openSavedSearchInTab(it.data); return; }
+      if (it.kind === 'folder') { void openSavedFolderInTab(it.path); return; }
       void activateTab(it.id); // no-op if already active → keeps the current tab
     }
 
@@ -3175,17 +3231,38 @@
       }
     }
 
+    /** Reuse a blank "New tab" (preferring the active one) or open a fresh one at the cap; returns it made active, no search run. */
+    async function acquireTabForSwitcherOpen() {
+      const reuse = findReusableNewTab();
+      if (reuse) {
+        if (reuse.id !== activeTabId) await activateTab(reuse.id, { skipSearch: true });
+        return reuse;
+      }
+      return openNewTab({ evictOldest: true, skipSearch: true });
+    }
+
+    /** Switcher: open a saved search in a reused-blank or new tab, preserving the other tabs. */
+    async function openSavedSearchInTab(s) {
+      hideTabSwitcher();
+      const tab = await acquireTabForSwitcherOpen();
+      if (!tab) return;
+      await applyFavouriteSearchState(s);
+      saveActiveTabStateFromUi();
+    }
+
+    /** Switcher: open a saved folder as the scope in a reused-blank or new tab, preserving the other tabs. */
+    async function openSavedFolderInTab(fp) {
+      hideTabSwitcher();
+      const tab = await acquireTabForSwitcherOpen();
+      if (!tab) return;
+      await applySearchScopeAndRefresh(fp);
+      saveActiveTabStateFromUi();
+    }
+
     /** Switcher shortcut: open (or reuse) a blank tab, evicting the oldest at the cap, and type into the search box. */
     async function openNewTabForTypedSearch(firstChar) {
       hideTabSwitcher();
-      const reuse = findReusableNewTab();
-      let tab;
-      if (reuse) {
-        if (reuse.id !== activeTabId) await activateTab(reuse.id, { skipSearch: true });
-        tab = reuse;
-      } else {
-        tab = await openNewTab({ evictOldest: true, skipSearch: true });
-      }
+      const tab = await acquireTabForSwitcherOpen();
       if (!tab) return;
       const q = document.getElementById('query');
       if (!q) return;
@@ -3200,9 +3277,10 @@
     function showTabSwitcher() {
       const overlay = document.getElementById('tabSwitcherOverlay');
       if (!overlay) return;
-      // Respect the setting and only bother when there is a real choice.
+      // Respect the setting and only bother when there is a real choice (more than
+      // one tab, or at least one saved search / folder to jump to).
       if (localStorage.getItem(LS.switcherOnToggle) === '0') return;
-      if (tabs.length < 2) return;
+      if (tabs.length < 2 && !loadFavouriteSearches().length && !loadFavouriteFolders().length) return;
       if (tabSwitcherOpen) { renderTabSwitcher(); return; }
       // Save the live pane into the active tab so titles/state are current.
       saveActiveTabStateFromUi();
