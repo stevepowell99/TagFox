@@ -1206,41 +1206,41 @@
       return /[\\/]My Drive [(]/i.test(s) || /\.shortcut-targets-by-id|\.shortcuts-by-id/i.test(s);
     }
 
-    /** A markdown row gmist can open. Under a Drive mount it always can (via the
-     *  deployed worker); anywhere else it can too WHEN a local gmist is up, since
-     *  local opens by path. The button uses the sync check for eligibility; the
-     *  click resolves the mode for real. */
-    function rowEligibleForGmist(fp) {
-      const s = String(fp || '');
-      const base = T.baseName(s);
+    /** A markdown (.md/.qmd) file: the only rows gmist opens. */
+    function isGmistMarkdown(fp) {
+      const base = T.baseName(String(fp || ''));
       const dot = base.lastIndexOf('.');
       const ext = dot >= 0 ? base.slice(dot + 1).toLowerCase() : '';
-      if (!GMIST_EXT.has(ext)) return false;
-      return pathUnderGoogleDrive(s) || _localGmist.up;
+      return GMIST_EXT.has(ext);
     }
 
-    async function openRowInGmist(fp) {
+    /* Steve chooses local vs online per click, so the row shows a button for each
+       mode that applies (see the render block): local when a local gmist is up
+       (opens ANY file by path), online when the file is under a Drive mount (the
+       deployed worker needs a Drive id). They are separate actions, not a
+       fallback chain. */
+    async function openRowInLocalGmist(fp) {
       if (!window.tagBrowser || typeof window.tagBrowser.openUrlDefaultBrowser !== 'function') {
         setStatusMain('Open in gmist is not available.');
         return;
       }
-      setStatusMain('Opening in gmist…');
-
-      // Prefer a local gmist: it opens ANY local file by absolute path, with no
-      // Drive lookup, no sign-in, and no ambiguity.
-      if (await localGmistUp()) {
-        const url = GMIST_LOCAL_BASE_URL + '/open?path=' + encodeURIComponent(fp);
-        const opened = await window.tagBrowser.openUrlDefaultBrowser({ url });
-        if (opened && opened.ok === false) setStatusMain(opened.error || 'Could not open browser for gmist.');
-        else setStatusMain('Opening in local gmist…');
+      // Re-check: local gmist may have been stopped since the row rendered.
+      if (!(await localGmistUp())) {
+        setStatusMain('Local gmist is not running. Start it with `npm run dev:local`, or use the online button.');
         return;
       }
+      const url = GMIST_LOCAL_BASE_URL + '/open?path=' + encodeURIComponent(fp);
+      const opened = await window.tagBrowser.openUrlDefaultBrowser({ url });
+      if (opened && opened.ok === false) setStatusMain(opened.error || 'Could not open browser for gmist.');
+      else setStatusMain('Opening in local gmist…');
+    }
 
-      // No local gmist: the deployed worker needs the file's Drive id.
-      if (typeof window.tagBrowser.resolveGoogleDriveFileId !== 'function') {
-        setStatusMain('Open in gmist: start a local gmist (npm run dev:local) or use a Drive file.');
+    async function openRowInOnlineGmist(fp) {
+      if (!window.tagBrowser || typeof window.tagBrowser.resolveGoogleDriveFileId !== 'function') {
+        setStatusMain('Open in gmist online is not available.');
         return;
       }
+      setStatusMain('Opening in gmist online…');
       const r = await window.tagBrowser.resolveGoogleDriveFileId({ fullPath: fp });
       if (!r || !r.ok || !r.fileId) {
         const why =
@@ -1248,8 +1248,8 @@
             ? 'several Drive files share this name; rename one or open it from drive.google.com.'
             : r && r.reason === 'no-drive-api'
               ? 'Google Drive sign-in is needed first (Settings).'
-              : 'could not find this file in Google Drive (or start a local gmist to open it by path).';
-        setStatusMain('Open in gmist: ' + why);
+              : 'could not find this file in Google Drive (only Drive files open online; a local gmist opens any file).';
+        setStatusMain('Open in gmist online: ' + why);
         return;
       }
       /* A harmless, readable breadcrumb the target ignores: the path from the user home, so the URL is legible. */
@@ -1258,7 +1258,7 @@
       const url = GMIST_BASE_URL + '/open?file=' + encodeURIComponent(r.fileId) + crumbSuffix;
       const opened = await window.tagBrowser.openUrlDefaultBrowser({ url });
       if (opened && opened.ok === false) setStatusMain(opened.error || 'Could not open browser for gmist.');
-      else setStatusMain('Opening in gmist (browser)…');
+      else setStatusMain('Opening in gmist online…');
     }
 
     /* Open in Google Workspace (edit online): Office and Google-native docs on Drive. The edit (pen) icon uses
@@ -13465,10 +13465,10 @@
     }
 
     function renderTable() {
-      // Warm the local-gmist probe so rowEligibleForGmist (sync) sees a current
-      // value; if it flips since last render, re-render once so the pen button
-      // appears/disappears on non-Drive markdown rows. Cached (5s), so this is a
-      // no-op most renders.
+      // Warm the local-gmist probe so the render (which reads _localGmist.up
+      // synchronously) is current; if it flips since last render, re-render once
+      // so the local pen button appears/disappears on markdown rows. Cached (5s),
+      // so this is a no-op most renders.
       const wasUp = _localGmist.up;
       localGmistUp().then((up) => { if (up !== wasUp) renderTable(); });
       const t0 = performance.now();
@@ -13755,22 +13755,46 @@
           }
           await openFileDefaultOrGoogleWorkspace(fp);
         });
-        /* Edit online (pen): Drive-resident markdown → gmist; other Drive docs (Office / Google-native) → Google Workspace. */
+        /* Edit online (pen): markdown → gmist, with a button per applicable mode
+           so Steve picks local vs online per click (local pen = this machine,
+           cloud = deployed worker). Other Drive docs (Office / Google-native) →
+           Google Workspace, the single pen as before. */
+        const gmistBtns = [];
+        const rowMarkdown = !rowIsFolder(row) && isGmistMarkdown(fp);
+        if (rowMarkdown) {
+          const mkPen = (iconClass, title, aria, handler) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className =
+              'btn btn-sm btn-outline-secondary tagfox-scope-bar-icon-btn d-inline-flex align-items-center justify-content-center';
+            b.title = title;
+            b.setAttribute('aria-label', aria);
+            b.innerHTML = `<i class="fa-solid ${iconClass}" aria-hidden="true"></i>`;
+            b.addEventListener('click', async (e) => { e.stopPropagation(); await handler(fp); });
+            return b;
+          };
+          // Local: any markdown, when a local gmist is up (probe cached, warmed by renderTable).
+          if (_localGmist.up) {
+            gmistBtns.push(mkPen('fa-pen-to-square', 'Open in local gmist (this machine, npm run dev:local)', 'Open in local gmist', openRowInLocalGmist));
+          }
+          // Online: the deployed worker, only for a file under a Drive mount.
+          if (pathUnderGoogleDrive(fp)) {
+            gmistBtns.push(mkPen('fa-cloud', 'Open in gmist online (deployed, needs the file in Google Drive)', 'Open in gmist online', openRowInOnlineGmist));
+          }
+        }
+        // Google Workspace edit for Office / Google-native docs (never markdown).
         let btnGmist = null;
-        const gmistOk = !rowIsFolder(row) && rowEligibleForGmist(fp);
-        const wsEditOk = !rowIsFolder(row) && !gmistOk && rowEligibleForWorkspaceEdit(fp);
-        if (gmistOk || wsEditOk) {
+        if (!rowIsFolder(row) && !gmistBtns.length && rowEligibleForWorkspaceEdit(fp)) {
           btnGmist = document.createElement('button');
           btnGmist.type = 'button';
           btnGmist.className =
             'btn btn-sm btn-outline-secondary tagfox-scope-bar-icon-btn d-inline-flex align-items-center justify-content-center';
-          btnGmist.title = gmistOk ? 'Open in gmist (Google Drive markdown editor)' : 'Open in Google Workspace (edit online)';
-          btnGmist.setAttribute('aria-label', gmistOk ? 'Open in gmist' : 'Open in Google Workspace');
+          btnGmist.title = 'Open in Google Workspace (edit online)';
+          btnGmist.setAttribute('aria-label', 'Open in Google Workspace');
           btnGmist.innerHTML = '<i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>';
           btnGmist.addEventListener('click', async (e) => {
             e.stopPropagation();
-            if (gmistOk) await openRowInGmist(fp);
-            else await openRowInGoogleWorkspace(fp);
+            await openRowInGoogleWorkspace(fp);
           });
         }
         const btnClip = document.createElement('button');
@@ -13864,6 +13888,7 @@
         });
 
         tdActInner.appendChild(btnOpen);
+        for (const b of gmistBtns) tdActInner.appendChild(b);
         if (btnGmist) tdActInner.appendChild(btnGmist);
         tdActInner.appendChild(btnScopeParent);
         tdActInner.appendChild(btnClip);
