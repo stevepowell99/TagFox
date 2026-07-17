@@ -3710,6 +3710,28 @@ ipcMain.handle('open-url-default-browser', async (_event, { url }) => {
   }
 });
 
+/**
+ * Is a local gmist (npm run dev:local) up at baseUrl? Probes from the main
+ * process (Node fetch), NOT the renderer: a renderer fetch would carry an
+ * Origin the dev server does not need, and main-process http keeps it simple.
+ * A short timeout so the "Open in gmist" click is not held up when nothing is
+ * running. TagFox never touches the localfs sidecar or its token: it talks only
+ * to the dev server, which owns the sidecar. See gmist's CLAUDE.md (local mode).
+ */
+ipcMain.handle('probe-local-gmist', async (_event, { baseUrl } = {}) => {
+  const base = String(baseUrl || 'http://localhost:5173').replace(/\/$/, '');
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 600);
+    // The /go launcher route is a stable, cheap local-only surface.
+    const res = await fetch(base + '/go', { method: 'HEAD', signal: ctrl.signal, redirect: 'manual' });
+    clearTimeout(t);
+    return { ok: true, up: res.status > 0 };
+  } catch {
+    return { ok: true, up: false };
+  }
+});
+
 /** Read-only sign-of-life: proves OAuth token works with Drive API (does not open browser or run consent). */
 ipcMain.handle('google-drive-api-ping', async () => {
   const cfg = readGoogleOAuthClientConfigSync();

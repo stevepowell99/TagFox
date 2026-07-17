@@ -49,6 +49,8 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   googleWorkspaceShortcutUrl: (payload) => ipcRenderer.invoke('google-workspace-shortcut-url', payload),
   openGoogleWorkspaceWindow: (payload) => ipcRenderer.invoke('open-google-workspace-window', payload),
   openUrlDefaultBrowser: (payload) => ipcRenderer.invoke('open-url-default-browser', payload),
+  /** Is a local `npm run dev:local` gmist up? (main-process probe; short timeout). */
+  probeLocalGmist: (payload) => ipcRenderer.invoke('probe-local-gmist', payload),
   /** Hello-world: Drive API about.get + one files.list row (existing token only; no OAuth popup). */
   googleDriveApiPing: () => ipcRenderer.invoke('google-drive-api-ping'),
   resolveFolderViewerDoc: (payload) => ipcRenderer.invoke('resolve-folder-viewer-doc', payload),

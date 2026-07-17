@@ -1176,7 +1176,29 @@
        TagFox reads off the local mirror via the same resolver as Open in Google Workspace, then deep-links to
        the worker's /open route in the default browser (where Steve is signed into gmist). */
     const GMIST_BASE_URL = 'https://mist.broad-smoke-cc64.workers.dev';
+    const GMIST_LOCAL_BASE_URL = 'http://localhost:5173';
     const GMIST_EXT = new Set(['md', 'qmd']);
+
+    /* Local-gmist detection, cached briefly so a folder of rows does not each
+       probe. When a local `npm run dev:local` is up, TagFox opens files by
+       absolute PATH (any drive, no Drive lookup, no sign-in); otherwise it falls
+       back to the deployed worker, which needs the file to be in Drive. gmist owns
+       the sidecar and its token; TagFox only picks which base URL to open. */
+    let _localGmist = { at: 0, up: false };
+    async function localGmistUp() {
+      const now = Date.now();
+      if (now - _localGmist.at < 5000) return _localGmist.up;
+      let up = false;
+      try {
+        const r =
+          window.tagBrowser && typeof window.tagBrowser.probeLocalGmist === 'function'
+            ? await window.tagBrowser.probeLocalGmist({ baseUrl: GMIST_LOCAL_BASE_URL })
+            : null;
+        up = !!(r && r.up);
+      } catch { up = false; }
+      _localGmist = { at: now, up };
+      return up;
+    }
 
     /** True when the path is under a Google Drive mount (own My Drive mirror, or a shared shortcut target). */
     function pathUnderGoogleDrive(fp) {
@@ -1184,22 +1206,41 @@
       return /[\\/]My Drive [(]/i.test(s) || /\.shortcut-targets-by-id|\.shortcuts-by-id/i.test(s);
     }
 
-    /** A markdown file living under a Google Drive mount: the only rows gmist can open. */
+    /** A markdown row gmist can open. Under a Drive mount it always can (via the
+     *  deployed worker); anywhere else it can too WHEN a local gmist is up, since
+     *  local opens by path. The button uses the sync check for eligibility; the
+     *  click resolves the mode for real. */
     function rowEligibleForGmist(fp) {
       const s = String(fp || '');
       const base = T.baseName(s);
       const dot = base.lastIndexOf('.');
       const ext = dot >= 0 ? base.slice(dot + 1).toLowerCase() : '';
       if (!GMIST_EXT.has(ext)) return false;
-      return pathUnderGoogleDrive(s);
+      return pathUnderGoogleDrive(s) || _localGmist.up;
     }
 
     async function openRowInGmist(fp) {
-      if (!window.tagBrowser || typeof window.tagBrowser.resolveGoogleDriveFileId !== 'function') {
+      if (!window.tagBrowser || typeof window.tagBrowser.openUrlDefaultBrowser !== 'function') {
         setStatusMain('Open in gmist is not available.');
         return;
       }
       setStatusMain('Opening in gmist…');
+
+      // Prefer a local gmist: it opens ANY local file by absolute path, with no
+      // Drive lookup, no sign-in, and no ambiguity.
+      if (await localGmistUp()) {
+        const url = GMIST_LOCAL_BASE_URL + '/open?path=' + encodeURIComponent(fp);
+        const opened = await window.tagBrowser.openUrlDefaultBrowser({ url });
+        if (opened && opened.ok === false) setStatusMain(opened.error || 'Could not open browser for gmist.');
+        else setStatusMain('Opening in local gmist…');
+        return;
+      }
+
+      // No local gmist: the deployed worker needs the file's Drive id.
+      if (typeof window.tagBrowser.resolveGoogleDriveFileId !== 'function') {
+        setStatusMain('Open in gmist: start a local gmist (npm run dev:local) or use a Drive file.');
+        return;
+      }
       const r = await window.tagBrowser.resolveGoogleDriveFileId({ fullPath: fp });
       if (!r || !r.ok || !r.fileId) {
         const why =
@@ -1207,7 +1248,7 @@
             ? 'several Drive files share this name; rename one or open it from drive.google.com.'
             : r && r.reason === 'no-drive-api'
               ? 'Google Drive sign-in is needed first (Settings).'
-              : 'could not find this file in Google Drive.';
+              : 'could not find this file in Google Drive (or start a local gmist to open it by path).';
         setStatusMain('Open in gmist: ' + why);
         return;
       }
@@ -13424,6 +13465,12 @@
     }
 
     function renderTable() {
+      // Warm the local-gmist probe so rowEligibleForGmist (sync) sees a current
+      // value; if it flips since last render, re-render once so the pen button
+      // appears/disappears on non-Drive markdown rows. Cached (5s), so this is a
+      // no-op most renders.
+      const wasUp = _localGmist.up;
+      localGmistUp().then((up) => { if (up !== wasUp) renderTable(); });
       const t0 = performance.now();
       try {
         renderTableImpl();
