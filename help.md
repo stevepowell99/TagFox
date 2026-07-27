@@ -66,7 +66,7 @@ TagFox combines **instant search** (powered by Everything) with a **folder tree 
 
 Tags come from a fixed vocabulary in three families: `xk` status (`TODO`, `WAITING`, `LATER`), `xp` person (`GCC`, `STEVE`, `CLAUDE`), and `xx` label (`PUB`, `INFO`, `KEY`). Only these words are treated as tags, which keeps ordinary filenames from being mistaken for tags. Bodies are always uppercase and you do not type the prefix; type `todo` and TagFox writes `xkTODO`. To add a word to the vocabulary, edit `TAG_VOCAB` in `tags.js`.
 
-A fourth family is deadlines: `xd-` plus an ISO date, e.g. `xd-2026-07-15`. Type a date like `2026-07-15` and TagFox writes `xd-2026-07-15`. The `xd-` marks it as a deadline so it stands apart from incidental dates in filenames; filter or search `xd-` to see every deadline.
+Two more families hold dates, and they answer different questions. A **deadline** is `xd-` plus an ISO date, e.g. `xd-2026-07-15`: when the thing is due. A **hide-until** is `xh-` plus a date, e.g. `xh-2026-09-01`: the date before which you do not want to see the thing at all. A file can carry one of each, which is the common case for something you cannot start yet but must finish by a fixed day. The prefixes mark both apart from the many incidental dates in filenames, so you can search `xd-` for every deadline and `xh-` for everything deferred.
 
 ### 🤔 The problems TagFox solves
 
@@ -147,6 +147,9 @@ Three icon-pair switches next to the search box — combine them freely:
 - Tags are stored as trailing prefixed tokens before the extension, e.g. `Notes xxINFO.md`. A token is a tag only when it is a vocabulary word with its family prefix (e.g. `xkTODO`, `xpGCC`, `xxPUB`); anything else is literal text.
 - Tag files, not folders. Renaming a folder to tag it is risky (it breaks shortcuts, saved paths and shared-folder names). To tag a folder, tag a readme inside it: any `.md` whose name contains `readme` is treated as the folder's doc, so `TreeAid readme xkTODO.md` both tags the folder and still shows as its folder doc. Never rename `CLAUDE.md` to tag it — that name is special and renaming it would hide it from Claude.
 - **Deadlines.** Set a deadline with the date picker in the tag editor or the Add TODO box; it is stored as `xd-2026-07-15`. The deadline buttons on the toolbar (Overdue, Today, This wk, Next wk) filter results to files whose deadline falls in that range; pick one (they are single-select), and the **✕** button clears it. Week ranges run Monday to Sunday, and This wk includes today.
+- **Hide until.** The second date picker, beside the deadline one, sets a hide-until date, stored as `xh-2026-09-01`. A file carrying a hide-until date in the future is dropped from results, so it stops competing for your attention until the day comes, then reappears on its own. This is switched **on by default**: a hide you have to remember to turn on hides nothing. To see what is currently hidden, open the deadline panel and turn on **Show hidden**.
+  - A hide-until is not a status. `xkLATER` means someday, maybe never; a hide-until means definitely, just not yet, and here is when to ask again. Nor is it a deadline: put both on the same file when you cannot start before one date and must finish by another.
+  - The hiding only happens inside TagFox. Everything, grep and Google Drive cannot read the token, so they will still return the file. That is the cost of keeping the whole state in the filename, and it errs the right way: a raw search is a deliberate act of looking.
 
 ### 📄 Viewer panel
 

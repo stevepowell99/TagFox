@@ -4,9 +4,9 @@
 // space-separated; the prefix is stripped for display and the tag tokens are removed from the
 // pretty name wherever they sit. Recognising any position (not only trailing) matches the hub
 // `xkTODO` convention, where the tag may lead the name (`xkTODO chapter5 GNI tables.md`); it is
-// safe because only the fixed TAG_VOCAB words (plus `xd-` dates) count, so a real word is never
-// mistaken for a tag. The family for a typed tag is chosen by word (see prefixForTag). Plain
-// words and `name[foo].ext` are literal text, not tags.
+// safe because only the fixed TAG_VOCAB words (plus `xd-` deadlines and `xh-` hide-until dates)
+// count, so a real word is never mistaken for a tag. The family for a typed tag is chosen by word
+// (see prefixForTag). Plain words and `name[foo].ext` are literal text, not tags.
 (function (global) {
   /** Two-char family prefixes that mark a trailing filename token as a tag. */
   const TAG_PREFIXES = ['xk', 'xp', 'xx'];
@@ -26,22 +26,56 @@
     PUB: 'xx', INFO: 'xx', KEY: 'xx', // label
   };
 
-  /** Deadline date family `xd-`: an ISO date, e.g. `xd-2026-07-15`. Open (pattern, not vocab). */
-  const DATE_PREFIX = 'xd-';
-  const DATE_BODY_RE = /^\d{4}-\d{2}-\d{2}$/; // 2026-07-15
-  const DATE_TOKEN_RE = /^xd-\d{4}-\d{2}-\d{2}$/; // xd-2026-07-15
+  /**
+   * Two date families, both ISO dates, both open patterns rather than vocabulary:
+   *   `xd-2026-07-15` a DEADLINE, the date the thing is due.
+   *   `xh-2026-09-01` a HIDE-UNTIL, the date before which the thing should not be shown at all.
+   * They are different questions ("by when" vs "from when"), so they are different tokens and a
+   * file may carry one of each. A bare `2026-07-15`, which is how older builds and the date inputs
+   * name a deadline, still reads as a deadline.
+   */
+  const DATE_PREFIX = 'xd-';          // back-compat alias: the deadline family
+  const HIDE_PREFIX = 'xh-';
+  const DATE_PREFIXES = [DATE_PREFIX, HIDE_PREFIX];
+  const DATE_BODY_RE = /^\d{4}-\d{2}-\d{2}$/; // 2026-07-15 (bare = deadline)
+  const DATE_TOKEN_RE = /^(?:xd|xh)-\d{4}-\d{2}-\d{2}$/; // xd-2026-07-15 | xh-2026-09-01
 
-  /** Is this tag a deadline date (body form `2026-07-15` or token form `xd-2026-07-15`)? Deadlines
-   *  are their own dimension with a dedicated range filter, so callers exclude them from the tag bar. */
+  /** Is this tag either kind of date? Dates never appear as tag-bar pills: each family has its own
+   *  filter, so callers use this to keep them out. */
   function isDateTag(name) {
     const s = String(name || '').trim();
     return DATE_BODY_RE.test(s) || DATE_TOKEN_RE.test(s);
   }
 
-  /** Family prefix for a tag name (no prefix): a date -> `xd-`, a vocab word -> its family, else `xx`. */
+  /** Which date family a tag name belongs to: 'deadline' | 'hide' | '' (not a date). */
+  function dateKind(name) {
+    const s = String(name || '').trim();
+    if (DATE_BODY_RE.test(s)) return 'deadline'; // bare, legacy
+    if (!DATE_TOKEN_RE.test(s)) return '';
+    return s.slice(0, 3) === HIDE_PREFIX ? 'hide' : 'deadline';
+  }
+
+  /** The `YYYY-MM-DD` part of a date tag, or '' if it is not a date. */
+  function dateBody(name) {
+    const s = String(name || '').trim();
+    if (DATE_BODY_RE.test(s)) return s;
+    if (DATE_TOKEN_RE.test(s)) return s.slice(3);
+    return '';
+  }
+
+  /** Canonical prefixed form of a date tag (`2026-07-15` -> `xd-2026-07-15`), else ''. */
+  function normalizeDateTag(name) {
+    const kind = dateKind(name);
+    if (!kind) return '';
+    return (kind === 'hide' ? HIDE_PREFIX : DATE_PREFIX) + dateBody(name);
+  }
+
+  /** Family prefix for a tag name (no prefix): a date -> its own family, a vocab word -> its family,
+   *  else `xx`. Date names normally arrive already prefixed, so this mostly serves the bare legacy form. */
   function prefixForTag(name) {
     const s = String(name || '').trim();
-    if (DATE_BODY_RE.test(s)) return DATE_PREFIX;
+    const kind = dateKind(s);
+    if (kind) return kind === 'hide' ? HIDE_PREFIX : DATE_PREFIX;
     return TAG_VOCAB[s.toUpperCase()] || 'xx';
   }
 
@@ -53,12 +87,13 @@
     return [c, ''];
   }
 
-  /** Tag name for a token, or '' if not a tag. A deadline `xd-2026-07-15`->`2026-07-15`; otherwise a
-   *  vocabulary word with its own family prefix: `xkTODO`->`TODO`, `xpGCC`->`GCC`. `xxTODO`,
-   *  `xkeyboard`, `xpITL` etc. are not tags. */
+  /** Tag name for a token, or '' if not a tag. A date KEEPS its prefix (`xd-2026-07-15`,
+   *  `xh-2026-09-01`), because that prefix is the only thing telling a deadline from a hide-until
+   *  once the token is off the filename. Other tags drop theirs: `xkTODO`->`TODO`, `xpGCC`->`GCC`.
+   *  `xxTODO`, `xkeyboard`, `xpITL` etc. are not tags. */
   function tagNameFromToken(token) {
     if (!token) return '';
-    if (DATE_TOKEN_RE.test(token)) return token.slice(DATE_PREFIX.length);
+    if (DATE_TOKEN_RE.test(token)) return token;
     if (token.length <= PREFIX_LEN) return '';
     const body = token.slice(PREFIX_LEN);
     if (TAG_VOCAB[body] !== token.slice(0, PREFIX_LEN)) return '';
@@ -128,27 +163,26 @@
     const { base } = peelTags(stem);
     const uniq = [];
     const seen = new Set();
-    let lastDate = ''; // only one deadline per file; the last xd- given wins, written trailing
+    // One date of each family per file; the last of each given wins. Both are written trailing,
+    // deadline before hide-until, so a name built twice from the same tags comes out identical.
+    const lastDate = { deadline: '', hide: '' };
     for (const t of tags || []) {
       const trimmed = String(t).trim();
-      // A date keeps its hyphens (xd-2026-07-15); any other tag body is letters/digits only, so
-      // what we write always reads back as a tag (space is the on-disk delimiter).
-      const isDate = DATE_BODY_RE.test(trimmed) || DATE_TOKEN_RE.test(trimmed);
-      const s = isDate ? trimmed.replace(/^xd-/, '') : trimmed.replace(/[^A-Za-z0-9]/g, '');
+      const kind = dateKind(trimmed);
+      if (kind) { lastDate[kind] = normalizeDateTag(trimmed); continue; } // collected, appended below
+      // A non-date tag body is letters/digits only, so what we write always reads back as a tag
+      // (space is the on-disk delimiter).
+      const s = trimmed.replace(/[^A-Za-z0-9]/g, '');
       if (!s) continue;
-      if (isDate) { lastDate = s; continue; } // collected, appended once below
       const k = s.toLowerCase();
       if (seen.has(k)) continue;
       seen.add(k);
-      uniq.push(s);
+      uniq.push(prefixForTag(s) + s.toUpperCase());
     }
-    if (lastDate) uniq.push(lastDate);
+    if (lastDate.deadline) uniq.push(lastDate.deadline);
+    if (lastDate.hide) uniq.push(lastDate.hide);
     if (!uniq.length) return base + ext;
-    // Date bodies stay as-is; other bodies are uppercased by convention.
-    const tagStr = uniq
-      .map((t) => (DATE_BODY_RE.test(t) ? DATE_PREFIX + t : prefixForTag(t) + t.toUpperCase()))
-      .join(' ');
-    return (base ? base + ' ' : '') + tagStr + ext;
+    return (base ? base + ' ' : '') + uniq.join(' ') + ext;
   }
 
   function parentDir(p) {
@@ -216,8 +250,14 @@
     TAG_PREFIX,
     TAG_PREFIXES,
     TAG_VOCAB,
+    DATE_PREFIX,
+    HIDE_PREFIX,
+    DATE_PREFIXES,
     prefixForTag,
     isDateTag,
+    dateKind,
+    dateBody,
+    normalizeDateTag,
     splitExt,
     tagNameFromToken,
     parseSegmentTags,

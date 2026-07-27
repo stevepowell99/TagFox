@@ -7,6 +7,7 @@ const path = require('path');
 
 const NODE = process.execPath;
 const runs = [
+  { name: 'tag date families', args: ['tags-dates.cjs'] }, // pure logic, no Electron; first because it is instant
   { name: 'smoke', args: ['smoke.cjs'] },
   { name: 'tab lifecycle', args: ['tab-lifecycle.cjs'] },
   { name: 'crud tab-isolation', args: ['crud-pane-isolation.cjs'] },

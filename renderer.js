@@ -3742,6 +3742,14 @@
       const raw = String(value || '').trim();
       if (!raw) return;
       const low = raw.toLowerCase();
+      // One date of each family, same rule as the tag modal: a second deadline replaces the first,
+      // and a hide-until sits alongside it rather than displacing it.
+      const addedKind = T.dateKind ? T.dateKind(raw) : '';
+      if (addedKind) {
+        for (let i = newTodoMdTags.length - 1; i >= 0; i--) {
+          if (T.dateKind(newTodoMdTags[i]) === addedKind) newTodoMdTags.splice(i, 1);
+        }
+      }
       if (newTodoMdTags.some((t) => t.toLowerCase() === low)) return;
       newTodoMdTags.push(raw);
       rememberTag(low, raw);
@@ -11658,6 +11666,7 @@
          A stale 1h/1d would otherwise silently cap every search after a restart (looks like search is broken). */
       setRecencyFilterMode('all');
       restoreDeadlineFilter();
+      restoreHideUntilFilter();
       sortColumn = localStorage.getItem(LS.sortBy) || 'name';
       if (sortColumn === 'ext') sortColumn = 'name';
       if (!['name', 'path', 'date_modified', 'size'].includes(sortColumn)) sortColumn = 'name';
@@ -12609,20 +12618,69 @@
       if (r === 'nextweek') return dateStr >= b.nextWeekStart && dateStr <= b.nextWeekEnd;
       return false;
     }
-    /** Deadline dates (xd- bodies) on a row, from its leaf name and row.name. */
-    function rowDeadlineDates(r) {
+    /** Dates of one family ('deadline' | 'hide') on a row, as YYYY-MM-DD, from leaf name and row.name. */
+    function rowDatesOfKind(r, kind) {
       const seen = new Set();
       const collect = (name) => {
         for (const t of T.parseSegmentTags(String(name || '')).tags) {
-          if (/^\d{4}-\d{2}-\d{2}$/.test(t)) seen.add(t);
+          if (T.dateKind(t) === kind) seen.add(T.dateBody(t));
         }
       };
       collect(T.baseName(fullPathForRow(r) || ''));
       collect(r && r.name);
       return [...seen];
     }
+    function rowDeadlineDates(r) {
+      return rowDatesOfKind(r, 'deadline');
+    }
     function deadlineFilterActive() {
       return !!activeDeadlineRange;
+    }
+
+    /* ---- Hide-until (xh-) filter --------------------------------------------------------------
+     * A hide-until date answers "from when", where a deadline answers "by when". A file tagged
+     * `xh-2026-09-01` is a real task that simply should not be in front of Steve before that date,
+     * so it is dropped from results until then. ON by default, because a hide you have to remember
+     * to switch on hides nothing. The reveal toggle is one click, and a revealed hidden row is
+     * marked, so "where did that go" always has an answer.
+     *
+     * Deliberately partial: this only holds inside TagFox. Everything, grep and Drive search cannot
+     * parse the token and will still return the file. That is the price of keeping the filename as
+     * the whole state, and it is the right way round, since a raw search is a deliberate act of
+     * looking for something.
+     */
+    let showHiddenUntil = false;
+    const LS_SHOW_HIDDEN = 'tagfox-show-hidden-until';
+    function rowHideUntilDates(r) {
+      return rowDatesOfKind(r, 'hide');
+    }
+    /** Is this row hidden right now, i.e. carrying a hide-until date still in the future? */
+    function rowIsHiddenUntilFuture(r, todayIso) {
+      const today = todayIso || isoLocalDate(new Date());
+      return rowHideUntilDates(r).some((d) => d > today);
+    }
+    function applyHideUntilFilter(rowsIn) {
+      const rows = Array.isArray(rowsIn) ? rowsIn : [];
+      if (showHiddenUntil) return rows;
+      const today = isoLocalDate(new Date());
+      return rows.filter((r) => !rowIsHiddenUntilFuture(r, today));
+    }
+    function syncHideUntilUi() {
+      const el = document.getElementById('optShowHiddenUntil');
+      if (el) el.checked = showHiddenUntil;
+      const btn = document.getElementById('btnToggleDeadline');
+      if (btn) btn.classList.toggle('tagfox-hidden-revealed', showHiddenUntil);
+    }
+    function restoreHideUntilFilter() {
+      showHiddenUntil = localStorage.getItem(LS_SHOW_HIDDEN) === '1';
+      syncHideUntilUi();
+    }
+    function setShowHiddenUntil(on) {
+      showHiddenUntil = !!on;
+      if (showHiddenUntil) localStorage.setItem(LS_SHOW_HIDDEN, '1');
+      else localStorage.removeItem(LS_SHOW_HIDDEN);
+      syncHideUntilUi();
+      void runSearchNow();
     }
     function syncDeadlineFilterUi() {
       for (const id of DEADLINE_RANGE_IDS) {
@@ -12698,7 +12756,8 @@
       return rows;
     }
 
-    /** Advanced path hides at node level (used for both raw rows and tree display rows). */
+    /** Advanced path hides at node level (used for both raw rows and tree display rows), plus the
+     *  hide-until drop, which belongs in the same pass: both answer "should this be on screen". */
     function applyAdvancedPathHides(rowsIn) {
       let rows = Array.isArray(rowsIn) ? rowsIn : [];
       if (isHideSpecialPaths()) {
@@ -12707,7 +12766,7 @@
       if (isHideTildePaths()) {
         rows = rows.filter((r) => !pathUnderTildeSegment(fullPathForRow(r)));
       }
-      return rows;
+      return applyHideUntilFilter(rows);
     }
 
     function filteredRows() {
@@ -14325,10 +14384,14 @@
       const raw = String(v || '').trim();
       if (!raw) return;
       const low = raw.toLowerCase();
-      // One deadline per file: adding a date drops any existing deadline first (replace, not append).
-      if (T.isDateTag && T.isDateTag(raw)) {
+      // One date of each family per file: adding a deadline replaces the deadline, adding a
+      // hide-until replaces the hide-until, and neither touches the other.
+      const addedKind = T.dateKind ? T.dateKind(raw) : '';
+      if (addedKind) {
         for (let i = modalTags.length - 1; i >= 0; i--) {
-          if (T.isDateTag(modalTags[i]) && modalTags[i].toLowerCase() !== low) modalTags.splice(i, 1);
+          if (T.dateKind(modalTags[i]) === addedKind && modalTags[i].toLowerCase() !== low) {
+            modalTags.splice(i, 1);
+          }
         }
       }
       if (tagModalIsNameDraft()) {
@@ -15507,6 +15570,9 @@
       if (cur) cur.checked = false;
       setDeadlineRange('');
     });
+    document.getElementById('optShowHiddenUntil')?.addEventListener('change', (e) => {
+      setShowHiddenUntil(!!(e.target && e.target.checked));
+    });
     ['optCase', 'optWholeWord', 'optPath', 'optDiacritics', 'optHideSpecial', 'optHideTilde'].forEach((id) => {
       document.getElementById(id).addEventListener('change', () => {
         saveSettings();
@@ -15967,6 +16033,13 @@
       di.value = '';
       void applyModalAddTag(v);
     });
+    document.getElementById('tagModalAddHideBtn')?.addEventListener('click', () => {
+      const hi = document.getElementById('tagModalHideInput');
+      const v = (hi && hi.value || '').trim();
+      if (!v) return;
+      hi.value = '';
+      void applyModalAddTag(T.HIDE_PREFIX + v); // the prefix is what makes it a hide-until, not a deadline
+    });
 
     /** Clipboard image in folder-doc / file markdown editors → `.images/paste-<ts>.png` + link at caret. */
     async function onMarkdownViewerPasteImage(e, which) {
@@ -16253,6 +16326,12 @@
       const value = di ? di.value : ''; // ISO yyyy-mm-dd; stored as xd- on create
       if (di) di.value = '';
       addQuickTodoTag(value);
+    });
+    document.getElementById('quickTodoAddHideBtn')?.addEventListener('click', () => {
+      const hi = document.getElementById('quickTodoHideInput');
+      const value = (hi && hi.value || '').trim();
+      if (hi) hi.value = '';
+      if (value) addQuickTodoTag(T.HIDE_PREFIX + value);
     });
     document.getElementById('quickTodoTitleInput')?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {

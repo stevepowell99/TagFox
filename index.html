@@ -573,6 +573,11 @@
                   <i class="fa-solid fa-xmark" aria-hidden="true"></i>
                 </button>
               </div>
+              <!-- Hide-until reveal. Hiding is ON by default, so this is the way back to what is hidden. -->
+              <div class="form-check form-switch ms-2 mb-0 flex-shrink-0">
+                <input class="form-check-input" type="checkbox" id="optShowHiddenUntil" autocomplete="off" />
+                <label class="form-check-label small text-nowrap" for="optShowHiddenUntil" title="Files tagged xh-YYYY-MM-DD are hidden until that date. Turn this on to see them anyway.">Show hidden</label>
+              </div>
             </div>
           </div>
           <!-- All match options grouped in one tray: Match path / Hide special / Hide ~ (own shortcuts p, ., t) plus More match options. -->
@@ -1312,9 +1317,14 @@
       <button type="button" class="btn btn-outline-primary" id="quickTodoTagAddBtn">Add</button>
     </div>
     <div class="input-group input-group-sm mb-2">
-      <span class="input-group-text" title="Deadline date (xd-)">Deadline</span>
+      <span class="input-group-text" title="Deadline date (xd-): when this is due">Deadline</span>
       <input type="date" id="quickTodoDateInput" class="form-control" autocomplete="off" />
       <button type="button" class="btn btn-outline-primary" id="quickTodoAddDateBtn">Add</button>
+    </div>
+    <div class="input-group input-group-sm mb-2">
+      <span class="input-group-text" title="Hide-until date (xh-): don't show this at all until then">Hide until</span>
+      <input type="date" id="quickTodoHideInput" class="form-control" autocomplete="off" />
+      <button type="button" class="btn btn-outline-primary" id="quickTodoAddHideBtn">Add</button>
     </div>
     <datalist id="quickTodoExistingTags"></datalist>
     <p class="small text-muted mb-0">
@@ -1359,9 +1369,14 @@
             <button type="button" class="btn btn-outline-primary" id="tagModalAddBtn">Add</button>
           </div>
           <div class="input-group input-group-sm mb-2">
-            <span class="input-group-text" title="Deadline date (xd-)">Deadline</span>
+            <span class="input-group-text" title="Deadline date (xd-): when this is due">Deadline</span>
             <input type="date" id="tagModalDateInput" class="form-control" autocomplete="off" />
             <button type="button" class="btn btn-outline-primary" id="tagModalAddDateBtn">Add</button>
+          </div>
+          <div class="input-group input-group-sm mb-2">
+            <span class="input-group-text" title="Hide-until date (xh-): don't show this at all until then">Hide until</span>
+            <input type="date" id="tagModalHideInput" class="form-control" autocomplete="off" />
+            <button type="button" class="btn btn-outline-primary" id="tagModalAddHideBtn">Add</button>
           </div>
           <!-- Existing xk/xp/xx tags + remembered (datalist). -->
           <datalist id="tagModalExistingTags"></datalist>
