@@ -21,7 +21,7 @@
    * here (and mirror it in CLAUDE.md / help.md).
    */
   const TAG_VOCAB = {
-    TODO: 'xk', WAITING: 'xk', LATER: 'xk', // status
+    TODO: 'xk', BLOCKING: 'xk', WAITING: 'xk', LATER: 'xk', // status
     GCC: 'xp', STEVE: 'xp', CLAUDE: 'xp', // person
     PUB: 'xx', INFO: 'xx', KEY: 'xx', // label
   };
