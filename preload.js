@@ -4,7 +4,6 @@ const { contextBridge, ipcRenderer } = require('electron');
 let onPathsMutated = null;
 let onShellActionError = null;
 let onQuickTodoOpen = null;
-let onTabSwitcherOpen = null;
 let onSearchDebugLine = null;
 let onPlainF5SearchRefresh = null;
 let onAppRestartHint = null;
@@ -20,9 +19,6 @@ ipcRenderer.on('search-debug-line', (_e, payload) => {
 });
 ipcRenderer.on('tagfox-open-quick-todo', () => {
   if (onQuickTodoOpen) onQuickTodoOpen();
-});
-ipcRenderer.on('tagfox-open-tab-switcher', () => {
-  if (onTabSwitcherOpen) onTabSwitcherOpen();
 });
 ipcRenderer.on('tagfox-plain-f5-refresh', () => {
   if (onPlainF5SearchRefresh) onPlainF5SearchRefresh();
@@ -110,9 +106,6 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   quickTodoHotkeySet: (accelerator) => ipcRenderer.invoke('quick-todo-hotkey-set', accelerator),
   setQuickTodoOpenHandler: (fn) => {
     onQuickTodoOpen = typeof fn === 'function' ? fn : null;
-  },
-  setTabSwitcherOpenHandler: (fn) => {
-    onTabSwitcherOpen = typeof fn === 'function' ? fn : null;
   },
   pickScopeFolder: () => ipcRenderer.invoke('pick-scope-folder'),
   userHomeDir: () => ipcRenderer.invoke('user-home-dir'),

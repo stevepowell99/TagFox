@@ -66,7 +66,6 @@
       viewerDocSplitPctTheater: 'tagBrowserViewerDocSplitPctTheater',
       tabsState: 'tagBrowserTabsState',
       tagBarShowAll: 'tagBrowserTagBarShowAll',
-      switcherOnToggle: 'tagBrowserSwitcherOnToggle',
     };
 
     /** One-time copy when upgrading from the old app name (everythang* keys). */
@@ -2807,7 +2806,7 @@
       });
     }
 
-    /** Show/hide handles: flat uses name|path + path|actions; tree uses only name|actions (same col indices 2|3 as path|actions). */
+    /** Only the name|path handle is view-specific: tree view hides Path, and 2|3 covers both views. */
     function syncResultsTableResizeHandles() {
       const showPath = !isTreeViewOn();
       const table = document.getElementById('resultsTable');
@@ -2816,7 +2815,6 @@
         const mode = el.dataset.resizeMode;
         if (mode === 'always') el.style.removeProperty('display');
         else if (mode === 'flat') el.style.display = showPath ? '' : 'none';
-        else if (mode === 'tree') el.style.display = showPath ? 'none' : '';
       }
     }
 
@@ -3050,18 +3048,12 @@
       saveActiveTabStateFromUi();
     }
 
-    /** Open a new scratch tab (seeded from the current search) and activate it. At MAX_TABS it
-        refuses, unless opts.evictOldest, in which case it drops the oldest tab (lowest id) first. */
+    /** Open a new scratch tab (seeded from the current search) and activate it. Refuses at MAX_TABS. */
     async function openNewTab(opts = {}) {
       saveActiveTabStateFromUi();
       if (tabs.length >= MAX_TABS) {
-        if (!opts.evictOldest) {
-          setStatusMain('Tab limit reached (' + MAX_TABS + '). Close a tab first.');
-          return null;
-        }
-        const oldest = tabs.reduce((a, b) => (a.id < b.id ? a : b));
-        const oi = tabIndexById(oldest.id);
-        if (oi >= 0) tabs.splice(oi, 1);
+        setStatusMain('Tab limit reached (' + MAX_TABS + '). Close a tab first.');
+        return null;
       }
       const seed = opts.seedFromCurrent === false ? null : serializeSearchState();
       const tab = newBlankTab(seed);
@@ -3113,251 +3105,6 @@
       const at = tabIndexById(activeTabId);
       const nextIdx = (((at + dir) % tabs.length) + tabs.length) % tabs.length;
       void activateTab(tabs[nextIdx].id);
-    }
-
-    // ---- Tab switcher overlay (opened by the global show/hide hotkey) --------
-    // A keyboard-driven picker: first row opens a new tab (evicting the oldest at
-    // the cap), the tab rows jump to an existing tab, then two optional sections —
-    // saved searches and saved folders — each opening in a reused-blank or new tab.
-    // Header rows are skipped by navigation. Esc dismisses to the current tab.
-    let tabSwitcherOpen = false;
-    let tabSwitcherSel = 0;
-
-    /** Overlay items: "New tab", then one per tab, then Saved searches, then Saved folders (each with a header). */
-    function tabSwitcherItems() {
-      const items = [{ kind: 'new' }];
-      tabs.forEach((t) => items.push({ kind: 'tab', id: t.id }));
-      const searches = loadFavouriteSearches();
-      if (searches.length) {
-        items.push({ kind: 'header', label: 'Saved searches' });
-        searches.forEach((s, i) => items.push({ kind: 'search', slot: i, data: s }));
-      }
-      const folders = loadFavouriteFolders();
-      if (folders.length) {
-        items.push({ kind: 'header', label: 'Saved folders' });
-        folders.forEach((fp, i) => items.push({ kind: 'folder', slot: i, path: fp }));
-      }
-      return items;
-    }
-
-    /** Header rows are labels only; every other kind is a selectable/openable row. */
-    function switcherItemSelectable(it) {
-      return !!it && it.kind !== 'header';
-    }
-
-    /** Switcher label for a saved search: its query, else the scope leaf, else its tags. */
-    function favouriteSearchLabel(s) {
-      const q = s && s.query != null ? String(s.query).trim() : '';
-      if (q) return q;
-      const sc = s && s.rootFolder != null ? String(s.rootFolder).trim().replace(/[/\\]+$/, '') : '';
-      if (sc) return segmentPretty(T.baseName(sc)) || T.baseName(sc) || sc;
-      const tags = Array.isArray(s && s.activeTagKeys) ? s.activeTagKeys.filter(Boolean) : [];
-      if (tags.length) return 'Tags: ' + tags.join(', ');
-      return '(saved search)';
-    }
-
-    /** Switcher label for a saved folder: its prettified leaf name. */
-    function favouriteFolderLabel(fp) {
-      const n = String(fp || '').trim().replace(/[/\\]+$/, '');
-      return segmentPretty(T.baseName(n)) || T.baseName(n) || n;
-    }
-
-    function renderTabSwitcher() {
-      const list = document.getElementById('tabSwitcherList');
-      if (!list) return;
-      const items = tabSwitcherItems();
-      list.textContent = '';
-      items.forEach((it, idx) => {
-        if (it.kind === 'header') {
-          const h = document.createElement('div');
-          h.className = 'tab-switcher-header';
-          h.setAttribute('role', 'presentation');
-          h.textContent = it.label;
-          list.appendChild(h);
-          return;
-        }
-        const row = document.createElement('div');
-        row.className = 'tab-switcher-item' + (idx === tabSwitcherSel ? ' tab-switcher-item-selected' : '');
-        row.setAttribute('role', 'option');
-        row.setAttribute('data-switch-idx', String(idx));
-        row.setAttribute('aria-selected', idx === tabSwitcherSel ? 'true' : 'false');
-        const icon = document.createElement('span');
-        icon.className = 'tab-switcher-item-icon';
-        const label = document.createElement('span');
-        label.className = 'tab-switcher-item-label';
-        let badgeText = '';
-        if (it.kind === 'new') {
-          row.classList.add('tab-switcher-item-new');
-          icon.innerHTML = '<i class="fa-solid fa-plus" aria-hidden="true"></i>';
-          label.textContent =
-            tabs.length >= MAX_TABS && !findReusableNewTab() ? 'New tab (replaces the oldest)' : 'New tab';
-        } else if (it.kind === 'tab') {
-          const tab = tabs.find((t) => t.id === it.id);
-          icon.innerHTML = '<i class="fa-regular fa-folder-open" aria-hidden="true"></i>';
-          label.textContent = tabTitle(tab);
-          if (it.id === activeTabId) badgeText = 'current';
-        } else if (it.kind === 'search') {
-          icon.innerHTML = '<i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>';
-          label.textContent = favouriteSearchLabel(it.data);
-          row.title = favouriteSearchTooltip(it.data, it.slot);
-        } else if (it.kind === 'folder') {
-          icon.innerHTML = '<i class="fa-solid fa-folder" aria-hidden="true"></i>';
-          label.textContent = favouriteFolderLabel(it.path);
-          row.title = it.path;
-        }
-        row.appendChild(icon);
-        row.appendChild(label);
-        if (badgeText) {
-          const badge = document.createElement('span');
-          badge.className = 'tab-switcher-item-badge';
-          badge.textContent = badgeText;
-          row.appendChild(badge);
-        }
-        list.appendChild(row);
-      });
-    }
-
-    function moveTabSwitcherSel(delta) {
-      const items = tabSwitcherItems();
-      const n = items.length;
-      if (!n) return;
-      const step = delta >= 0 ? 1 : -1;
-      let i = tabSwitcherSel;
-      for (let guard = 0; guard < n; guard++) {
-        i = (((i + step) % n) + n) % n;
-        if (switcherItemSelectable(items[i])) { tabSwitcherSel = i; break; }
-      }
-      renderTabSwitcher();
-      const sel = document.querySelector('.tab-switcher-item-selected');
-      if (sel && typeof sel.scrollIntoView === 'function') sel.scrollIntoView({ block: 'nearest' });
-    }
-
-    function activateTabSwitcherIndex(idx) {
-      const items = tabSwitcherItems();
-      const it = items[idx];
-      hideTabSwitcher();
-      if (!switcherItemSelectable(it)) return;
-      if (it.kind === 'new') {
-        const reuse = findReusableNewTab();
-        if (reuse) { void activateTab(reuse.id); return; } // no-op if it is already active
-        void openNewTab({ evictOldest: true });
-        return;
-      }
-      if (it.kind === 'search') { void openSavedSearchInTab(it.data); return; }
-      if (it.kind === 'folder') { void openSavedFolderInTab(it.path); return; }
-      void activateTab(it.id); // no-op if already active → keeps the current tab
-    }
-
-    /** An existing empty tab still labelled "New tab" (no query/scope), preferring the active one. */
-    function findReusableNewTab() {
-      const act = activeTab();
-      if (act && tabTitle(act) === 'New tab') return act;
-      return tabs.find((t) => tabTitle(t) === 'New tab') || null;
-    }
-
-    function onTabSwitcherKeydown(e) {
-      if (!tabSwitcherOpen) return;
-      const k = e.key;
-      if (k === 'Escape') { e.preventDefault(); e.stopPropagation(); hideTabSwitcher(); return; }
-      if (k === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); moveTabSwitcherSel(1); return; }
-      if (k === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); moveTabSwitcherSel(-1); return; }
-      if (k === 'Home') { e.preventDefault(); e.stopPropagation(); tabSwitcherSel = 0; renderTabSwitcher(); return; }
-      if (k === 'End') { e.preventDefault(); e.stopPropagation(); tabSwitcherSel = tabSwitcherItems().length - 1; renderTabSwitcher(); return; }
-      if (k === 'Enter') { e.preventDefault(); e.stopPropagation(); activateTabSwitcherIndex(tabSwitcherSel); return; }
-      // Any printable character: dismiss and start a fresh search in a new tab, seeding the query with it.
-      if (k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        void openNewTabForTypedSearch(k);
-      }
-    }
-
-    /** Reuse a blank "New tab" (preferring the active one) or open a fresh one at the cap; returns it made active, no search run. */
-    async function acquireTabForSwitcherOpen() {
-      const reuse = findReusableNewTab();
-      if (reuse) {
-        if (reuse.id !== activeTabId) await activateTab(reuse.id, { skipSearch: true });
-        return reuse;
-      }
-      return openNewTab({ evictOldest: true, skipSearch: true });
-    }
-
-    /** Switcher: open a saved search in a reused-blank or new tab, preserving the other tabs. */
-    async function openSavedSearchInTab(s) {
-      hideTabSwitcher();
-      const tab = await acquireTabForSwitcherOpen();
-      if (!tab) return;
-      await applyFavouriteSearchState(s);
-      saveActiveTabStateFromUi();
-    }
-
-    /** Switcher: open a saved folder as the scope in a reused-blank or new tab, preserving the other tabs. */
-    async function openSavedFolderInTab(fp) {
-      hideTabSwitcher();
-      const tab = await acquireTabForSwitcherOpen();
-      if (!tab) return;
-      await applySearchScopeAndRefresh(fp);
-      saveActiveTabStateFromUi();
-    }
-
-    /** Switcher shortcut: open (or reuse) a blank tab, evicting the oldest at the cap, and type into the search box. */
-    async function openNewTabForTypedSearch(firstChar) {
-      hideTabSwitcher();
-      const tab = await acquireTabForSwitcherOpen();
-      if (!tab) return;
-      const q = document.getElementById('query');
-      if (!q) return;
-      q.value = firstChar;
-      q.focus();
-      try { q.setSelectionRange(q.value.length, q.value.length); } catch (_) {}
-      syncQueryGhostUi();
-      scheduleSearch();
-      scheduleSearchHistoryCommit();
-    }
-
-    function showTabSwitcher() {
-      const overlay = document.getElementById('tabSwitcherOverlay');
-      if (!overlay) return;
-      // Respect the setting and only bother when there is a real choice (more than
-      // one tab, or at least one saved search / folder to jump to).
-      if (localStorage.getItem(LS.switcherOnToggle) === '0') return;
-      if (tabs.length < 2 && !loadFavouriteSearches().length && !loadFavouriteFolders().length) return;
-      if (tabSwitcherOpen) { renderTabSwitcher(); return; }
-      // Save the live pane into the active tab so titles/state are current.
-      saveActiveTabStateFromUi();
-      tabSwitcherOpen = true;
-      const at = tabIndexById(activeTabId);
-      tabSwitcherSel = at >= 0 ? at + 1 : 0; // start on the current tab
-      renderTabSwitcher();
-      overlay.classList.remove('d-none');
-      document.addEventListener('keydown', onTabSwitcherKeydown, true);
-      pullWebContentsKeyboardFocus();
-      requestAnimationFrame(() => document.getElementById('tabSwitcherPanel')?.focus());
-    }
-
-    function hideTabSwitcher() {
-      const overlay = document.getElementById('tabSwitcherOverlay');
-      if (overlay) overlay.classList.add('d-none');
-      if (tabSwitcherOpen) document.removeEventListener('keydown', onTabSwitcherKeydown, true);
-      tabSwitcherOpen = false;
-    }
-
-    function bindTabSwitcherOnce() {
-      const overlay = document.getElementById('tabSwitcherOverlay');
-      if (!overlay || overlay.dataset.switcherBound === '1') return;
-      overlay.dataset.switcherBound = '1';
-      overlay.addEventListener('click', (e) => {
-        // Click on the dimmed backdrop (outside the panel) dismisses to the current tab.
-        if (!e.target.closest('#tabSwitcherPanel')) { hideTabSwitcher(); return; }
-        const row = e.target.closest('.tab-switcher-item');
-        if (row) activateTabSwitcherIndex(Number(row.getAttribute('data-switch-idx')));
-      });
-      overlay.addEventListener('mousemove', (e) => {
-        const row = e.target.closest('.tab-switcher-item');
-        if (!row) return;
-        const idx = Number(row.getAttribute('data-switch-idx'));
-        if (idx !== tabSwitcherSel) { tabSwitcherSel = idx; renderTabSwitcher(); }
-      });
     }
 
     /** Move a tab within the strip (drag reorder). */
@@ -11675,10 +11422,6 @@
       document.getElementById('optTreeFolding').checked = localStorage.getItem(LS.treeFolding) !== '0';
       document.getElementById('optTreeGroupHL').checked = localStorage.getItem(LS.treeGroupHighlight) !== '0';
       {
-        const sw = document.getElementById('optSwitcherOnToggle');
-        if (sw) sw.checked = localStorage.getItem(LS.switcherOnToggle) !== '0';
-      }
-      {
         const hm = document.getElementById('optHighlightMatchedNames');
         if (hm) hm.checked = localStorage.getItem(LS.highlightMatchedNames) !== '0';
         const th = document.getElementById('optResultThumbnails');
@@ -11755,10 +11498,6 @@
       localStorage.setItem(LS.optAsc, sortAsc ? '1' : '0');
       localStorage.setItem(LS.treeFolding, document.getElementById('optTreeFolding').checked ? '1' : '0');
       localStorage.setItem(LS.treeGroupHighlight, document.getElementById('optTreeGroupHL').checked ? '1' : '0');
-      {
-        const sw = document.getElementById('optSwitcherOnToggle');
-        if (sw) localStorage.setItem(LS.switcherOnToggle, sw.checked ? '1' : '0');
-      }
       {
         const hm = document.getElementById('optHighlightMatchedNames');
         if (hm) localStorage.setItem(LS.highlightMatchedNames, hm.checked ? '1' : '0');
@@ -15870,9 +15609,6 @@
       saveSettings();
       if (!isHoverPreviewOn()) hideHoverPreview();
     });
-    document.getElementById('optSwitcherOnToggle')?.addEventListener('change', () => {
-      saveSettings();
-    });
     /* Hover preview: delegated so it spans both panes and survives re-renders; hidden on scroll / leaving the window. */
     document.addEventListener('mouseover', onResultRowHoverOver);
     document.addEventListener('mouseout', onResultRowHoverOut);
@@ -16292,9 +16028,6 @@
     }
     if (typeof window.tagBrowser.setQuickTodoOpenHandler === 'function') {
       window.tagBrowser.setQuickTodoOpenHandler(() => showQuickTodoPop());
-    }
-    if (typeof window.tagBrowser.setTabSwitcherOpenHandler === 'function') {
-      window.tagBrowser.setTabSwitcherOpenHandler(() => showTabSwitcher());
     }
     document.getElementById('btnQuickTodoPopClose')?.addEventListener('click', () => hideQuickTodoPop());
     document.getElementById('btnQuickTodoPopCancel')?.addEventListener('click', () => {
@@ -18062,7 +17795,6 @@
     bindVerticalSplitters();
     bindViewerDocSplitters();
     bindTabStripOnce();
-    bindTabSwitcherOnce();
     bindFavFoldersSplitter();
     bindFavFoldersCollapseButton();
     bindFavColumnCollapsedHoverExit();

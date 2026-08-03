@@ -13,6 +13,7 @@ guard:
 - A copy or delete in the active tab never mutates another tab's stored rows.
 - Tab lifecycle: open to the cap, refuse past it, close down to one (never zero), cycle with wraparound,
   reorder, and spring-hover activation.
+- Every visible results column divider can actually be grabbed with the mouse.
 
 ## Prerequisites
 
@@ -25,7 +26,7 @@ guard:
 ## Running
 
 ```
-npm test                      # whole suite (smoke + tab-lifecycle + tab-isolation + load-more + 3 fuzz seeds)
+npm test                      # whole suite (smoke + tab-lifecycle + tab-isolation + load-more + column-resize + 3 fuzz seeds)
 npm run test:smoke            # readable walkthrough of the main flows
 npm run test:tabs             # tab lifecycle: open/close/cap/cycle/reorder/spring-hover
 npm run test:loadmore         # focused load-more / tab-state regression
@@ -50,6 +51,7 @@ runs are unaffected: `main.js` only skips `show()` when that env var is set.
 | `tab-lifecycle.cjs` | Open to the cap, refuse the 11th, cycle with wraparound, reorder by index, spring-hover activation, and close down to one (never zero). |
 | `crud-pane-isolation.cjs` | A delete in the active tab must leave another tab's stored rows untouched (cross-tab CRUD bleed). Guards the passive-inactive-tab rule. |
 | `loadmore-regression.cjs` | Loads two extra pages and checks the rows are stored on the active tab and rendered (the load-more desync bug). |
+| `column-resize.cjs` | Walks `elementFromPoint` across every visible header boundary, in flat and tree view, and requires the resize handle to be on top for most of a 15px window. Catches handles buried under the neighbouring sticky `th`, which leaves a divider half-dead and sends boundary clicks to that column's sort. |
 | `fuzz.cjs` | Random bursts of actions (type, refresh, new/close/cycle tab, recency, view, scope, auto-refresh tick) with a structural check plus a consistency re-search after every burst. |
 | `run-all.cjs` | Runs the above in sequence and prints a pass/fail summary. |
 

@@ -30,15 +30,24 @@ const httpGet = (url, timeoutMs = 2000) =>
     req.setTimeout(timeoutMs, () => req.destroy(new Error('timeout')));
   });
 
+// Retry, and allow well over the old 2s: this probe runs a real search over the whole index, and a
+// cold one measured 4.8s on a machine where the server was up and healthy the whole time. A single
+// short shot made whole test files abort at connect() with "no Everything HTTP server reachable",
+// which reads as a broken app rather than an impatient probe.
 async function resolveEverythingUrl() {
-  for (const base of URL_CANDIDATES) {
-    try {
-      const body = await httpGet(`${base}/?json=1&count=1&search=test`);
-      JSON.parse(body); // valid Everything JSON
-      return base;
-    } catch (_) {}
+  for (let attempt = 0; attempt < 4; attempt++) {
+    for (const base of URL_CANDIDATES) {
+      try {
+        const body = await httpGet(`${base}/?json=1&count=1&search=test`, 8000);
+        JSON.parse(body); // valid Everything JSON
+        return base;
+      } catch (_) {}
+    }
+    if (attempt < 3) await sleep(600 * (attempt + 1));
   }
-  throw new Error(`No Everything HTTP server reachable. Tried: ${URL_CANDIDATES.join(', ')}. Set TAGFOX_TEST_URL.`);
+  throw new Error(
+    `No Everything HTTP server reachable after 4 attempts. Tried: ${URL_CANDIDATES.join(', ')}. Set TAGFOX_TEST_URL.`,
+  );
 }
 
 async function findPageTarget(port) {

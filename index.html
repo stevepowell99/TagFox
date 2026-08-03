@@ -235,10 +235,6 @@
               </button>
             </div>
             <div id="globalToggleHotkeyHelp" class="form-text text-muted small">Default <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> so <kbd>Ctrl</kbd>+<kbd>Space</kbd> is free for global show/hide if you record it. Hold <kbd>Ctrl</kbd>, <kbd>Alt</kbd>, or <kbd>Shift</kbd> when recording.</div>
-            <div class="form-check form-switch mt-2">
-              <input class="form-check-input" type="checkbox" id="optSwitcherOnToggle" checked />
-              <label class="form-check-label small" for="optSwitcherOnToggle">Show the tab switcher when toggling in with the global hotkey (only when more than one tab is open). <kbd>Esc</kbd> keeps the current tab.</label>
-            </div>
           </div>
           <div class="col-12 col-lg-8">
             <label class="form-label small mb-0" for="quickTodoHotkeyDisplay">Quick TODO hotkey -- save notes from anywhere in Windows</label>
@@ -804,28 +800,36 @@
           <thead class="table-light">
             <tr>
               <!-- no position-relative: it overrides sticky (Bootstrap !important); sticky th still contains .th-resize -->
+              <!--
+                Resize handles: data-resize-left/right = colPercent indices 0–5 (chk,name,path,actions,size,modified).
+                Every handle straddles its column's LEFT edge and belongs to the th on the RIGHT of that
+                boundary. This is not cosmetic: each sticky th has z-index 4, so equal-z siblings paint in
+                DOM order and a handle hanging off a th's right edge is buried under the next th, leaving
+                half of it unclickable and its clicks landing on that th's sort instead.
+              -->
               <th class="align-middle text-start results-th-cb" title="Select rows — Space toggles row, Ctrl+A all. Drag = in-app. Shelf OS drag or Alt+drag = Explorer files.">
                 <input type="checkbox" class="form-check-input m-0 results-cb" id="chkSelectAllResults" autocomplete="off" aria-label="Select all in list" />
-                <!-- resize: data-resize-left/right = colPercent indices 0–5 (chk,name,path,actions,size,modified) -->
-                <span class="th-resize" data-resize-left="0" data-resize-right="1" data-resize-mode="always" title="Drag to resize"></span>
               </th>
               <th class="sortable-th" data-sort="name" title="Sort by name — n">
+                <span class="th-resize" data-resize-left="0" data-resize-right="1" data-resize-mode="always" title="Drag to resize"></span>
                 <span class="sort-label">Name</span>
-                <span class="th-resize" data-resize-left="1" data-resize-right="2" data-resize-mode="flat" title="Drag to resize"></span>
-                <span class="th-resize" data-resize-left="2" data-resize-right="3" data-resize-mode="tree" title="Drag to resize"></span>
               </th>
               <th class="sortable-th" data-sort="path" title="Sort by path">
+                <span class="th-resize" data-resize-left="1" data-resize-right="2" data-resize-mode="flat" title="Drag to resize"></span>
                 <span class="sort-label">Path</span>
-                <span class="th-resize" data-resize-left="2" data-resize-right="3" data-resize-mode="flat" title="Drag to resize"></span>
               </th>
-              <th class="align-middle" aria-label="Row actions"></th>
+              <!-- 2|3 serves both views: in tree view Path is hidden and its weight folds into Name, so this is still the boundary left of Actions. -->
+              <th class="align-middle" aria-label="Row actions">
+                <span class="th-resize" data-resize-left="2" data-resize-right="3" data-resize-mode="always" title="Drag to resize"></span>
+              </th>
               <th class="sortable-th text-end" data-sort="size" title="Sort by size — z">
-                <!-- 3|4 on left edge of Size th: handle was on Actions (right) and extended under this th, so hits targeted Size|Modified -->
-                <span class="th-resize th-resize-leading" data-resize-left="3" data-resize-right="4" data-resize-mode="always" title="Drag to resize"></span>
+                <span class="th-resize" data-resize-left="3" data-resize-right="4" data-resize-mode="always" title="Drag to resize"></span>
                 <span class="sort-label">Size</span>
-                <span class="th-resize" data-resize-left="4" data-resize-right="5" data-resize-mode="always" title="Drag to resize"></span>
               </th>
-              <th class="sortable-th" data-sort="date_modified" title="Sort by modified — m"><span class="sort-label">Modified</span></th>
+              <th class="sortable-th" data-sort="date_modified" title="Sort by modified — m">
+                <span class="th-resize" data-resize-left="4" data-resize-right="5" data-resize-mode="always" title="Drag to resize"></span>
+                <span class="sort-label">Modified</span>
+              </th>
             </tr>
           </thead>
           <tbody id="tbody"></tbody>
@@ -1225,14 +1229,6 @@
     <span id="statusMain" class="min-w-0"></span>
     <span id="statusSmartNote" class="d-none tagfox-status-hidden-hint flex-shrink-0"></span>
   </footer>
-
-  <!-- Tab switcher: global-hotkey overlay to jump to a tab or open a new one. Built by renderTabSwitcher(); keyboard-driven (↑/↓, Enter, Esc). -->
-  <div id="tabSwitcherOverlay" class="tab-switcher-overlay d-none" role="dialog" aria-modal="true" aria-label="Switch tab">
-    <div id="tabSwitcherPanel" class="tab-switcher-panel shadow" role="listbox" aria-label="Open tabs" tabindex="-1">
-      <div class="tab-switcher-title text-muted small px-3 pt-2 pb-1">Switch tab <span class="tab-switcher-hint">&nbsp;·&nbsp; ↑ ↓ Enter to switch, type to search in a new tab, Esc to keep current</span></div>
-      <div id="tabSwitcherList" class="tab-switcher-list"></div>
-    </div>
-  </div>
 
   <!-- Quick TODO: fixed strip (z-index in styles.css — below modal backdrop 1100 so #tagModal stays on top). -->
   <div
