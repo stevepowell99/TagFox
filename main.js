@@ -15,10 +15,14 @@ const {
 
 // Dev: reload renderer / restart main when project files change (no manual npm start).
 if (!app.isPackaged) {
-  // Windows + OneDrive (and some editors): native fs.watch often never fires — chokidar must poll.
-  if (process.platform === 'win32') process.env.CHOKIDAR_USEPOLLING = 'true';
+  /* Polling only on a synced mount (OneDrive / Google Drive), where native fs.watch often never fires.
+     On local NTFS it is pure cost: measured 5% of a core in main, constantly, plus ~4k metadata ops/sec
+     on the fs threadpool, which everything else in main queues behind. */
+  const synced = /OneDrive|My Drive|Shared drives/i.test(__dirname);
+  if (process.platform === 'win32' && synced) process.env.CHOKIDAR_USEPOLLING = 'true';
   try {
-    require('electron-reloader')(module);
+    // Scratch and build output must not reload Steve's running window out from under him.
+    require('electron-reloader')(module, { ignore: ['_tmp', 'dist'] });
   } catch (_) {}
 }
 
@@ -2203,17 +2207,35 @@ function saveQuickTodoAccelToDisk(acc) {
   fssync.writeFileSync(p, JSON.stringify({ accelerator: acc }), 'utf8');
 }
 
+let lastHiddenAt = 0;
+
 function toggleMainWindowFromGlobalShortcut() {
   const w =
     mainWindowRef && !mainWindowRef.isDestroyed()
       ? mainWindowRef
       : BrowserWindow.getAllWindows().find((x) => x && !x.isDestroyed());
   if (!w || w.isDestroyed()) return;
-  if (w.isVisible() && !w.isMinimized() && w.isFocused()) w.hide();
-  else {
+  if (w.isVisible() && !w.isMinimized() && w.isFocused()) {
+    w.hide();
+    lastHiddenAt = Date.now();
+  } else {
+    /* Steve reports slow wake-on-raise. show() is instant; what he waits for is the renderer painting
+       again after a long idle (Chromium throttles a hidden window, and Windows trims its working set),
+       so time raise → two animation frames in the renderer, and note how long it had been away. */
+    const t0 = Date.now();
+    const away = lastHiddenAt ? t0 - lastHiddenAt : 0;
     if (w.isMinimized()) w.restore();
     w.show();
     w.focus();
+    const shown = Date.now() - t0;
+    w.webContents
+      .executeJavaScript('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(1))))')
+      .then(() =>
+        mainPerfLog(
+          'raise show=' + shown + 'ms to-paint=' + (Date.now() - t0) + 'ms away=' + Math.round(away / 1000) + 's'
+        )
+      )
+      .catch(() => {});
   }
 }
 
