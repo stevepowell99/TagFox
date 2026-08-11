@@ -3824,9 +3824,13 @@ async function startLocalGmist() {
   localGmistStartInFlight = (async () => {
     const repoDir = findLocalGmistRepoDir();
     if (!repoDir) {
+      /* No checkout at all is a different case from a start that failed, and callers must be able to
+         tell them apart: on a machine without the gmist repo (a packaged build handed to someone else)
+         markdown has to fall back to the shell rather than report an error for every file opened. */
       return {
         ok: false,
         up: false,
+        noRepo: true,
         error:
           'Could not find the gmist repo (looked for a "mist" folder beside TagFox with a dev:local script). Set it in ' +
           localGmistPrefsPath() +

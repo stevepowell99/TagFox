@@ -1150,7 +1150,16 @@
          Open button, Enter and a double-click all land in the editor Steve actually edits markdown in.
          The row context menu's "Open with default app" is the way to reach Obsidian or an editor. */
       if (GMIST_EXT.has(ext)) {
-        if (await openRowInLocalGmist(fp)) bumpFileFocusVisit(fp);
+        const r = await openRowInLocalGmist(fp);
+        if (r === 'no-gmist-repo') {
+          /* No gmist checkout on this machine, so there is nothing to start and nothing to wait for.
+             Open the file the way TagFox always did rather than failing on every markdown row. */
+          const shellErr = await window.tagBrowser.openPath(fp);
+          if (shellErr && status) setStatusMain('Open failed: ' + shellErr);
+          else if (!shellErr) bumpFileFocusVisit(fp);
+          return;
+        }
+        if (r) bumpFileFocusVisit(fp);
         return;
       }
       if (GOOGLE_SHORTCUT_EXT.has(ext) && window.tagBrowser.googleWorkspaceShortcutUrl && window.tagBrowser.openGoogleWorkspaceWindow) {
@@ -1226,7 +1235,7 @@
        (opens ANY file by path), online when the file is under a Drive mount (the
        deployed worker needs a Drive id). They are separate actions, not a
        fallback chain. */
-    /** Returns true when the browser was actually sent to gmist (callers use it to count the file as visited). */
+    /** true = the browser was sent to gmist (callers count the file as visited); 'no-gmist-repo' = no checkout on this machine, so the caller should open the file another way; false = tried and failed. */
     async function openRowInLocalGmist(fp) {
       if (!window.tagBrowser || typeof window.tagBrowser.openUrlDefaultBrowser !== 'function') {
         setStatusMain('Open in gmist is not available.');
@@ -1245,6 +1254,12 @@
           started = await window.tagBrowser.startLocalGmist();
         } catch (e) {
           started = { up: false, error: String((e && e.message) || e) };
+        }
+        /* No checkout to start: the caller decides (the default-open path falls back to the shell,
+           the pen says so), rather than every markdown row reporting a failure. */
+        if (started && started.noRepo) {
+          setStatusMain('No local gmist on this machine: ' + started.error);
+          return 'no-gmist-repo';
         }
         if (!started || !started.up) {
           const why = (started && started.error) || 'unknown error';
