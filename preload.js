@@ -47,6 +47,8 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   openUrlDefaultBrowser: (payload) => ipcRenderer.invoke('open-url-default-browser', payload),
   /** Is a local `npm run dev:local` gmist up? (main-process probe; short timeout). */
   probeLocalGmist: (payload) => ipcRenderer.invoke('probe-local-gmist', payload),
+  /** Start a local gmist (`npm run dev:local`, detached) and wait for it to answer. */
+  startLocalGmist: () => ipcRenderer.invoke('start-local-gmist'),
   /** Hello-world: Drive API about.get + one files.list row (existing token only; no OAuth popup). */
   googleDriveApiPing: () => ipcRenderer.invoke('google-drive-api-ping'),
   resolveFolderViewerDoc: (payload) => ipcRenderer.invoke('resolve-folder-viewer-doc', payload),

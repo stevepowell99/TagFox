@@ -54,7 +54,7 @@ If search feels slow, open **Advanced** and turn off **Folder-contents highlight
 - **Paste from Explorer and screenshots.** Paste copied files into the current folder, or paste a screenshot to save `Clipboard image.png` there.
 - **Mixed local and Google Docs.** Local Office files preview inline. Google Workspace shortcuts (`.gdoc`, `.gsheet`, `.gslides`) open in a popup, resolved from the shortcut or the Drive stream, including streamed (on-demand) files.
 - **Google Drive shortcut folders.** Shared-folder shortcuts under `.shortcut-targets-by-id` are resolved to their real names in the breadcrumb and Name column, cached across restarts.
-- **Open in gmist.** A markdown file (`.md`/`.qmd`) gets a row button for the [gmist](https://mist.broad-smoke-cc64.workers.dev) web editor, and you choose local or online per click. When a local gmist is running (`npm run dev:local`) a pen icon opens the file straight from disk by its path (any file on any drive, in or out of Google Drive); a cloud icon opens the deployed editor using the file's Drive id (Google Drive files only). Both show together when they both apply. Auth is your signed-in gmist session.
+- **Open in gmist.** A markdown file (`.md`/`.qmd`) gets a row button for the [gmist](https://mist.broad-smoke-cc64.workers.dev) web editor, and you choose local or online per click. The pen icon opens the file in a local gmist straight from disk by its path (any file on any drive, in or out of Google Drive), starting `npm run dev:local` first if it is not already running, which takes about a minute the first time. The cloud icon opens the deployed editor using the file's Drive id (Google Drive files only). Both show on a Drive file. Auth is your signed-in gmist session.
 
 ## For developers
 

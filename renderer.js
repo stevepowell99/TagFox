@@ -1178,11 +1178,12 @@
     const GMIST_LOCAL_BASE_URL = 'http://localhost:5173';
     const GMIST_EXT = new Set(['md', 'qmd']);
 
-    /* Local-gmist detection, cached briefly so a folder of rows does not each
-       probe. When a local `npm run dev:local` is up, TagFox opens files by
-       absolute PATH (any drive, no Drive lookup, no sign-in); otherwise it falls
-       back to the deployed worker, which needs the file to be in Drive. gmist owns
-       the sidecar and its token; TagFox only picks which base URL to open. */
+    /* Local-gmist detection, cached briefly so repeated clicks do not each probe.
+       Read only on click now (the local pen is always shown), to decide whether the
+       file can be opened straight away or gmist has to be started first. A local
+       gmist opens files by absolute PATH (any drive, no Drive lookup, no sign-in);
+       the deployed worker needs the file to be in Drive. gmist owns the sidecar and
+       its token; TagFox only picks which base URL to open. */
     let _localGmist = { at: 0, up: false };
     async function localGmistUp() {
       const now = Date.now();
@@ -1223,10 +1224,27 @@
         setStatusMain('Open in gmist is not available.');
         return;
       }
-      // Re-check: local gmist may have been stopped since the row rendered.
+      /* Not running is the ordinary case, not an error: start it and wait. The button is always
+         shown, so the click is where "is gmist up" gets settled. */
       if (!(await localGmistUp())) {
-        setStatusMain('Local gmist is not running. Start it with `npm run dev:local`, or use the online button.');
-        return;
+        if (typeof window.tagBrowser.startLocalGmist !== 'function') {
+          setStatusMain('Local gmist is not running. Start it with `npm run dev:local`, or use the online button.');
+          return;
+        }
+        setStatusMain('Starting local gmist (npm run dev:local) — a cold start takes about a minute…');
+        let started = null;
+        try {
+          started = await window.tagBrowser.startLocalGmist();
+        } catch (e) {
+          started = { up: false, error: String((e && e.message) || e) };
+        }
+        if (!started || !started.up) {
+          const why = (started && started.error) || 'unknown error';
+          const log = started && started.logPath ? ' See ' + started.logPath + '.' : '';
+          setStatusMain('Could not start local gmist: ' + why + log);
+          return;
+        }
+        _localGmist = { at: Date.now(), up: true };
       }
       const url = GMIST_LOCAL_BASE_URL + '/open?path=' + encodeURIComponent(fp);
       const opened = await window.tagBrowser.openUrlDefaultBrowser({ url });
@@ -3285,6 +3303,27 @@
       } finally {
         suppressViewerResyncForTimerSearch = false;
       }
+    }
+
+    /* Everything pages its index out while nothing queries it. Measured 11 August 2026, after the user
+       instance had been up two weeks: first query 9874ms, then 12ms, 51ms, 45ms, 42ms. That one cold
+       query is the whole of "TagFox is frozen after I wake it up" — a filter click calls runSearchNow(),
+       which queues on searchMutex behind it and shows nothing, so the list sits stale for ten seconds.
+       A trivial query every few minutes keeps the pages resident, which costs nothing once warm. */
+    const EVERYTHING_KEEPALIVE_MS = 3 * 60 * 1000;
+    let everythingKeepaliveTimerId = null;
+
+    async function everythingKeepalivePing() {
+      if (searchInFlight) return;
+      try {
+        await everythingSearchOnce({ searchText: 'tagfox-keepalive-no-match', count: 1 });
+      } catch (_) {}
+    }
+
+    function startEverythingKeepalive() {
+      if (everythingKeepaliveTimerId) return;
+      everythingKeepaliveTimerId = setInterval(() => void everythingKeepalivePing(), EVERYTHING_KEEPALIVE_MS);
+      void everythingKeepalivePing();
     }
 
     /* Serialize whole runSearchNow flow (active runSearch + inactive refresh dance) so two F5/auto-refresh ticks can't interleave the swap-canonical-IDs dance. Reuses searchMutex/topLevelSearchDepth; nested runSearchNow (smart-narrow inside outer runSearch) sees depth>0 and skips re-acquire. */
@@ -13263,12 +13302,6 @@
     }
 
     function renderTable() {
-      // Warm the local-gmist probe so the render (which reads _localGmist.up
-      // synchronously) is current; if it flips since last render, re-render once
-      // so the local pen button appears/disappears on markdown rows. Cached (5s),
-      // so this is a no-op most renders.
-      const wasUp = _localGmist.up;
-      localGmistUp().then((up) => { if (up !== wasUp) renderTable(); });
       const t0 = performance.now();
       try {
         renderTableImpl();
@@ -13571,10 +13604,9 @@
             b.addEventListener('click', async (e) => { e.stopPropagation(); await handler(fp); });
             return b;
           };
-          // Local: any markdown, when a local gmist is up (probe cached, warmed by renderTable).
-          if (_localGmist.up) {
-            gmistBtns.push(mkPen('fa-pen-to-square', 'Open in local gmist (this machine, npm run dev:local)', 'Open in local gmist', openRowInLocalGmist));
-          }
+          /* Local: any markdown, always offered. A stopped gmist used to remove the button, which
+             reads as the feature having gone; the click starts `npm run dev:local` instead. */
+          gmistBtns.push(mkPen('fa-pen-to-square', 'Open in local gmist (this machine; starts npm run dev:local if it is not up)', 'Open in local gmist', openRowInLocalGmist));
           // Online: the deployed worker, only for a file under a Drive mount.
           if (pathUnderGoogleDrive(fp)) {
             gmistBtns.push(mkPen('fa-cloud', 'Open in gmist online (deployed, needs the file in Google Drive)', 'Open in gmist online', openRowInOnlineGmist));
@@ -14885,7 +14917,15 @@
           releaseSearchMutex = r;
         });
         searchMutex = next;
-        await prev;
+        /* The "Searching…" status below is set after the mutex, so a click that queues behind a slow
+           search used to change nothing on screen at all, which reads as the filter being ignored.
+           Delay the hint so an uncontended search (the normal case) does not flash it. */
+        const waitHintTimer = setTimeout(() => setStatusMain('Waiting for the current search…'), 150);
+        try {
+          await prev;
+        } finally {
+          clearTimeout(waitHintTimer);
+        }
       }
       topLevelSearchDepth++;
       try {
@@ -17863,9 +17903,13 @@
     void renderShelf().then(() => refreshTagFoxChromeTooltips(document.body));
     requestAnimationFrame(() => requestAnimationFrame(focusSearchBox));
     window.addEventListener('blur', () => searchDebugFocusSnapshot('window.blur'));
-    document.addEventListener('visibilitychange', () =>
-      searchDebugFocusSnapshot('visibilitychange', { hidden: document.hidden })
-    );
+    startEverythingKeepalive();
+    document.addEventListener('visibilitychange', () => {
+      searchDebugFocusSnapshot('visibilitychange', { hidden: document.hidden });
+      /* Timers are throttled while hidden, so the window may surface with Everything already gone cold;
+         start warming it the moment it does, in parallel with whatever the raise itself triggers. */
+      if (!document.hidden) void everythingKeepalivePing();
+    });
     window.addEventListener('focus', () => {
       searchDebugFocusSnapshot('window.focus');
       requestAnimationFrame(() => {

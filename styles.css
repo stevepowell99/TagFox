@@ -31,6 +31,8 @@ html, body { height: 100%; margin: 0; }
   --tagfox-toolbar-row-rule: rgba(255, 255, 255, 0.82);
   /* fa-tags glyphs: muted green (see .fa-solid.fa-tags rules below). */
   --tagfox-tags-icon: #5c7a5c;
+  /* Row under the pointer: lighter than selection, which also carries a left bar and a dotted ring. */
+  --tagfox-row-hover-bg: rgba(79, 70, 229, 0.07);
 }
 body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 /* Indigo-to-coral gradient strip at top of window */
@@ -495,7 +497,15 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 #resultsTable tbody td.results-td-size.tagfox-size-heat-kb100 {
   color: #4d7c0f;
 }
-/* no hover highlight — selection: row tint + left bar + dotted ring (clearer than pale bg alone) */
+/* Hover: a light tint so the row under the pointer is obvious. Selection keeps its own stronger cue
+   (tint + left bar + dotted ring), so the hover fill stands down on an already selected row rather
+   than painting over it. */
+/* An inset wash rather than a background, so it layers over whatever the cell already has (the
+   path-sort folder tint, size heat) instead of winning a specificity fight and replacing it. */
+#resultsTable tbody tr:not(.table-active):not(.table-active-child):hover > td {
+  box-shadow: inset 0 0 0 9999px var(--tagfox-row-hover-bg);
+}
+/* Selection: row tint + left bar + dotted ring (clearer than pale bg alone) */
 #resultsTable tbody tr.table-active {
   --bs-table-bg-state: var(--bs-primary-bg-subtle);
   box-shadow: inset 3px 0 0 var(--tb-accent);
@@ -2627,6 +2637,7 @@ body > .tooltip {
   --bs-secondary-bg: #27272a;
   --bs-tertiary-bg: #1f1f23;
   --tagfox-folder-row-bg: rgba(217, 119, 6, 0.15);
+  --tagfox-row-hover-bg: rgba(255, 255, 255, 0.06);
   --bs-border-color: #3f3f46;
   --tagfox-toolbar-row-rule: rgba(255, 255, 255, 0.14);
   --bs-primary-bg-subtle: #1e1b4b;

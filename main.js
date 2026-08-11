@@ -3736,19 +3736,168 @@ ipcMain.handle('open-url-default-browser', async (_event, { url }) => {
  * running. TagFox never touches the localfs sidecar or its token: it talks only
  * to the dev server, which owns the sidecar. See gmist's CLAUDE.md (local mode).
  */
-ipcMain.handle('probe-local-gmist', async (_event, { baseUrl } = {}) => {
-  const base = String(baseUrl || 'http://localhost:5173').replace(/\/$/, '');
+const LOCAL_GMIST_BASE_URL = 'http://localhost:5173';
+
+async function probeLocalGmistOnce(baseUrl, timeoutMs) {
+  const base = String(baseUrl || LOCAL_GMIST_BASE_URL).replace(/\/$/, '');
   try {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 600);
+    const t = setTimeout(() => ctrl.abort(), timeoutMs || 600);
     // The /go launcher route is a stable, cheap local-only surface.
     const res = await fetch(base + '/go', { method: 'HEAD', signal: ctrl.signal, redirect: 'manual' });
     clearTimeout(t);
-    return { ok: true, up: res.status > 0 };
+    return res.status > 0;
   } catch {
-    return { ok: true, up: false };
+    return false;
   }
-});
+}
+
+ipcMain.handle('probe-local-gmist', async (_event, { baseUrl } = {}) => ({
+  ok: true,
+  up: await probeLocalGmistOnce(baseUrl, 600),
+}));
+
+/* Starting a local gmist on demand ------------------------------------------
+   The row's local pen is offered on every markdown row, whether or not gmist is
+   up, so the click has to be able to start `npm run dev:local` itself. Before
+   this, a stopped gmist simply removed the button, which reads as the feature
+   having been deleted rather than as something not running. */
+/* A cold start is the sidecar plus a react-router/vite dev server: measured around a minute on this
+   machine, so the wait has to be generous or a working start reports as a failure. */
+const LOCAL_GMIST_START_TIMEOUT_MS = 150000;
+const LOCAL_GMIST_POLL_MS = 500;
+
+function localGmistPrefsPath() {
+  return path.join(app.getPath('userData'), 'tagfox-local-gmist.json');
+}
+
+/** Log the dev server's own output: a detached spawn otherwise swallows the reason it died. */
+function localGmistLogPath() {
+  const dir = process.env.LOCALAPPDATA
+    ? path.join(process.env.LOCALAPPDATA, 'TagFox')
+    : app.getPath('userData');
+  return path.join(dir, 'gmist-local.log');
+}
+
+/** The gmist repo: an explicit override, else a sibling "mist" checkout, else C:\dev\mist. Each candidate must actually carry the dev:local script, so a wrong folder fails here with a clear message instead of at spawn. */
+function findLocalGmistRepoDir() {
+  const candidates = [];
+  try {
+    const j = JSON.parse(fssync.readFileSync(localGmistPrefsPath(), 'utf8'));
+    if (j && typeof j.repoDir === 'string' && j.repoDir.trim()) candidates.push(j.repoDir.trim());
+  } catch (_) {}
+  candidates.push(path.resolve(__dirname, '..', 'mist'));
+  if (process.platform === 'win32') candidates.push('C:\\dev\\mist');
+  for (const dir of candidates) {
+    try {
+      const pkg = JSON.parse(fssync.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+      if (pkg && pkg.scripts && pkg.scripts['dev:local']) return dir;
+    } catch (_) {}
+  }
+  return null;
+}
+
+/** Last part of the dev:local log, so a failure carries the server's own words (stale sidecar, missing npm, port taken). */
+function localGmistLogTail(logPath, maxChars) {
+  try {
+    const txt = fssync.readFileSync(logPath, 'utf8');
+    const tail = txt.slice(-(maxChars || 700)).trim();
+    return tail ? 'Log says: ' + tail.split(/\r?\n/).filter(Boolean).slice(-6).join(' | ') : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+let localGmistStartInFlight = null;
+
+async function startLocalGmist() {
+  if (await probeLocalGmistOnce(LOCAL_GMIST_BASE_URL, 600)) {
+    return { ok: true, up: true, alreadyRunning: true };
+  }
+  if (localGmistStartInFlight) return localGmistStartInFlight;
+  localGmistStartInFlight = (async () => {
+    const repoDir = findLocalGmistRepoDir();
+    if (!repoDir) {
+      return {
+        ok: false,
+        up: false,
+        error:
+          'Could not find the gmist repo (looked for a "mist" folder beside TagFox with a dev:local script). Set it in ' +
+          localGmistPrefsPath() +
+          ' as {"repoDir": "C:\\\\dev\\\\mist"}.',
+      };
+    }
+    const logPath = localGmistLogPath();
+    let fd = null;
+    try {
+      fssync.mkdirSync(path.dirname(logPath), { recursive: true });
+      fd = fssync.openSync(logPath, 'a');
+      fssync.writeSync(fd, `\n=== ${new Date().toISOString()} TagFox: npm run dev:local in ${repoDir} ===\n`);
+    } catch (_) {
+      fd = null;
+    }
+    /* NOT detached, and shell:true, which is the only shape on Windows that keeps both halves of the
+       contract: the dev server's own output reaches the log, and an early exit reaches the 'exit'
+       handler below. Measured 11 August 2026: `detached: true` gives the child a new console, so
+       grandchildren (npm → node → vite) write there instead of the inherited log handle, and the
+       parent stops seeing exit at all — a failed start then looks identical to a slow one. The child
+       still outlives TagFox itself, since Windows does not kill children when a parent exits; it dies
+       only with the console TagFox was launched from (Ctrl+C in that terminal). */
+    let child = null;
+    let exitReason = null;
+    try {
+      child = spawn('npm run dev:local', [], {
+        cwd: repoDir,
+        shell: true,
+        windowsHide: true,
+        stdio: ['ignore', fd == null ? 'ignore' : fd, fd == null ? 'ignore' : fd],
+      });
+    } catch (e) {
+      if (fd != null) try { fssync.closeSync(fd); } catch (_) {}
+      return { ok: false, up: false, repoDir, logPath, error: 'Could not start npm: ' + String(e.message || e) };
+    }
+    child.on('error', (e) => {
+      if (exitReason == null) exitReason = 'npm could not be started: ' + String(e.message || e);
+    });
+    child.on('exit', (code) => {
+      if (exitReason == null) exitReason = 'dev:local exited straight away (code ' + (code == null ? 'signal' : code) + ')';
+    });
+    child.unref();
+    if (fd != null) try { fssync.closeSync(fd); } catch (_) {}
+
+    const deadline = Date.now() + LOCAL_GMIST_START_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      if (await probeLocalGmistOnce(LOCAL_GMIST_BASE_URL, 600)) {
+        return { ok: true, up: true, started: true, repoDir, logPath };
+      }
+      /* An early exit is the common failure (a stale localfs sidecar still holding its port), so
+         say so at once rather than waiting out the timeout on a process that is already gone. */
+      if (exitReason) {
+        return { ok: false, up: false, repoDir, logPath, error: [exitReason, localGmistLogTail(logPath)].filter(Boolean).join('. ') };
+      }
+      await new Promise((r) => setTimeout(r, LOCAL_GMIST_POLL_MS));
+    }
+    return {
+      ok: false,
+      up: false,
+      repoDir,
+      logPath,
+      error: [
+        'Local gmist did not answer on ' + LOCAL_GMIST_BASE_URL + ' within ' + Math.round(LOCAL_GMIST_START_TIMEOUT_MS / 1000) + 's',
+        localGmistLogTail(logPath),
+      ]
+        .filter(Boolean)
+        .join('. '),
+    };
+  })();
+  try {
+    return await localGmistStartInFlight;
+  } finally {
+    localGmistStartInFlight = null;
+  }
+}
+
+ipcMain.handle('start-local-gmist', async () => startLocalGmist());
 
 /** Read-only sign-of-life: proves OAuth token works with Drive API (does not open browser or run consent). */
 ipcMain.handle('google-drive-api-ping', async () => {
