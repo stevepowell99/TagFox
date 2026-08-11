@@ -1136,7 +1136,7 @@
       await navigateTagFoxToShortcutTarget(r.targetPath, r.isDirectory);
     }
 
-    /** File row: shell open, or Workspace child window for .gdoc / .gsheet / .gslides (same as Viewer button). */
+    /** File row: markdown → local gmist, shell open otherwise, or a Workspace child window for .gdoc / .gsheet / .gslides (same as Viewer button). */
     async function openFileDefaultOrGoogleWorkspace(fp) {
       const status = document.getElementById('statusMain');
       const base = T.baseName(fp);
@@ -1144,6 +1144,13 @@
       const ext = dot >= 0 ? base.slice(dot + 1).toLowerCase() : '';
       if (ext === 'lnk') {
         await followShellShortcutInTagFox(fp);
+        return;
+      }
+      /* Markdown opens in a local gmist by default (August 2026), starting it if it is not up, so the
+         Open button, Enter and a double-click all land in the editor Steve actually edits markdown in.
+         The row context menu's "Open with default app" is the way to reach Obsidian or an editor. */
+      if (GMIST_EXT.has(ext)) {
+        if (await openRowInLocalGmist(fp)) bumpFileFocusVisit(fp);
         return;
       }
       if (GOOGLE_SHORTCUT_EXT.has(ext) && window.tagBrowser.googleWorkspaceShortcutUrl && window.tagBrowser.openGoogleWorkspaceWindow) {
@@ -1219,17 +1226,18 @@
        (opens ANY file by path), online when the file is under a Drive mount (the
        deployed worker needs a Drive id). They are separate actions, not a
        fallback chain. */
+    /** Returns true when the browser was actually sent to gmist (callers use it to count the file as visited). */
     async function openRowInLocalGmist(fp) {
       if (!window.tagBrowser || typeof window.tagBrowser.openUrlDefaultBrowser !== 'function') {
         setStatusMain('Open in gmist is not available.');
-        return;
+        return false;
       }
       /* Not running is the ordinary case, not an error: start it and wait. The button is always
          shown, so the click is where "is gmist up" gets settled. */
       if (!(await localGmistUp())) {
         if (typeof window.tagBrowser.startLocalGmist !== 'function') {
           setStatusMain('Local gmist is not running. Start it with `npm run dev:local`, or use the online button.');
-          return;
+          return false;
         }
         setStatusMain('Starting local gmist (npm run dev:local) — a cold start takes about a minute…');
         let started = null;
@@ -1242,14 +1250,18 @@
           const why = (started && started.error) || 'unknown error';
           const log = started && started.logPath ? ' See ' + started.logPath + '.' : '';
           setStatusMain('Could not start local gmist: ' + why + log);
-          return;
+          return false;
         }
         _localGmist = { at: Date.now(), up: true };
       }
       const url = GMIST_LOCAL_BASE_URL + '/open?path=' + encodeURIComponent(fp);
       const opened = await window.tagBrowser.openUrlDefaultBrowser({ url });
-      if (opened && opened.ok === false) setStatusMain(opened.error || 'Could not open browser for gmist.');
-      else setStatusMain('Opening in local gmist…');
+      if (opened && opened.ok === false) {
+        setStatusMain(opened.error || 'Could not open browser for gmist.');
+        return false;
+      }
+      setStatusMain('Opening in local gmist…');
+      return true;
     }
 
     async function openRowInOnlineGmist(fp) {

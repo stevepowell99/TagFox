@@ -119,6 +119,12 @@ function isGoogleWorkspaceOfficeFilePath(fullPath) {
   return ext === '.docx' || ext === '.xlsx' || ext === '.pptx';
 }
 
+/** Markdown, the types the app opens in a local gmist rather than the shell (renderer: GMIST_EXT). */
+function isMarkdownFilePath(fullPath) {
+  const ext = path.extname(String(fullPath || '')).toLowerCase();
+  return ext === '.md' || ext === '.qmd';
+}
+
 /** Best-effort Drive file id from local path (Windows Drive-for-desktop). */
 function googleDriveFileIdForLocalPath(fullPath) {
   if (process.platform !== 'win32') return null;
@@ -4216,7 +4222,14 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
       { type: 'separator' },
       { label: '--- OPEN AND EXPLORE ---', enabled: false },
       {
-        label: isGoogleShortcutFile ? 'Open in app window' : 'Open',
+        /* Markdown rows open in a local gmist everywhere else in the app (the Open button, Enter, a
+           double-click), so here the label says what this one does differently: it is the way back to
+           Obsidian or whatever else holds the .md association. */
+        label: isGoogleShortcutFile
+          ? 'Open in app window'
+          : isMarkdownFilePath(fp)
+            ? 'Open with default app'
+            : 'Open',
         click: () => {
           if (!isDir && path.extname(fp).toLowerCase() === '.lnk') {
             done({ ok: true, action: 'followShellShortcut', filePath: fp });
