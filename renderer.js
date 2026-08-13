@@ -1187,9 +1187,10 @@
       else if (!err) bumpFileFocusVisit(fp);
     }
 
-    /* Open in gmist (the Drive-only markdown web editor). gmist opens a Drive file by its Drive file id, which
-       TagFox reads off the local mirror via the same resolver as Open in Google Workspace, then deep-links to
-       the worker's /open route in the default browser (where Steve is signed into gmist). */
+    /* Open in gmist (the markdown web editor). Local gmist opens in a TagFox child window, the same framed
+       BrowserView window Google Docs use, since local mode needs no sign-in. The deployed worker opens a Drive
+       file by its Drive file id, which TagFox reads off the local mirror via the same resolver as Open in Google
+       Workspace, and goes to the default browser, where Steve's gmist session lives. */
     const GMIST_BASE_URL = 'https://mist.broad-smoke-cc64.workers.dev';
     const GMIST_LOCAL_BASE_URL = 'http://localhost:5173';
     const GMIST_EXT = new Set(['md', 'qmd']);
@@ -1235,9 +1236,9 @@
        (opens ANY file by path), online when the file is under a Drive mount (the
        deployed worker needs a Drive id). They are separate actions, not a
        fallback chain. */
-    /** true = the browser was sent to gmist (callers count the file as visited); 'no-gmist-repo' = no checkout on this machine, so the caller should open the file another way; false = tried and failed. */
+    /** true = a gmist window was opened (callers count the file as visited); 'no-gmist-repo' = no checkout on this machine, so the caller should open the file another way; false = tried and failed. */
     async function openRowInLocalGmist(fp) {
-      if (!window.tagBrowser || typeof window.tagBrowser.openUrlDefaultBrowser !== 'function') {
+      if (!window.tagBrowser || typeof window.tagBrowser.openGmistWindow !== 'function') {
         setStatusMain('Open in gmist is not available.');
         return false;
       }
@@ -1270,9 +1271,9 @@
         _localGmist = { at: Date.now(), up: true };
       }
       const url = GMIST_LOCAL_BASE_URL + '/open?path=' + encodeURIComponent(fp);
-      const opened = await window.tagBrowser.openUrlDefaultBrowser({ url });
+      const opened = await window.tagBrowser.openGmistWindow({ url });
       if (opened && opened.ok === false) {
-        setStatusMain(opened.error || 'Could not open browser for gmist.');
+        setStatusMain(opened.error || 'Could not open a gmist window.');
         return false;
       }
       setStatusMain('Opening in local gmist…');
@@ -13633,7 +13634,7 @@
           };
           /* Local: any markdown, always offered. A stopped gmist used to remove the button, which
              reads as the feature having gone; the click starts `npm run dev:local` instead. */
-          gmistBtns.push(mkPen('fa-pen-to-square', 'Open in local gmist (this machine; starts npm run dev:local if it is not up)', 'Open in local gmist', openRowInLocalGmist));
+          gmistBtns.push(mkPen('fa-pen-to-square', 'Open in local gmist (a TagFox window; starts npm run dev:local if it is not up)', 'Open in local gmist', openRowInLocalGmist));
           // Online: the deployed worker, only for a file under a Drive mount.
           if (pathUnderGoogleDrive(fp)) {
             gmistBtns.push(mkPen('fa-cloud', 'Open in gmist online (deployed, needs the file in Google Drive)', 'Open in gmist online', openRowInOnlineGmist));

@@ -2776,11 +2776,11 @@ ipcMain.handle('open-terminal-at', async (event, cwdPath) => {
   return diag;
 });
 
-/** ─── Google Drive “.gdoc / .gsheet / .gslides” shortcuts → child window(s) (docs.google.com); each open gets its own window ─── */
+/** ─── In-app web editor child windows: Google Workspace docs, and markdown in a local gmist; each open gets its own window ─── */
 
-/** Persist window frame in userData (Renderer localStorage is not TagFox’s for google.com). */
-function googleWorkspaceBoundsPrefsPath() {
-  return path.join(app.getPath('userData'), 'tagBrowser-google-workspace-bounds.json');
+/** Persist window frame per kind in userData (Renderer localStorage is not TagFox’s for the embedded site). */
+function webEditorBoundsPrefsPath(kind) {
+  return path.join(app.getPath('userData'), kind.boundsFile);
 }
 
 function rectIntersectsWorkArea(rect, wa) {
@@ -2791,7 +2791,7 @@ function rectIntersectsWorkArea(rect, wa) {
   return rect.x < wx2 && rx2 > wa.x && rect.y < wy2 && ry2 > wa.y;
 }
 
-function isGoogleWorkspaceBoundsUsable(rect) {
+function isWebEditorBoundsUsable(rect) {
   if (!rect || !Number.isFinite(rect.width) || !Number.isFinite(rect.height)) return false;
   if (rect.width < 200 || rect.height < 200) return false;
   try {
@@ -2802,7 +2802,7 @@ function isGoogleWorkspaceBoundsUsable(rect) {
   return false;
 }
 
-function defaultGoogleWorkspaceWindowBounds() {
+function defaultWebEditorWindowBounds() {
   const wa = screen.getPrimaryDisplay().workArea;
   const width = Math.round(wa.width * 0.9);
   const height = Math.round(wa.height * 0.9);
@@ -2811,9 +2811,9 @@ function defaultGoogleWorkspaceWindowBounds() {
   return { x, y, width, height, maximized: false };
 }
 
-function loadGoogleWorkspaceBoundsFromDisk() {
+function loadWebEditorBoundsFromDisk(kind) {
   try {
-    const p = googleWorkspaceBoundsPrefsPath();
+    const p = webEditorBoundsPrefsPath(kind);
     if (!fssync.existsSync(p)) return null;
     const j = JSON.parse(fssync.readFileSync(p, 'utf8'));
     const x = Number(j.x);
@@ -2833,8 +2833,8 @@ function loadGoogleWorkspaceBoundsFromDisk() {
   }
 }
 
-function saveGoogleWorkspaceBoundsToDisk(state) {
-  const p = googleWorkspaceBoundsPrefsPath();
+function saveWebEditorBoundsToDisk(kind, state) {
+  const p = webEditorBoundsPrefsPath(kind);
   const dir = path.dirname(p);
   if (!fssync.existsSync(dir)) fssync.mkdirSync(dir, { recursive: true });
   fssync.writeFileSync(
@@ -2850,7 +2850,7 @@ function saveGoogleWorkspaceBoundsToDisk(state) {
   );
 }
 
-function snapshotGoogleWorkspaceWindowState(win) {
+function snapshotWebEditorWindowState(win) {
   if (!win || win.isDestroyed()) return null;
   const maximized = win.isMaximized();
   const b = maximized ? win.getNormalBounds() : win.getBounds();
@@ -2864,13 +2864,13 @@ function snapshotGoogleWorkspaceWindowState(win) {
 }
 
 /** Debounced save on move/resize; flush on close. */
-function attachGoogleWorkspaceWindowBoundsPersistence(win) {
+function attachWebEditorWindowBoundsPersistence(win, kind) {
   let timer = null;
   const flush = () => {
     timer = null;
     try {
-      const s = snapshotGoogleWorkspaceWindowState(win);
-      if (s) saveGoogleWorkspaceBoundsToDisk(s);
+      const s = snapshotWebEditorWindowState(win);
+      if (s) saveWebEditorBoundsToDisk(kind, s);
     } catch (_) {}
   };
   const schedule = () => {
@@ -3434,6 +3434,48 @@ function isAllowedGoogleWorkspaceAddressBarUrl(u) {
   }
 }
 
+/** Only the local dev server, so a mistyped or hostile URL cannot be loaded in this window. */
+function isAllowedLocalGmistUrl(u) {
+  try {
+    const { protocol, hostname, port } = new URL(String(u || '').trim());
+    if (protocol !== 'http:') return false;
+    const want = new URL(LOCAL_GMIST_BASE_URL);
+    const h = hostname.toLowerCase();
+    return (h === 'localhost' || h === '127.0.0.1') && (port || '80') === (want.port || '80');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The child-window kinds. Everything site-specific lives here: which URLs the window may load,
+ * its own cookie jar, its own remembered frame, and whether the Google-only Expand button shows.
+ */
+const WEB_EDITOR_KINDS = {
+  googleWorkspace: {
+    boundsFile: 'tagBrowser-google-workspace-bounds.json',
+    partition: 'persist:tagfox-google-workspace',
+    background: '#f1f3f4',
+    allowUrl: (u) => isAllowedGoogleWorkspaceUrl(u),
+    allowAddressBarUrl: (u) => isAllowedGoogleWorkspaceAddressBarUrl(u),
+    showExpand: true,
+    placeholder: 'https://docs.google.com/…',
+    badUrlError: 'Not a Google Docs/Drive URL.',
+  },
+  /* Local gmist needs no sign-in (the dev server owns the localfs sidecar), so this window is
+     a plain view on localhost: no Google session, nothing to authenticate. */
+  gmistLocal: {
+    boundsFile: 'tagBrowser-gmist-local-bounds.json',
+    partition: 'persist:tagfox-gmist-local',
+    background: '#ffffff',
+    allowUrl: (u) => isAllowedLocalGmistUrl(u),
+    allowAddressBarUrl: (u) => isAllowedLocalGmistUrl(u),
+    showExpand: false,
+    placeholder: 'http://localhost:5173/…',
+    badUrlError: 'Not a local gmist URL.',
+  },
+};
+
 const GOOGLE_WORKSPACE_TOOLBAR_PX = 40;
 /** Child doc windows can otherwise be resized to a needle-thin strip — hard to hit title bar / taskbar restore. */
 const GOOGLE_WORKSPACE_WINDOW_MIN_W = 820;
@@ -3512,10 +3554,10 @@ async function googleWorkspaceTryRestoreSatellite(wc) {
   }
 }
 
-function layoutGoogleWorkspaceBrowserViews(win) {
+function layoutWebEditorBrowserViews(win) {
   if (!win || win.isDestroyed()) return;
-  const tb = win.gwsToolbarBV;
-  const cv = win.gwsContentBV;
+  const tb = win.webEditToolbarBV;
+  const cv = win.webEditContentBV;
   if (!tb || !cv) return;
   const [w, h] = win.getContentSize();
   const th = GOOGLE_WORKSPACE_TOOLBAR_PX;
@@ -3526,117 +3568,121 @@ function layoutGoogleWorkspaceBrowserViews(win) {
   } catch (_) {}
 }
 
-function syncGoogleWorkspaceToolbarFromContent(win) {
+function syncWebEditorToolbarFromContent(win) {
   if (!win || win.isDestroyed()) return;
-  const wc = win.gwsContentWc;
-  const tb = win.gwsToolbarWc;
+  const wc = win.webEditContentWc;
+  const tb = win.webEditToolbarWc;
   if (!wc || !tb || wc.isDestroyed() || tb.isDestroyed()) return;
   const u = wc.getURL();
-  if (u && !u.startsWith('about:')) tb.send('gws-toolbar-set-url', u);
-  tb.send('gws-toolbar-nav-state', {
+  if (u && !u.startsWith('about:')) tb.send('webedit-toolbar-set-url', u);
+  tb.send('webedit-toolbar-nav-state', {
     canGoBack: wc.canGoBack(),
     canGoForward: wc.canGoForward(),
   });
 }
 
-function attachGoogleWorkspaceContentNavigationSync(win, contentWc) {
-  const tick = () => syncGoogleWorkspaceToolbarFromContent(win);
+function attachWebEditorContentNavigationSync(win, contentWc) {
+  const tick = () => syncWebEditorToolbarFromContent(win);
   contentWc.on('did-navigate', tick);
   contentWc.on('did-navigate-in-page', tick);
   contentWc.on('did-finish-load', tick);
 }
 
-let googleWorkspaceToolbarIpcRegistered = false;
-function registerGoogleWorkspaceToolbarIpcOnce() {
-  if (googleWorkspaceToolbarIpcRegistered) return;
-  googleWorkspaceToolbarIpcRegistered = true;
-  ipcMain.on('gws-toolbar-go', (event, urlRaw) => {
+let webEditorToolbarIpcRegistered = false;
+function registerWebEditorToolbarIpcOnce() {
+  if (webEditorToolbarIpcRegistered) return;
+  webEditorToolbarIpcRegistered = true;
+  /** The content webContents of the window this toolbar belongs to, or null. */
+  const contentWcOf = (event) => {
     const w = BrowserWindow.fromWebContents(event.sender);
-    if (!w || w.isDestroyed() || !w.gwsContentWc || w.gwsContentWc.isDestroyed()) return;
-    const wc = w.gwsContentWc;
-    if (!wc || wc.isDestroyed()) return;
+    if (!w || w.isDestroyed()) return null;
+    const wc = w.webEditContentWc;
+    if (!wc || wc.isDestroyed()) return null;
+    return wc;
+  };
+  ipcMain.on('webedit-toolbar-go', (event, urlRaw) => {
+    const w = BrowserWindow.fromWebContents(event.sender);
+    const wc = contentWcOf(event);
+    if (!wc) return;
     const u = String(urlRaw || '').trim();
-    if (!isAllowedGoogleWorkspaceAddressBarUrl(u)) return;
+    if (!w.webEditKind || !w.webEditKind.allowAddressBarUrl(u)) return;
     void wc.loadURL(u);
   });
-  ipcMain.on('gws-toolbar-back', (event) => {
-    const w = BrowserWindow.fromWebContents(event.sender);
-    if (!w || w.isDestroyed() || !w.gwsContentWc || w.gwsContentWc.isDestroyed()) return;
-    const wc = w.gwsContentWc;
-    if (!wc || wc.isDestroyed()) return;
-    if (wc.canGoBack()) wc.goBack();
+  ipcMain.on('webedit-toolbar-back', (event) => {
+    const wc = contentWcOf(event);
+    if (wc && wc.canGoBack()) wc.goBack();
   });
-  ipcMain.on('gws-toolbar-forward', (event) => {
-    const w = BrowserWindow.fromWebContents(event.sender);
-    if (!w || w.isDestroyed() || !w.gwsContentWc || w.gwsContentWc.isDestroyed()) return;
-    const wc = w.gwsContentWc;
-    if (!wc || wc.isDestroyed()) return;
-    if (wc.canGoForward()) wc.goForward();
+  ipcMain.on('webedit-toolbar-forward', (event) => {
+    const wc = contentWcOf(event);
+    if (wc && wc.canGoForward()) wc.goForward();
   });
-  ipcMain.on('gws-toolbar-reload', (event) => {
-    const w = BrowserWindow.fromWebContents(event.sender);
-    if (!w || w.isDestroyed() || !w.gwsContentWc || w.gwsContentWc.isDestroyed()) return;
-    const wc = w.gwsContentWc;
-    if (!wc || wc.isDestroyed()) return;
-    wc.reload();
+  ipcMain.on('webedit-toolbar-reload', (event) => {
+    const wc = contentWcOf(event);
+    if (wc) wc.reload();
   });
-  ipcMain.on('gws-toolbar-restore-satellite', (event) => {
-    const w = BrowserWindow.fromWebContents(event.sender);
-    if (!w || w.isDestroyed() || !w.gwsContentWc || w.gwsContentWc.isDestroyed()) return;
-    void googleWorkspaceTryRestoreSatellite(w.gwsContentWc);
+  ipcMain.on('webedit-toolbar-restore-satellite', (event) => {
+    const wc = contentWcOf(event);
+    if (wc) void googleWorkspaceTryRestoreSatellite(wc);
   });
 }
 
-function mountGoogleWorkspaceBrowserViews(win, targetUrlArg, useBounds) {
+function mountWebEditorBrowserViews(win, targetUrlArg, useBounds, kind) {
   const url = String(targetUrlArg || '').trim();
   const contentBV = new BrowserView({
     webPreferences: {
-      partition: 'persist:tagfox-google-workspace',
+      partition: kind.partition,
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
   const toolbarBV = new BrowserView({
     webPreferences: {
-      preload: path.join(__dirname, 'google-workspace-toolbar-preload.js'),
+      preload: path.join(__dirname, 'web-editor-toolbar-preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
   win.addBrowserView(contentBV);
   win.addBrowserView(toolbarBV);
-  win.gwsContentBV = contentBV;
-  win.gwsToolbarBV = toolbarBV;
-  win.gwsContentWc = contentBV.webContents;
-  win.gwsToolbarWc = toolbarBV.webContents;
+  win.webEditContentBV = contentBV;
+  win.webEditToolbarBV = toolbarBV;
+  win.webEditContentWc = contentBV.webContents;
+  win.webEditToolbarWc = toolbarBV.webContents;
 
-  win.on('resize', () => layoutGoogleWorkspaceBrowserViews(win));
+  win.on('resize', () => layoutWebEditorBrowserViews(win));
 
   attachPageZoomShortcuts(contentBV.webContents);
-  attachGoogleWorkspaceContentNavigationSync(win, contentBV.webContents);
+  attachWebEditorContentNavigationSync(win, contentBV.webContents);
 
   const showFramed = () => {
     if (!win || win.isDestroyed()) return;
-    layoutGoogleWorkspaceBrowserViews(win);
-    syncGoogleWorkspaceToolbarFromContent(win);
+    layoutWebEditorBrowserViews(win);
+    syncWebEditorToolbarFromContent(win);
     if (useBounds && useBounds.maximized) win.maximize();
     win.show();
   };
 
   toolbarBV.webContents.once('did-finish-load', showFramed);
-  layoutGoogleWorkspaceBrowserViews(win);
-  void toolbarBV.webContents.loadFile(path.join(__dirname, 'google-workspace-toolbar.html'));
+  layoutWebEditorBrowserViews(win);
+  const toolbarQuery = new URLSearchParams({
+    expand: kind.showExpand ? '1' : '0',
+    placeholder: kind.placeholder || '',
+  }).toString();
+  void toolbarBV.webContents.loadFile(path.join(__dirname, 'web-editor-toolbar.html'), { search: toolbarQuery });
   void contentBV.webContents.loadURL(url);
 }
 
-function openGoogleWorkspaceEditorWindow(parentWin, targetUrl) {
-  registerGoogleWorkspaceToolbarIpcOnce();
+/** kindKey: a key of WEB_EDITOR_KINDS ('googleWorkspace', 'gmistLocal'). */
+function openWebEditorWindow(parentWin, targetUrl, kindKey) {
+  const kind = WEB_EDITOR_KINDS[kindKey];
+  if (!kind) return { ok: false, error: 'Unknown editor window kind.' };
+  registerWebEditorToolbarIpcOnce();
   const url = String(targetUrl || '').trim();
-  if (!isAllowedGoogleWorkspaceUrl(url)) return { ok: false, error: 'Not a Google Docs/Drive URL.' };
-  const saved = loadGoogleWorkspaceBoundsFromDisk();
-  const fallback = defaultGoogleWorkspaceWindowBounds();
+  if (!kind.allowUrl(url)) return { ok: false, error: kind.badUrlError };
+  const saved = loadWebEditorBoundsFromDisk(kind);
+  const fallback = defaultWebEditorWindowBounds();
   const use =
-    saved && isGoogleWorkspaceBoundsUsable({ x: saved.x, y: saved.y, width: saved.width, height: saved.height })
+    saved && isWebEditorBoundsUsable({ x: saved.x, y: saved.y, width: saved.width, height: saved.height })
       ? saved
       : fallback;
   const initW = Math.max(GOOGLE_WORKSPACE_WINDOW_MIN_W, use.width);
@@ -3648,16 +3694,17 @@ function openGoogleWorkspaceEditorWindow(parentWin, targetUrl) {
     width: initW,
     height: initH,
     show: false,
-    backgroundColor: '#f1f3f4',
+    backgroundColor: kind.background,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
-  attachGoogleWorkspaceWindowBoundsPersistence(win);
+  win.webEditKind = kind;
+  attachWebEditorWindowBoundsPersistence(win, kind);
   win.setMinimumSize(GOOGLE_WORKSPACE_WINDOW_MIN_W, GOOGLE_WORKSPACE_WINDOW_MIN_H);
   win.setMenuBarVisibility(false);
-  mountGoogleWorkspaceBrowserViews(win, url, use);
+  mountWebEditorBrowserViews(win, url, use, kind);
   return { ok: true };
 }
 
@@ -3681,7 +3728,7 @@ async function openPathOrGoogleWorkspaceShortcut(wc, fullPathRaw) {
     const url = targetUrlFromGoogleDriveShortcut(p, r.raw);
     if (url) {
       const parent = BrowserWindow.fromWebContents(wc);
-      const winR = openGoogleWorkspaceEditorWindow(parent, url);
+      const winR = openWebEditorWindow(parent, url, 'googleWorkspace');
       if (winR.ok) return null;
       if (winR && winR.error) return winR.error;
     }
@@ -3722,7 +3769,7 @@ ipcMain.handle('google-workspace-shortcut-url', async (_event, { fullPath }) => 
 
 ipcMain.handle('open-google-workspace-window', async (event, { url }) => {
   const parent = BrowserWindow.fromWebContents(event.sender);
-  return openGoogleWorkspaceEditorWindow(parent, url);
+  return openWebEditorWindow(parent, url, 'googleWorkspace');
 });
 
 ipcMain.handle('open-url-default-browser', async (_event, { url }) => {
@@ -3908,6 +3955,17 @@ async function startLocalGmist() {
 }
 
 ipcMain.handle('start-local-gmist', async () => startLocalGmist());
+
+/**
+ * Markdown opens in a TagFox child window rather than the default browser (August 2026), the same
+ * framed BrowserView window Google Docs use. Local gmist only: it needs no sign-in, so the window's
+ * own cookie jar costs nothing. The online worker still goes to the browser, where Steve's gmist
+ * session lives.
+ */
+ipcMain.handle('open-gmist-window', async (event, { url }) => {
+  const parent = BrowserWindow.fromWebContents(event.sender);
+  return openWebEditorWindow(parent, url, 'gmistLocal');
+});
 
 /** Read-only sign-of-life: proves OAuth token works with Drive API (does not open browser or run consent). */
 ipcMain.handle('google-drive-api-ping', async () => {
@@ -4296,7 +4354,7 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
               return;
             }
             const parent = BrowserWindow.fromWebContents(event.sender);
-            const r = openGoogleWorkspaceEditorWindow(parent, u);
+            const r = openWebEditorWindow(parent, u, 'googleWorkspace');
             if (!r.ok) {
               event.sender.send('shell-action-error', r.error || 'Could not open Google Workspace window.');
               done({ ok: false, action: 'openGoogleWorkspace', error: r.error || 'Open failed' });
@@ -4340,7 +4398,7 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
               return;
             }
             const parent = BrowserWindow.fromWebContents(event.sender);
-            const winR = openGoogleWorkspaceEditorWindow(parent, u);
+            const winR = openWebEditorWindow(parent, u, 'googleWorkspace');
             if (!winR.ok) {
               event.sender.send('shell-action-error', winR.error || 'Could not open Google Workspace window.');
               done({ ok: false, action: 'createGoogleDocHere', error: winR.error || 'Open failed' });

@@ -49,6 +49,8 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   probeLocalGmist: (payload) => ipcRenderer.invoke('probe-local-gmist', payload),
   /** Start a local gmist (`npm run dev:local`, detached) and wait for it to answer. */
   startLocalGmist: () => ipcRenderer.invoke('start-local-gmist'),
+  /** Open a local gmist URL in a TagFox child window (localhost only), like the Google Workspace window. */
+  openGmistWindow: (payload) => ipcRenderer.invoke('open-gmist-window', payload),
   /** Hello-world: Drive API about.get + one files.list row (existing token only; no OAuth popup). */
   googleDriveApiPing: () => ipcRenderer.invoke('google-drive-api-ping'),
   resolveFolderViewerDoc: (payload) => ipcRenderer.invoke('resolve-folder-viewer-doc', payload),
