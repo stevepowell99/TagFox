@@ -26,7 +26,7 @@ guard:
 ## Running
 
 ```
-npm test                      # whole suite (smoke + tab-lifecycle + tab-isolation + load-more + column-resize + 3 fuzz seeds)
+npm test                      # whole suite (smoke + tab-lifecycle + tab-isolation + load-more + column-resize + refresh-visible + 3 fuzz seeds)
 npm run test:smoke            # readable walkthrough of the main flows
 npm run test:tabs             # tab lifecycle: open/close/cap/cycle/reorder/spring-hover
 npm run test:loadmore         # focused load-more / tab-state regression
@@ -52,6 +52,7 @@ runs are unaffected: `main.js` only skips `show()` when that env var is set.
 | `crud-pane-isolation.cjs` | A delete in the active tab must leave another tab's stored rows untouched (cross-tab CRUD bleed). Guards the passive-inactive-tab rule. |
 | `loadmore-regression.cjs` | Loads two extra pages and checks the rows are stored on the active tab and rendered (the load-more desync bug). |
 | `column-resize.cjs` | Walks `elementFromPoint` across every visible header boundary, in flat and tree view, and requires the resize handle to be on top for most of a 15px window. Catches handles buried under the neighbouring sticky `th`, which leaves a divider half-dead and sends boundary clicks to that column's sort. |
+| `refresh-visible.cjs` | The header Refresh button exists and is wired. Every explicit refresh route (button, F5) writes a `Refreshed hh:mm:ss — N row(s), …` status. Guards the answer to "F5 sometimes does not refresh": a refresh that finds nothing new must still prove it ran. |
 | `fuzz.cjs` | Random bursts of actions (type, refresh, new/close/cycle tab, recency, view, scope, auto-refresh tick) with a structural check plus a consistency re-search after every burst. |
 | `run-all.cjs` | Runs the above in sequence and prints a pass/fail summary. |
 

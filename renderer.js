@@ -9658,6 +9658,28 @@
       return pathKeyLoose(fp);
     }
 
+    /** Local wall-clock hh:mm:ss for status lines: the stamp that shows a refresh really just ran. */
+    function clockTimeHms() {
+      const d = new Date();
+      const p = (n) => String(n).padStart(2, '0');
+      return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+    }
+
+    /** ", unchanged" / ", +3 new, -1 gone" against the row keys held before an explicit refresh. */
+    function refreshRowChangeSuffix(prevKeys) {
+      if (!prevKeys) return '';
+      const now = new Set(lastRows.map((r) => pathNormKey(fullPathForRow(r))).filter(Boolean));
+      let added = 0;
+      for (const k of now) if (!prevKeys.has(k)) added++;
+      let gone = 0;
+      for (const k of prevKeys) if (!now.has(k)) gone++;
+      if (!added && !gone) return ', unchanged';
+      const parts = [];
+      if (added) parts.push('+' + added + ' new');
+      if (gone) parts.push('-' + gone + ' gone');
+      return ', ' + parts.join(', ');
+    }
+
     /** Natural full-path sort key: separator replaced with \x00 so children always follow their parent (e.g. abc\file < abc2). */
     function pathSortKey(row) {
       return pathNormKey(fullPathForRow(row)).replace(/[/\\]/g, '\x00');
@@ -15080,7 +15102,15 @@
         options,
       });
 
-      setStatusMain(opts && opts.uiHint === 'f5' ? 'F5 — searching…' : 'Searching…');
+      /* An explicit refresh (F5 or the header button) that finds nothing new reads exactly like one that
+         never ran, which is what "F5 sometimes does not refresh" looks like from the outside. So a refresh
+         reports the clock time it finished and what changed, and the keys it started from are kept here. */
+      const explicitRefresh = !!(opts && opts.uiHint === 'f5');
+      const refreshPrevKeys = explicitRefresh
+        ? new Set(lastRows.map((r) => pathNormKey(fullPathForRow(r))).filter(Boolean))
+        : null;
+
+      setStatusMain(explicitRefresh ? 'Refreshing…' : 'Searching…');
 
       searchDebugLog('runSearch.branch', {
         runId,
@@ -15207,8 +15237,10 @@
             text = 'Big folder!';
           }
           setStatusSmartNote(text, pending ? pending.kind : 'warn');
-        } else if (opts && opts.uiHint === 'f5') {
-          setStatusMain('Refreshed (F5) — ' + lastRows.length + ' row(s).');
+        } else if (explicitRefresh) {
+          setStatusMain(
+            'Refreshed ' + clockTimeHms() + ' — ' + lastRows.length + ' row(s)' + refreshRowChangeSuffix(refreshPrevKeys) + '.'
+          );
         }
       }
       } finally {
@@ -16127,7 +16159,7 @@
     if (typeof window.tagBrowser.setPlainF5SearchRefreshHandler === 'function') {
       window.tagBrowser.setPlainF5SearchRefreshHandler(() => {
         searchDebugLog('searchRefresh.f5.renderer', { step: 'beforeRunSearchNow', eventKind: 'refresh' });
-        void runSearchNow('refresh', { uiHint: 'f5' });
+        void refreshResultsFromUi();
       });
     }
     if (typeof window.tagBrowser.setAppRestartHintHandler === 'function') {
@@ -16258,6 +16290,19 @@
     /** On load / window focus — query only. */
     function focusSearchBox() {
       focusQueryBox(false);
+    }
+
+    /** The one explicit-refresh path: F5 (either route) and the header Refresh button. Spins the button
+        while the search runs, so a refresh that finds nothing new still shows it happened. */
+    async function refreshResultsFromUi() {
+      const btn = document.getElementById('btnRefreshResults');
+      const icon = btn?.querySelector('i');
+      icon?.classList.add('fa-spin');
+      try {
+        await runSearchNow('refresh', { uiHint: 'f5' });
+      } finally {
+        icon?.classList.remove('fa-spin');
+      }
     }
 
     /** After programmatic list selection: move keyboard focus off stray buttons onto the results region. */
@@ -17351,7 +17396,9 @@
       if (e.key === 'F5') {
         if (blockAppShortcutInTextField(e.target)) return;
         e.preventDefault();
-        void runSearchNow('refresh');
+        /* Same reporting as the main-process F5 route and the button: a silent refresh here was one of the
+           ways "F5 did nothing" could be true on screen while the search had in fact run. */
+        void refreshResultsFromUi();
         return;
       }
       if (e.key === 'F2') {
@@ -17746,6 +17793,9 @@
     document.getElementById('btnSearchHistBack').addEventListener('click', () => void goSearchHistory(-1));
     document.getElementById('btnSearchHistFwd').addEventListener('click', () => void goSearchHistory(1));
     document.getElementById('btnUndo')?.addEventListener('click', () => void runUndo());
+    /* Same action as F5, on a button, because F5 only arrives when the page holds OS keyboard focus and
+       Steve loses that often enough to report refreshes that never happened. A click always lands. */
+    document.getElementById('btnRefreshResults')?.addEventListener('click', () => void refreshResultsFromUi());
     updateUndoButton();
     renderScopeBreadcrumb();
     bindResultsTableDragDrop();
@@ -18001,7 +18051,7 @@
       };
       window.__tagfoxTest = {
         runSearchNow: (kind, opts) => runSearchNow(kind, opts),
-        refreshNow: () => runSearchNow('refresh', { uiHint: 'f5' }),
+        refreshNow: () => refreshResultsFromUi(),
         scheduleSearch: (kind) => scheduleSearch(kind),
         setQuery: (q) => {
           const el = document.getElementById('query');

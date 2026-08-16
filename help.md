@@ -238,7 +238,7 @@ Things that might trip you up:
 <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
 <tr><td><kbd>/</kbd> / <kbd>Ctrl</kbd>+<kbd>U</kbd></td><td>Focus / unfocus search</td></tr>
 <tr><td><kbd>Esc</kbd></td><td>Close Viewer / flyouts, or clear query / current folder</td></tr>
-<tr><td><kbd>F5</kbd></td><td>Refresh results</td></tr>
+<tr><td><kbd>F5</kbd></td><td>Refresh results (or the <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> button in the header, which works even when the keyboard focus has slipped off the page). The status line then reports the time it ran and whether anything changed.</td></tr>
 <tr><td><kbd>i</kbd> / <kbd>Ctrl</kbd>+<kbd>I</kbd></td><td>Cycle layout</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd></td><td>Reset to Smart view defaults (subfolders on, files + folders; not Flat), plus clear tag filters, recency <strong>All</strong>, whole word off</td></tr>
 <tr><td><kbd>w</kbd> / <kbd>Ctrl</kbd>+<kbd>W</kbd></td><td>Toggle whole word</td></tr>
