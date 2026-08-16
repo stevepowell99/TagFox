@@ -113,4 +113,6 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   },
   pickScopeFolder: () => ipcRenderer.invoke('pick-scope-folder'),
   userHomeDir: () => ipcRenderer.invoke('user-home-dir'),
+  /** Renderer-side jank lines into the main perf log (%TEMP%\tagfox-mainperf.log); rate-capped in main. */
+  perfLog: (line) => ipcRenderer.send('tagfox-perf-log', String(line || '')),
 });

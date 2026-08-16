@@ -13,6 +13,20 @@ const {
   screen,
 } = require('electron');
 
+/* Chromium demotes a window's renderer to background mode whenever that window is hidden OR merely
+   covered by another window (native occlusion). On Windows that means PROCESS_MODE_BACKGROUND_BEGIN:
+   Idle priority class, lowest I/O and memory priority, working set trimmed. Measured here: both TagFox
+   renderers sit at PriorityClass=Idle the whole time the window is covered, while every other app on the
+   machine stays normal. TagFox is summoned by a hotkey and typed into immediately, so the first thing it
+   must do after a raise is exactly the work an Idle-priority, trimmed process is worst at, which is how a
+   raise came to cost 3-7s to first paint (%TEMP%\tagfox-mainperf.log, August 2026) against ~50ms warm.
+   Autostart (3 August) made that the normal case rather than the exception, since TagFox now sits covered
+   for days instead of being started when wanted.
+   Keep the renderer at normal priority; the cost is ~100MB kept resident while TagFox is not on screen.
+   Assert it rather than trust the switch name: with this on, PriorityClass must read Normal for the
+   renderer processes while the window is hidden or covered. */
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+
 // Dev: reload renderer / restart main when project files change (no manual npm start).
 if (!app.isPackaged) {
   /* Polling only on a synced mount (OneDrive / Google Drive), where native fs.watch often never fires.
@@ -42,6 +56,36 @@ function mainPerfLog(line) {
     fssync.appendFileSync(MAIN_PERF_LOG, new Date().toISOString() + ' ' + line + '\n');
   } catch (_) {}
 }
+/* Name the slow channel rather than leaving a main-loop stall to be guessed at: every IPC handler is
+   timed, and one that runs long enough to be felt says which one it was. A sync handler (ipcRenderer
+   .sendSync) blocks the renderer for its whole duration, so it logs at a lower bar than an async one. */
+const IPC_SLOW_MS = 500;
+const IPC_SYNC_SLOW_MS = 100;
+{
+  const origHandle = ipcMain.handle.bind(ipcMain);
+  ipcMain.handle = (channel, fn) =>
+    origHandle(channel, async (...args) => {
+      const t0 = Date.now();
+      try {
+        return await fn(...args);
+      } finally {
+        const ms = Date.now() - t0;
+        if (ms >= IPC_SLOW_MS) mainPerfLog('ipc ' + channel + ' ' + ms + 'ms');
+      }
+    });
+  const origOn = ipcMain.on.bind(ipcMain);
+  ipcMain.on = (channel, fn) =>
+    origOn(channel, (...args) => {
+      const t0 = Date.now();
+      try {
+        return fn(...args);
+      } finally {
+        const ms = Date.now() - t0;
+        if (ms >= IPC_SYNC_SLOW_MS) mainPerfLog('ipc-sync ' + channel + ' ' + ms + 'ms');
+      }
+    });
+}
+
 const { drive: createDriveClient } = require('@googleapis/drive');
 const { OAuth2Client } = require('google-auth-library');
 const MsgReader = require('@kenjiuno/msgreader').default;
@@ -2230,17 +2274,51 @@ function toggleMainWindowFromGlobalShortcut() {
        so time raise → two animation frames in the renderer, and note how long it had been away. */
     const t0 = Date.now();
     const away = lastHiddenAt ? t0 - lastHiddenAt : 0;
+    const wasVisible = w.isVisible();
+    const wasMin = w.isMinimized();
+    /* Working set + CPU across the raise. A slow raise that faults ~100MB back in while burning almost
+       no CPU is the OS paging the process in; a slow raise that burns CPU is work we are doing. */
+    const metricsNow = () => {
+      const out = { ws: {}, cpu: {} };
+      try {
+        for (const m of app.getAppMetrics()) {
+          const kind = m.type === 'Tab' ? 'rend' + m.pid : m.type;
+          out.ws[kind] = Math.round((m.memory?.workingSetSize || 0) / 1024);
+          out.cpu[kind] = m.cpu?.cumulativeCPUUsage || 0;
+        }
+      } catch (_) {}
+      return out;
+    };
+    const m0 = metricsNow();
     if (w.isMinimized()) w.restore();
+    const tRestore = Date.now();
     w.show();
+    const tShow = Date.now();
     w.focus();
     const shown = Date.now() - t0;
+    /* Two probes, so a slow raise says which half is slow: a bare executeJavaScript measures the
+       IPC round trip plus renderer main-thread availability; the rAF pair adds compositor paint. */
     w.webContents
-      .executeJavaScript('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(1))))')
-      .then(() =>
-        mainPerfLog(
-          'raise show=' + shown + 'ms to-paint=' + (Date.now() - t0) + 'ms away=' + Math.round(away / 1000) + 's'
-        )
-      )
+      .executeJavaScript('1')
+      .then(() => {
+        const rt = Date.now() - t0;
+        return w.webContents
+          .executeJavaScript('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(1))))')
+          .then(() => {
+            const m1 = metricsNow();
+            const deltas = Object.keys(m1.ws)
+              .map((k) => {
+                const cpuMs = Math.round(((m1.cpu[k] || 0) - (m0.cpu[k] || 0)) * 1000);
+                return k + '=' + (m0.ws[k] || 0) + '→' + (m1.ws[k] || 0) + 'MB/' + cpuMs + 'ms';
+              })
+              .join(' ');
+            mainPerfLog(
+              'raise show=' + shown + 'ms (restore=' + (tRestore - t0) + ' show=' + (tShow - tRestore) +
+                ') js=' + rt + 'ms to-paint=' + (Date.now() - t0) + 'ms away=' + Math.round(away / 1000) +
+                's vis=' + (wasVisible ? 1 : 0) + ' min=' + (wasMin ? 1 : 0) + ' | ' + deltas
+            );
+          });
+      })
       .catch(() => {});
   }
 }
@@ -2340,6 +2418,10 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      /* Same reason as disable-renderer-backgrounding above: a hidden window's timers are otherwise
+         throttled to 1Hz and then to 1/min, so the first tick after a raise can be a second late. The
+         app's own timers already check document.hidden, so nothing starts doing work while hidden. */
+      backgroundThrottling: false,
     },
   });
   mainWindowRef = win;
@@ -2672,6 +2754,21 @@ ipcMain.handle('quick-todo-hotkey-get', () => ({
 
 ipcMain.handle('quick-todo-hotkey-set', (_event, accel) => registerQuickTodoShortcut(accel));
 
+/* Renderer-side jank (long tasks, event-loop lag, keystroke latency) into the same log as the main-side
+   probes, so one file tells the whole story of a slow raise. Rate-capped: a renderer stuck in a loop must
+   not be able to fill the disk through this channel. */
+let rendPerfLogCount = 0;
+let rendPerfLogMinute = 0;
+ipcMain.on('tagfox-perf-log', (_event, line) => {
+  const minute = Math.floor(Date.now() / 60000);
+  if (minute !== rendPerfLogMinute) {
+    rendPerfLogMinute = minute;
+    rendPerfLogCount = 0;
+  }
+  if (++rendPerfLogCount > 60) return;
+  mainPerfLog('rend ' + String(line || '').slice(0, 300));
+});
+
 ipcMain.on('tag-prefs-read-sync', (event) => {
   try {
     const p = tagBrowserTagPrefsPath();
@@ -2700,6 +2797,7 @@ ipcMain.handle('tag-prefs-write', async (_e, payload) => {
 });
 
 ipcMain.handle('everything-search', async (_event, payload) => {
+  const tStart = Date.now();
   const { baseUrl, searchText, httpUser, httpPassword, count, options } = payload;
   const settingsBase = String(baseUrl || '').trim();
   const url = everythingSearchUrl(baseUrl, searchText, count, options);
@@ -2738,7 +2836,9 @@ ipcMain.handle('everything-search', async (_event, payload) => {
       },
     };
   }
+  const tFetched = Date.now();
   const text = await res.text();
+  const tText = Date.now();
   let data;
   try {
     data = JSON.parse(text);
@@ -2758,7 +2858,17 @@ ipcMain.handle('everything-search', async (_event, payload) => {
       },
     };
   }
-  return { ok: true, rows: rowsFromEverythingJson(data) };
+  const tParsed = Date.now();
+  const rows = rowsFromEverythingJson(data);
+  const total = Date.now() - tStart;
+  if (total >= 800) {
+    mainPerfLog(
+      'everything-search ' + total + 'ms fetch=' + (tFetched - tStart) + ' body=' + (tText - tFetched) +
+        ' parse=' + (tParsed - tText) + ' bytes=' + text.length + ' rows=' + rows.length +
+        ' count=' + count + ' q=' + JSON.stringify(String(searchText || '').slice(0, 80))
+    );
+  }
+  return { ok: true, rows };
 });
 
 ipcMain.handle('open-path', async (_event, fullPath) => {

@@ -11704,7 +11704,8 @@
         if (ms >= PERF_SLOW_MS) searchDebugLog('perf.slow', { label, ms, ...(meta || {}) });
       }
     }
-    /** Log any renderer main-thread long task (jank), e.g. a big sort or full table re-render, to the debug buffer. */
+    /** One long-task observer (jank: a big sort, a full table re-render): the debug buffer gets every one,
+        the perf log only those long enough to be felt, so a slow raise can be read without debug on. */
     function installLongTaskMonitor() {
       if (typeof PerformanceObserver !== 'function') return;
       try {
@@ -11712,10 +11713,52 @@
           for (const e of list.getEntries()) {
             const ms = Math.round(e.duration);
             if (ms >= PERF_SLOW_MS) searchDebugLog('perf.longtask', { ms });
+            if (ms >= 500) {
+              try {
+                window.tagBrowser?.perfLog?.('longtask ' + ms + 'ms');
+              } catch (_) {}
+            }
           }
         });
         obs.observe({ entryTypes: ['longtask'] });
       } catch (_) {}
+    }
+
+    /* The symptom Steve reports is renderer-side ("the search box will not take a keystroke for
+       seconds"), and main cannot see it, so the renderer reports its own jank into the same perf log:
+       event-loop lag, long tasks, when the page went hidden, and how long a keystroke took to paint.
+       Thresholds are set so an ordinary session writes nothing. */
+    function installRendererPerfProbe() {
+      const log = (line) => {
+        try {
+          window.tagBrowser?.perfLog?.(line);
+        } catch (_) {}
+      };
+      let last = performance.now();
+      setInterval(() => {
+        const now = performance.now();
+        const drift = Math.round(now - last - 250);
+        last = now;
+        /* A hidden window is throttled by design, so only visible-time lag is signal. */
+        if (drift > 750 && !document.hidden) log('lag ' + drift + 'ms foc=' + (document.hasFocus() ? 1 : 0));
+      }, 250);
+      /* Long tasks come from installLongTaskMonitor, which owns the one observer. */
+      /* Two lines per hide/show cycle, and the raise line is only readable against them. */
+      document.addEventListener('visibilitychange', () =>
+        log('vis=' + document.visibilityState + ' foc=' + (document.hasFocus() ? 1 : 0))
+      );
+      const q = document.getElementById('query');
+      if (q) {
+        q.addEventListener('keydown', (e) => {
+          const t0 = performance.now();
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => {
+              const ms = Math.round(performance.now() - t0);
+              if (ms >= 250) log('key ' + JSON.stringify(e.key) + ' to-paint=' + ms + 'ms');
+            })
+          );
+        });
+      }
     }
 
     function searchDebugFormatConsoleArgs(args) {
@@ -17897,6 +17940,7 @@
     bindFolderPathDropTargetBarsOnce();
     bindScopeFolderDropdownDragCaptureOnce();
     installLongTaskMonitor();
+    installRendererPerfProbe();
     renderFavFoldersBar();
     renderFavSearchesBar();
     renderTagBar();
