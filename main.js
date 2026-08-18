@@ -3901,18 +3901,45 @@ ipcMain.handle('open-url-default-browser', async (_event, { url }) => {
  */
 const LOCAL_GMIST_BASE_URL = 'http://localhost:5173';
 
-async function probeLocalGmistOnce(baseUrl, timeoutMs) {
+/**
+ * Loopback has two addresses and a dev server may bind only one: vite binds [::1] here, while the
+ * main process's fetch resolves localhost to a single address and never retries the other. Probing
+ * one of them therefore reported a running gmist as down, and the pen then tried to start a second
+ * one, which died on the sidecar port it was already holding (18 August 2026). So probe both.
+ */
+function loopbackProbeOrigins(baseUrl) {
   const base = String(baseUrl || LOCAL_GMIST_BASE_URL).replace(/\/$/, '');
   try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), timeoutMs || 600);
-    // The /go launcher route is a stable, cheap local-only surface.
-    const res = await fetch(base + '/go', { method: 'HEAD', signal: ctrl.signal, redirect: 'manual' });
-    clearTimeout(t);
-    return res.status > 0;
-  } catch {
-    return false;
-  }
+    const u = new URL(base);
+    if (u.hostname === 'localhost') {
+      return ['127.0.0.1', '[::1]'].map((h) => {
+        const v = new URL(base);
+        v.hostname = h;
+        return v.origin;
+      });
+    }
+  } catch (_) {}
+  return [base];
+}
+
+async function probeLocalGmistOnce(baseUrl, timeoutMs) {
+  const ms = timeoutMs || 600;
+  /* Both addresses at once, so two candidates cost one timeout rather than two. */
+  const results = await Promise.all(
+    loopbackProbeOrigins(baseUrl).map(async (origin) => {
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), ms);
+        // The /go launcher route is a stable, cheap local-only surface.
+        const res = await fetch(origin + '/go', { method: 'HEAD', signal: ctrl.signal, redirect: 'manual' });
+        clearTimeout(t);
+        return res.status > 0;
+      } catch {
+        return false;
+      }
+    })
+  );
+  return results.some(Boolean);
 }
 
 ipcMain.handle('probe-local-gmist', async (_event, { baseUrl } = {}) => ({
@@ -3971,11 +3998,49 @@ function localGmistLogTail(logPath, maxChars) {
   }
 }
 
+/** Windows: PIDs listening on these ports, so a failed start can name what is in the way. */
+function listenerPidsOnPorts(ports) {
+  if (process.platform !== 'win32') return [];
+  try {
+    /* Plain -ano, never -p tcp: that flag lists IPv4 only, and the vite dev server binds [::1] here. */
+    const out = execFileSync('netstat', ['-ano'], { encoding: 'utf8', timeout: 4000 });
+    const pids = new Set();
+    for (const line of out.split(/\r?\n/)) {
+      if (!/LISTENING/i.test(line)) continue;
+      const m = line.match(/:(\d+)\s+\S+\s+LISTENING\s+(\d+)/i);
+      if (m && ports.includes(Number(m[1]))) pids.add(Number(m[2]));
+    }
+    return [...pids];
+  } catch (_) {
+    return [];
+  }
+}
+
+/** The ports local gmist needs: the dev server and the localfs sidecar it owns. */
+const LOCAL_GMIST_PORTS = [5173, 5199];
+
+/** What is in the way, in words Steve can act on without going looking for the PID himself. */
+function localGmistPortHolderHint() {
+  const pids = listenerPidsOnPorts(LOCAL_GMIST_PORTS);
+  if (!pids.length) return '';
+  return (
+    'Something is already listening on ' + LOCAL_GMIST_PORTS.join('/') + ' (PID ' + pids.join(', ') + '). ' +
+    'Stop it with: taskkill /PID ' + pids.join(' /PID ') + ' /F'
+  );
+}
+
 let localGmistStartInFlight = null;
 
 async function startLocalGmist() {
   if (await probeLocalGmistOnce(LOCAL_GMIST_BASE_URL, 600)) {
     return { ok: true, up: true, alreadyRunning: true };
+  }
+  /* A second, patient look before spending up to 150s on a start that cannot work. The dev server
+     is a node process that may have sat idle for hours, and a slow answer is not the same as no
+     answer: treating it as down is what produced "dev:local exited straight away (code 1)" on a
+     gmist that had been running since lunchtime, because its own sidecar still held port 5199. */
+  if (await probeLocalGmistOnce(LOCAL_GMIST_BASE_URL, 5000)) {
+    return { ok: true, up: true, alreadyRunning: true, slowProbe: true };
   }
   if (localGmistStartInFlight) return localGmistStartInFlight;
   localGmistStartInFlight = (async () => {
@@ -4040,7 +4105,15 @@ async function startLocalGmist() {
       /* An early exit is the common failure (a stale localfs sidecar still holding its port), so
          say so at once rather than waiting out the timeout on a process that is already gone. */
       if (exitReason) {
-        return { ok: false, up: false, repoDir, logPath, error: [exitReason, localGmistLogTail(logPath)].filter(Boolean).join('. ') };
+        return {
+          ok: false,
+          up: false,
+          repoDir,
+          logPath,
+          error: [exitReason, localGmistLogTail(logPath), localGmistPortHolderHint()]
+            .filter(Boolean)
+            .join('. '),
+        };
       }
       await new Promise((r) => setTimeout(r, LOCAL_GMIST_POLL_MS));
     }
@@ -4052,6 +4125,7 @@ async function startLocalGmist() {
       error: [
         'Local gmist did not answer on ' + LOCAL_GMIST_BASE_URL + ' within ' + Math.round(LOCAL_GMIST_START_TIMEOUT_MS / 1000) + 's',
         localGmistLogTail(logPath),
+        localGmistPortHolderHint(),
       ]
         .filter(Boolean)
         .join('. '),
