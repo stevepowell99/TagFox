@@ -62,6 +62,10 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   /** Windows: file targets from shell Recent (.lnk), newest first (empty on other OS). */
   windowsRecentFiles: () => ipcRenderer.invoke('windows-recent-files'),
   showItemActionsMenu: (payload) => ipcRenderer.invoke('show-item-actions-menu', payload),
+  /** Profile picker for Print to PDF (markdown rows); resolves { ok, profile } or { ok, dismissed }. */
+  showPrintPdfMenu: (payload) => ipcRenderer.invoke('show-print-pdf-menu', payload),
+  /** Render a markdown file to a sibling PDF via JobCat's make_pdf.py (slow: seconds, not ms). */
+  makePdfFromMarkdown: (payload) => ipcRenderer.invoke('make-pdf-from-markdown', payload),
   clipboardWriteText: (text) => ipcRenderer.invoke('clipboard-write-text', text),
   copyExplorerPaste: (paths) => ipcRenderer.invoke('copy-explorer-paste', paths),
   cutExplorerPaste: (paths) => ipcRenderer.invoke('cut-explorer-paste', paths),

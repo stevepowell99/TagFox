@@ -4066,6 +4066,227 @@ async function startLocalGmist() {
 
 ipcMain.handle('start-local-gmist', async () => startLocalGmist());
 
+/* Markdown -> PDF -----------------------------------------------------------
+   JobCat's make_pdf.py is our markdown-to-PDF renderer (Chromium print-to-PDF through Playwright,
+   a cover page carrying the contents list, logo and footer branding), so TagFox calls that script
+   rather than growing a second renderer and a second house style. JobCat's own CLAUDE.md section 4
+   is canonical for the flags; keep the profiles below matching it.
+   make_pdf.py does not embed body images, so a markdown file whose pictures matter still wants
+   Quarto or the garden PDF route. */
+const PRINT_PDF_PROFILES = [
+  { key: 'plain', label: 'Plain (no cover, contents or branding)', args: ['--type', 'none'] },
+  { key: 'cm', label: 'Causal Map branded (cover + contents)', args: ['--type', 'cm'] },
+  {
+    key: 'steve',
+    label: 'Steve Powell branded (cover + contents)',
+    args: ['--type', 'steve', '--no-cover-brand', '--footer-mode', 'plain'],
+  },
+];
+
+const MAKE_PDF_TIMEOUT_MS = 240000;
+
+function makePdfPrefsPath() {
+  return path.join(app.getPath('userData'), 'tagfox-make-pdf.json');
+}
+
+function makePdfLogPath() {
+  const dir = process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'TagFox') : app.getPath('userData');
+  return path.join(dir, 'make-pdf.log');
+}
+
+/** The JobCat checkout: an explicit override, else the Drive copy (built from the home folder, not
+ *  hardcoded to one user), else a sibling or C:\dev clone. Each candidate must carry make_pdf.py. */
+function findMakePdfScript() {
+  const candidates = [];
+  try {
+    const j = JSON.parse(fssync.readFileSync(makePdfPrefsPath(), 'utf8'));
+    if (j && typeof j.jobcatDir === 'string' && j.jobcatDir.trim()) candidates.push(j.jobcatDir.trim());
+  } catch (_) {}
+  candidates.push(
+    path.join(
+      os.homedir(),
+      'My Drive (hello@causalmap.app)',
+      'Causal Map',
+      '20-29 Platforms and Documentation',
+      '20 all platforms',
+      'JobCat'
+    )
+  );
+  candidates.push(path.resolve(__dirname, '..', 'JobCat'));
+  if (process.platform === 'win32') candidates.push('C:\\dev\\JobCat');
+  for (const dir of candidates) {
+    const script = path.join(dir, 'make_pdf.py');
+    try {
+      if (fssync.statSync(script).isFile()) return { dir, script };
+    } catch (_) {}
+  }
+  return null;
+}
+
+/** A real interpreter before a bare `python`: on Windows the PATH entry is often the WindowsApps
+ *  stub, which opens the Store and exits without running anything. */
+function findPythonExe() {
+  const candidates = [];
+  if (process.env.TAGFOX_PYTHON) candidates.push(process.env.TAGFOX_PYTHON);
+  const la = process.env.LOCALAPPDATA;
+  if (la) {
+    const progs = path.join(la, 'Programs', 'Python');
+    try {
+      const dirs = fssync
+        .readdirSync(progs)
+        .filter((d) => /^Python3/i.test(d))
+        .sort()
+        .reverse();
+      for (const d of dirs) candidates.push(path.join(progs, d, 'python.exe'));
+    } catch (_) {}
+  }
+  for (const c of candidates) {
+    try {
+      if (fssync.statSync(c).isFile()) return c;
+    } catch (_) {}
+  }
+  return 'python';
+}
+
+/** make_pdf.py writes .front.tmp.pdf / .content.tmp.pdf beside the output and can leave them on error. */
+function cleanMakePdfTempSiblings(outPath) {
+  const base = outPath.replace(/\.pdf$/i, '');
+  for (const suffix of ['.front.tmp.pdf', '.content.tmp.pdf']) {
+    try {
+      fssync.unlinkSync(base + suffix);
+    } catch (_) {}
+  }
+}
+
+/**
+ * Render one markdown file to a sibling PDF. Returns { ok:true, outputPath } or { ok:false, error },
+ * or { ok:false, exists:true, outputPath } when a PDF of that name is already there and overwrite
+ * was not asked for, so the caller confirms rather than this replacing a file it did not write.
+ */
+async function makePdfFromMarkdown({ filePath, profile, overwrite } = {}) {
+  const fp = path.normalize(String(filePath || '').trim());
+  if (!fp || !isMarkdownFilePath(fp)) return { ok: false, error: 'Print to PDF: not a markdown file.' };
+  try {
+    if (!fssync.statSync(fp).isFile()) return { ok: false, error: 'Print to PDF: file not found.' };
+  } catch (_) {
+    return { ok: false, error: 'Print to PDF: file not found.' };
+  }
+  const prof = PRINT_PDF_PROFILES.find((p) => p.key === String(profile || '')) || PRINT_PDF_PROFILES[0];
+  const found = findMakePdfScript();
+  if (!found) {
+    return {
+      ok: false,
+      error:
+        'Could not find JobCat make_pdf.py. Set the folder in ' +
+        makePdfPrefsPath() +
+        ' as {"jobcatDir": "C:\\\\path\\\\to\\\\JobCat"}.',
+    };
+  }
+  const outPath = path.join(path.dirname(fp), path.basename(fp, path.extname(fp)) + '.pdf');
+  if (!overwrite) {
+    try {
+      if (fssync.statSync(outPath).isFile()) return { ok: false, exists: true, outputPath: outPath };
+    } catch (_) {}
+  }
+  const py = findPythonExe();
+  const args = [found.script, '--input', fp, '--output', outPath, ...prof.args];
+  const logPath = makePdfLogPath();
+  return await new Promise((resolve) => {
+    let settled = false;
+    const finish = (v) => {
+      if (settled) return;
+      settled = true;
+      cleanMakePdfTempSiblings(outPath);
+      resolve(v);
+    };
+    let child = null;
+    let out = '';
+    try {
+      /* No shell: argv keeps the spaces in the Drive path and in the file name intact. cwd is the
+         JobCat folder because make_pdf.py resolves its logo (img/...) against the working folder. */
+      child = spawn(py, args, { cwd: found.dir, windowsHide: true });
+    } catch (e) {
+      finish({ ok: false, error: 'Could not start python (' + py + '): ' + String((e && e.message) || e) });
+      return;
+    }
+    const cap = (b) => {
+      out += String(b);
+      if (out.length > 20000) out = out.slice(-20000);
+    };
+    child.stdout.on('data', cap);
+    child.stderr.on('data', cap);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try {
+        child.kill();
+      } catch (_) {}
+    }, MAKE_PDF_TIMEOUT_MS);
+    child.on('error', (e) => {
+      clearTimeout(timer);
+      finish({ ok: false, error: 'Could not start python (' + py + '): ' + String((e && e.message) || e) });
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      try {
+        fssync.mkdirSync(path.dirname(logPath), { recursive: true });
+        fssync.appendFileSync(
+          logPath,
+          '\n=== ' + new Date().toISOString() + ' ' + py + ' make_pdf.py --type ' + prof.key + '\n' +
+            'input: ' + fp + '\noutput: ' + outPath + '\nexit: ' + (timedOut ? 'timeout' : code) + '\n' + out + '\n'
+        );
+      } catch (_) {}
+      let wrote = false;
+      try {
+        wrote = fssync.statSync(outPath).size > 0;
+      } catch (_) {}
+      /* Exit 0 is not proof on its own: the check has to see the file, or a run that printed a
+         traceback and still returned 0 would report a PDF that is not there. */
+      if (!timedOut && code === 0 && wrote) {
+        finish({ ok: true, outputPath: outPath, profile: prof.key, logPath });
+        return;
+      }
+      const tail = out.split(/\r?\n/).filter(Boolean).slice(-4).join(' | ').slice(0, 600);
+      finish({
+        ok: false,
+        logPath,
+        error:
+          (timedOut
+            ? 'make_pdf.py timed out after ' + Math.round(MAKE_PDF_TIMEOUT_MS / 1000) + 's'
+            : 'make_pdf.py exited ' + code + (wrote ? '' : ' and wrote no PDF')) +
+          (tail ? '. ' + tail : '') +
+          '. Log: ' + logPath,
+      });
+    });
+  });
+}
+
+ipcMain.handle('make-pdf-from-markdown', async (_event, payload) => makePdfFromMarkdown(payload || {}));
+
+/** Profile picker for the row PDF button, so the icon does not have to guess branded vs plain. */
+ipcMain.handle('show-print-pdf-menu', async (event, { x, y } = {}) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  return await new Promise((resolve) => {
+    let settled = false;
+    const done = (v) => {
+      if (settled) return;
+      settled = true;
+      resolve(v);
+    };
+    const menu = Menu.buildFromTemplate([
+      { label: '--- PRINT TO PDF ---', enabled: false },
+      ...PRINT_PDF_PROFILES.map((p) => ({ label: p.label, click: () => done({ ok: true, profile: p.key }) })),
+    ]);
+    menu.popup({
+      window: win || undefined,
+      x: Math.round(Number(x) || 0),
+      y: Math.round(Number(y) || 0),
+      callback: () => done({ ok: true, dismissed: true }),
+    });
+  });
+});
+
+
 /**
  * Markdown opens in a TagFox child window rather than the default browser (August 2026), the same
  * framed BrowserView window Google Docs use. Local gmist only: it needs no sign-in, so the window's
@@ -4636,6 +4857,17 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
           },
         });
       }
+    }
+    /* Markdown only: JobCat's make_pdf.py renders it, and the profile is picked per click because
+       a personal note and a client proposal want different branding (see makePdfFromMarkdown). */
+    if (!isDir && isMarkdownFilePath(fp)) {
+      template.push({
+        label: 'Print to PDF',
+        submenu: PRINT_PDF_PROFILES.map((p) => ({
+          label: p.label,
+          click: () => done({ ok: true, action: 'printPdf', profile: p.key }),
+        })),
+      });
     }
     template.push(
       { type: 'separator' },

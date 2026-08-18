@@ -13372,6 +13372,50 @@
     }
 
     /** ⋯ menu + right-click row: same IPC menu (viewport coords for Menu.popup). */
+    /**
+     * Print one markdown row to a sibling PDF through JobCat's make_pdf.py (main process).
+     * The run takes seconds, so the status line says it started and then says what it wrote: a PDF
+     * appearing silently in a folder nobody is looking at is not a result the user can see.
+     */
+    async function printRowToPdf(fp, profile, opts) {
+      setStatusMain('Making PDF from ' + T.baseName(fp) + '…');
+      let res;
+      try {
+        res = await window.tagBrowser.makePdfFromMarkdown({
+          filePath: fp,
+          profile,
+          overwrite: Boolean(opts && opts.overwrite),
+        });
+      } catch (e) {
+        setStatusMain('Print to PDF failed: ' + String((e && e.message) || e));
+        return;
+      }
+      if (res && res.exists && !(opts && opts.overwrite)) {
+        /* Never replace a PDF we did not write: a downloaded report.pdf can sit beside report.md. */
+        if (!confirm(T.baseName(res.outputPath) + ' already exists. Overwrite it?')) {
+          setStatusMain('Print to PDF cancelled, ' + T.baseName(res.outputPath) + ' kept.');
+          return;
+        }
+        await printRowToPdf(fp, profile, { overwrite: true });
+        return;
+      }
+      if (!res || !res.ok) {
+        setStatusMain('Print to PDF failed: ' + ((res && res.error) || 'unknown error'));
+        return;
+      }
+      setStatusMain('PDF written: ' + T.baseName(res.outputPath));
+      void refreshAfterDiskMutation({ paths: [res.outputPath] });
+    }
+
+    /** Pick a PDF profile (plain / Causal Map / Steve) at the given point, then print. */
+    async function pickProfileAndPrintRowToPdf(fp, clientX, clientY) {
+      const pick = await window.tagBrowser.showPrintPdfMenu({
+        x: Math.round(clientX),
+        y: Math.round(clientY),
+      });
+      if (!pick || !pick.profile) return;
+      await printRowToPdf(fp, pick.profile);
+    }
     async function openResultsRowItemActionsMenu(fp, clientX, clientY, row) {
       const res = await window.tagBrowser.showItemActionsMenu({
         filePath: fp,
@@ -13389,7 +13433,8 @@
         const target =
           row && rowIsFolder(row) ? normalizeFolderPathForEverything(fullPathForRow(row)) : null;
         if (target) await applySearchScopeAndRefresh(target);
-      } else if (res && res.action === 'rename') void renameItemInteractive(fp);
+      } else if (res && res.action === 'printPdf') void printRowToPdf(fp, res.profile);
+      else if (res && res.action === 'rename') void renameItemInteractive(fp);
       else if (res && res.action === 'bulkRename') openBulkRenameModal();
       else if (res && res.action === 'trash') void refreshAfterDiskMutation({ paths: fp ? [fp] : [], trashed: true });
     }
@@ -13703,6 +13748,15 @@
           // Online: the deployed worker, only for a file under a Drive mount.
           if (pathUnderGoogleDrive(fp)) {
             gmistBtns.push(mkPen('fa-cloud', 'Open in gmist online (deployed, needs the file in Google Drive)', 'Open in gmist online', openRowInOnlineGmist));
+          }
+          /* Print to PDF: any markdown, on Drive or not. The click opens the profile picker rather
+             than guessing branded vs plain, the same per-click choice the two pens offer. */
+          {
+            const btnPdf = mkPen('fa-file-pdf', 'Print to PDF (JobCat make_pdf.py)', 'Print to PDF', async (p) => {
+              const rr = btnPdf.getBoundingClientRect();
+              await pickProfileAndPrintRowToPdf(p, rr.left, rr.bottom);
+            });
+            gmistBtns.push(btnPdf);
           }
         }
         // Google Workspace edit for Office / Google-native docs (never markdown).
