@@ -924,28 +924,40 @@ body > .offcanvas-backdrop.show {
   }
 }
 /* Draggable vertical panes */
+/* A splitter is a target you aim at, so it stays the size it looks: 6px of bar inside a 22px grab
+   band, and hover only lights it up. It used to scale to 2.3x on hover, which moved the thing under
+   the pointer as you arrived and shrank it again the moment a drag ran ahead of it. */
 .split-v {
   position: relative;
-  width: 4px;
+  width: 6px;
   flex-shrink: 0;
   cursor: col-resize;
   align-self: stretch;
   background: var(--bs-border-color);
   touch-action: none;
-  transform-origin: center;
-  transition: background 0.15s ease, transform 0.15s ease;
+  transition: background 0.12s ease;
 }
 .split-v::before {
   content: '';
   position: absolute;
   top: 0;
   bottom: 0;
-  left: -6px;
-  right: -6px;
+  left: -8px;
+  right: -8px;
 }
-.split-v:hover {
+.split-v:hover,
+.split-v.is-dragging {
   background: var(--tb-accent);
-  transform: scaleX(2.3);
+}
+/* Drag shield: a transparent layer over the whole window for the length of a splitter drag. The
+   Viewer holds iframes and the PDF preview runs in its own process, so a drag crossing one stops
+   delivering pointer moves to this document: the divider freezes, then jumps when the pointer comes
+   back. The shield keeps every hit test in this document. */
+.tagfox-split-drag-shield {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  background: transparent;
 }
 .split-v.d-none { display: none !important; width: 0 !important; }
 /* Splitter drag: pairs with rAF in bindVerticalSplitters — isolates viewer compositing while width changes. */

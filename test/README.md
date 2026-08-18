@@ -14,6 +14,7 @@ guard:
 - Tab lifecycle: open to the cap, refuse past it, close down to one (never zero), cycle with wraparound,
   reorder, and spring-hover activation.
 - Every visible results column divider can actually be grabbed with the mouse.
+- The Viewer splitter follows the pointer across the previews, stops where the layout stops it, and lets go.
 
 ## Prerequisites
 
@@ -26,7 +27,7 @@ guard:
 ## Running
 
 ```
-npm test                      # whole suite (smoke + tab-lifecycle + tab-isolation + load-more + column-resize + refresh-visible + 3 fuzz seeds)
+npm test                      # whole suite (smoke + tab-lifecycle + tab-isolation + load-more + column-resize + splitter-drag + refresh-visible + 3 fuzz seeds)
 npm run test:smoke            # readable walkthrough of the main flows
 npm run test:tabs             # tab lifecycle: open/close/cap/cycle/reorder/spring-hover
 npm run test:loadmore         # focused load-more / tab-state regression

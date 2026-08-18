@@ -214,6 +214,10 @@
     }
 
     let propsPanePx = 300;
+    const PROPS_PANE_MIN_PX = 200;
+    const PROPS_PANE_MAX_PX = 1600;
+    /* The results pane keeps this much whatever the Viewer asks for, so a drag cannot crush it. */
+    const RESULTS_PANE_MIN_PX = 320;
     let viewerDocSplitPct = 50;
     let viewerDocSplitPctTheater = 50;
     /** Favourites column width when expanded (px). Collapsed rail peek reuses this saved full width. */
@@ -2464,8 +2468,23 @@
       syncQueryGhostUi();
     }
 
+    /** Widest the Viewer may be right now: what is left of the results row after the results pane
+     *  keeps its minimum. Clamping here (rather than only at drag time) means a narrowed window
+     *  cannot leave a Viewer wider than the app, and widening it again restores the asked-for width. */
+    function maxPropsPaneWidthPx() {
+      const aside = document.getElementById('propsAside');
+      const results = document.querySelector('.results-viewer-wrap');
+      if (!aside || !results) return PROPS_PANE_MAX_PX;
+      /* The two panes share whatever those two widths add up to, wherever the divider sits, so read
+         them rather than the parent: the parent also holds the favourites column and the splitter. */
+      const shared = results.getBoundingClientRect().width + aside.getBoundingClientRect().width;
+      const room = Math.round(shared - RESULTS_PANE_MIN_PX);
+      return Math.max(PROPS_PANE_MIN_PX, Math.min(PROPS_PANE_MAX_PX, room));
+    }
+
     function applyPaneWidths() {
-      document.getElementById('propsAside').style.width = propsPanePx + 'px';
+      const w = Math.max(PROPS_PANE_MIN_PX, Math.min(maxPropsPaneWidthPx(), propsPanePx));
+      document.getElementById('propsAside').style.width = w + 'px';
     }
 
     function applyViewerDocSplitSizes() {
@@ -2671,7 +2690,7 @@
 
     function loadPaneWidthsFromStorage() {
       const pw = parseInt(localStorage.getItem(LS.propsWidthPx) || '', 10);
-      if (Number.isFinite(pw) && pw >= 200 && pw <= 1600) propsPanePx = pw;
+      if (Number.isFinite(pw) && pw >= PROPS_PANE_MIN_PX && pw <= PROPS_PANE_MAX_PX) propsPanePx = pw;
       applyPaneWidths();
     }
 
@@ -2679,15 +2698,50 @@
       localStorage.setItem(LS.propsWidthPx, String(propsPanePx));
     }
 
+    /**
+     * A transparent layer over the whole window for the length of a splitter drag, removed by the
+     * returned function. The Viewer holds iframes (the PDF preview runs in its own process), and a
+     * drag that crosses one stops delivering moves to this document, so the divider freezes and then
+     * jumps when the pointer comes back. The shield keeps every hit test here.
+     */
+    function addSplitDragShield(cursor) {
+      /* Never stack shields: one left behind would swallow every click in the app, so a new drag
+         clears any shield an earlier one failed to remove. */
+      document.querySelectorAll('.tagfox-split-drag-shield').forEach((el) => el.remove());
+      const shield = document.createElement('div');
+      shield.className = 'tagfox-split-drag-shield';
+      shield.style.cursor = cursor || 'col-resize';
+      document.body.appendChild(shield);
+      return () => {
+        try {
+          shield.remove();
+        } catch (_) {}
+      };
+    }
+
     function bindVerticalSplitters() {
-      const MIN_P = 200;
-      const MAX_P = 1600;
-      document.getElementById('splitProps').addEventListener('mousedown', (e) => {
+      const split = document.getElementById('splitProps');
+      if (!split) return;
+      window.addEventListener('resize', applyPaneWidths);
+      split.addEventListener('pointerdown', (e) => {
+        /* Left button only: any button used to start a drag that then ran until the next mouseup. */
+        if (e.button !== 0) return;
         e.preventDefault();
-        // One layout pass per frame: raw mousemove + PDF/office preview caused massive main-thread work.
+        // One layout pass per frame: raw moves + PDF/office preview caused massive main-thread work.
         document.body.classList.add('tagfox-props-split-drag');
+        split.classList.add('is-dragging');
+        const removeShield = addSplitDragShield('col-resize');
+        /* Capture as well as the shield: capture is what still delivers the moves and the release
+           when the pointer leaves the window, which otherwise leaves the drag live and the divider
+           following the pointer again the moment it comes back. */
+        try {
+          split.setPointerCapture(e.pointerId);
+        } catch (_) {}
         const startX = e.clientX;
         const startW = propsPanePx;
+        /* Measured once per drag: past this the panel stops growing, and counting past it would
+           buy dead travel that has to be dragged back before the divider moves again. */
+        const maxW = maxPropsPaneWidthPx();
         let raf = 0;
         function flushPaneWidth() {
           raf = 0;
@@ -2695,19 +2749,28 @@
         }
         function move(ev) {
           // Dragging the handle right widens the left (results) pane; inverted delta matches that motion.
-          propsPanePx = Math.min(MAX_P, Math.max(MIN_P, startW - (ev.clientX - startX)));
+          propsPanePx = Math.min(maxW, Math.max(PROPS_PANE_MIN_PX, startW - (ev.clientX - startX)));
           if (!raf) raf = requestAnimationFrame(flushPaneWidth);
         }
         function up() {
-          document.removeEventListener('mousemove', move);
-          document.removeEventListener('mouseup', up);
+          split.removeEventListener('pointermove', move);
+          split.removeEventListener('pointerup', up);
+          split.removeEventListener('pointercancel', up);
+          split.removeEventListener('lostpointercapture', up);
+          try {
+            split.releasePointerCapture(e.pointerId);
+          } catch (_) {}
+          removeShield();
           if (raf) cancelAnimationFrame(raf);
           flushPaneWidth();
+          split.classList.remove('is-dragging');
           document.body.classList.remove('tagfox-props-split-drag');
           persistPaneWidths();
         }
-        document.addEventListener('mousemove', move);
-        document.addEventListener('mouseup', up);
+        split.addEventListener('pointermove', move);
+        split.addEventListener('pointerup', up);
+        split.addEventListener('pointercancel', up);
+        split.addEventListener('lostpointercapture', up);
       });
     }
 
@@ -2724,6 +2787,7 @@
           const size = theater ? rect.width : rect.height;
           if (!Number.isFinite(size) || size <= 24) return;
           document.body.classList.add('tagfox-viewer-doc-split-drag');
+          const removeShield = addSplitDragShield(theater ? 'col-resize' : 'row-resize');
           let raf = 0;
           function flushViewerDocSplit() {
             raf = 0;
@@ -2739,6 +2803,7 @@
           function up() {
             document.removeEventListener('mousemove', move);
             document.removeEventListener('mouseup', up);
+            removeShield();
             if (raf) cancelAnimationFrame(raf);
             flushViewerDocSplit();
             document.body.classList.remove('tagfox-viewer-doc-split-drag');
@@ -2765,6 +2830,7 @@
         const startedCollapsed = !!favFoldersCollapsed;
         favFoldersColPx = Math.max(FAV_COL_MIN, favFoldersColPx);
         applyFavFoldersColumnWidth();
+        const removeShield = addSplitDragShield('col-resize');
         const startX = e.clientX;
         const startW = favFoldersColPx;
         let raf = 0;
@@ -2780,6 +2846,7 @@
         function up(ev) {
           document.removeEventListener('mousemove', move);
           document.removeEventListener('mouseup', up);
+          removeShield();
           if (raf) cancelAnimationFrame(raf);
           favFoldersSplitDragging = false;
           favFoldersCollapsed = startedCollapsed;

@@ -13,6 +13,7 @@ const runs = [
   { name: 'crud tab-isolation', args: ['crud-pane-isolation.cjs'] },
   { name: 'load-more regression', args: ['loadmore-regression.cjs'] },
   { name: 'column resize', args: ['column-resize.cjs'] },
+  { name: 'splitter drag', args: ['splitter-drag.cjs'] },
   { name: 'refresh visibility', args: ['refresh-visible.cjs'] },
   { name: 'fuzz seed 999', args: ['fuzz.cjs', '40', '999'] },
   { name: 'fuzz seed 7', args: ['fuzz.cjs', '40', '7'] },
