@@ -170,9 +170,9 @@ function isMarkdownFilePath(fullPath) {
 }
 
 /** Best-effort Drive file id from local path (Windows Drive-for-desktop). */
-function googleDriveFileIdForLocalPath(fullPath) {
+function googleDriveFileIdForLocalPath(fullPath, opts) {
   if (process.platform !== 'win32') return null;
-  return tryReadGoogleDriveVirtualFileIdWindowsSync(fullPath, null);
+  return tryReadGoogleDriveVirtualFileIdWindowsSync(fullPath, null, opts);
 }
 
 /** Extract Google Drive file id from common Docs/Drive URL shapes. */
@@ -195,8 +195,8 @@ function googleDriveFileIdFromUrl(u) {
 }
 
 /** Best-effort file-id resolver for a local row path. */
-async function resolveGoogleDriveFileIdForPath(fullPath) {
-  const id = googleDriveFileIdForLocalPath(fullPath);
+async function resolveGoogleDriveFileIdForPath(fullPath, opts) {
+  const id = googleDriveFileIdForLocalPath(fullPath, opts);
   if (id) return id;
   const ext = path.extname(String(fullPath || '')).toLowerCase();
   if (!['.gdoc', '.gsheet', '.gslides'].includes(ext)) return null;
@@ -204,6 +204,26 @@ async function resolveGoogleDriveFileIdForPath(fullPath) {
   if (!body || !body.ok) return null;
   const u = targetUrlFromGoogleDriveShortcut(fullPath, body.raw);
   return googleDriveFileIdFromUrl(u);
+}
+
+/* How many siblings are worth the spawning readers when the cheap pass found nothing. Small on
+   purpose: each one costs about 700ms here (measured), and one hit is all this needs. */
+const ADS_ESCALATION_BUDGET = 3;
+
+/* A folder whose siblings have already been escalated over, and found streamless, is not worth
+   another 2s of spawns on the next click. Mirror-mode Drive has no `:user.drive.id` streams at all,
+   so without this every click in such a folder pays the same 2s to learn the same thing. The TTL is
+   short so a folder that gains streamed content is retried soon rather than never. */
+const ADS_NO_STREAM_FOLDER_TTL_MS = 10 * 60 * 1000;
+const adsNoStreamFolders = new Map();
+function adsFolderKnownStreamless(folderPath) {
+  const at = adsNoStreamFolders.get(String(folderPath || ''));
+  if (!at) return false;
+  if (Date.now() - at > ADS_NO_STREAM_FOLDER_TTL_MS) {
+    adsNoStreamFolders.delete(String(folderPath || ''));
+    return false;
+  }
+  return true;
 }
 
 /** Infer a folder id by taking any child item with id and asking Drive for that item's parent. */
@@ -216,11 +236,7 @@ async function inferGoogleDriveFolderIdFromChildItems(folderPath, drive) {
   }
   if (!names.length) return { ok: false, reason: 'folder-empty-or-unreadable' };
   let sawChildId = false;
-  for (const name of names.slice(0, 80)) {
-    const childPath = path.join(folderPath, name);
-    const childId = await resolveGoogleDriveFileIdForPath(childPath);
-    if (!childId) continue;
-    sawChildId = true;
+  const askDriveForParent = async (childId) => {
     try {
       const rr = await drive.files.get({
         fileId: childId,
@@ -229,10 +245,47 @@ async function inferGoogleDriveFolderIdFromChildItems(folderPath, drive) {
       });
       const parents = (rr && rr.data && rr.data.parents) || [];
       const parentId = Array.isArray(parents) && parents.length ? String(parents[0] || '').trim() : '';
-      if (parentId) return { ok: true, folderId: parentId, reason: 'child-parent-lookup' };
-    } catch (_) {}
+      return parentId || null;
+    } catch (_) {
+      return null;
+    }
+  };
+  /* Pass 1 covers every sibling, but only with the plain Node read: the escalation to cmd and
+     PowerShell costs about a second EACH, and on a mount where no file carries the stream that is
+     every sibling in the folder, synchronously, with the whole app frozen behind it. */
+  const scanned = names.slice(0, 80);
+  for (const name of scanned) {
+    const childPath = path.join(folderPath, name);
+    const childId = await resolveGoogleDriveFileIdForPath(childPath, { cheapOnly: true });
+    if (!childId) continue;
+    sawChildId = true;
+    const parentId = await askDriveForParent(childId);
+    if (parentId) return { ok: true, folderId: parentId, reason: 'child-parent-lookup' };
   }
-  if (!sawChildId) return { ok: false, reason: 'folder-no-child-id-streams' };
+  /* Pass 2 pays for the escalation on a few siblings only, because the plain read is known to
+     ENOENT on mirrored paths whose stream does exist, and one hit is all this needs. The bound is
+     on how hard we try per file, never on how many files pass 1 looked at. */
+  if (!sawChildId && !adsFolderKnownStreamless(folderPath)) {
+    for (const name of scanned.slice(0, ADS_ESCALATION_BUDGET)) {
+      const childPath = path.join(folderPath, name);
+      const childId = await resolveGoogleDriveFileIdForPath(childPath);
+      if (!childId) continue;
+      sawChildId = true;
+      const parentId = await askDriveForParent(childId);
+      if (parentId) return { ok: true, folderId: parentId, reason: 'child-parent-lookup-escalated' };
+    }
+  }
+  if (!sawChildId) {
+    const wasMemo = adsFolderKnownStreamless(folderPath);
+    adsNoStreamFolders.set(folderPath, Date.now());
+    return {
+      ok: false,
+      reason: 'folder-no-child-id-streams',
+      scanned: scanned.length,
+      of: names.length,
+      escalated: wasMemo ? 0 : Math.min(scanned.length, ADS_ESCALATION_BUDGET),
+    };
+  }
   return { ok: false, reason: 'folder-child-parent-missing' };
 }
 
@@ -3040,7 +3093,16 @@ try {
  * Google Drive for Desktop: cloud file id is exposed as a synthetic stream `file.gdoc:user.drive.id`.
  * Often readable when the main stream throws EISDIR to Node (placeholder stub). Not on all mounts.
  */
-function tryReadGoogleDriveVirtualFileIdWindowsSync(fullPathRaw, diag) {
+/**
+ * Read a file’s Drive id from its `:user.drive.id` stream. Synchronous, and on a miss it escalates
+ * to cmd and then PowerShell, so ONE call can cost a second and spawn four processes.
+ *
+ * opts.cheapOnly limits it to the plain Node read (microseconds, no spawn). Scanning a folder full
+ * of siblings must use it: on a Mirror-mode Drive no file carries the stream at all, so the full
+ * escalation ran for every neighbour and blocked the main process for 19s on one click (measured
+ * 19 August 2026, `eventloop-lag 19133ms` beside `ipc resolve-google-drive-file-id 21516ms`).
+ */
+function tryReadGoogleDriveVirtualFileIdWindowsSync(fullPathRaw, diag, opts) {
   if (process.platform !== 'win32') return null;
   const norm = normalizePathForShellOpen(String(fullPathRaw || '')).trim();
   if (!norm) return null;
@@ -3061,6 +3123,7 @@ function tryReadGoogleDriveVirtualFileIdWindowsSync(fullPathRaw, diag) {
   const attempts = [];
   for (const adsPath of candidates) {
     // GDrive mirrored paths: Node/cmd often ENOENT on `file:user.drive.id` even when the stream exists; PS Get-Content usually works.
+    const cheapOnly = Boolean(opts && opts.cheapOnly);
     const readers = [
       {
         label: 'fs.readFileSync',
@@ -3081,7 +3144,7 @@ function tryReadGoogleDriveVirtualFileIdWindowsSync(fullPathRaw, diag) {
         run: () => tryReadAdsStreamPowerShellGetContentEncoded(psExe, adsPath),
       },
     ];
-    for (const { label, run } of readers) {
+    for (const { label, run } of cheapOnly ? readers.slice(0, 1) : readers) {
       try {
         const raw = run();
         const id = String(raw || '')
