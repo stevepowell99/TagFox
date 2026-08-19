@@ -3882,10 +3882,58 @@ ipcMain.handle('open-google-workspace-window', async (event, { url }) => {
   return openWebEditorWindow(parent, url, 'googleWorkspace');
 });
 
-ipcMain.handle('open-url-default-browser', async (_event, { url }) => {
-  try {
+/** Stable Chrome if it is installed: the user install first (that is the one on this machine),
+ *  then the two system paths. Never "Chrome Beta", which is also installed here and holds no session. */
+function findChromeExe() {
+  if (process.platform !== 'win32') return '';
+  const candidates = [];
+  const la = process.env.LOCALAPPDATA;
+  if (la) candidates.push(path.join(la, 'Google', 'Chrome', 'Application', 'chrome.exe'));
+  if (process.env.ProgramFiles) candidates.push(path.join(process.env.ProgramFiles, 'Google', 'Chrome', 'Application', 'chrome.exe'));
+  const pf86 = process.env['ProgramFiles(x86)'];
+  if (pf86) candidates.push(path.join(pf86, 'Google', 'Chrome', 'Application', 'chrome.exe'));
+  for (const c of candidates) {
+    try {
+      if (fssync.statSync(c).isFile()) return c;
+    } catch (_) {}
+  }
+  return '';
+}
+
+/**
+ * Open a URL where the Google session actually lives, rather than in whatever is registered as the
+ * default browser. The default here is Edge, while Steve's gmist and Drive sign-in are in stable
+ * Chrome's Default profile (see gmist's CLAUDE.md), so the online gmist pen landed on a sign-in wall
+ * on 19 August 2026. Only the sign-in-bound links use this; everything else still honours the default
+ * browser. Falls back to the default browser when Chrome is missing or will not start.
+ */
+async function openUrlPreferringChrome(url) {
+  const exe = findChromeExe();
+  if (!exe) {
     await openUrlInSystemDefaultBrowser(url);
-    return { ok: true };
+    return 'default';
+  }
+  await new Promise((resolve) => {
+    const child = spawn(exe, ['--profile-directory=Default', String(url)], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    child.on('error', () => {
+      void openUrlInSystemDefaultBrowser(url).catch(() => {});
+    });
+    child.unref();
+    setImmediate(resolve);
+  });
+  return 'chrome';
+}
+
+ipcMain.handle('open-url-default-browser', async (_event, { url, preferChrome } = {}) => {
+  try {
+    /* Report which browser took it: "it opened, somewhere" is exactly the report that hid a
+       sign-in wall in a browser Steve was not signed into. */
+    const via = preferChrome ? await openUrlPreferringChrome(url) : (await openUrlInSystemDefaultBrowser(url), 'default');
+    return { ok: true, via };
   } catch (e) {
     return { ok: false, error: String(e.message || e) };
   }
