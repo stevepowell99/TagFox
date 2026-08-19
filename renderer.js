@@ -1305,12 +1305,9 @@
       const crumb = String(r.relPath || '').trim();
       const crumbSuffix = crumb ? '&p=' + crumb.split('/').map(encodeURIComponent).join('/') : '';
       const url = GMIST_BASE_URL + '/open?file=' + encodeURIComponent(r.fileId) + crumbSuffix;
-      /* Chrome by preference: the deployed gmist needs a Google session, and the default browser
-         here is Edge, which has none, so the pen used to land on a sign-in wall. */
-      const opened = await window.tagBrowser.openUrlDefaultBrowser({ url, preferChrome: true });
+      const opened = await window.tagBrowser.openUrlDefaultBrowser({ url });
       if (opened && opened.ok === false) setStatusMain(opened.error || 'Could not open browser for gmist.');
-      else if (opened && opened.via === 'chrome') setStatusMain('Opening in gmist online (Chrome)…');
-      else setStatusMain('Opening in gmist online (default browser; sign in there if it asks)…');
+      else setStatusMain('Opening in gmist online…');
     }
 
     /* Open in Google Workspace (edit online): Office and Google-native docs on Drive. The edit (pen) icon uses
