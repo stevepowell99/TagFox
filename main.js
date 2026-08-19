@@ -1615,57 +1615,38 @@ async function openPathTryTemplateSpawn(tmpl, absNormPath) {
 }
 
 /** ProgId for http/https from UrlAssociations (Settings → Default browser / “choose by link type”). */
-function winProgIdForUrlScheme(schemeLower) {
-  const s = String(schemeLower || '')
-    .toLowerCase()
-    .replace(/:$/, '')
-    .replace(/[^a-z0-9+-]/g, '');
-  if (!s) return null;
-  return (
-    winRegQuery(`HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\${s}\\UserChoice`, 'ProgId') ||
-    null
-  );
-}
-
-/** Spawn the registered browser with this URL (avoids Electron routing https → Edge). */
-async function openUrlViaRegisteredHandlerWindows(url) {
-  const u = String(url || '').trim();
-  if (!/^https?:\/\//i.test(u)) return 'Not an http(s) URL';
-  for (const sch of ['https', 'http']) {
-    const pid = winProgIdForUrlScheme(sch);
-    if (!pid) continue;
-    const tmpl = winOpenCommandTemplateForProgId(pid);
-    if (!tmpl) continue;
-    const err = await openPathTryTemplateSpawn(tmpl, u);
-    if (!err) return null;
-  }
-  return 'No UrlAssociations handler';
-}
 
 /**
- * Open http(s) in the user’s real default browser (Win: UrlAssociations → spawn, then `start`, then Electron shell).
+ * Open http(s) where the shell would open it. Ask Windows, never work the answer out ourselves:
+ * this used to read `UrlAssociations\https\UserChoice` and spawn that ProgId's command, and on
+ * STEVE-DELL that key says `MSEdgeHTM` while the shell itself opens Chrome (measured 19 August 2026:
+ * `start https://…` launched Chrome, and every gmist link TagFox opened landed in Edge, signed out,
+ * as `{"error":"sign in required"}`). A key Windows has stopped honouring is not a default browser.
+ *
+ * `shell.openExternal` is ShellExecuteEx, the same call Explorer makes. The fallback is rundll32
+ * url.dll, which is also ShellExecute and takes the URL as one argv token; cmd's `start` is NOT a
+ * fallback here, because it eats everything after the first `&` (measured: a probe URL arrived as
+ * `/probe?a=1`, losing two parameters), and the same URL through rundll32 arrived whole.
  */
 async function openUrlInSystemDefaultBrowser(url) {
   const u = String(url || '').trim();
   if (!u) throw new Error('Empty URL');
-  if (process.platform === 'win32') {
-    const regErr = await openUrlViaRegisteredHandlerWindows(u);
-    if (!regErr) return;
-    // Quote URL for cmd/start so '&' in query strings is not treated as a command separator.
-    const uQuotedForCmd = `"${u.replace(/"/g, '""')}"`;
-    await new Promise((resolve, reject) => {
-      const child = spawn(getCmdExe(), ['/d', '/c', 'start', '', uQuotedForCmd], {
-        detached: true,
-        stdio: 'ignore',
-        windowsHide: true,
-      });
-      child.on('error', (e) => reject(e));
-      child.unref();
-      setImmediate(() => resolve());
-    });
+  try {
+    await shell.openExternal(u);
     return;
+  } catch (e) {
+    if (process.platform !== 'win32') throw e;
   }
-  await shell.openExternal(u);
+  await new Promise((resolve, reject) => {
+    const child = spawn('rundll32.exe', ['url.dll,FileProtocolHandler', u], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    child.on('error', (e) => reject(e));
+    child.unref();
+    setImmediate(() => resolve());
+  });
 }
 
 /**
