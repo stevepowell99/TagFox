@@ -1293,6 +1293,29 @@ async function copySourcesIntoScopeFolder(sourcePaths, destDirRaw, rootPrefix, r
 }
 
 /**
+ * Copy one file or folder to a sibling with an Explorer-style free name (`stem (1).ext`).
+ * Same directory only, so no scope/root check is needed: the copy lands where the original already is.
+ */
+async function duplicatePathInPlace(srcRaw) {
+  const src = path.resolve(path.normalize(String(srcRaw || '').trim()));
+  if (!src) return { ok: false, error: 'No path to duplicate.' };
+  try {
+    await fs.stat(src);
+  } catch {
+    return { ok: false, error: 'Source missing: ' + src };
+  }
+  const destDir = path.dirname(src);
+  const u = await uniqueDestPathInDir(destDir, path.basename(src));
+  if (!u.ok) return u;
+  try {
+    await fs.cp(src, u.destResolved, { recursive: true, errorOnExist: true, force: false });
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+  return { ok: true, destPath: u.destResolved };
+}
+
+/**
  * Clipboard screenshot / copied image → PNG in scope folder (`Clipboard image.png`, then `(1)`, …).
  * `image` must be a non-empty NativeImage from clipboard.readImage().
  */
@@ -4934,6 +4957,20 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
       { label: 'Set as current folder', enabled: isDir, click: () => done({ ok: true, action: 'setCurrentFolder' }) },
       { label: 'Rename…', click: () => done({ ok: true, action: 'rename' }) },
       { label: 'Bulk rename', click: () => done({ ok: true, action: 'bulkRename' }) },
+      {
+        label: 'Duplicate',
+        click: () => {
+          void duplicatePathInPlace(fp).then((r) => {
+            if (!r.ok) {
+              event.sender.send('shell-action-error', String(r.error || 'Duplicate failed.'));
+              done({ ok: false, action: 'duplicate', error: String(r.error || '') });
+              return;
+            }
+            event.sender.send('paths-mutated', { paths: [r.destPath] });
+            done({ ok: true, action: 'duplicate', destPath: r.destPath });
+          });
+        },
+      },
     );
     if (process.platform === 'win32') {
       template.push(

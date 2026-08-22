@@ -13503,6 +13503,8 @@
       } else if (res && res.action === 'printPdf') void printRowToPdf(fp, res.profile);
       else if (res && res.action === 'rename') void renameItemInteractive(fp);
       else if (res && res.action === 'bulkRename') openBulkRenameModal();
+      else if (res && res.action === 'duplicate' && res.destPath)
+        setStatusMain('Duplicated as ' + T.baseName(res.destPath));
       else if (res && res.action === 'trash') void refreshAfterDiskMutation({ paths: fp ? [fp] : [], trashed: true });
     }
 
