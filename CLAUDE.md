@@ -2,6 +2,8 @@
 
 Electron desktop UI over the local [Voidtools Everything](https://www.voidtools.com/) HTTP server. No backend; it talks only to Everything and the local filesystem. Main editor: Cursor.
 
+Role: the tool Steve reaches for a hundred times a day, so it has to work in his hands rather than in a test. Measure what is on screen before designing for it; land the work on `main` in `C:\dev\TagFox`, where he runs it; prove it in the running app before calling it done. Ledger: `_role.md`.
+
 ## Where the docs are
 
 Do not duplicate these here; read them:
