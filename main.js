@@ -3021,13 +3021,9 @@ function snapshotWebEditorWindowState(win) {
   if (!win || win.isDestroyed()) return null;
   const maximized = win.isMaximized();
   const b = maximized ? win.getNormalBounds() : win.getBounds();
-  /* Remember where the user put a window, not where the cascade nudged it, or every second
-     window opened would walk the remembered frame further down-right. Cleared once the user
-     moves the window themselves (see attachWebEditorWindowBoundsPersistence). */
-  const nudge = win.webEditCascade || { dx: 0, dy: 0 };
   return {
-    x: b.x - nudge.dx,
-    y: b.y - nudge.dy,
+    x: b.x,
+    y: b.y,
     width: b.width,
     height: b.height,
     maximized: !!maximized,
@@ -3049,11 +3045,7 @@ function attachWebEditorWindowBoundsPersistence(win, kind) {
     timer = setTimeout(flush, 400);
   };
   win.on('resize', schedule);
-  win.on('move', () => {
-    /* The user has placed this window, so the cascade nudge is no longer ours to subtract. */
-    win.webEditCascade = null;
-    schedule();
-  });
+  win.on('move', schedule);
   win.on('maximize', schedule);
   win.on('unmaximize', schedule);
   win.on('close', () => {
@@ -3664,50 +3656,9 @@ const WEB_EDITOR_KINDS = {
 };
 
 /**
- * Every window of a kind is restored to the one remembered frame, so a second doc used to open
- * exactly on top of the first: two identical frames, no way to tell them apart or to reach the one
- * underneath. Step each new window down-right until its top-left clears the windows already open.
- */
-const WEB_EDITOR_CASCADE_PX = 34;
-
-function webEditorCascadeOffset(rect) {
-  const live = BrowserWindow.getAllWindows().filter((w) => w && !w.isDestroyed() && w.webEditKind);
-  if (!live.length) return { dx: 0, dy: 0 };
-  let wa = null;
-  try {
-    wa = screen.getDisplayMatching(rect).workArea;
-  } catch (_) {
-    wa = screen.getPrimaryDisplay().workArea;
-  }
-  const taken = [];
-  for (const w of live) {
-    try {
-      const b = w.getBounds();
-      taken.push({ x: b.x, y: b.y });
-    } catch (_) {}
-  }
-  const clashes = (x, y) =>
-    taken.some((t) => Math.abs(t.x - x) < WEB_EDITOR_CASCADE_PX && Math.abs(t.y - y) < WEB_EDITOR_CASCADE_PX);
-  let dx = 0;
-  let dy = 0;
-  /* Bounded: one step per window already open, then give up rather than loop. */
-  for (let i = 0; i <= taken.length; i++) {
-    if (!clashes(rect.x + dx, rect.y + dy)) return { dx, dy };
-    dx += WEB_EDITOR_CASCADE_PX;
-    dy += WEB_EDITOR_CASCADE_PX;
-    /* Walked off the work area: start again from its top-left corner rather than off screen. */
-    if (rect.x + dx + rect.width > wa.x + wa.width || rect.y + dy + rect.height > wa.y + wa.height) {
-      dx = wa.x + WEB_EDITOR_CASCADE_PX - rect.x;
-      dy = wa.y + WEB_EDITOR_CASCADE_PX - rect.y;
-    }
-  }
-  return { dx, dy };
-}
-
-/**
- * A doc window shows only the site's own page, so without this its title bar and taskbar tooltip
- * say nothing at all and two open windows are indistinguishable. Prefer the name TagFox opened
- * (the row's filename, which the site may never mention), and fall back to the page's own title.
+ * A doc window shows only the site's own page, so without this its title bar says nothing at all
+ * and two open windows are indistinguishable. Prefer the name TagFox opened (the row's filename,
+ * which the site may never mention), and fall back to the page's own title.
  */
 function setWebEditorWindowTitle(win, { label, pageTitle } = {}) {
   if (!win || win.isDestroyed()) return;
@@ -3720,6 +3671,52 @@ function setWebEditorWindowTitle(win, { label, pageTitle } = {}) {
   } catch (_) {}
   const tb = win.webEditToolbarWc;
   if (tb && !tb.isDestroyed()) tb.send('webedit-toolbar-set-label', name);
+  void applyWebEditorWindowIcon(win, name);
+}
+
+/**
+ * Two or three characters that tell one doc window from another: initials where the name has
+ * several words, otherwise the first letters of the only one. "alpha report.docx" → AR,
+ * "EES2026 bites.md" → EB, "notes.md" → NOT.
+ */
+function webEditorIconAbbrev(name) {
+  const stem = String(name || '')
+    .replace(/\.[A-Za-z0-9]{1,8}$/, '')
+    .trim();
+  const words = stem.split(/[^A-Za-z0-9]+/).filter(Boolean);
+  if (!words.length) return '';
+  if (words.length === 1) return words[0].slice(0, 3).toUpperCase();
+  return words
+    .slice(0, 3)
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase();
+}
+
+/**
+ * A minimised doc window becomes a 160x28 stub on the desktop rather than a taskbar button, because
+ * it is owned by the main window. Measured on STEVE-DELL, 23 August 2026: that stub draws NO caption
+ * text whatever the title says (the classic theme does, the themed one does not), so its icon is the
+ * only thing on it that can carry a name. Draw the abbreviation into the icon, so a row of minimised
+ * docs reads as AR, EB, NOT rather than as identical Electron atoms.
+ */
+async function applyWebEditorWindowIcon(win, name) {
+  if (!win || win.isDestroyed()) return;
+  const abbrev = webEditorIconAbbrev(name);
+  if (!abbrev || abbrev === win.webEditIconAbbrev) return;
+  const tb = win.webEditToolbarWc;
+  if (!tb || tb.isDestroyed()) return;
+  /* Claim it before the await, or two title updates in a row both draw. */
+  win.webEditIconAbbrev = abbrev;
+  try {
+    const urls = await tb.executeJavaScript(`window.__tagfoxDrawWindowIcon(${JSON.stringify(abbrev)})`, true);
+    if (!urls || !urls.px16 || !urls.px32 || win.isDestroyed()) return;
+    const img = nativeImage.createFromDataURL(urls.px16);
+    img.addRepresentation({ scaleFactor: 2, dataURL: urls.px32 });
+    win.setIcon(img);
+  } catch (_) {
+    win.webEditIconAbbrev = null;
+  }
 }
 
 /** Local gmist is opened as /open?path=<absolute path>, so the row's filename is in the URL. */
@@ -3950,11 +3947,10 @@ function openWebEditorWindow(parentWin, targetUrl, kindKey, { label } = {}) {
       : fallback;
   const initW = Math.max(GOOGLE_WORKSPACE_WINDOW_MIN_W, use.width);
   const initH = Math.max(GOOGLE_WORKSPACE_WINDOW_MIN_H, use.height);
-  const nudge = webEditorCascadeOffset({ x: use.x, y: use.y, width: initW, height: initH });
   const win = new BrowserWindow({
     parent: parentWin || undefined,
-    x: use.x + nudge.dx,
-    y: use.y + nudge.dy,
+    x: use.x,
+    y: use.y,
     width: initW,
     height: initH,
     show: false,
@@ -3965,7 +3961,6 @@ function openWebEditorWindow(parentWin, targetUrl, kindKey, { label } = {}) {
     },
   });
   win.webEditKind = kind;
-  win.webEditCascade = nudge.dx || nudge.dy ? nudge : null;
   attachWebEditorWindowBoundsPersistence(win, kind);
   win.setMinimumSize(GOOGLE_WORKSPACE_WINDOW_MIN_W, GOOGLE_WORKSPACE_WINDOW_MIN_H);
   win.setMenuBarVisibility(false);

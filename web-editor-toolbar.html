@@ -77,6 +77,40 @@
     urlEl.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') window.webEditorToolbar.go(urlEl.value.trim());
     });
+    /* Main asks this page to draw the window icon, because a canvas is the only text rasteriser we
+       have and the minimised stub's icon is the only place a name can appear on it. Light square,
+       dark letters, so it reads on a dark caption and on a light one. */
+    window.__tagfoxDrawWindowIcon = (abbrev) => {
+      const draw = (px) => {
+        const c = document.createElement('canvas');
+        c.width = px;
+        c.height = px;
+        const g = c.getContext('2d');
+        const r = Math.round(px * 0.2);
+        g.fillStyle = '#f5f5f7';
+        g.beginPath();
+        g.moveTo(r, 0);
+        g.arcTo(px, 0, px, px, r);
+        g.arcTo(px, px, 0, px, r);
+        g.arcTo(0, px, 0, 0, r);
+        g.arcTo(0, 0, px, 0, r);
+        g.closePath();
+        g.fill();
+        g.fillStyle = '#1f1f36';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        /* Shrink to fit rather than clip: three letters in 16px is tight. */
+        let size = Math.round(px * 0.62);
+        for (; size > 4; size--) {
+          g.font = '600 ' + size + 'px Segoe UI, system-ui, sans-serif';
+          if (g.measureText(abbrev).width <= px * 0.86) break;
+        }
+        g.fillText(abbrev, px / 2, px / 2 + Math.round(px * 0.04));
+        return c.toDataURL('image/png');
+      };
+      return { px16: draw(16), px32: draw(32) };
+    };
+
     const labelEl = document.getElementById('docLabel');
     window.webEditorToolbar.onLabel((s) => {
       labelEl.textContent = s || '';
