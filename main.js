@@ -3675,25 +3675,30 @@ function setWebEditorWindowTitle(win, { label, pageTitle } = {}) {
 }
 
 /**
- * Two or three characters that tell one doc window from another: initials where the name has
- * several words, otherwise the first letters of the only one. "alpha report.docx" → AR,
- * "EES2026 bites.md" → EB, "notes.md" → NOT.
+ * Up to six characters that tell one doc window from another, as two rows of three. The stub's icon
+ * is a 16px square, so stacking is what buys the characters: three letters per row read at that size
+ * and four do not (measured side by side on STEVE-DELL, 23 August 2026). "alpha report.docx" reads
+ * ALP over REP. A second word too short to fill its row borrows first letters from the words after it,
+ * so "Everything G-H index config" reads EVE over GHI rather than EVE over a lone G.
  */
-function webEditorIconAbbrev(name) {
-  /* Strip xk/xp/xx tags first, or "xkTODO run tp-catchup.md" abbreviates to XRT and spends its
-     first letter on the tag every file in a backlog folder shares. */
+function webEditorIconLines(name) {
+  /* Strip xk/xp/xx tags first, or "xkTODO run tp-catchup.md" spends its letters on the tag every
+     file in a backlog folder shares. */
   const pretty = TagBrowserTags ? TagBrowserTags.parseSegmentTags(String(name || '')).pretty : String(name || '');
   const stem = String(pretty || '')
     .replace(/\.[A-Za-z0-9]{1,8}$/, '')
     .trim();
   const words = stem.split(/[^A-Za-z0-9]+/).filter(Boolean);
-  if (!words.length) return '';
-  if (words.length === 1) return words[0].slice(0, 3).toUpperCase();
-  return words
-    .slice(0, 3)
-    .map((w) => w[0])
-    .join('')
-    .toUpperCase();
+  if (!words.length) return [];
+  const ROW = 3;
+  const up = (w, n) => w.slice(0, n).toUpperCase();
+  if (words.length === 1) {
+    const w = up(words[0], ROW * 2);
+    return w.length <= ROW ? [w] : [w.slice(0, ROW), w.slice(ROW)];
+  }
+  let second = up(words[1], ROW);
+  for (let i = 2; i < words.length && second.length < ROW; i++) second += words[i][0].toUpperCase();
+  return [up(words[0], ROW), second];
 }
 
 /**
@@ -3701,18 +3706,19 @@ function webEditorIconAbbrev(name) {
  * it is owned by the main window. Measured on STEVE-DELL, 23 August 2026: that stub draws NO caption
  * text whatever the title says (the classic theme does, the themed one does not), so its icon is the
  * only thing on it that can carry a name. Draw the abbreviation into the icon, so a row of minimised
- * docs reads as AR, EB, NOT rather than as identical Electron atoms.
+ * docs reads as ALP/REP, EES/BIT, NOT/ES rather than as identical Electron atoms.
  */
 async function applyWebEditorWindowIcon(win, name) {
   if (!win || win.isDestroyed()) return;
-  const abbrev = webEditorIconAbbrev(name);
-  if (!abbrev || abbrev === win.webEditIconAbbrev) return;
+  const lines = webEditorIconLines(name);
+  const key = lines.join('/');
+  if (!key || key === win.webEditIconAbbrev) return;
   const tb = win.webEditToolbarWc;
   if (!tb || tb.isDestroyed()) return;
   /* Claim it before the await, or two title updates in a row both draw. */
-  win.webEditIconAbbrev = abbrev;
+  win.webEditIconAbbrev = key;
   try {
-    const urls = await tb.executeJavaScript(`window.__tagfoxDrawWindowIcon(${JSON.stringify(abbrev)})`, true);
+    const urls = await tb.executeJavaScript(`window.__tagfoxDrawWindowIcon(${JSON.stringify(lines)})`, true);
     if (!urls || !urls.px16 || !urls.px32 || win.isDestroyed()) return;
     const img = nativeImage.createFromDataURL(urls.px16);
     img.addRepresentation({ scaleFactor: 2, dataURL: urls.px32 });
