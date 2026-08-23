@@ -3680,7 +3680,10 @@ function setWebEditorWindowTitle(win, { label, pageTitle } = {}) {
  * "EES2026 bites.md" → EB, "notes.md" → NOT.
  */
 function webEditorIconAbbrev(name) {
-  const stem = String(name || '')
+  /* Strip xk/xp/xx tags first, or "xkTODO run tp-catchup.md" abbreviates to XRT and spends its
+     first letter on the tag every file in a backlog folder shares. */
+  const pretty = TagBrowserTags ? TagBrowserTags.parseSegmentTags(String(name || '')).pretty : String(name || '');
+  const stem = String(pretty || '')
     .replace(/\.[A-Za-z0-9]{1,8}$/, '')
     .trim();
   const words = stem.split(/[^A-Za-z0-9]+/).filter(Boolean);
