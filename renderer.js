@@ -1181,7 +1181,7 @@
           if (!shellErr) bumpFileFocusVisit(fp);
           return;
         }
-        const r = await window.tagBrowser.openGoogleWorkspaceWindow({ url: rGw.url });
+        const r = await window.tagBrowser.openGoogleWorkspaceWindow({ url: rGw.url, label: pathBasenameForConfirm(fp) });
         if (status && !r.ok) setStatusMain(r.error || 'Open failed');
         else bumpFileFocusVisit(fp);
         return;
@@ -1275,7 +1275,7 @@
         _localGmist = { at: Date.now(), up: true };
       }
       const url = GMIST_LOCAL_BASE_URL + '/open?path=' + encodeURIComponent(fp);
-      const opened = await window.tagBrowser.openGmistWindow({ url });
+      const opened = await window.tagBrowser.openGmistWindow({ url, label: pathBasenameForConfirm(fp) });
       if (opened && opened.ok === false) {
         setStatusMain(opened.error || 'Could not open a gmist window.');
         return false;
@@ -1373,7 +1373,7 @@
         setStatusMain('No Google editor for this file type.');
         return;
       }
-      const opened = await window.tagBrowser.openGoogleWorkspaceWindow({ url });
+      const opened = await window.tagBrowser.openGoogleWorkspaceWindow({ url, label: pathBasenameForConfirm(fp) });
       if (opened && opened.ok === false) setStatusMain(opened.error || 'Open in Google Workspace failed.');
       else setStatusMain('Opening in Google Workspace…');
     }

@@ -36,6 +36,21 @@
       border-radius: 4px;
       font: inherit;
     }
+    /* Names the document in the toolbar as well as the title bar, since a window parked at the
+       screen edge can have its title bar off screen. Bounded so it never crowds out the address bar. */
+    #docLabel {
+      flex: 0 1 auto;
+      max-width: 40%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 600;
+      color: #202124;
+      padding-left: 2px;
+    }
+    #docLabel:empty {
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -43,6 +58,7 @@
   <button type="button" id="fwd" title="Forward">→</button>
   <button type="button" id="reload" title="Reload">↻</button>
   <button type="button" id="restoreSatellite" title="Expand Google’s minimized panel — simulates clicks on the tiny bottom bar">Expand</button>
+  <span id="docLabel" title=""></span>
   <input type="text" id="url" spellcheck="false" autocomplete="off" placeholder="https://…" />
   <script>
     /* Main passes the window kind's toolbar options as a query string (see openWebEditorWindow):
@@ -60,6 +76,11 @@
     document.getElementById('reload').onclick = () => window.webEditorToolbar.reload();
     urlEl.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') window.webEditorToolbar.go(urlEl.value.trim());
+    });
+    const labelEl = document.getElementById('docLabel');
+    window.webEditorToolbar.onLabel((s) => {
+      labelEl.textContent = s || '';
+      labelEl.title = s || '';
     });
     window.webEditorToolbar.onUrl((u) => {
       urlEl.value = u;

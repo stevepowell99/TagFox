@@ -3021,9 +3021,13 @@ function snapshotWebEditorWindowState(win) {
   if (!win || win.isDestroyed()) return null;
   const maximized = win.isMaximized();
   const b = maximized ? win.getNormalBounds() : win.getBounds();
+  /* Remember where the user put a window, not where the cascade nudged it, or every second
+     window opened would walk the remembered frame further down-right. Cleared once the user
+     moves the window themselves (see attachWebEditorWindowBoundsPersistence). */
+  const nudge = win.webEditCascade || { dx: 0, dy: 0 };
   return {
-    x: b.x,
-    y: b.y,
+    x: b.x - nudge.dx,
+    y: b.y - nudge.dy,
     width: b.width,
     height: b.height,
     maximized: !!maximized,
@@ -3045,7 +3049,11 @@ function attachWebEditorWindowBoundsPersistence(win, kind) {
     timer = setTimeout(flush, 400);
   };
   win.on('resize', schedule);
-  win.on('move', schedule);
+  win.on('move', () => {
+    /* The user has placed this window, so the cascade nudge is no longer ours to subtract. */
+    win.webEditCascade = null;
+    schedule();
+  });
   win.on('maximize', schedule);
   win.on('unmaximize', schedule);
   win.on('close', () => {
@@ -3630,6 +3638,7 @@ function isAllowedLocalGmistUrl(u) {
  */
 const WEB_EDITOR_KINDS = {
   googleWorkspace: {
+    windowKindName: 'Google Workspace',
     boundsFile: 'tagBrowser-google-workspace-bounds.json',
     partition: 'persist:tagfox-google-workspace',
     background: '#f1f3f4',
@@ -3642,6 +3651,7 @@ const WEB_EDITOR_KINDS = {
   /* Local gmist needs no sign-in (the dev server owns the localfs sidecar), so this window is
      a plain view on localhost: no Google session, nothing to authenticate. */
   gmistLocal: {
+    windowKindName: 'gmist',
     boundsFile: 'tagBrowser-gmist-local-bounds.json',
     partition: 'persist:tagfox-gmist-local',
     background: '#ffffff',
@@ -3652,6 +3662,75 @@ const WEB_EDITOR_KINDS = {
     badUrlError: 'Not a local gmist URL.',
   },
 };
+
+/**
+ * Every window of a kind is restored to the one remembered frame, so a second doc used to open
+ * exactly on top of the first: two identical frames, no way to tell them apart or to reach the one
+ * underneath. Step each new window down-right until its top-left clears the windows already open.
+ */
+const WEB_EDITOR_CASCADE_PX = 34;
+
+function webEditorCascadeOffset(rect) {
+  const live = BrowserWindow.getAllWindows().filter((w) => w && !w.isDestroyed() && w.webEditKind);
+  if (!live.length) return { dx: 0, dy: 0 };
+  let wa = null;
+  try {
+    wa = screen.getDisplayMatching(rect).workArea;
+  } catch (_) {
+    wa = screen.getPrimaryDisplay().workArea;
+  }
+  const taken = [];
+  for (const w of live) {
+    try {
+      const b = w.getBounds();
+      taken.push({ x: b.x, y: b.y });
+    } catch (_) {}
+  }
+  const clashes = (x, y) =>
+    taken.some((t) => Math.abs(t.x - x) < WEB_EDITOR_CASCADE_PX && Math.abs(t.y - y) < WEB_EDITOR_CASCADE_PX);
+  let dx = 0;
+  let dy = 0;
+  /* Bounded: one step per window already open, then give up rather than loop. */
+  for (let i = 0; i <= taken.length; i++) {
+    if (!clashes(rect.x + dx, rect.y + dy)) return { dx, dy };
+    dx += WEB_EDITOR_CASCADE_PX;
+    dy += WEB_EDITOR_CASCADE_PX;
+    /* Walked off the work area: start again from its top-left corner rather than off screen. */
+    if (rect.x + dx + rect.width > wa.x + wa.width || rect.y + dy + rect.height > wa.y + wa.height) {
+      dx = wa.x + WEB_EDITOR_CASCADE_PX - rect.x;
+      dy = wa.y + WEB_EDITOR_CASCADE_PX - rect.y;
+    }
+  }
+  return { dx, dy };
+}
+
+/**
+ * A doc window shows only the site's own page, so without this its title bar and taskbar tooltip
+ * say nothing at all and two open windows are indistinguishable. Prefer the name TagFox opened
+ * (the row's filename, which the site may never mention), and fall back to the page's own title.
+ */
+function setWebEditorWindowTitle(win, { label, pageTitle } = {}) {
+  if (!win || win.isDestroyed()) return;
+  const kindName = (win.webEditKind && win.webEditKind.windowKindName) || 'TagFox';
+  if (label !== undefined) win.webEditLabel = label || '';
+  if (pageTitle !== undefined) win.webEditPageTitle = pageTitle || '';
+  const name = win.webEditLabel || win.webEditPageTitle || '';
+  try {
+    win.setTitle(name ? name + ' — ' + kindName : kindName);
+  } catch (_) {}
+  const tb = win.webEditToolbarWc;
+  if (tb && !tb.isDestroyed()) tb.send('webedit-toolbar-set-label', name);
+}
+
+/** Local gmist is opened as /open?path=<absolute path>, so the row's filename is in the URL. */
+function webEditorLabelFromUrl(url) {
+  try {
+    const u = new URL(String(url || ''));
+    const p = u.searchParams.get('path');
+    if (p) return path.basename(p);
+  } catch (_) {}
+  return '';
+}
 
 const GOOGLE_WORKSPACE_TOOLBAR_PX = 40;
 /** Child doc windows can otherwise be resized to a needle-thin strip — hard to hit title bar / taskbar restore. */
@@ -3830,11 +3909,15 @@ function mountWebEditorBrowserViews(win, targetUrlArg, useBounds, kind) {
 
   attachPageZoomShortcuts(contentBV.webContents);
   attachWebEditorContentNavigationSync(win, contentBV.webContents);
+  contentBV.webContents.on('page-title-updated', (_e, title) => {
+    setWebEditorWindowTitle(win, { pageTitle: title });
+  });
 
   const showFramed = () => {
     if (!win || win.isDestroyed()) return;
     layoutWebEditorBrowserViews(win);
     syncWebEditorToolbarFromContent(win);
+    setWebEditorWindowTitle(win);
     if (useBounds && useBounds.maximized) win.maximize();
     win.show();
   };
@@ -3849,8 +3932,11 @@ function mountWebEditorBrowserViews(win, targetUrlArg, useBounds, kind) {
   void contentBV.webContents.loadURL(url);
 }
 
-/** kindKey: a key of WEB_EDITOR_KINDS ('googleWorkspace', 'gmistLocal'). */
-function openWebEditorWindow(parentWin, targetUrl, kindKey) {
+/**
+ * kindKey: a key of WEB_EDITOR_KINDS ('googleWorkspace', 'gmistLocal').
+ * label: what to call this window (normally the row's filename); falls back to the page's own title.
+ */
+function openWebEditorWindow(parentWin, targetUrl, kindKey, { label } = {}) {
   const kind = WEB_EDITOR_KINDS[kindKey];
   if (!kind) return { ok: false, error: 'Unknown editor window kind.' };
   registerWebEditorToolbarIpcOnce();
@@ -3864,10 +3950,11 @@ function openWebEditorWindow(parentWin, targetUrl, kindKey) {
       : fallback;
   const initW = Math.max(GOOGLE_WORKSPACE_WINDOW_MIN_W, use.width);
   const initH = Math.max(GOOGLE_WORKSPACE_WINDOW_MIN_H, use.height);
+  const nudge = webEditorCascadeOffset({ x: use.x, y: use.y, width: initW, height: initH });
   const win = new BrowserWindow({
     parent: parentWin || undefined,
-    x: use.x,
-    y: use.y,
+    x: use.x + nudge.dx,
+    y: use.y + nudge.dy,
     width: initW,
     height: initH,
     show: false,
@@ -3878,9 +3965,11 @@ function openWebEditorWindow(parentWin, targetUrl, kindKey) {
     },
   });
   win.webEditKind = kind;
+  win.webEditCascade = nudge.dx || nudge.dy ? nudge : null;
   attachWebEditorWindowBoundsPersistence(win, kind);
   win.setMinimumSize(GOOGLE_WORKSPACE_WINDOW_MIN_W, GOOGLE_WORKSPACE_WINDOW_MIN_H);
   win.setMenuBarVisibility(false);
+  setWebEditorWindowTitle(win, { label: String(label || '') || webEditorLabelFromUrl(url), pageTitle: '' });
   mountWebEditorBrowserViews(win, url, use, kind);
   return { ok: true };
 }
@@ -3905,7 +3994,7 @@ async function openPathOrGoogleWorkspaceShortcut(wc, fullPathRaw) {
     const url = targetUrlFromGoogleDriveShortcut(p, r.raw);
     if (url) {
       const parent = BrowserWindow.fromWebContents(wc);
-      const winR = openWebEditorWindow(parent, url, 'googleWorkspace');
+      const winR = openWebEditorWindow(parent, url, 'googleWorkspace', { label: path.basename(p) });
       if (winR.ok) return null;
       if (winR && winR.error) return winR.error;
     }
@@ -3944,9 +4033,9 @@ ipcMain.handle('google-workspace-shortcut-url', async (_event, { fullPath }) => 
   return { ok: true, url, diag: body.diag || null };
 });
 
-ipcMain.handle('open-google-workspace-window', async (event, { url }) => {
+ipcMain.handle('open-google-workspace-window', async (event, { url, label }) => {
   const parent = BrowserWindow.fromWebContents(event.sender);
-  return openWebEditorWindow(parent, url, 'googleWorkspace');
+  return openWebEditorWindow(parent, url, 'googleWorkspace', { label });
 });
 
 ipcMain.handle('open-url-default-browser', async (_event, { url }) => {
@@ -4434,9 +4523,9 @@ ipcMain.handle('show-print-pdf-menu', async (event, { x, y } = {}) => {
  * own cookie jar costs nothing. The online worker still goes to the browser, where Steve's gmist
  * session lives.
  */
-ipcMain.handle('open-gmist-window', async (event, { url }) => {
+ipcMain.handle('open-gmist-window', async (event, { url, label }) => {
   const parent = BrowserWindow.fromWebContents(event.sender);
-  return openWebEditorWindow(parent, url, 'gmistLocal');
+  return openWebEditorWindow(parent, url, 'gmistLocal', { label });
 });
 
 /** Read-only sign-of-life: proves OAuth token works with Drive API (does not open browser or run consent). */
@@ -4826,7 +4915,7 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
               return;
             }
             const parent = BrowserWindow.fromWebContents(event.sender);
-            const r = openWebEditorWindow(parent, u, 'googleWorkspace');
+            const r = openWebEditorWindow(parent, u, 'googleWorkspace', { label: baseName });
             if (!r.ok) {
               event.sender.send('shell-action-error', r.error || 'Could not open Google Workspace window.');
               done({ ok: false, action: 'openGoogleWorkspace', error: r.error || 'Open failed' });
