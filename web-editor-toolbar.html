@@ -79,19 +79,19 @@
     });
     /* Main asks this page to draw the window icon, because a canvas is the only text rasteriser we
        have and the minimised stub's icon is the only place a name can appear on it. Two letters, set
-       as large as a 16px square allows: anything smaller is unreadable on Steve's screen, which is
-       what three across and six stacked both proved. Light ground, dark letters, so it reads on a
-       dark caption and a light one. */
-    window.__tagfoxDrawWindowIcon = (abbrev) => {
+       as large as a 16px square allows, on the ground main picked (see webEditorIconHue). Ink and
+       ground share a hue and sit far apart in lightness, so every colour in the set reads at 16px. */
+    window.__tagfoxDrawWindowIcon = (abbrev, hue) => {
       const text = String(abbrev || '');
+      const h = Number.isFinite(hue) ? hue : 212;
       const draw = (px) => {
         const c = document.createElement('canvas');
         c.width = px;
         c.height = px;
         const g = c.getContext('2d');
-        g.fillStyle = '#f5f5f7';
+        g.fillStyle = 'hsl(' + h + ', 72%, 84%)';
         g.fillRect(0, 0, px, px);
-        g.fillStyle = '#1f1f36';
+        g.fillStyle = 'hsl(' + h + ', 75%, 20%)';
         g.textAlign = 'center';
         g.textBaseline = 'middle';
         /* Grow until the pair fills the width; a 1px margin each side is all the square can spare. */

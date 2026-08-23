@@ -3703,6 +3703,27 @@ function webEditorIconAbbrev(name, taken) {
 }
 
 /**
+ * Ten grounds for the stub icons, at least 30 degrees apart: a raw hash of the letter pair put too
+ * many names in the same yellow-green corner, and two neighbouring yellows read as one colour at
+ * 16px. The hue is a hash of the pair, so a document keeps its colour from one session to the next,
+ * and it steps to the next free ground where another open window already holds that one, for the
+ * same reason the letters do: two pills the eye cannot separate are two pills that say nothing.
+ */
+const WEB_EDITOR_ICON_HUES = [6, 38, 72, 108, 145, 180, 212, 248, 288, 324];
+
+function webEditorIconHue(abbrev, takenHues) {
+  const text = String(abbrev || '');
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) >>> 0;
+  const start = h % WEB_EDITOR_ICON_HUES.length;
+  for (let i = 0; i < WEB_EDITOR_ICON_HUES.length; i++) {
+    const hue = WEB_EDITOR_ICON_HUES[(start + i) % WEB_EDITOR_ICON_HUES.length];
+    if (!takenHues || !takenHues.has(hue)) return hue;
+  }
+  return WEB_EDITOR_ICON_HUES[start];
+}
+
+/**
  * A minimised doc window becomes a 160x28 stub on the desktop rather than a taskbar button, because
  * it is owned by the main window. Measured on STEVE-DELL, 23 August 2026: that stub draws NO caption
  * text whatever the title says (the classic theme does, the themed one does not), so its icon is the
@@ -3711,25 +3732,29 @@ function webEditorIconAbbrev(name, taken) {
  */
 async function applyWebEditorWindowIcon(win, name) {
   if (!win || win.isDestroyed()) return;
-  const taken = new Set(
-    BrowserWindow.getAllWindows()
-      .filter((w) => w !== win && !w.isDestroyed() && w.webEditKind && w.webEditIconAbbrev)
-      .map((w) => w.webEditIconAbbrev)
+  const others = BrowserWindow.getAllWindows().filter(
+    (w) => w !== win && !w.isDestroyed() && w.webEditKind && w.webEditIconAbbrev
   );
-  const abbrev = webEditorIconAbbrev(name, taken);
+  const abbrev = webEditorIconAbbrev(name, new Set(others.map((w) => w.webEditIconAbbrev)));
   if (!abbrev || abbrev === win.webEditIconAbbrev) return;
   const tb = win.webEditToolbarWc;
   if (!tb || tb.isDestroyed()) return;
-  /* Claim it before the await, or two windows opened together both take the same pair. */
+  const hue = webEditorIconHue(abbrev, new Set(others.map((w) => w.webEditIconHue).filter((h) => h != null)));
+  /* Claim both before the await, or two windows opened together take the same pair and ground. */
   win.webEditIconAbbrev = abbrev;
+  win.webEditIconHue = hue;
   try {
-    const urls = await tb.executeJavaScript(`window.__tagfoxDrawWindowIcon(${JSON.stringify(abbrev)})`, true);
+    const urls = await tb.executeJavaScript(
+      `window.__tagfoxDrawWindowIcon(${JSON.stringify(abbrev)}, ${hue})`,
+      true
+    );
     if (!urls || !urls.px16 || !urls.px32 || win.isDestroyed()) return;
     const img = nativeImage.createFromDataURL(urls.px16);
     img.addRepresentation({ scaleFactor: 2, dataURL: urls.px32 });
     win.setIcon(img);
   } catch (_) {
     win.webEditIconAbbrev = null;
+    win.webEditIconHue = null;
   }
 }
 
