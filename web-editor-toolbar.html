@@ -78,11 +78,12 @@
       if (e.key === 'Enter') window.webEditorToolbar.go(urlEl.value.trim());
     });
     /* Main asks this page to draw the window icon, because a canvas is the only text rasteriser we
-       have and the minimised stub's icon is the only place a name can appear on it. The square is
-       16px, so the letters are stacked and set edge to edge: every pixel spent on padding is a
-       pixel off the glyphs. Light ground, dark letters, so it reads on a dark caption and a light one. */
-    window.__tagfoxDrawWindowIcon = (lines) => {
-      const rows = (Array.isArray(lines) ? lines : [String(lines || '')]).filter(Boolean);
+       have and the minimised stub's icon is the only place a name can appear on it. Two letters, set
+       as large as a 16px square allows: anything smaller is unreadable on Steve's screen, which is
+       what three across and six stacked both proved. Light ground, dark letters, so it reads on a
+       dark caption and a light one. */
+    window.__tagfoxDrawWindowIcon = (abbrev) => {
+      const text = String(abbrev || '');
       const draw = (px) => {
         const c = document.createElement('canvas');
         c.width = px;
@@ -93,18 +94,14 @@
         g.fillStyle = '#1f1f36';
         g.textAlign = 'center';
         g.textBaseline = 'middle';
-        const pad = Math.max(1, Math.round(px * 0.06));
-        const maxW = px - pad * 2;
-        const rowH = (px - pad * 2) / rows.length;
-        rows.forEach((text, i) => {
-          /* Fit each row on its own, so a wide pair and a single letter both fill their band. */
-          let size = Math.round(rowH * 1.06);
-          for (; size > 3; size--) {
-            g.font = '700 ' + size + 'px Segoe UI, system-ui, sans-serif';
-            if (g.measureText(text).width <= maxW) break;
-          }
-          g.fillText(text, px / 2, pad + rowH * (i + 0.5));
-        });
+        /* Grow until the pair fills the width; a 1px margin each side is all the square can spare. */
+        const maxW = px - 2;
+        let size = Math.round(px * 0.95);
+        for (; size > 3; size--) {
+          g.font = '700 ' + size + 'px Segoe UI, system-ui, sans-serif';
+          if (g.measureText(text).width <= maxW) break;
+        }
+        g.fillText(text, px / 2, px / 2 + Math.round(px * 0.06));
         return c.toDataURL('image/png');
       };
       return { px16: draw(16), px32: draw(32) };

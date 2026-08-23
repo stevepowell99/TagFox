@@ -3675,30 +3675,31 @@ function setWebEditorWindowTitle(win, { label, pageTitle } = {}) {
 }
 
 /**
- * Up to six characters that tell one doc window from another, as two rows of three. The stub's icon
- * is a 16px square, so stacking is what buys the characters: three letters per row read at that size
- * and four do not (measured side by side on STEVE-DELL, 23 August 2026). "alpha report.docx" reads
- * ALP over REP. A second word too short to fill its row borrows first letters from the words after it,
- * so "Everything G-H index config" reads EVE over GHI rather than EVE over a lone G.
+ * Two characters that tell one doc window from another. Two is what the stub's 16px icon can draw
+ * at a size Steve can read: three across is cramped and six stacked is invisible, both measured on
+ * his screen (23 August 2026). Normally the first two letters of the name, so "README.md" is RE and
+ * "alpha report.docx" is AL. Where another open window already holds that pair, walk a ladder of
+ * alternatives rather than shipping two windows that look identical, which is the whole point of
+ * the icon: the first letter with the second word's initial, then with each later letter of the
+ * name, then with a digit.
  */
-function webEditorIconLines(name) {
-  /* Strip xk/xp/xx tags first, or "xkTODO run tp-catchup.md" spends its letters on the tag every
-     file in a backlog folder shares. */
+function webEditorIconAbbrev(name, taken) {
+  /* Strip xk/xp/xx tags first, or every file in a backlog folder claims the same pair. */
   const pretty = TagBrowserTags ? TagBrowserTags.parseSegmentTags(String(name || '')).pretty : String(name || '');
   const stem = String(pretty || '')
     .replace(/\.[A-Za-z0-9]{1,8}$/, '')
     .trim();
   const words = stem.split(/[^A-Za-z0-9]+/).filter(Boolean);
-  if (!words.length) return [];
-  const ROW = 3;
-  const up = (w, n) => w.slice(0, n).toUpperCase();
-  if (words.length === 1) {
-    const w = up(words[0], ROW * 2);
-    return w.length <= ROW ? [w] : [w.slice(0, ROW), w.slice(ROW)];
-  }
-  let second = up(words[1], ROW);
-  for (let i = 2; i < words.length && second.length < ROW; i++) second += words[i][0].toUpperCase();
-  return [up(words[0], ROW), second];
+  if (!words.length) return '';
+  const letters = words.join('').toUpperCase();
+  const first = letters[0];
+  const cands = [];
+  if (letters.length > 1) cands.push(first + letters[1]);
+  if (words[1]) cands.push(first + words[1][0].toUpperCase());
+  for (let i = 2; i < letters.length; i++) cands.push(first + letters[i]);
+  for (const d of '23456789') cands.push(first + d);
+  const free = cands.find((c) => !taken || !taken.has(c));
+  return free || cands[0] || first;
 }
 
 /**
@@ -3706,19 +3707,23 @@ function webEditorIconLines(name) {
  * it is owned by the main window. Measured on STEVE-DELL, 23 August 2026: that stub draws NO caption
  * text whatever the title says (the classic theme does, the themed one does not), so its icon is the
  * only thing on it that can carry a name. Draw the abbreviation into the icon, so a row of minimised
- * docs reads as ALP/REP, EES/BIT, NOT/ES rather than as identical Electron atoms.
+ * docs reads as RE, AL, NO rather than as identical Electron atoms.
  */
 async function applyWebEditorWindowIcon(win, name) {
   if (!win || win.isDestroyed()) return;
-  const lines = webEditorIconLines(name);
-  const key = lines.join('/');
-  if (!key || key === win.webEditIconAbbrev) return;
+  const taken = new Set(
+    BrowserWindow.getAllWindows()
+      .filter((w) => w !== win && !w.isDestroyed() && w.webEditKind && w.webEditIconAbbrev)
+      .map((w) => w.webEditIconAbbrev)
+  );
+  const abbrev = webEditorIconAbbrev(name, taken);
+  if (!abbrev || abbrev === win.webEditIconAbbrev) return;
   const tb = win.webEditToolbarWc;
   if (!tb || tb.isDestroyed()) return;
-  /* Claim it before the await, or two title updates in a row both draw. */
-  win.webEditIconAbbrev = key;
+  /* Claim it before the await, or two windows opened together both take the same pair. */
+  win.webEditIconAbbrev = abbrev;
   try {
-    const urls = await tb.executeJavaScript(`window.__tagfoxDrawWindowIcon(${JSON.stringify(lines)})`, true);
+    const urls = await tb.executeJavaScript(`window.__tagfoxDrawWindowIcon(${JSON.stringify(abbrev)})`, true);
     if (!urls || !urls.px16 || !urls.px32 || win.isDestroyed()) return;
     const img = nativeImage.createFromDataURL(urls.px16);
     img.addRepresentation({ scaleFactor: 2, dataURL: urls.px32 });
