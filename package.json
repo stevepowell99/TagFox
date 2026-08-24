@@ -1,14 +1,15 @@
 {
   "name": "tagbrowser",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "TagFox — local Everything search UI (Electron)",
   "main": "main.js",
   "scripts": {
     "build:help": "node scripts/build-help.js",
     "vendor:sync": "node scripts/sync-vendor-assets.js",
+    "bundle:gmist": "node scripts/bundle-gmist.js",
     "postinstall": "node scripts/sync-vendor-assets.js",
     "prestart": "npm run vendor:sync && npm run build:help",
-    "predist": "npm run vendor:sync && npm run build:help",
+    "predist": "npm run vendor:sync && npm run build:help && npm run bundle:gmist",
     "start": "electron .",
     "dist": "node scripts/run-dist.js",
     "test": "node test/run-all.cjs",
@@ -38,6 +39,15 @@
       "package.json",
       "google-oauth-client.json",
       "vendor/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "_gmist",
+        "to": "gmist",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "win": {
       "target": [

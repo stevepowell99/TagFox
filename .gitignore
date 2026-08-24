@@ -15,3 +15,6 @@ recording.txt
 
 # scratch
 _tmp/
+
+# Staged gmist bundle for the installer (built by scripts/bundle-gmist.js)
+_gmist/
