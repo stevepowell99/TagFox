@@ -1,6 +1,6 @@
 {
   "name": "tagbrowser",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "TagFox — local Everything search UI (Electron)",
   "main": "main.js",
   "scripts": {
