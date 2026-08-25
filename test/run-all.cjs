@@ -15,6 +15,7 @@ const runs = [
   { name: 'column resize', args: ['column-resize.cjs'] },
   { name: 'splitter drag', args: ['splitter-drag.cjs'] },
   { name: 'refresh visibility', args: ['refresh-visible.cjs'] },
+  { name: 'zoom buttons', args: ['zoom-buttons.cjs'] },
   { name: 'fuzz seed 999', args: ['fuzz.cjs', '40', '999'] },
   { name: 'fuzz seed 7', args: ['fuzz.cjs', '40', '7'] },
   { name: 'fuzz seed 2024', args: ['fuzz.cjs', '40', '2024'] },

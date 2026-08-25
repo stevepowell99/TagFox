@@ -51,6 +51,7 @@
       helpModalTab: 'tagBrowserHelpModalTab',
       autoRefreshSec: 'tagBrowserAutoRefreshSec',
       darkMode: 'tagBrowserDarkMode',
+      pageZoom: 'tagBrowserPageZoom',
       treeFolding: 'tagBrowserTreeFolding',
       treeGroupHighlight: 'tagBrowserTreeGroupHL',
       highlightMatchedNames: 'tagBrowserHighlightMatchedNames',
@@ -18063,6 +18064,35 @@
       localStorage.setItem(LS.sortBy, sortColumn);
       localStorage.setItem(LS.optAsc, '1');
     }
+    /* Page zoom: navbar buttons for anyone who does not know Ctrl +/-, level remembered across restarts */
+    (function initPageZoom() {
+      const out = document.getElementById('btnZoomOut');
+      const reset = document.getElementById('btnZoomReset');
+      const zin = document.getElementById('btnZoomIn');
+      if (!out || !reset || !zin) return;
+      const show = (factor) => {
+        const pct = Math.round((Number(factor) || 1) * 100);
+        reset.textContent = pct + '%';
+        try {
+          localStorage.setItem(LS.pageZoom, String(Number(factor) || 1));
+        } catch (_) {}
+      };
+      const step = async (dir) => {
+        const r = await window.tagBrowser.pageZoom(dir);
+        if (r && r.ok) show(r.factor);
+      };
+      window.tagBrowser.setPageZoomChangedHandler(show);
+      out.addEventListener('click', () => void step('out'));
+      zin.addEventListener('click', () => void step('in'));
+      reset.addEventListener('click', () => void step('reset'));
+      let saved = 1;
+      try {
+        saved = Number(localStorage.getItem(LS.pageZoom)) || 1;
+      } catch (_) {}
+      /* Restore even at 1: main is the only place that knows the real factor after a reload. */
+      void step(saved);
+    })();
+
     /* Dark / light mode: apply saved preference, wire toggle button */
     (function initDarkMode() {
       const html = document.documentElement;

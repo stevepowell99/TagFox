@@ -2798,3 +2798,9 @@ body > .tooltip {
 [data-bs-theme="dark"] #btnToggleDarkMode .fa-sun { display: inline; }
 #btnToggleDarkMode .fa-sun { display: none; }
 /* ─── End dark theme ─── */
+
+/* Zoom level button: fixed width so the +/- buttons do not shuffle as the percentage changes. */
+.tagfox-zoom-level {
+  min-width: 3.4rem;
+  font-variant-numeric: tabular-nums;
+}

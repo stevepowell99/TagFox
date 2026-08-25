@@ -2067,20 +2067,38 @@ function focusedMenuWebContents(focusedWindow) {
   return w.webContents;
 }
 
-/** Page zoom steps — shared by View menu (clicks) and attachPageZoomShortcuts (keyboard). */
+/** Page zoom steps — shared by View menu (clicks), attachPageZoomShortcuts (keyboard) and the navbar buttons (IPC). */
+function notifyPageZoom(wc) {
+  /* The navbar control shows the level, so every route that changes zoom has to tell the page. */
+  if (!wc || wc.isDestroyed()) return;
+  try {
+    wc.send('tagfox-page-zoom-changed', wc.getZoomFactor());
+  } catch (_) {}
+}
 function pageZoomReset(wc) {
   if (!wc || wc.isDestroyed()) return;
   wc.setZoomFactor(1);
+  notifyPageZoom(wc);
 }
 function pageZoomIn(wc) {
   if (!wc || wc.isDestroyed()) return;
   const z = wc.getZoomFactor();
   wc.setZoomFactor(Math.min(3, Math.round(z * 1.1 * 100) / 100));
+  notifyPageZoom(wc);
 }
 function pageZoomOut(wc) {
   if (!wc || wc.isDestroyed()) return;
   const z = wc.getZoomFactor();
   wc.setZoomFactor(Math.max(0.25, Math.round((z / 1.1) * 100) / 100));
+  notifyPageZoom(wc);
+}
+/** Restore a saved zoom factor (renderer keeps it in localStorage across restarts). */
+function pageZoomSet(wc, factor) {
+  if (!wc || wc.isDestroyed()) return;
+  const n = Number(factor);
+  if (!Number.isFinite(n)) return;
+  wc.setZoomFactor(Math.min(3, Math.max(0.25, Math.round(n * 100) / 100)));
+  notifyPageZoom(wc);
 }
 
 /** Full app restart: relaunch Electron so main/preload/renderer/CSS/JS all reload. */
@@ -2825,6 +2843,20 @@ ipcMain.on('tagfox-perf-log', (_event, line) => {
   }
   if (++rendPerfLogCount > 60) return;
   mainPerfLog('rend ' + String(line || '').slice(0, 300));
+});
+
+/**
+ * Navbar zoom buttons: same steps as Ctrl +/- and the View menu, for anyone who does not know the shortcut.
+ * dir is 'in' | 'out' | 'reset' | 'get', or a zoom factor to restore.
+ */
+ipcMain.handle('page-zoom', (event, dir) => {
+  const wc = event.sender;
+  if (!wc || wc.isDestroyed()) return { ok: false, factor: 1 };
+  if (dir === 'in') pageZoomIn(wc);
+  else if (dir === 'out') pageZoomOut(wc);
+  else if (dir === 'reset') pageZoomReset(wc);
+  else if (dir !== 'get') pageZoomSet(wc, dir);
+  return { ok: true, factor: wc.getZoomFactor() };
 });
 
 ipcMain.on('tag-prefs-read-sync', (event) => {

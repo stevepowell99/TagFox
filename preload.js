@@ -7,6 +7,7 @@ let onQuickTodoOpen = null;
 let onSearchDebugLine = null;
 let onPlainF5SearchRefresh = null;
 let onAppRestartHint = null;
+let onPageZoomChanged = null;
 ipcRenderer.on('paths-mutated', (_e, payload) => {
   if (onPathsMutated) onPathsMutated(payload && typeof payload === 'object' ? payload : {});
 });
@@ -23,6 +24,9 @@ ipcRenderer.on('tagfox-open-quick-todo', () => {
 ipcRenderer.on('tagfox-plain-f5-refresh', () => {
   if (onPlainF5SearchRefresh) onPlainF5SearchRefresh();
   else ipcRenderer.send('tagfox-plain-f5-missed');
+});
+ipcRenderer.on('tagfox-page-zoom-changed', (_e, factor) => {
+  if (onPageZoomChanged) onPageZoomChanged(Number(factor) || 1);
 });
 ipcRenderer.on('tagfox-app-restart-imminent', (_e, payload) => {
   if (onAppRestartHint) onAppRestartHint(payload && typeof payload === 'object' ? payload : {});
@@ -117,6 +121,11 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   },
   pickScopeFolder: () => ipcRenderer.invoke('pick-scope-folder'),
   userHomeDir: () => ipcRenderer.invoke('user-home-dir'),
+  /** Page zoom for the navbar buttons: 'in' | 'out' | 'reset' | 'get', or a factor to restore. */
+  pageZoom: (dir) => ipcRenderer.invoke('page-zoom', dir),
+  setPageZoomChangedHandler: (fn) => {
+    onPageZoomChanged = typeof fn === 'function' ? fn : null;
+  },
   /** Renderer-side jank lines into the main perf log (%TEMP%\tagfox-mainperf.log); rate-capped in main. */
   perfLog: (line) => ipcRenderer.send('tagfox-perf-log', String(line || '')),
 });
