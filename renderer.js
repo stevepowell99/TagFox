@@ -1285,12 +1285,17 @@
       return true;
     }
 
-    async function openRowInOnlineGmist(fp) {
+    /* opts.share ('suggest' | 'edit') asks gmist to copy the room's share link to the clipboard once it
+       has opened, so a collaborator link is one click from a row. TagFox cannot build that link itself:
+       it holds no gmist credentials, and minting a room needs the browser's own session cookie, so the
+       round trip happens in the browser and gmist does the copying (see gmist's ShareOnOpen). */
+    async function openRowInOnlineGmist(fp, opts) {
+      const share = opts && opts.share ? String(opts.share) : '';
       if (!window.tagBrowser || typeof window.tagBrowser.resolveGoogleDriveFileId !== 'function') {
         setStatusMain('Open in gmist online is not available.');
         return;
       }
-      setStatusMain('Opening in gmist online…');
+      setStatusMain(share ? 'Getting a gmist share link…' : 'Opening in gmist online…');
       const r = await window.tagBrowser.resolveGoogleDriveFileId({ fullPath: fp });
       if (!r || !r.ok || !r.fileId) {
         const why =
@@ -1305,9 +1310,11 @@
       /* A harmless, readable breadcrumb the target ignores: the path from the user home, so the URL is legible. */
       const crumb = String(r.relPath || '').trim();
       const crumbSuffix = crumb ? '&p=' + crumb.split('/').map(encodeURIComponent).join('/') : '';
-      const url = GMIST_BASE_URL + '/open?file=' + encodeURIComponent(r.fileId) + crumbSuffix;
+      const shareSuffix = share ? '&share=' + encodeURIComponent(share) : '';
+      const url = GMIST_BASE_URL + '/open?file=' + encodeURIComponent(r.fileId) + crumbSuffix + shareSuffix;
       const opened = await window.tagBrowser.openUrlDefaultBrowser({ url });
       if (opened && opened.ok === false) setStatusMain(opened.error || 'Could not open browser for gmist.');
+      else if (share) setStatusMain('gmist is copying the ' + share + ' link to your clipboard…');
       else setStatusMain('Opening in gmist online…');
     }
 
@@ -13502,6 +13509,7 @@
           row && rowIsFolder(row) ? normalizeFolderPathForEverything(fullPathForRow(row)) : null;
         if (target) await applySearchScopeAndRefresh(target);
       } else if (res && res.action === 'printPdf') void printRowToPdf(fp, res.profile);
+      else if (res && res.action === 'gmistShareLink') void openRowInOnlineGmist(fp, { share: res.share });
       else if (res && res.action === 'rename') void renameItemInteractive(fp);
       else if (res && res.action === 'bulkRename') openBulkRenameModal();
       else if (res && res.action === 'duplicate' && res.destPath)

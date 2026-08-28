@@ -5330,6 +5330,16 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
           click: () => done({ ok: true, action: 'printPdf', profile: p.key }),
         })),
       });
+      /* Open the file in the deployed gmist and put a share link on the clipboard, for pasting to a
+         collaborator in Slack. Whether the file is actually in Drive is the renderer's call: it owns
+         the Drive-mount test and the id resolver, and says so in its own words when it is not. */
+      template.push({
+        label: 'Copy gmist share link',
+        submenu: [
+          { label: 'Suggest link (they cannot rewrite it)', click: () => done({ ok: true, action: 'gmistShareLink', share: 'suggest' }) },
+          { label: 'Edit link', click: () => done({ ok: true, action: 'gmistShareLink', share: 'edit' }) },
+        ],
+      });
     }
     template.push(
       { type: 'separator' },
