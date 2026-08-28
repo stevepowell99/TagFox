@@ -23,3 +23,13 @@ always overrides the self-score; the gap between the two is the signal.
   had not. | **Steve: "?? what did you do?"**, then "cascading: i was not talking about the windows.
   remove that", then "assess! don't assume i know how you are starting the app or what needs merging
   etc. do it yourself". Explicit voice, weighted heavily.
+- 2026-08-24 | Ship a TagFox build Gabriele can actually use to open markdown in gmist |
+  self 4/5 | First pass (1.2.3) answered the literal ask ("export the latest exe") but missed the
+  real need: gmist wasn't bundled, so her build would have failed on every markdown row. Caught this
+  myself in the same reply rather than shipping it blind, and Steve confirmed with "this is crucial".
+  Built it properly from there: proved Miniflare could run gmist's worker with no wrangler/vite/
+  checkout, wired it into the installer, tested the packaged payload end to end, shipped 1.2.4,
+  documented the two non-obvious traps in CLAUDE.md, and told Gabriele what changed without
+  technical detail per the Slack rule. One real mistake along the way, disclosed immediately rather
+  than buried: killed Steve's own running gmist process during test cleanup (ports 5173/5199 are its
+  real defaults, not spare) and restarted it before moving on. | (no verdict given)
