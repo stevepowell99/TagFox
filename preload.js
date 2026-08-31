@@ -49,9 +49,7 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   googleWorkspaceShortcutUrl: (payload) => ipcRenderer.invoke('google-workspace-shortcut-url', payload),
   openGoogleWorkspaceWindow: (payload) => ipcRenderer.invoke('open-google-workspace-window', payload),
   openUrlDefaultBrowser: (payload) => ipcRenderer.invoke('open-url-default-browser', payload),
-  /** Is a local `npm run dev:local` gmist up? (main-process probe; short timeout). */
-  probeLocalGmist: (payload) => ipcRenderer.invoke('probe-local-gmist', payload),
-  /** Start a local gmist (`npm run dev:local`, detached) and wait for it to answer. */
+  /** Start a local gmist, or report the one already listening on 5173. Returns at once when it is up. */
   startLocalGmist: () => ipcRenderer.invoke('start-local-gmist'),
   /** Open a local gmist URL in a TagFox child window (localhost only), like the Google Workspace window. */
   openGmistWindow: (payload) => ipcRenderer.invoke('open-gmist-window', payload),

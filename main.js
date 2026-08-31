@@ -43,6 +43,7 @@ if (!app.isPackaged) {
 const { spawn, spawnSync, execFileSync } = require('child_process');
 const { pathToFileURL } = require('url');
 const http = require('http');
+const net = require('net');
 const fs = require('fs').promises;
 const fssync = require('fs');
 const os = require('os');
@@ -4145,16 +4146,18 @@ function loopbackProbeOrigins(baseUrl) {
   return [base];
 }
 
-/* Measured on STEVE-DELL, 31 August 2026, against a gmist that had been up for hours: HEAD /go
-   answered in 1.3s, 1.6s, 1.9s, 3.3s and 3.3s over five consecutive tries, because the dev server
-   re-evaluates the worker entry per request. So a 600ms probe reported a perfectly healthy gmist
-   as down on EVERY click, and the whole feature rested on the patient re-probe behind it. These
-   are budgets, not delays: a probe returns the moment the server answers. */
-const LOCAL_GMIST_PROBE_QUICK_MS = 2500;
+/* One budget, and a generous one, because there is no short timeout that is also correct. Measured
+   on STEVE-DELL, 31 August 2026, against a gmist up for three days: HEAD /go answered in 1.3s,
+   1.6s, 1.9s, 3.3s and 3.3s on one run, then 2.6s, 4.9s, 6.1s, 9.0s and 11.3s twenty minutes
+   later, because the dev server re-evaluates the worker entry per request. The old 600ms probe
+   therefore called a healthy gmist down on nearly every click. This is a budget rather than a
+   delay: the call returns the moment the server answers. Nothing on the click path waits on it any
+   more, since startLocalGmist settles "is gmist up" from the ports. Its one job now is the wait
+   during a cold start, where a server that is coming up has to be given time to answer. */
 const LOCAL_GMIST_PROBE_PATIENT_MS = 8000;
 
 async function probeLocalGmistOnce(baseUrl, timeoutMs) {
-  const ms = timeoutMs || LOCAL_GMIST_PROBE_QUICK_MS;
+  const ms = timeoutMs || LOCAL_GMIST_PROBE_PATIENT_MS;
   /* Both addresses at once, so two candidates cost one timeout rather than two. */
   const results = await Promise.all(
     loopbackProbeOrigins(baseUrl).map(async (origin) => {
@@ -4172,11 +4175,6 @@ async function probeLocalGmistOnce(baseUrl, timeoutMs) {
   );
   return results.some(Boolean);
 }
-
-ipcMain.handle('probe-local-gmist', async (_event, { baseUrl } = {}) => ({
-  ok: true,
-  up: await probeLocalGmistOnce(baseUrl, LOCAL_GMIST_PROBE_QUICK_MS),
-}));
 
 /* Starting a local gmist on demand ------------------------------------------
    The row's local pen is offered on every markdown row, whether or not gmist is
@@ -4248,6 +4246,21 @@ function listenersByPort(ports) {
     for (const [port, set] of seen) byPort.set(port, [...set]);
   } catch (_) {}
   return byPort;
+}
+
+/** Is anything listening on this port? Asking the OS to bind it answers in microseconds and needs no
+    subprocess, where netstat measured 2.2s on a loaded machine, which is far too slow for a click.
+    Both loopback addresses, because the vite dev server binds [::1] only and a bind to 127.0.0.1
+    would then succeed and call the port free. This says nothing about WHO holds it, so the error
+    paths still pay for netstat to name the process; the common path never does. */
+function portIsHeld(port) {
+  const tryBind = (host) =>
+    new Promise((resolve) => {
+      const srv = net.createServer();
+      srv.once('error', (e) => resolve(e && e.code === 'EADDRINUSE'));
+      srv.listen({ port, host, exclusive: true }, () => srv.close(() => resolve(false)));
+    });
+  return Promise.all([tryBind('127.0.0.1'), tryBind('::1')]).then((r) => r.some(Boolean));
 }
 
 /** PIDs listening on any of these ports, so a failed start can name what is in the way. */
@@ -4385,7 +4398,7 @@ async function startBundledGmist(gmistDir) {
 
   const deadline = Date.now() + LOCAL_GMIST_START_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    if (await probeLocalGmistOnce(LOCAL_GMIST_BASE_URL, LOCAL_GMIST_PROBE_QUICK_MS)) {
+    if (await probeLocalGmistOnce(LOCAL_GMIST_BASE_URL, LOCAL_GMIST_PROBE_PATIENT_MS)) {
       return { ok: true, up: true, started: true, bundled: true, gmistDir, logPath };
     }
     if (exitReason) {
@@ -4418,64 +4431,47 @@ async function startBundledGmist(gmistDir) {
 
 let localGmistStartInFlight = null;
 
-/* How long to keep asking a dev server that IS listening on 5173 but has not answered /go yet.
-   Generous, because the alternative is spawning a start the ports guarantee will fail. */
-const LOCAL_GMIST_WAIT_FOR_HELD_PORT_MS = 45000;
-
 async function startLocalGmist() {
-  if (await probeLocalGmistOnce(LOCAL_GMIST_BASE_URL, LOCAL_GMIST_PROBE_QUICK_MS)) {
+  /* Whether the ports are held is read FIRST, before any HTTP request, because it is the only
+     signal here that is both instant and stable. Measured on STEVE-DELL, 31 August 2026, against a
+     gmist that had been up for three days: HEAD /go answered in 1.3s, 1.6s, 1.9s, 3.3s, 3.3s on
+     one run and 2.6s, 4.9s, 6.1s, 9.0s, 11.3s twenty minutes later, so no timeout is both short
+     enough to keep a click responsive and long enough to be right. A probe that gives up then
+     reports a healthy gmist as down, the start that follows dies on the sidecar port that gmist is
+     holding, and `dev:local exited straight away (code 1)` reaches the status bar looking like a
+     broken feature. A held 5173 settles it with no probe at all. */
+  const [devHeld, sidecarHeld] = await Promise.all([
+    portIsHeld(LOCAL_GMIST_DEV_PORT),
+    portIsHeld(LOCAL_GMIST_SIDECAR_PORT),
+  ]);
+  if (devHeld) {
+    /* Something owns the dev port, so gmist is there. It may be slow to answer, which is the
+       window's problem to wait out while it loads, not a reason to start a second gmist that would
+       die on the sidecar port the first one already holds. Nothing else runs on this path: no
+       netstat, no HTTP request, so the click stays a click. */
     return { ok: true, up: true, alreadyRunning: true };
   }
-  /* A second, patient look before spending up to 150s on a start that cannot work. The dev server
-     is a node process that may have sat idle for hours, and a slow answer is not the same as no
-     answer: treating it as down is what produced "dev:local exited straight away (code 1)" on a
-     gmist that had been running since lunchtime, because its own sidecar still held port 5199. */
-  if (await probeLocalGmistOnce(LOCAL_GMIST_BASE_URL, LOCAL_GMIST_PROBE_PATIENT_MS)) {
-    return { ok: true, up: true, alreadyRunning: true, slowProbe: true };
-  }
-  /* The listening ports, not the HTTP probe, decide whether a start can work, and they answer
-     instantly and deterministically where the probe is a slow judgement about a slow server. This
-     is the guard the two probes above are not: `dev:local` refuses outright while anything holds
-     5199, so spawning it against a held port produces "exited straight away (code 1)" and reads as
-     the feature being broken, which is exactly the report this fixes (31 August 2026, on a gmist
-     whose dev server and sidecar had both been up for hours). Never spawn against a held port. */
-  const held = listenersByPort(LOCAL_GMIST_PORTS);
-  const devPids = held.get(LOCAL_GMIST_DEV_PORT) || [];
-  const sidecarPids = held.get(LOCAL_GMIST_SIDECAR_PORT) || [];
-  if (devPids.length) {
-    /* Something owns the dev port, so gmist is there and merely slow: wait it out rather than
-       starting a second one that will die on the sidecar port the first one already holds. */
-    const deadline = Date.now() + LOCAL_GMIST_WAIT_FOR_HELD_PORT_MS;
-    while (Date.now() < deadline) {
-      if (await probeLocalGmistOnce(LOCAL_GMIST_BASE_URL, LOCAL_GMIST_PROBE_PATIENT_MS)) {
-        return { ok: true, up: true, alreadyRunning: true, slowProbe: true };
-      }
-      await new Promise((r) => setTimeout(r, LOCAL_GMIST_POLL_MS));
-    }
-    return {
-      ok: false,
-      up: false,
-      portHeld: true,
-      error:
-        'Port ' + LOCAL_GMIST_DEV_PORT + ' is held (PID ' + devPids.join(', ') + ') but nothing answered ' +
-        LOCAL_GMIST_BASE_URL + '/go in ' + Math.round(LOCAL_GMIST_WAIT_FOR_HELD_PORT_MS / 1000) + 's. ' +
-        'Not starting a second gmist on top of it. Stop that process with: taskkill /PID ' +
-        devPids.join(' /PID ') + ' /F',
-    };
-  }
-  if (sidecarPids.length) {
+  if (sidecarHeld) {
     /* The dev port is free but the localfs sidecar from a previous run is not, which `dev:local`
-       refuses on. Say so now rather than after a doomed spawn and a log tail. */
+       refuses on. Say so now rather than after a doomed spawn and a log tail. This is the error
+       path, so it can afford netstat to name the process Steve has to stop. */
+    const pids = listenersByPort([LOCAL_GMIST_SIDECAR_PORT]).get(LOCAL_GMIST_SIDECAR_PORT) || [];
     return {
       ok: false,
       up: false,
       portHeld: true,
       error:
         'A localfs sidecar from an earlier gmist is still on port ' + LOCAL_GMIST_SIDECAR_PORT +
-        ' (PID ' + sidecarPids.join(', ') + '), and dev:local will not start while it is there. ' +
-        'Stop it with: taskkill /PID ' + sidecarPids.join(' /PID ') + ' /F',
+        (pids.length ? ' (PID ' + pids.join(', ') + ')' : '') +
+        ', and dev:local will not start while it is there. Stop it with: ' +
+        (pids.length
+          ? 'taskkill /PID ' + pids.join(' /PID ') + ' /F'
+          : 'taskkill /F /IM node.exe (or close the dev:local window)'),
     };
   }
+  /* Both ports free means nothing is listening, so gmist is not running and no HTTP request could
+     say otherwise. Go straight to the spawn: an "is it up after all?" probe here would time out on
+     every cold start for a certain answer we already have. */
   if (localGmistStartInFlight) return localGmistStartInFlight;
   localGmistStartInFlight = (async () => {
     /* A checkout wins where there is one: it gives hot reload and it is the copy being worked on.
@@ -4540,7 +4536,7 @@ async function startLocalGmist() {
 
     const deadline = Date.now() + LOCAL_GMIST_START_TIMEOUT_MS;
     while (Date.now() < deadline) {
-      if (await probeLocalGmistOnce(LOCAL_GMIST_BASE_URL, LOCAL_GMIST_PROBE_QUICK_MS)) {
+      if (await probeLocalGmistOnce(LOCAL_GMIST_BASE_URL, LOCAL_GMIST_PROBE_PATIENT_MS)) {
         return { ok: true, up: true, started: true, repoDir, logPath };
       }
       /* An early exit is the common failure (a stale localfs sidecar still holding its port), so

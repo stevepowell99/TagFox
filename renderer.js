@@ -1200,27 +1200,14 @@
     const GMIST_LOCAL_BASE_URL = 'http://localhost:5173';
     const GMIST_EXT = new Set(['md', 'qmd']);
 
-    /* Local-gmist detection, cached briefly so repeated clicks do not each probe.
-       Read only on click now (the local pen is always shown), to decide whether the
-       file can be opened straight away or gmist has to be started first. A local
-       gmist opens files by absolute PATH (any drive, no Drive lookup, no sign-in);
-       the deployed worker needs the file to be in Drive. gmist owns the sidecar and
-       its token; TagFox only picks which base URL to open. */
-    let _localGmist = { at: 0, up: false };
-    async function localGmistUp() {
-      const now = Date.now();
-      if (now - _localGmist.at < 5000) return _localGmist.up;
-      let up = false;
-      try {
-        const r =
-          window.tagBrowser && typeof window.tagBrowser.probeLocalGmist === 'function'
-            ? await window.tagBrowser.probeLocalGmist({ baseUrl: GMIST_LOCAL_BASE_URL })
-            : null;
-        up = !!(r && r.up);
-      } catch { up = false; }
-      _localGmist = { at: now, up };
-      return up;
-    }
+    /* Whether a local gmist is up is main's call alone (startLocalGmist), and the renderer no
+       longer keeps its own answer. It used to probe HEAD /go here first, which was a second,
+       worse copy of the same judgement: an HTTP timeout, on a dev server measured answering
+       anywhere between 1.3s and 11.3s, so it read "down" about a healthy gmist on most clicks and
+       cost a couple of seconds doing it. Main reads the LISTENING ports instead, which is instant
+       and stable, so the click can just ask it and act on the answer. A local gmist opens files by
+       absolute PATH (any drive, no Drive lookup, no sign-in); the deployed worker needs the file to
+       be in Drive. gmist owns the sidecar and its token; TagFox only picks which base URL to open. */
 
     /** True when the path is under a Google Drive mount (own My Drive mirror, or a shared shortcut target). */
     function pathUnderGoogleDrive(fp) {
@@ -1247,35 +1234,37 @@
         setStatusMain('Open in gmist is not available.');
         return false;
       }
-      /* Not running is the ordinary case, not an error: start it and wait. The button is always
-         shown, so the click is where "is gmist up" gets settled. */
-      if (!(await localGmistUp())) {
-        if (typeof window.tagBrowser.startLocalGmist !== 'function') {
-          setStatusMain('Local gmist is not running. Start it with `npm run dev:local`, or use the online button.');
-          return false;
-        }
-        /* "Waiting for", not "Starting": main only spawns when the ports are free, and where a gmist
-           is already listening but slow to answer it waits for that one instead. */
-        setStatusMain('Waiting for local gmist, starting it if it is not up — a cold start takes about a minute…');
-        let started = null;
-        try {
-          started = await window.tagBrowser.startLocalGmist();
-        } catch (e) {
-          started = { up: false, error: String((e && e.message) || e) };
-        }
-        /* No checkout to start: the caller decides (the default-open path falls back to the shell,
-           the pen says so), rather than every markdown row reporting a failure. */
-        if (started && started.noRepo) {
-          setStatusMain('No local gmist on this machine: ' + started.error);
-          return 'no-gmist-repo';
-        }
-        if (!started || !started.up) {
-          const why = (started && started.error) || 'unknown error';
-          const log = started && started.logPath ? ' See ' + started.logPath + '.' : '';
-          setStatusMain('Could not start local gmist: ' + why + log);
-          return false;
-        }
-        _localGmist = { at: Date.now(), up: true };
+      /* Every click asks main, because a gmist that is already up costs one netstat to establish
+         and the answer is then certain. Not running is the ordinary case rather than an error:
+         main starts it and waits. */
+      if (typeof window.tagBrowser.startLocalGmist !== 'function') {
+        setStatusMain('Local gmist is not running. Start it with `npm run dev:local`, or use the online button.');
+        return false;
+      }
+      /* Only say "starting" if the answer does not come back at once, or an already-running gmist
+         flashes a cold-start warning it has no need of. */
+      const slow = setTimeout(
+        () => setStatusMain('Starting local gmist (npm run dev:local) — a cold start takes about a minute…'),
+        700
+      );
+      let started = null;
+      try {
+        started = await window.tagBrowser.startLocalGmist();
+      } catch (e) {
+        started = { up: false, error: String((e && e.message) || e) };
+      }
+      clearTimeout(slow);
+      /* No checkout to start: the caller decides (the default-open path falls back to the shell,
+         the pen says so), rather than every markdown row reporting a failure. */
+      if (started && started.noRepo) {
+        setStatusMain('No local gmist on this machine: ' + started.error);
+        return 'no-gmist-repo';
+      }
+      if (!started || !started.up) {
+        const why = (started && started.error) || 'unknown error';
+        const log = started && started.logPath ? ' See ' + started.logPath + '.' : '';
+        setStatusMain('Could not start local gmist: ' + why + log);
+        return false;
       }
       const url = GMIST_LOCAL_BASE_URL + '/open?path=' + encodeURIComponent(fp);
       const opened = await window.tagBrowser.openGmistWindow({ url, label: pathBasenameForConfirm(fp) });
