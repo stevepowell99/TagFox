@@ -1254,7 +1254,9 @@
           setStatusMain('Local gmist is not running. Start it with `npm run dev:local`, or use the online button.');
           return false;
         }
-        setStatusMain('Starting local gmist (npm run dev:local) — a cold start takes about a minute…');
+        /* "Waiting for", not "Starting": main only spawns when the ports are free, and where a gmist
+           is already listening but slow to answer it waits for that one instead. */
+        setStatusMain('Waiting for local gmist, starting it if it is not up — a cold start takes about a minute…');
         let started = null;
         try {
           started = await window.tagBrowser.startLocalGmist();
