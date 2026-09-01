@@ -2552,11 +2552,11 @@ ul.breadcrumb-folder-flyout .dropdown-item,
 }
 #propsAside.props-theater {
   position: fixed;
-  top: 3vh;
+  top: 0;
   left: 50%;
   transform: translateX(-50%);
-  width: min(96vw, 1680px) !important;
-  height: 94vh !important;
+  width: 90vw !important;
+  height: 100vh !important;
   max-width: none !important;
   min-width: 240px;
   z-index: 2000;

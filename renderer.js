@@ -1993,6 +1993,7 @@
       const pdfFrame = document.getElementById('pdfFrame');
       if (pdfFrame) {
         pdfFrame.removeAttribute('src');
+        delete pdfFrame.dataset.pdfBlobUrl;
         pdfFrame.srcdoc = PREVIEW_IFRAME_IDLE;
       }
       const htmlPreviewFrame = document.getElementById('htmlPreviewFrame');
@@ -2030,6 +2031,42 @@
       const url = URL.createObjectURL(blob);
       previewBlobUrls.push(url);
       return url;
+    }
+
+    /*
+     * Chromium's PDF plugin reads its view parameters from the URL fragment, and only at load, so
+     * the fragment is re-applied (which reloads the frame) whenever the Viewer enters or leaves
+     * near-full-screen. Expanded, the plugin is wide enough that it opens its thumbnail sidebar
+     * uninvited and 100% leaves the text small, so expanded asks for 150% and no sidebar.
+     * `toolbar=0` is the only thing that closes that sidebar: measured 1 September 2026 against the
+     * Electron PDF viewer at 1728px, `pagemode=none` left the thumbnails exactly where they were.
+     * It takes the plugin's own toolbar with it (page counter, zoom buttons, print, download), which
+     * is the price of the sidebar going; Ctrl+wheel still zooms and the TagFox header still refreshes.
+     * The side pane is narrow enough that no sidebar appears, so it keeps the toolbar and the fit.
+     */
+    const PDF_VIEW_PARAMS_THEATER = '#zoom=150&toolbar=0';
+    const PDF_VIEW_PARAMS_PANE = '';
+
+    function pdfViewParams() {
+      return isPropsTheaterOn() ? PDF_VIEW_PARAMS_THEATER : PDF_VIEW_PARAMS_PANE;
+    }
+
+    /** Point #pdfFrame at a freshly made blob URL, remembering it so a theater toggle can re-apply. */
+    function setPdfFrameSrc(blobUrl) {
+      const f = document.getElementById('pdfFrame');
+      if (!f) return;
+      f.dataset.pdfBlobUrl = blobUrl;
+      f.removeAttribute('srcdoc');
+      f.src = blobUrl + pdfViewParams();
+    }
+
+    function syncPdfViewParams() {
+      const f = document.getElementById('pdfFrame');
+      const blobUrl = f && f.dataset ? f.dataset.pdfBlobUrl : '';
+      if (!f || !blobUrl) return;
+      const want = blobUrl + pdfViewParams();
+      if (f.src === want) return;
+      f.src = want;
     }
 
     /** Stable hue 0–359 from tag identity (lowercase so “Foo” matches “foo”). */
@@ -2672,6 +2709,7 @@
       backdrop.classList.toggle('d-none', !show);
       split.classList.toggle('d-none', show);
       syncViewerDocDividerOrientation();
+      syncPdfViewParams();
       if (btn) {
         btn.setAttribute('aria-expanded', show ? 'true' : 'false');
         btn.title = show ? 'Exit expanded view (Shift+Space or Esc)' : 'Near full screen (Shift+Space)';
@@ -7999,9 +8037,7 @@
         if (r.ok) {
           pdfBlock.classList.remove('d-none');
           document.getElementById('btnPdfRefresh')?.classList.remove('d-none');
-          const pdfFrame = document.getElementById('pdfFrame');
-          pdfFrame.removeAttribute('srcdoc');
-          pdfFrame.src = base64ToBlobUrl(r.base64, 'application/pdf');
+          setPdfFrameSrc(base64ToBlobUrl(r.base64, 'application/pdf'));
         } else {
           propPh.classList.remove('d-none');
           propPh.textContent = 'PDF: ' + (r.error || 'Could not load.');
