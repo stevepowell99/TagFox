@@ -158,11 +158,11 @@
         </button>
       </div>
       <div id="settingsAutoRefreshDetails" class="collapse">
-        <label class="form-label small mb-1" for="autoRefreshSec">Optional. Refresh results on a timer. Handy if files change outside TagFox; otherwise leave Off.</label>
+        <label class="form-label small mb-1" for="autoRefreshSec">Picks up files changed outside TagFox. The list is only repainted when something has actually changed, so a quiet folder stays still.</label>
         <select id="autoRefreshSec" class="form-select form-select-sm mb-1" autocomplete="off">
-          <option value="0" selected>Off</option>
+          <option value="0">Off</option>
           <option value="3">Every 3 seconds</option>
-          <option value="5">Every 5 seconds</option>
+          <option value="5" selected>Every 5 seconds</option>
           <option value="10">Every 10 seconds</option>
           <option value="30">Every 30 seconds</option>
         </select>

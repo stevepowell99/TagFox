@@ -50,6 +50,7 @@
       searchDebug: 'tagBrowserSearchDebug',
       helpModalTab: 'tagBrowserHelpModalTab',
       autoRefreshSec: 'tagBrowserAutoRefreshSec',
+      autoRefreshDefaultMoved: 'tagBrowserAutoRefreshDefaultMoved',
       darkMode: 'tagBrowserDarkMode',
       pageZoom: 'tagBrowserPageZoom',
       treeFolding: 'tagBrowserTreeFolding',
@@ -3419,6 +3420,33 @@
       autoRefreshTimerId = setInterval(() => void maybeAutoRefreshSearchTick(), sec * 1000);
     }
 
+    /* True only for the duration of an auto-refresh tick's search. It buys two things the explicit
+       routes (F5, the header button, a disk mutation) must not have: renderTable may skip a rebuild
+       that would paint the same rows again, and a rebuild that does happen keeps the scroll position.
+       An explicit refresh is a thing Steve asked for, so it always repaints and always reports. */
+    let quietAutoRefreshRender = false;
+
+    /* A repaint under the pointer moves the row being aimed at, so the click lands on the wrong file.
+       Skip the tick and let the next one have it: a few seconds later is invisible, a row that jumps
+       mid-click is not. */
+    function autoRefreshTickWouldDisturb() {
+      if (document.body.classList.contains('tagfox-internal-path-drag')) return true;
+      if (document.querySelector('.tagfox-split-drag-shield')) return true;
+      /* A refresh re-runs the search, which comes back with the first page, so a tick after load-more
+         would throw away the pages Steve asked for. Someone who has paged down is reading a long list,
+         which is where a repaint costs most anyway. F5 still refreshes and still collapses the list,
+         unchanged, because that one he asked for. The test is against pageSize, not zero: singleOffset
+         starts at the first page's own row count, so `> 0` is true of every non-empty search and would
+         silently stop the timer altogether. */
+      const paging = resultsPagingCtx;
+      if (paging && paging.mode === 'single' && paging.singleOffset > paging.pageSize) return true;
+      const scroll = document.getElementById('resultsScroll');
+      try {
+        if (scroll && scroll.matches(':hover')) return true;
+      } catch (_) {}
+      return false;
+    }
+
     /** Timer callback: same query as F5, but only when idle and safe. */
     async function maybeAutoRefreshSearchTick() {
       if (!autoRefreshIntervalSeconds()) {
@@ -3429,11 +3457,14 @@
       if (document.querySelector('.modal.show')) return;
       if (tagRenameBusy || renameItemBusy) return;
       if (searchInFlight) return;
+      if (autoRefreshTickWouldDisturb()) return;
       suppressViewerResyncForTimerSearch = true;
+      quietAutoRefreshRender = true;
       try {
         await runSearchNow('refresh');
       } finally {
         suppressViewerResyncForTimerSearch = false;
+        quietAutoRefreshRender = false;
       }
     }
 
@@ -9782,6 +9813,21 @@
       return ', ' + parts.join(', ');
     }
 
+    /* What the table is actually showing, so a tick that changed nothing can be told from one that
+       did. Modified time and size are in the key as well as the path: a file edited in place keeps
+       its row but changes two of its columns, and that is a change the list should show. */
+    let lastRenderedTableSig = '';
+
+    function resultsTableRenderSignature() {
+      const rows = listRowsForUi();
+      const parts = [rows.length + '/' + lastRows.length];
+      for (const r of rows) {
+        parts.push(pathNormKey(fullPathForRow(r)) + '*' + modifiedTimeMs(r) + '*' + (r && r.size != null ? r.size : ''));
+      }
+      /* | and * cannot occur in a Windows path, so neither separator can be part of a key. */
+      return parts.join('|');
+    }
+
     /** Natural full-path sort key: separator replaced with \x00 so children always follow their parent (e.g. abc\file < abc2). */
     function pathSortKey(row) {
       return pathNormKey(fullPathForRow(row)).replace(/[/\\]/g, '\x00');
@@ -11644,8 +11690,16 @@
         const sel = document.getElementById('autoRefreshSec');
         if (sel) {
           const allowed = new Set(['0', '3', '5', '10', '30']);
-          const v = localStorage.getItem(LS.autoRefreshSec);
-          sel.value = allowed.has(String(v)) ? String(v) : '0';
+          let v = localStorage.getItem(LS.autoRefreshSec);
+          /* Auto-refresh defaulted to Off because every tick rebuilt the table whether or not anything
+             had changed. A tick now repaints only on a real change, so on is the useful default, and
+             this carries an existing Off over once. An Off chosen after the move survives, because the
+             marker is written on the first load either way. */
+          if (localStorage.getItem(LS.autoRefreshDefaultMoved) !== '1') {
+            localStorage.setItem(LS.autoRefreshDefaultMoved, '1');
+            if (!allowed.has(String(v)) || String(v) === '0') v = '5';
+          }
+          sel.value = allowed.has(String(v)) ? String(v) : '5';
         }
       }
       syncGlobalViewerBasenamesInputFromStorage();
@@ -13546,9 +13600,16 @@
 
     function renderTable() {
       const t0 = performance.now();
+      /* A quiet tick that does repaint (the rows really did change) must not also throw the reader
+         back to the top of a long list. */
+      const keepScrollEl = quietAutoRefreshRender ? document.getElementById('resultsScroll') : null;
+      const keepScrollTop = keepScrollEl ? keepScrollEl.scrollTop : 0;
       try {
         renderTableImpl();
       } finally {
+        if (keepScrollEl && keepScrollTop && keepScrollEl.scrollTop !== keepScrollTop) {
+          keepScrollEl.scrollTop = keepScrollTop;
+        }
         const ms = Math.round(performance.now() - t0);
         const dom = document.getElementById('tbody')?.childElementCount || 0;
         if (ms >= PERF_SLOW_MS) searchDebugLog('perf.slow', { label: 'render.table', ms, rows: lastRows.length, dom });
@@ -13562,11 +13623,21 @@
         const tip = bootstrap.Tooltip.getInstance(el);
         if (tip) tip.dispose();
       });
+      /* Both settle state and neither touches the tbody, so they run before the guard below and the
+         signature is taken against what the table would show. */
+      applyGoneTombstonesToLastRows();
+      pruneCheckedPaths();
+      /* An auto-refresh tick that came back with the same rows must not rebuild the table. The rebuild
+         is what made the timer intrusive: it drops the scroll position, disposes and remakes every
+         tooltip, and moves the row under the pointer. Same guard as the folder-thumbs grid, and it
+         fires only for a timer tick, never for F5 or the header button. */
+      if (quietAutoRefreshRender) {
+        const sig = resultsTableRenderSignature();
+        if (sig === lastRenderedTableSig && tbody.childElementCount) return;
+      }
       clearInternalPathDragDropTargetHints();
       resetThumbObserver();
       tbody.innerHTML = '';
-      applyGoneTombstonesToLastRows();
-      pruneCheckedPaths();
       const rows = filteredRows();
       const rowsForDisplay = listRowsForUi();
       const rawN = lastRows.length;
@@ -14124,6 +14195,7 @@
       updateEmptyResultsPulseHints(rowsForDisplay.length);
       updateResultsLoadMoreUi();
       scheduleFolderChildCountsForVisibleResultsRows();
+      lastRenderedTableSig = resultsTableRenderSignature();
       runAfterNextLayoutPaint(() => maybeAutoFillResultsUntilScrollable());
     }
 

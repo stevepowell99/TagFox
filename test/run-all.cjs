@@ -15,6 +15,7 @@ const runs = [
   { name: 'column resize', args: ['column-resize.cjs'] },
   { name: 'splitter drag', args: ['splitter-drag.cjs'] },
   { name: 'refresh visibility', args: ['refresh-visible.cjs'] },
+  { name: 'quiet auto-refresh', args: ['quiet-refresh.cjs'] },
   { name: 'zoom buttons', args: ['zoom-buttons.cjs'] },
   { name: 'gmist start guard', args: ['gmist-start-guard.cjs'] }, // skips loudly if a real gmist holds 5173/5199
   { name: 'fuzz seed 999', args: ['fuzz.cjs', '40', '999'] },
