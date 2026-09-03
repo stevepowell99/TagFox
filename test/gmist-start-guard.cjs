@@ -15,6 +15,10 @@
 // Run: node test/gmist-start-guard.cjs
 
 const net = require('net');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawn } = require('child_process');
 const { connect, SCOPES } = require('./harness.cjs');
 
 const DEV_PORT = 5173;
@@ -89,8 +93,49 @@ async function main() {
     } else {
       console.log(`  PASS sidecar port held -> named the holder, did not spawn (${ms2}ms)`);
     }
-    if (ms2 > 3000) failures.push(`sidecar port held: took ${ms2}ms, expected well under 3s (no spawn, no probe)`);
+    /* Wider than case 1 on purpose: this path now answers a second question (who owns the sidecar)
+       on top of the netstat it already ran, and netstat alone measured 2.2s on a loaded machine. It
+       is still bounded, because an error the user is waiting on must arrive rather than hang. */
+    if (ms2 > 8000) failures.push(`sidecar port held: took ${ms2}ms, expected under 8s (no spawn, no HTTP probe)`);
     for (const s of held.splice(0)) await new Promise((r) => s.close(r));
+
+    /* Case 3: the same two ports, the opposite situation. dev:local brings the sidecar up first and
+       vite several seconds later, so a click in that window sees exactly what case 2 sees and used to
+       be told to kill the gmist it was about to use (Steve, 3 September 2026, against a gmist that had
+       been up since 08:34). The two are told apart by who owns the sidecar, so the fake runner below
+       is a process whose command line looks like dev:local with the port holder as its child. */
+    const runnerPath = path.join(os.tmpdir(), 'tagfox-test-dev-local-runner.mjs');
+    fs.writeFileSync(runnerPath, [
+      "import { createServer } from 'net';",
+      "const srv = createServer((s) => s.on('error', () => {}));",
+      `srv.listen(${SIDECAR_PORT}, '127.0.0.1');`,
+      'process.on("SIGTERM", () => process.exit(0));',
+      'setInterval(() => {}, 1000);',
+    ].join(String.fromCharCode(10)));
+    let runner = null;
+    try {
+      runner = spawn(process.execPath, [runnerPath], { stdio: 'ignore' });
+      /* Wait for the fake sidecar to actually be listening, or the case tests nothing. */
+      for (let i = 0; i < 40 && (await portIsFree(SIDECAR_PORT)); i++) await new Promise((r) => setTimeout(r, 100));
+      if (await portIsFree(SIDECAR_PORT)) throw new Error('the fake sidecar never took port ' + SIDECAR_PORT);
+
+      const call = drv.ev(`window.tagBrowser.startLocalGmist()`);
+      /* Let it sit in the wait, then bring the dev port up the way a real vite finally would. */
+      await new Promise((r) => setTimeout(r, 2000));
+      held.push(await holdPort(DEV_PORT, '127.0.0.1'));
+      const r3 = await call;
+      if (!r3 || r3.up !== true || r3.alreadyRunning !== true) {
+        failures.push(`sidecar held by a live dev:local: expected {up:true, alreadyRunning:true}, got ${JSON.stringify(r3)}`);
+      } else if (/taskkill/i.test(String(r3.error || ''))) {
+        failures.push(`sidecar held by a live dev:local: must not tell Steve to kill a gmist that is starting: ${r3.error}`);
+      } else {
+        console.log('  PASS sidecar held by a live dev:local -> waited for the dev port instead of reporting an orphan');
+      }
+    } finally {
+      if (runner) { try { runner.kill(); } catch (_) {} }
+      try { fs.unlinkSync(runnerPath); } catch (_) {}
+      for (const s of held.splice(0)) await new Promise((r) => s.close(r));
+    }
   } catch (e) {
     failures.push(`threw: ${(e && e.stack) || e}`);
   } finally {

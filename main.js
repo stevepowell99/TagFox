@@ -4270,6 +4270,32 @@ function listenerPidsOnPorts(ports) {
   return [...pids];
 }
 
+/* Whose child is the process holding the sidecar port. A sidecar left behind by a dead gmist has no
+   runner above it any more; one belonging to a gmist that is still coming up does, because dev:local
+   starts the sidecar first and vite several seconds later. Without this the two are indistinguishable
+   from the ports alone, and a click during that window reported a perfectly healthy gmist as an
+   orphan to be killed. Shells out, so it stays on the error path where netstat already lives. */
+function sidecarHasLiveGmistRunner(pid) {
+  if (process.platform !== 'win32' || !pid) return false;
+  try {
+    const out = execFileSync(
+      'powershell',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        '$c = Get-CimInstance Win32_Process -Filter "ProcessId=' + Number(pid) + '"; ' +
+          'if ($c) { $p = Get-CimInstance Win32_Process -Filter "ProcessId=$($c.ParentProcessId)"; if ($p) { $p.CommandLine } }',
+      ],
+      { encoding: 'utf8', timeout: 6000 }
+    );
+    return /dev[-:]local/i.test(String(out || ''));
+  } catch (_) {
+    /* No answer is not evidence of an orphan, and calling it one is the failure this exists to stop. */
+    return false;
+  }
+}
+
 /** The ports local gmist needs: the dev server and the localfs sidecar it owns. */
 const LOCAL_GMIST_PORTS = [5173, 5199];
 const LOCAL_GMIST_DEV_PORT = LOCAL_GMIST_PORTS[0];
@@ -4452,10 +4478,26 @@ async function startLocalGmist() {
     return { ok: true, up: true, alreadyRunning: true };
   }
   if (sidecarHeld) {
-    /* The dev port is free but the localfs sidecar from a previous run is not, which `dev:local`
-       refuses on. Say so now rather than after a doomed spawn and a log tail. This is the error
-       path, so it can afford netstat to name the process Steve has to stop. */
+    /* The dev port is free but the localfs sidecar is not. That is two different situations wearing
+       the same pair of ports: a sidecar orphaned by a dead gmist, and the sidecar of a gmist that is
+       still starting, because dev:local brings the sidecar up first and vite seconds later. Only the
+       first is an error. Ask who owns the sidecar before saying anything, or a click landing in that
+       window tells Steve to kill the gmist he is about to use. This is the error path, so it can
+       afford netstat and one WMI query. */
     const pids = listenersByPort([LOCAL_GMIST_SIDECAR_PORT]).get(LOCAL_GMIST_SIDECAR_PORT) || [];
+    if (pids.some((pid) => sidecarHasLiveGmistRunner(pid))) {
+      /* gmist is on its way up. Wait for the dev port on the same budget a start we spawned ourselves
+         gets, rather than starting a second one that would die on this very port. */
+      const deadline = Date.now() + LOCAL_GMIST_START_TIMEOUT_MS;
+      while (Date.now() < deadline) {
+        if (await portIsHeld(LOCAL_GMIST_DEV_PORT)) {
+          return { ok: true, up: true, alreadyRunning: true, waitedForStartup: true };
+        }
+        await new Promise((r) => setTimeout(r, LOCAL_GMIST_POLL_MS));
+      }
+      /* The runner is alive and the dev port never came up, so something is wrong with that run, not
+         with the ports. Fall through and name what is holding them. */
+    }
     return {
       ok: false,
       up: false,
