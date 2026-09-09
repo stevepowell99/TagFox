@@ -662,6 +662,8 @@
     /** RHS .md / .txt editor: path the textarea belongs to + debounced write */
     let mdAutosaveTimer = null;
     let mdAutosaveTargetPath = null;
+    /** Exactly what the mdFile buffer was loaded with, so a write can tell an edit from a stale buffer. */
+    let mdAutosaveLoadedText = null;
     const MD_AUTOSAVE_MS = 450;
     const viewerMdEditors = { readme: null, mdFile: null };
 
@@ -993,11 +995,31 @@
       }
     }
 
+    /** The mdFile write is armed by the editor being open, never by the preview. Selecting a file
+        loads its text into the same buffer, so an armed-on-preview write saved that buffer back on
+        the next blur and overwrote whatever had written the file since. */
+    function mdFileEditorIsOpen() {
+      const wrap = document.getElementById('mdFileEditorWrap');
+      return !!wrap && !wrap.classList.contains('d-none');
+    }
+
     async function flushMdFileAutosave() {
       cancelMdFileAutosave();
       const p = mdAutosaveTargetPath;
       if (!p) return;
+      if (!mdFileEditorIsOpen()) return;
       const text = getViewerMdValue('mdFile');
+      if (mdAutosaveLoadedText !== null && text === mdAutosaveLoadedText) return;
+      /* Round-trip guard: the file may have moved on disk since this buffer was loaded, by another
+         editor, an agent or a checkout. Writing then destroys that work with nothing on screen to
+         say so, and the buffer is recoverable by reselecting the file, so refuse instead. */
+      if (mdAutosaveLoadedText !== null) {
+        const disk = await window.tagBrowser.readTextFile({ fullPath: p });
+        if (disk.ok && disk.text !== mdAutosaveLoadedText) {
+          setStatusMain('Not saved: ' + T.baseName(p) + ' has changed on disk. Reselect the file to reload it.');
+          return;
+        }
+      }
       // TEMP DIAGNOSTIC (truncation hunt): compare editor value lengths vs what is written.
       try {
         const cm = getViewerMdEditor('mdFile');
@@ -1020,6 +1042,7 @@
         nativeConsole.log('mdAutosave.readback', rb);
         searchDebugLog('mdAutosave.readback', rb);
       } catch (_) {}
+      if (r.ok) mdAutosaveLoadedText = text;
       setStatusMain(r.ok ? 'Saved.' : (r.error || 'Save failed'));
     }
 
@@ -7875,11 +7898,13 @@
           return;
         }
         mdAutosaveTargetPath = null;
+        mdAutosaveLoadedText = null;
         const rTxt = await window.tagBrowser.readTextFile({ fullPath: targetFp });
         if (!propsViewStill(targetFp)) return;
         if (rTxt.ok) {
           setViewerMdValue('mdFile', rTxt.text);
           mdAutosaveTargetPath = targetFp;
+          mdAutosaveLoadedText = rTxt.text;
         } else {
           setViewerMdValue('mdFile', '/* read error: ' + (rTxt.error || '') + ' */');
         }
@@ -8512,6 +8537,27 @@
       }
     }
 
+    /** Opening the mdFile editor re-reads the file first. The buffer was filled when the file was
+        previewed, which may have been hours ago, so typing into it without this is how an edit gets
+        made against a version that no longer exists and then refused by the guard in the flush. */
+    async function openMdFileEditorFresh() {
+      if (mdFileEditorIsOpen()) {
+        setViewerDocEditorOpen('mdFile', true);
+        return;
+      }
+      const p = mdAutosaveTargetPath;
+      if (p) {
+        const disk = await window.tagBrowser.readTextFile({ fullPath: p });
+        if (disk.ok && disk.text !== mdAutosaveLoadedText) {
+          setViewerMdValue('mdFile', disk.text);
+          mdAutosaveLoadedText = disk.text;
+          const prev = document.getElementById('mdFilePreview');
+          if (prev) prev.innerHTML = editableTextPreviewHtml(disk.text, p);
+        }
+      }
+      setViewerDocEditorOpen('mdFile', true);
+    }
+
     /** Folder doc: single control — Save writes to disk, closes editor, refreshes search. */
     async function closeReadmeEditorWithSave() {
       const status = document.getElementById('statusMain');
@@ -8578,6 +8624,10 @@
       const willOpen = wrap.classList.contains('d-none');
       if (which === 'readme' && !willOpen) {
         void closeReadmeEditorWithSave();
+        return;
+      }
+      if (which === 'mdFile' && willOpen) {
+        void openMdFileEditorFresh();
         return;
       }
       setViewerDocEditorOpen(which, willOpen);
@@ -16343,15 +16393,19 @@
       function bind(prevId, which) {
         const el = document.getElementById(prevId);
         if (!el) return;
+        const open = () => {
+          if (which === 'mdFile') void openMdFileEditorFresh();
+          else setViewerDocEditorOpen(which, true);
+        };
         el.addEventListener('dblclick', () => {
           if (which === 'readme' && globalNestedReadmeView) return;
-          setViewerDocEditorOpen(which, true);
+          open();
         });
         el.addEventListener('keydown', (e) => {
           if (which === 'readme' && globalNestedReadmeView) return;
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            setViewerDocEditorOpen(which, true);
+            open();
           }
         });
       }
@@ -18335,6 +18389,28 @@
         /* Simulate the renderer side of a delete: tombstone the paths + repaint the active pane. Used by
            crud-pane-isolation to prove a delete in the active tab never touches other tabs' stored rows. */
         tombstone: (paths) => removeGonePathsFromUiNow(Array.isArray(paths) ? paths : [paths]),
+        /* Viewer markdown/text editor. Each driver calls the real function, so a test drives the same
+           preview-and-edit path a user does rather than a second copy of it. The synthetic row stands in
+           for a search hit when the file is not in the current results. */
+        selectViewerFile: async (p) => {
+          const fp = String(p);
+          selectedFullPath = fp;
+          selectedRow =
+            findRowByFullPath(fp) ||
+            { type: 'file', name: T.baseName(fp), path: T.parentDir(fp), size: 0, date_modified: '' };
+          await refreshPropsPanel();
+        },
+        mdOpenEditor: () => openMdFileEditorFresh(),
+        mdCloseEditor: () => setViewerDocEditorOpen('mdFile', false),
+        mdSetBuffer: (t) => setViewerMdValue('mdFile', String(t)),
+        mdFlush: () => flushMdFileAutosave(),
+        mdState: () => ({
+          target: mdAutosaveTargetPath,
+          editorOpen: mdFileEditorIsOpen(),
+          buffer: getViewerMdValue('mdFile'),
+          loaded: mdAutosaveLoadedText,
+          status: document.getElementById('statusMain')?.textContent || '',
+        }),
         disableAutofill: () => { maybeAutoFillResultsUntilScrollable = () => {}; },
         autoStart: (sec) => { const e = document.getElementById('autoRefreshSec'); if (e) { e.value = String(sec); } syncAutoRefreshTimer(); },
         autoStop: () => { const e = document.getElementById('autoRefreshSec'); if (e) e.value = '0'; syncAutoRefreshTimer(); },
