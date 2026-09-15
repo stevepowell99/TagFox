@@ -131,7 +131,7 @@ async function connect({ port, profile, maxResults = 60, scope = SCOPES.repo, di
   };
 
   const close = () => { try { cdp.close(); } catch (_) {} try { child.kill('SIGKILL'); } catch (_) {} };
-  return { baseUrl, ev, T, state, diag, settle, stderr: () => stderr, close };
+  return { baseUrl, ev, T, state, diag, settle, send: cdp.send, stderr: () => stderr, close };
 }
 
 // Standard structural invariants every settled state must satisfy. Returns an array of problem strings.

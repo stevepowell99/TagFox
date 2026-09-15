@@ -16651,18 +16651,11 @@
       return (isTypingTarget(el) || isInMarkdownEditSurface(el)) && !(el && el.id === 'query');
     }
 
-    /** Breadcrumb ▾ menus + fixed flyouts own ↑/↓/←/→ + Enter: skip global table/scope nav (would re-render breadcrumb and kill focus, and ←/→ drill the flyout chain). */
-    function isBreadcrumbScopeFolderNavTarget(el) {
+    /** Any dropdown menu, the toggle of an open one, or a breadcrumb flyout owns ↑/↓/←/→ + Enter: skip global table/scope nav, or Enter opens the selected result row instead of the focused item (Ctrl+L recent folders did), the first ↓ from the toggle also moves the results selection, and ←/→ would drill the flyout chain. */
+    function isMenuKeyboardNavTarget(el) {
       if (!el || !el.closest) return false;
-      if (el.closest('ul.breadcrumb-folder-flyout')) return true;
-      if (el.closest('#breadcrumbBar .dropdown-menu')) return true;
-      if (
-        el.closest('#favFoldersBar .dropdown-menu') ||
-        el.closest('#favRecentFoldersBar .dropdown-menu') ||
-        el.closest('#favRecentFilesBar .dropdown-menu')
-      )
-        return true;
-      return false;
+      if (el.matches('[data-bs-toggle="dropdown"][aria-expanded="true"]')) return true;
+      return !!el.closest('ul.breadcrumb-folder-flyout, .dropdown-menu');
     }
 
     /** ↑/↓ starting row: active (highlighted) row if still listed, else bottom-most checked row — keeps arrows aligned with checkbox picks. */
@@ -17694,7 +17687,7 @@
       }
 
       if (isTypingTarget(e.target)) return;
-      if (isBreadcrumbScopeFolderNavTarget(e.target)) {
+      if (isMenuKeyboardNavTarget(e.target)) {
         const kk = e.key;
         if (
           kk === 'ArrowDown' ||
@@ -18349,7 +18342,8 @@
     window.addEventListener('focus', () => {
       searchDebugFocusSnapshot('window.focus');
       requestAnimationFrame(() => {
-        focusSearchBox();
+        /* An open menu survives alt-tab; leave its keyboard focus alone or ↑/↓/Enter go to the list. */
+        if (!document.querySelector('.dropdown-menu.show')) focusSearchBox();
         requestAnimationFrame(() => searchDebugFocusSnapshot('window.focus.afterRestore'));
       });
     });

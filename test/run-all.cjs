@@ -17,6 +17,7 @@ const runs = [
   { name: 'refresh visibility', args: ['refresh-visible.cjs'] },
   { name: 'quiet auto-refresh', args: ['quiet-refresh.cjs'] },
   { name: 'markdown preview never writes', args: ['md-preview-no-write.cjs'] },
+  { name: 'menu Enter activates item', args: ['menu-enter.cjs'] },
   { name: 'zoom buttons', args: ['zoom-buttons.cjs'] },
   { name: 'gmist start guard', args: ['gmist-start-guard.cjs'] }, // skips loudly if a real gmist holds 5173/5199
   { name: 'fuzz seed 999', args: ['fuzz.cjs', '40', '999'] },
