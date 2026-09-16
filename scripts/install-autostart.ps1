@@ -19,6 +19,10 @@ $startupDir = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Star
 $shortcut = Join-Path $startupDir 'TagFox autostart.lnk'
 
 $shell = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
+# Store pwsh resolves to a versioned WindowsApps folder that the next update deletes
+# (task fails 0x80070002). The per-user execution alias survives updates.
+$storeAlias = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\pwsh.exe'
+if ($shell -like "$env:ProgramFiles\WindowsApps\*" -and (Test-Path $storeAlias)) { $shell = $storeAlias }
 if (-not $shell) { $shell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe' }
 $shellArgs = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$script`""
 
