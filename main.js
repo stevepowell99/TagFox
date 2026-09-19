@@ -2400,18 +2400,36 @@ function toggleMainWindowFromGlobalShortcut() {
   }
 }
 
-/** Bring main window forward and open the renderer Quick TODO strip (global shortcut). */
-function openQuickTodoFromGlobalShortcut() {
+/** Raise the main window for a global shortcut that then asks the renderer to do something; null if there is none. */
+function raiseMainWindowForShortcut() {
   const w =
     mainWindowRef && !mainWindowRef.isDestroyed()
       ? mainWindowRef
       : BrowserWindow.getAllWindows().find((x) => x && !x.isDestroyed());
-  if (!w || w.isDestroyed()) return;
+  if (!w || w.isDestroyed()) return null;
   if (w.isMinimized()) w.restore();
   w.show();
   w.focus();
+  return w;
+}
+
+/** Bring main window forward and open the renderer Quick TODO strip (global shortcut). */
+function openQuickTodoFromGlobalShortcut() {
+  const w = raiseMainWindowForShortcut();
+  if (!w) return;
   try {
     w.webContents.send('tagfox-open-quick-todo');
+  } catch (_) {}
+}
+
+/** Third global shortcut: raise TagFox on a new tab of the last week's changes anywhere. Fixed rather
+ *  than configurable; a failed registration (another app holds it) is logged at startup. */
+const RECENT_TAB_ACCEL = 'Control+Shift+Space';
+function openRecentTabFromGlobalShortcut() {
+  const w = raiseMainWindowForShortcut();
+  if (!w) return;
+  try {
+    w.webContents.send('tagfox-open-recent-tab');
   } catch (_) {}
 }
 
@@ -2803,6 +2821,9 @@ app.whenReady().then(() => {
   if (!gt.ok) console.warn('[TagFox] Global toggle shortcut:', gt.error);
   const qt = registerQuickTodoShortcut(loadQuickTodoAccelFromDisk());
   if (!qt.ok) console.warn('[TagFox] Quick TODO shortcut:', qt.error);
+  if (!globalShortcut.register(RECENT_TAB_ACCEL, openRecentTabFromGlobalShortcut)) {
+    console.warn('[TagFox] Recent-tab shortcut ' + RECENT_TAB_ACCEL + ' is already in use by another app.');
+  }
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

@@ -513,22 +513,10 @@
       syncViewRadioActiveFromDom();
     }
 
-    /**
-     * Smart layout + subfolders + files & folders; re-search.
-     * clearFilters: drop active tag filters, set recency to All, whole word off (same as Ctrl+Shift+Space).
-     */
-    function reimposeSmartViewDefaults(opts) {
-      const clearFilters = !!(opts && opts.clearFilters);
+    /** Smart layout + subfolders + files & folders; re-search. */
+    function reimposeSmartViewDefaults() {
       smartRevertFP = null;
       smartProbePrior = null;
-      if (clearFilters) {
-        activeTagKeys.clear();
-        excludedTagKeys.clear();
-        setRecencyFilterMode('all');
-        const ww = document.getElementById('optWholeWord');
-        if (ww) ww.checked = false;
-        syncAdvancedSearchIconFilledState();
-      }
       applyResultsViewRadiosToDom('smart', true, 'all');
       syncViewRadioActiveFromDom();
       clearStatusSmartNote();
@@ -537,14 +525,6 @@
       updateSortHeaders();
       applyResultsTablePathColumnVisibility();
       renderTagBar();
-      if (clearFilters) {
-        void (async () => {
-          await runSearchNow('identity');
-          commitSearchHistoryNow();
-          updateEmptyResultsPulseHints(listRowsForUi().length);
-        })();
-        return;
-      }
       void runSearchNow('identity');
       commitSearchHistoryNow();
     }
@@ -3239,6 +3219,27 @@
       persistTabsToStorage();
       if (!opts.skipSearch) { await runSearchNow('identity'); saveActiveTabStateFromUi(); }
       return tab;
+    }
+
+    /** New tab on the last week's changes anywhere: no query, no scope folder, no tag filters, whole
+     *  word off, smart view. Nothing is inherited from the tab it was opened from. Reached only by the
+     *  global Ctrl+Shift+Space (main.js RECENT_TAB_ACCEL), so it works while TagFox is hidden. */
+    async function openRecentTab() {
+      const tab = await openNewTab({ skipSearch: true });
+      if (!tab) return;
+      leaveScopePathEditChrome();
+      document.getElementById('rootFolder').value = '';
+      clearSearchQueryInputOnly();
+      activeTagKeys.clear();
+      excludedTagKeys.clear();
+      persistActiveTagFilter();
+      setRecencyFilterMode('1w');
+      const ww = document.getElementById('optWholeWord');
+      if (ww) ww.checked = false;
+      syncAdvancedSearchIconFilledState();
+      renderScopeBreadcrumb();
+      reimposeSmartViewDefaults();
+      saveActiveTabStateFromUi();
     }
 
     /** Close a tab. Activates a neighbour; never drops below one tab (the last one resets to blank). */
@@ -16457,6 +16458,9 @@
     if (typeof window.tagBrowser.setQuickTodoOpenHandler === 'function') {
       window.tagBrowser.setQuickTodoOpenHandler(() => showQuickTodoPop());
     }
+    if (typeof window.tagBrowser.setRecentTabOpenHandler === 'function') {
+      window.tagBrowser.setRecentTabOpenHandler(() => void openRecentTab());
+    }
     document.getElementById('btnQuickTodoPopClose')?.addEventListener('click', () => hideQuickTodoPop());
     document.getElementById('btnQuickTodoPopCancel')?.addEventListener('click', () => {
       const inp = document.getElementById('quickTodoTitleInput');
@@ -17435,13 +17439,6 @@
         }
         return;
       }
-      if (modC && e.shiftKey && (e.key === ' ' || e.code === 'Space')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        reimposeSmartViewDefaults({ clearFilters: true });
-        return;
-      }
       if (modC && !e.shiftKey && (e.key === 'w' || e.key === 'W')) {
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
@@ -18372,6 +18369,7 @@
         loadMore: () => loadMoreResults(),
         /* Tab drivers. springHoverTab models the spring-load result: a drag hovering a tab activates it. */
         newTab: () => openNewTab(),
+        openRecentTab: () => openRecentTab(),
         closeTab: (id) => closeTab(Number(id)),
         activateTab: (id) => activateTab(Number(id)),
         cycleTab: (dir) => cycleTab(Number(dir) || 1),

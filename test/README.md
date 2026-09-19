@@ -15,6 +15,7 @@ guard:
   reorder, and spring-hover activation.
 - Every visible results column divider can actually be grabbed with the mouse.
 - The Viewer splitter follows the pointer across the previews, stops where the layout stops it, and lets go.
+- The global Ctrl+Shift+Space tab opens with no query, no scope folder and a 1 week recency window, and leaves the tab it came from alone.
 - Previewing a markdown file never writes it back, and an edit whose file has moved on disk is refused.
 
 ## Prerequisites
@@ -28,7 +29,7 @@ guard:
 ## Running
 
 ```
-npm test                      # whole suite (smoke + tab-lifecycle + tab-isolation + load-more + column-resize + splitter-drag + refresh-visible + quiet-refresh + md-preview-no-write + menu-enter + 3 fuzz seeds)
+npm test                      # whole suite (smoke + tab-lifecycle + tab-isolation + load-more + column-resize + splitter-drag + refresh-visible + quiet-refresh + md-preview-no-write + menu-enter + recent-tab + 3 fuzz seeds)
 npm run test:smoke            # readable walkthrough of the main flows
 npm run test:tabs             # tab lifecycle: open/close/cap/cycle/reorder/spring-hover
 npm run test:loadmore         # focused load-more / tab-state regression
@@ -58,6 +59,7 @@ runs are unaffected: `main.js` only skips `show()` when that env var is set.
 | `quiet-refresh.cjs` | Auto-refresh is silent until something really changes: four ticks over an unchanged folder leave the row nodes and the scroll position alone, and a file appearing on disk still gets through and repaints. The positive control matters more than the negative one here, because a tick that never ran looks exactly like a tick that found nothing. |
 | `md-preview-no-write.cjs` | Previewing a `.md`/`.txt` file must never write it back, opening the editor re-reads the file, and a write whose file has moved on disk is refused. The positive control is the half that matters: an edit made in the open editor, and one saved by closing it, must still reach disk, or a fix that simply stopped saving would pass. |
 | `menu-enter.cjs` | Ctrl+L opens the recent-folders menu, the arrows move through it without the results list also taking them, and Enter applies the focused folder. Sent as real key events over CDP, because a synthetic click would pass whether or not the global Enter handler swallowed the key. |
+| `recent-tab.cjs` | The renderer half of the global Ctrl+Shift+Space (`openRecentTab`, driven through the test hook): the new tab is empty of query, scope folder, tags and whole-word, carries a 1 week recency window that reaches the Everything query as `dm:`, and the busy tab it was opened from is unchanged when reactivated. The OS-wide registration itself lives in `main.js` (`RECENT_TAB_ACCEL`) and is not pressable from a test without raising the window. |
 | `fuzz.cjs` | Random bursts of actions (type, refresh, new/close/cycle tab, recency, view, scope, auto-refresh tick) with a structural check plus a consistency re-search after every burst. |
 | `run-all.cjs` | Runs the above in sequence and prints a pass/fail summary. |
 
