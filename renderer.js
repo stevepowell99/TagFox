@@ -3221,21 +3221,32 @@
       return tab;
     }
 
-    /** New tab on the last week's changes anywhere: no query, no scope folder, no tag filters, whole
-     *  word off, smart view. Nothing is inherited from the tab it was opened from. Reached only by the
-     *  global Ctrl+Shift+Space (main.js RECENT_TAB_ACCEL), so it works while TagFox is hidden. */
+    /** The last week's changes anywhere, in a tab whose scope is empty: reuse the first such tab (the
+     *  active one if it qualifies) so the shortcut cannot pile up tabs, else open a new one. Either way
+     *  the tab is reset to defaults: no query, no scope folder, no tags, every option off, smart view,
+     *  1 week recency. Reached only by the global Ctrl+Shift+Space (main.js RECENT_TAB_ACCEL), so it
+     *  works while TagFox is hidden. */
     async function openRecentTab() {
-      const tab = await openNewTab({ skipSearch: true });
-      if (!tab) return;
+      saveActiveTabStateFromUi();
+      const emptyScope = (t) => !!t.searchState && !String(t.searchState.rootFolder || '').trim();
+      const reuse = tabs.find((t) => t.id === activeTabId && emptyScope(t)) || tabs.find(emptyScope);
+      if (reuse) {
+        await activateTab(reuse.id, { skipSearch: true });
+      } else if (!(await openNewTab({ skipSearch: true }))) {
+        return;
+      }
       leaveScopePathEditChrome();
       document.getElementById('rootFolder').value = '';
       clearSearchQueryInputOnly();
       activeTagKeys.clear();
       excludedTagKeys.clear();
+      tagFilterCombineOr = false;
       persistActiveTagFilter();
       setRecencyFilterMode('1w');
-      const ww = document.getElementById('optWholeWord');
-      if (ww) ww.checked = false;
+      for (const id of ['optCase', 'optWholeWord', 'optPath', 'optDiacritics', 'optHideSpecial', 'optHideTilde']) {
+        const el = document.getElementById(id);
+        if (el) el.checked = false;
+      }
       syncAdvancedSearchIconFilledState();
       renderScopeBreadcrumb();
       reimposeSmartViewDefaults();
