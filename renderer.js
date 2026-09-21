@@ -1242,13 +1242,13 @@
          and the answer is then certain. Not running is the ordinary case rather than an error:
          main starts it and waits. */
       if (typeof window.tagBrowser.startLocalGmist !== 'function') {
-        setStatusMain('Local gmist is not running. Start it with `npm run dev:local`, or use the online button.');
+        setStatusMain('Local gmist is not running. Start it with `npm run preview:local`, or use the online button.');
         return false;
       }
       /* Only say "starting" if the answer does not come back at once, or an already-running gmist
          flashes a cold-start warning it has no need of. */
       const slow = setTimeout(
-        () => setStatusMain('Starting local gmist (npm run dev:local) — a cold start takes about a minute…'),
+        () => setStatusMain('Starting local gmist (npm run preview:local) — a cold start builds it, about two minutes…'),
         700
       );
       let started = null;
@@ -13982,7 +13982,7 @@
           };
           /* Local: any markdown, always offered. A stopped gmist used to remove the button, which
              reads as the feature having gone; the click starts `npm run dev:local` instead. */
-          gmistBtns.push(mkPen('fa-pen-to-square', 'Open in local gmist (a TagFox window; starts npm run dev:local if it is not up)', 'Open in local gmist', openRowInLocalGmist));
+          gmistBtns.push(mkPen('fa-pen-to-square', 'Open in local gmist (a TagFox window; starts npm run preview:local if it is not up)', 'Open in local gmist', openRowInLocalGmist));
           // Online: the deployed worker, only for a file under a Drive mount.
           if (pathUnderGoogleDrive(fp)) {
             gmistBtns.push(mkPen('fa-cloud', 'Open in gmist online (deployed, needs the file in Google Drive)', 'Open in gmist online', openRowInOnlineGmist));

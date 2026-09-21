@@ -4204,7 +4204,10 @@ async function probeLocalGmistOnce(baseUrl, timeoutMs) {
    having been deleted rather than as something not running. */
 /* A cold start is the sidecar plus a react-router/vite dev server: measured around a minute on this
    machine, so the wait has to be generous or a working start reports as a failure. */
-const LOCAL_GMIST_START_TIMEOUT_MS = 150000;
+/* A cold start now builds gmist before serving it (see localGmistStartScript), so the budget covers
+   a production build on this machine, not just a dev server coming up. 150s was the old dev-server
+   figure and would have reported a healthy build as a timeout. */
+const LOCAL_GMIST_START_TIMEOUT_MS = 300000;
 const LOCAL_GMIST_POLL_MS = 500;
 
 function localGmistPrefsPath() {
@@ -4231,10 +4234,31 @@ function findLocalGmistRepoDir() {
   for (const dir of candidates) {
     try {
       const pkg = JSON.parse(fssync.readFileSync(path.join(dir, 'package.json'), 'utf8'));
-      if (pkg && pkg.scripts && pkg.scripts['dev:local']) return dir;
+      if (pkg && pkg.scripts && (pkg.scripts['preview:local'] || pkg.scripts['dev:local'])) return dir;
     } catch (_) {}
   }
   return null;
+}
+
+/**
+ * Which npm script starts gmist for USING it: `preview:local` (a production build) where the repo
+ * has it, else the old `dev:local`.
+ *
+ * Not a preference. React's dev build logs every commit and that logging deep-walks props; React
+ * Router hangs the real `window` off its router object, and `window[0]` is gmist's sandboxed deck
+ * iframe, which is cross-origin, so reading it throws inside a passive effect and takes React's work
+ * loop down. gmist then looks fine and is dead: every button silently does nothing, while links
+ * still work because they need no handler. It happens on any deck with the slide pane open, which
+ * is most of why anyone opens gmist from here. None of that code is in a production build.
+ * `dev:local` remains right when working ON gmist, and a server already on the port is reused
+ * either way, so this only decides what TagFox starts for itself.
+ */
+function localGmistStartScript(repoDir) {
+  try {
+    const pkg = JSON.parse(fssync.readFileSync(path.join(repoDir, 'package.json'), 'utf8'));
+    if (pkg && pkg.scripts && pkg.scripts['preview:local']) return 'preview:local';
+  } catch (_) {}
+  return 'dev:local';
 }
 
 /** Last part of the dev:local log, so a failure carries the server's own words (stale sidecar, missing npm, port taken). */
@@ -4559,12 +4583,13 @@ async function startLocalGmist() {
           ' as {"repoDir": "C:\\\\dev\\\\mist"}.',
       };
     }
+    const startScript = localGmistStartScript(repoDir);
     const logPath = localGmistLogPath();
     let fd = null;
     try {
       fssync.mkdirSync(path.dirname(logPath), { recursive: true });
       fd = fssync.openSync(logPath, 'a');
-      fssync.writeSync(fd, `\n=== ${new Date().toISOString()} TagFox: npm run dev:local in ${repoDir} ===\n`);
+      fssync.writeSync(fd, `\n=== ${new Date().toISOString()} TagFox: npm run ${startScript} in ${repoDir} ===\n`);
     } catch (_) {
       fd = null;
     }
@@ -4578,7 +4603,7 @@ async function startLocalGmist() {
     let child = null;
     let exitReason = null;
     try {
-      child = spawn('npm run dev:local', [], {
+      child = spawn('npm run ' + startScript, [], {
         cwd: repoDir,
         shell: true,
         windowsHide: true,
@@ -4592,7 +4617,7 @@ async function startLocalGmist() {
       if (exitReason == null) exitReason = 'npm could not be started: ' + String(e.message || e);
     });
     child.on('exit', (code) => {
-      if (exitReason == null) exitReason = 'dev:local exited straight away (code ' + (code == null ? 'signal' : code) + ')';
+      if (exitReason == null) exitReason = startScript + ' exited straight away (code ' + (code == null ? 'signal' : code) + ')';
     });
     child.unref();
     if (fd != null) try { fssync.closeSync(fd); } catch (_) {}
