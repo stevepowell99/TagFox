@@ -4764,7 +4764,41 @@
       return { changed: true, existed };
     }
 
-    const SCOPE_FOLDER_HISTORY_MAX = 30;
+    const SCOPE_FOLDER_HISTORY_MAX = 300;
+
+    /**
+     * Fuzzy match for the recent-folders filter: every space-separated token must appear in `text` as an in-order
+     * subsequence (case-insensitive). Returns null on no match, else a score: consecutive runs, word-boundary hits
+     * and hits inside the last path segment (the folder's own name) score higher. Best alignment by DP, so
+     * "cm ext" finds ...\causal-map-extension without an early stray "c" or "m" spoiling it.
+     */
+    function fuzzyPathScore(query, text) {
+      const t = String(text || '').toLowerCase();
+      const tokens = String(query || '').toLowerCase().split(/\s+/).filter(Boolean);
+      if (!tokens.length) return 0;
+      const lastSep = Math.max(t.lastIndexOf('\\'), t.lastIndexOf('/'));
+      const isBoundary = (i) => i === 0 || /[\\/\s._-]/.test(t[i - 1]);
+      let total = 0;
+      for (const q of tokens) {
+        let prev = null; // prev[i] = best score with the previous token char matched at text index i
+        for (let j = 0; j < q.length; j++) {
+          const cur = new Array(t.length).fill(-Infinity);
+          let maxPrev = -Infinity; // best prev[k] for k <= i-2: a match that is not adjacent
+          for (let i = 0; i < t.length; i++) {
+            if (prev && i >= 2) maxPrev = Math.max(maxPrev, prev[i - 2]);
+            if (t[i] !== q[j]) continue;
+            const base = j === 0 ? 0 : Math.max(maxPrev, prev[i - 1] + 4);
+            if (base === -Infinity) continue;
+            cur[i] = base + 1 + (isBoundary(i) ? 3 : 0) + (i > lastSep ? 2 : 0);
+          }
+          prev = cur;
+        }
+        const best = Math.max(...prev);
+        if (best === -Infinity) return null;
+        total += best;
+      }
+      return total;
+    }
 
     function loadScopeFolderHistory() {
       try {
@@ -4804,21 +4838,73 @@
         return;
       }
       const histBtn = document.getElementById('btnScopeFolderHistory');
-      for (const fp of paths) {
-        const li = document.createElement('li');
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'dropdown-item small text-start';
-        b.textContent = fp;
-        b.title = fp;
-        b.addEventListener('click', () => {
-          if (histBtn) bootstrap.Dropdown.getOrCreateInstance(histBtn).hide();
-          void applySearchScopeAndRefresh(fp);
-        });
-        li.appendChild(b);
-        ul.appendChild(li);
-      }
-      refreshTagFoxChromeTooltips(ul);
+      const filterLi = document.createElement('li');
+      filterLi.className = 'px-2 pb-1 sticky-top';
+      filterLi.style.background = 'var(--bs-dropdown-bg)';
+      const filter = document.createElement('input');
+      filter.type = 'text';
+      filter.id = 'scopeFolderHistoryFilter';
+      filter.className = 'form-control form-control-sm';
+      filter.placeholder = 'Filter recent folders (fuzzy)';
+      filter.autocomplete = 'off';
+      filter.spellcheck = false;
+      filterLi.appendChild(filter);
+      ul.appendChild(filterLi);
+
+      const fillItems = () => {
+        ul.querySelectorAll('li.tagfox-hist-item').forEach((el) => el.remove());
+        const q = filter.value.trim();
+        let shown = paths;
+        if (q) {
+          // Sort is stable, so equal scores keep recency order.
+          shown = paths
+            .map((fp) => ({ fp, score: fuzzyPathScore(q, fp) }))
+            .filter((x) => x.score != null)
+            .sort((a, b) => b.score - a.score)
+            .map((x) => x.fp);
+        }
+        if (!shown.length) {
+          const li = document.createElement('li');
+          li.className = 'tagfox-hist-item';
+          const sp = document.createElement('span');
+          sp.className = 'dropdown-item-text text-muted small px-3 py-2';
+          sp.textContent = `No folders match "${q}"`;
+          li.appendChild(sp);
+          ul.appendChild(li);
+          return;
+        }
+        for (const fp of shown) {
+          const li = document.createElement('li');
+          li.className = 'tagfox-hist-item';
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'dropdown-item small text-start';
+          b.textContent = fp;
+          b.title = fp;
+          b.addEventListener('click', () => {
+            if (histBtn) bootstrap.Dropdown.getOrCreateInstance(histBtn).hide();
+            void applySearchScopeAndRefresh(fp);
+          });
+          li.appendChild(b);
+          ul.appendChild(li);
+        }
+        refreshTagFoxChromeTooltips(ul);
+      };
+      filter.addEventListener('input', fillItems);
+      // Bootstrap ignores arrows inside an input, so ↓ hands focus to the first entry (its own nav takes over) and
+      // Enter applies the best match.
+      filter.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown') {
+          const first = ul.querySelector('.tagfox-hist-item .dropdown-item');
+          if (first) first.focus();
+          e.preventDefault();
+        } else if (e.key === 'Enter') {
+          const first = ul.querySelector('.tagfox-hist-item .dropdown-item');
+          if (first) first.click();
+          e.preventDefault();
+        }
+      });
+      fillItems();
     }
 
     /**
@@ -18076,6 +18162,10 @@
       if (rf) rememberScopeFolderHistory(normalizeFolderPathForEverything(rf));
     }
     document.getElementById('btnScopeFolderHistory').addEventListener('show.bs.dropdown', () => renderScopeFolderHistoryMenu());
+    document.getElementById('btnScopeFolderHistory').addEventListener('shown.bs.dropdown', () => {
+      const f = document.getElementById('scopeFolderHistoryFilter');
+      if (f) f.focus();
+    });
     document.getElementById('btnSearchHistBack').addEventListener('click', () => void goSearchHistory(-1));
     document.getElementById('btnSearchHistFwd').addEventListener('click', () => void goSearchHistory(1));
     document.getElementById('btnUndo')?.addEventListener('click', () => void runUndo());

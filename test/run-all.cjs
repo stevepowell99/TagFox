@@ -18,6 +18,7 @@ const runs = [
   { name: 'quiet auto-refresh', args: ['quiet-refresh.cjs'] },
   { name: 'markdown preview never writes', args: ['md-preview-no-write.cjs'] },
   { name: 'menu Enter activates item', args: ['menu-enter.cjs'] },
+  { name: 'recent folders filter', args: ['recent-folders-filter.cjs'] },
   { name: 'recent tab (global hotkey)', args: ['recent-tab.cjs'] },
   { name: 'zoom buttons', args: ['zoom-buttons.cjs'] },
   { name: 'gmist start guard', args: ['gmist-start-guard.cjs'] }, // skips loudly if a real gmist holds 5173/5199

@@ -99,7 +99,7 @@ Meanwhile, tools like Google Drive train you to type a word and expect the right
 
 - The **breadcrumb** under the favourites row shows your **scope folder** (if set in Settings) as the first segment, then your **current folder** beneath it. Everything you search, create and paste uses the current folder when set; if only the scope is set, those actions use the scope root. Clear the current folder (×) to widen to the whole tree under the scope. **Settings → Search scope folder** sets or clears the hard ceiling. If the search box still has text when you change folder (double-click a folder row, breadcrumb, favourites, etc.), that filter stays on; the search row flashes briefly as a reminder.
 - The ✏️ **pen button** lets you type a path directly. Press `Enter` to apply, `Esc` to cancel.
-- The 🕐 **clock button** (or `Ctrl`+`L`) lists **recent folders** only (paths you have used), not full search snapshots. Full search history is `Alt`+`←` / `→` (or the toolbar arrows).
+- The 🕐 **clock button** (or `Ctrl`+`L`) lists your last 300 **recent folders** (paths you have used), with a fuzzy filter box: type a few letters of any part of the path, in order, and `Enter` opens the best match, not full search snapshots. Full search history is `Alt`+`←` / `→` (or the toolbar arrows).
 
 ### 🔍 Searching
 
