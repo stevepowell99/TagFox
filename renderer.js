@@ -4878,7 +4878,7 @@
           li.className = 'tagfox-hist-item';
           const b = document.createElement('button');
           b.type = 'button';
-          b.className = 'dropdown-item small text-start';
+          b.className = 'dropdown-item small text-start text-wrap text-break';
           b.textContent = fp;
           b.title = fp;
           b.addEventListener('click', () => {
@@ -18161,7 +18161,14 @@
       const rf = document.getElementById('rootFolder').value.trim();
       if (rf) rememberScopeFolderHistory(normalizeFolderPathForEverything(rf));
     }
-    document.getElementById('btnScopeFolderHistory').addEventListener('show.bs.dropdown', () => renderScopeFolderHistoryMenu());
+    document.getElementById('btnScopeFolderHistory').addEventListener('show.bs.dropdown', () => {
+      // The menu is right-aligned to the button, so it may only grow leftwards as far as the window allows; long paths wrap instead.
+      const ul = document.getElementById('scopeFolderHistoryMenu');
+      const room = Math.max(240, Math.floor(document.getElementById('btnScopeFolderHistory').getBoundingClientRect().right - 8));
+      ul.style.maxWidth = room + 'px';
+      ul.style.minWidth = Math.min(416, room) + 'px';
+      renderScopeFolderHistoryMenu();
+    });
     document.getElementById('btnScopeFolderHistory').addEventListener('shown.bs.dropdown', () => {
       const f = document.getElementById('scopeFolderHistoryFilter');
       if (f) f.focus();
