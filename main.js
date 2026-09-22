@@ -2336,6 +2336,15 @@ function saveQuickTodoAccelToDisk(acc) {
 
 let lastHiddenAt = 0;
 
+/** Doc windows (gmist, Workspace) are owned by the main window, and Windows keeps an owned window above
+ *  its owner, so raising TagFox from a global shortcut left the results hidden underneath them.
+ *  Minimise them on every shortcut raise; each leaves its lettered stub to restore from. */
+function minimiseWebEditorWindows() {
+  for (const x of BrowserWindow.getAllWindows()) {
+    if (x && !x.isDestroyed() && x.webEditKind && x.isVisible() && !x.isMinimized()) x.minimize();
+  }
+}
+
 function toggleMainWindowFromGlobalShortcut() {
   const w =
     mainWindowRef && !mainWindowRef.isDestroyed()
@@ -2367,6 +2376,7 @@ function toggleMainWindowFromGlobalShortcut() {
       return out;
     };
     const m0 = metricsNow();
+    minimiseWebEditorWindows();
     if (w.isMinimized()) w.restore();
     const tRestore = Date.now();
     w.show();
@@ -2407,6 +2417,7 @@ function raiseMainWindowForShortcut() {
       ? mainWindowRef
       : BrowserWindow.getAllWindows().find((x) => x && !x.isDestroyed());
   if (!w || w.isDestroyed()) return null;
+  minimiseWebEditorWindows();
   if (w.isMinimized()) w.restore();
   w.show();
   w.focus();
