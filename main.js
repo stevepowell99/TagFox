@@ -3750,6 +3750,71 @@ const WEB_EDITOR_KINDS = {
  * became a bare window in the local window's cookie jar, signed out of the real gmist. Ask instead:
  * a TagFox window (its own signed-in session) or the default browser (where Steve's session lives).
  */
+/**
+ * Local gmist's print button opens `/slides/<id>?print-pdf`. A local file id is `lf_` + base64url of
+ * the absolute path (gmist's app/lib/localfs-ids.ts), so the deck's own file is recoverable and the
+ * PDF can go beside it. Returns that sibling .pdf path, or null for anything else.
+ */
+function localGmistDeckPrintTarget(url) {
+  try {
+    const u = new URL(String(url || ''));
+    if (!isAllowedLocalGmistUrl(u.href) || !u.searchParams.has('print-pdf')) return null;
+    const m = /^\/slides\/(lf_[A-Za-z0-9_-]+)$/.exec(u.pathname);
+    if (!m) return null;
+    const src = Buffer.from(m[1].slice(3), 'base64url').toString('utf8');
+    if (!src || !path.isAbsolute(src) || src.includes('\0')) return null;
+    return path.join(path.dirname(src), path.parse(src).name + '.pdf');
+  } catch {
+    return null;
+  }
+}
+
+const LOCAL_DECK_PDF_READY_MS = 60_000;
+
+/**
+ * The same print the online gmist does server-side (its slides.$id.pdf route), done here by TagFox's
+ * own Chromium: load the print view in a hidden window, wait for the deck to set
+ * html[data-mist-ready] (print pages built, fonts and images loaded), then printToPDF at the deck's
+ * own @page size with backgrounds. Saved beside the .md; an existing PDF is replaced only on a yes.
+ */
+async function printLocalGmistDeckToPdf(parentWin, printUrl, outPath) {
+  const say = (type, message, detail, buttons = ['OK']) =>
+    parentWin && !parentWin.isDestroyed()
+      ? dialog.showMessageBox(parentWin, { type, message, detail, buttons, noLink: true })
+      : dialog.showMessageBox({ type, message, detail, buttons, noLink: true });
+  if (fssync.existsSync(outPath)) {
+    const { response } = await say('question', 'Replace ' + path.basename(outPath) + '?', outPath, ['Replace', 'Cancel']);
+    if (response !== 0) return;
+  }
+  if (parentWin && !parentWin.isDestroyed()) parentWin.setTitle('Making PDF… — ' + path.basename(outPath));
+  const pw = new BrowserWindow({
+    show: false,
+    width: 1280,
+    height: 720,
+    webPreferences: { partition: WEB_EDITOR_KINDS.gmistLocal.partition, contextIsolation: true, nodeIntegration: false },
+  });
+  try {
+    await pw.loadURL(printUrl);
+    let ready = null;
+    for (const t0 = Date.now(); Date.now() - t0 < LOCAL_DECK_PDF_READY_MS; ) {
+      ready = await pw.webContents.executeJavaScript("document.documentElement.getAttribute('data-mist-ready')");
+      if (ready) break;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    if (ready !== '1') throw new Error(ready ? 'the deck laid out no print pages (' + ready + ')' : 'the deck never said it was ready');
+    const pdf = await pw.webContents.printToPDF({ preferCSSPageSize: true, printBackground: true });
+    await fs.writeFile(outPath, pdf);
+    const { response } = await say('info', 'Saved ' + path.basename(outPath), outPath, ['Open', 'Show in folder', 'OK']);
+    if (response === 0) void shell.openPath(outPath);
+    else if (response === 1) shell.showItemInFolder(outPath);
+  } catch (e) {
+    void say('error', 'Could not make the PDF', String((e && e.message) || e));
+  } finally {
+    if (!pw.isDestroyed()) pw.destroy();
+    if (parentWin && !parentWin.isDestroyed()) setWebEditorWindowTitle(parentWin);
+  }
+}
+
 function offerOnlineGmistTarget(parentWin, url) {
   const owner = parentWin && !parentWin.isDestroyed() && parentWin.getParentWindow ? parentWin.getParentWindow() : null;
   Menu.buildFromTemplate([
@@ -4056,9 +4121,16 @@ function mountWebEditorBrowserViews(win, targetUrlArg, useBounds, kind) {
   attachWebEditorContentNavigationSync(win, contentBV.webContents);
   if (kind === WEB_EDITOR_KINDS.gmistLocal) {
     contentBV.webContents.setWindowOpenHandler(({ url: openUrl }) => {
-      if (!isOnlineGmistUrl(openUrl)) return { action: 'allow' };
-      offerOnlineGmistTarget(win, openUrl);
-      return { action: 'deny' };
+      if (isOnlineGmistUrl(openUrl)) {
+        offerOnlineGmistTarget(win, openUrl);
+        return { action: 'deny' };
+      }
+      const deckPdf = localGmistDeckPrintTarget(openUrl);
+      if (deckPdf) {
+        void printLocalGmistDeckToPdf(win, openUrl, deckPdf);
+        return { action: 'deny' };
+      }
+      return { action: 'allow' };
     });
   }
   contentBV.webContents.on('page-title-updated', (_e, title) => {
