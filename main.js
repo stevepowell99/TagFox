@@ -3690,6 +3690,17 @@ function isAllowedLocalGmistUrl(u) {
   }
 }
 
+/** The deployed gmist worker. The renderer's GMIST_BASE_URL is the same origin, for the row's cloud pen. */
+const ONLINE_GMIST_ORIGIN = 'https://mist.broad-smoke-cc64.workers.dev';
+
+function isOnlineGmistUrl(u) {
+  try {
+    return new URL(String(u || '').trim()).origin === ONLINE_GMIST_ORIGIN;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The child-window kinds. Everything site-specific lives here: which URLs the window may load,
  * its own cookie jar, its own remembered frame, and whether the Google-only Expand button shows.
@@ -3719,7 +3730,39 @@ const WEB_EDITOR_KINDS = {
     placeholder: 'http://localhost:5173/…',
     badUrlError: 'Not a local gmist URL.',
   },
+  /* The deployed worker signs in with Google, so this window keeps its own session; the sign-in
+     pages are reachable from its address bar for the same reason as the Workspace window's. */
+  gmistOnline: {
+    windowKindName: 'gmist online',
+    boundsFile: 'tagBrowser-gmist-online-bounds.json',
+    partition: 'persist:tagfox-gmist-online',
+    background: '#ffffff',
+    allowUrl: (u) => isOnlineGmistUrl(u),
+    allowAddressBarUrl: (u) => isOnlineGmistUrl(u) || isAllowedGoogleWorkspaceAddressBarUrl(u),
+    showExpand: false,
+    placeholder: ONLINE_GMIST_ORIGIN + '/…',
+    badUrlError: 'Not an online gmist URL.',
+  },
 };
+
+/**
+ * Local gmist's Online (globe) button opens the deployed gmist in a new tab. Left to Electron, that
+ * became a bare window in the local window's cookie jar, signed out of the real gmist. Ask instead:
+ * a TagFox window (its own signed-in session) or the default browser (where Steve's session lives).
+ */
+function offerOnlineGmistTarget(parentWin, url) {
+  const owner = parentWin && !parentWin.isDestroyed() && parentWin.getParentWindow ? parentWin.getParentWindow() : null;
+  Menu.buildFromTemplate([
+    {
+      label: 'Open online gmist in a TagFox window',
+      click: () => openWebEditorWindow(owner || parentWin, url, 'gmistOnline'),
+    },
+    {
+      label: 'Open online gmist in the browser',
+      click: () => void openUrlInSystemDefaultBrowser(url).catch(() => {}),
+    },
+  ]).popup({ window: parentWin });
+}
 
 /**
  * A doc window shows only the site's own page, so without this its title bar says nothing at all
@@ -4011,6 +4054,13 @@ function mountWebEditorBrowserViews(win, targetUrlArg, useBounds, kind) {
 
   attachPageZoomShortcuts(contentBV.webContents);
   attachWebEditorContentNavigationSync(win, contentBV.webContents);
+  if (kind === WEB_EDITOR_KINDS.gmistLocal) {
+    contentBV.webContents.setWindowOpenHandler(({ url: openUrl }) => {
+      if (!isOnlineGmistUrl(openUrl)) return { action: 'allow' };
+      offerOnlineGmistTarget(win, openUrl);
+      return { action: 'deny' };
+    });
+  }
   contentBV.webContents.on('page-title-updated', (_e, title) => {
     setWebEditorWindowTitle(win, { pageTitle: title });
   });
