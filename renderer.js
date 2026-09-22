@@ -18139,7 +18139,49 @@
     wireQuickTodoSettingsUiOnce();
     document.getElementById('settingsPanel')?.addEventListener('shown.bs.offcanvas', () => {
       void probeEverythingConnectionForSettingsBadge();
+      void refreshRunningNow(true);
     });
+    /* Which TagFox and which gmist are running, because neither says so and Steve could not tell.
+       Main no longer restarts itself when main.js changes on disk, so the header carries a Restart
+       button once it has; the gmist half shells out, so it is asked only when Settings opens. */
+    const whenText = (t) =>
+      new Date(t).toLocaleString('en-GB', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+    async function refreshRunningNow(withGmist) {
+      if (!window.tagBrowser?.runtimeInfo) return;
+      let info;
+      try {
+        info = await window.tagBrowser.runtimeInfo({ withGmist });
+      } catch (_) {
+        return;
+      }
+      const stale = info.changedSinceStart || [];
+      const btn = document.getElementById('btnRestartTagFox');
+      if (btn) {
+        btn.classList.toggle('d-none', !stale.length);
+        btn.title = 'Changed since TagFox started: ' + stale.join(', ') + '. Click to restart and run the new code.';
+      }
+      const tf = document.getElementById('runningNowTagFox');
+      if (tf) {
+        tf.textContent =
+          'TagFox: started ' + whenText(info.startedAt) + ', PID ' + info.pid +
+          (info.restartsInTerminal ? ', under npm start' : ', not under npm start (a restart detaches it)') +
+          (stale.length ? '. Code changed since: ' + stale.join(', ') + ' (Restart in the header).' : '. Running the code on disk.');
+      }
+      const gm = document.getElementById('runningNowGmist');
+      if (gm && withGmist && info.gmist) {
+        const g = info.gmist;
+        gm.textContent = !g.devPortHeld
+          ? 'gmist: not running' + (g.sidecarPortHeld ? ', but something holds its sidecar port 5199' : '') +
+            '. TagFox starts it the first time a markdown file is opened.'
+          : 'gmist: ' + (g.holder ? g.holder.kind : 'running') +
+            (g.holder && g.holder.started ? ', started ' + whenText(g.holder.started) : '') +
+            (g.holder && g.holder.pid ? ', PID ' + g.holder.pid : '') + ', on port 5173.';
+      }
+    }
+    void refreshRunningNow(false);
+    setInterval(() => void refreshRunningNow(false), 30_000);
+    window.addEventListener('focus', () => void refreshRunningNow(false));
+    document.getElementById('btnRestartTagFox')?.addEventListener('click', () => void window.tagBrowser?.restartTagFox?.());
     document.getElementById('autoRefreshSec')?.addEventListener('change', () => {
       saveSettings();
       syncAutoRefreshTimer();

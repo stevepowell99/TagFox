@@ -10,7 +10,7 @@
     "postinstall": "node scripts/sync-vendor-assets.js",
     "prestart": "npm run vendor:sync && npm run build:help",
     "predist": "npm run vendor:sync && npm run build:help && npm run bundle:gmist",
-    "start": "electron .",
+    "start": "node scripts/start.js",
     "dist": "node scripts/run-dist.js",
     "test": "node test/run-all.cjs",
     "test:smoke": "node test/smoke.cjs",

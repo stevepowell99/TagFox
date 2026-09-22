@@ -55,6 +55,8 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   openUrlDefaultBrowser: (payload) => ipcRenderer.invoke('open-url-default-browser', payload),
   /** Start a local gmist, or report the one already listening on 5173. Returns at once when it is up. */
   startLocalGmist: () => ipcRenderer.invoke('start-local-gmist'),
+  runtimeInfo: (opts) => ipcRenderer.invoke('tagfox-runtime-info', opts || {}),
+  restartTagFox: () => ipcRenderer.invoke('tagfox-restart'),
   /** Open a local gmist URL in a TagFox child window (localhost only), like the Google Workspace window. */
   openGmistWindow: (payload) => ipcRenderer.invoke('open-gmist-window', payload),
   /** Hello-world: Drive API about.get + one files.list row (existing token only; no OAuth popup). */

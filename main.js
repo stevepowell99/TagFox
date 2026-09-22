@@ -35,8 +35,10 @@ if (!app.isPackaged) {
   const synced = /OneDrive|My Drive|Shared drives/i.test(__dirname);
   if (process.platform === 'win32' && synced) process.env.CHOKIDAR_USEPOLLING = 'true';
   try {
-    // Scratch and build output must not reload Steve's running window out from under him.
-    require('electron-reloader')(module, { ignore: ['_tmp', 'dist', '_gmist'] });
+    /* Scratch and build output must not reload Steve's running window out from under him. Nor may
+       main.js: an agent edits it often, and each edit restarted TagFox mid-use. The header shows a
+       Restart button instead once main-process code has changed (tagfox-runtime-info). */
+    require('electron-reloader')(module, { ignore: ['_tmp', 'dist', '_gmist', 'main.js'] });
   } catch (_) {}
 }
 
@@ -4478,6 +4480,99 @@ function sidecarHasLiveGmistRunner(pid) {
 const LOCAL_GMIST_PORTS = [5173, 5199];
 const LOCAL_GMIST_DEV_PORT = LOCAL_GMIST_PORTS[0];
 const LOCAL_GMIST_SIDECAR_PORT = LOCAL_GMIST_PORTS[1];
+
+/* What is running --------------------------------------------------------------
+   Two servers matter and neither announces itself: this TagFox (which may predate the code on disk)
+   and whichever gmist holds 5173 (a dev server, a production build, or TagFox's bundled copy). */
+
+const TAGFOX_STARTED_AT = Date.now();
+
+/** Every main-process source file with its mtime at startup, so a later edit on disk can be seen. */
+const mainCodeAtStart = (() => {
+  const snap = new Map();
+  for (const f of Object.keys(require.cache)) {
+    if (!f.startsWith(__dirname) || f.includes('node_modules')) continue;
+    try {
+      snap.set(f, fssync.statSync(f).mtimeMs);
+    } catch (_) {}
+  }
+  return snap;
+})();
+
+/** Main-process files that have changed since this TagFox started (relative names). */
+function mainCodeChangedSinceStart() {
+  const changed = [];
+  for (const [f, t] of mainCodeAtStart) {
+    try {
+      if (fssync.statSync(f).mtimeMs !== t) changed.push(path.relative(__dirname, f));
+    } catch (_) {}
+  }
+  return changed;
+}
+
+/**
+ * Who holds gmist's dev port, described by the runner above it: walk up from the listener to the
+ * first ancestor whose command line names how gmist was started. Shells out once, so it is asked
+ * only when Settings opens, never on a click path.
+ */
+function describeLocalGmistHolder() {
+  const pids = listenersByPort([LOCAL_GMIST_DEV_PORT]).get(LOCAL_GMIST_DEV_PORT) || [];
+  if (!pids.length || process.platform !== 'win32') return null;
+  try {
+    const out = execFileSync(
+      'powershell',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        '$id=' + Number(pids[0]) + '; for ($i=0; $i -lt 8 -and $id; $i++) { ' +
+          '$c = Get-CimInstance Win32_Process -Filter "ProcessId=$id"; if (-not $c) { break }; ' +
+          'if ($c.CommandLine -match "preview:local|dev:local|dev-local|serve-gmist") { ' +
+          '[pscustomobject]@{ pid=$c.ProcessId; cmd=$c.CommandLine; started=$c.CreationDate.ToString("o") } | ConvertTo-Json -Compress; break }; ' +
+          '$id = $c.ParentProcessId }',
+      ],
+      { encoding: 'utf8', timeout: 8000 }
+    );
+    const found = String(out || '').trim();
+    if (!found) return { pid: pids[0], kind: 'unknown', started: null };
+    const j = JSON.parse(found);
+    const cmd = String(j.cmd || '');
+    const kind = /serve-gmist/.test(cmd)
+      ? 'bundled with TagFox'
+      : /preview:local|dev-local\.mjs\s+--built/.test(cmd) // preview:local runs dev-local.mjs --built
+        ? 'production build (preview:local)'
+        : 'dev server (dev:local)';
+    return { pid: j.pid, kind, started: j.started };
+  } catch (_) {
+    return { pid: pids[0], kind: 'unknown', started: null };
+  }
+}
+
+ipcMain.handle('tagfox-runtime-info', async (_e, { withGmist } = {}) => {
+  const info = {
+    pid: process.pid,
+    startedAt: TAGFOX_STARTED_AT,
+    changedSinceStart: mainCodeChangedSinceStart(),
+    restartsInTerminal: Boolean(process.env.TAGFOX_START_WRAPPER),
+  };
+  if (withGmist) {
+    const [dev, sidecar] = await Promise.all([portIsHeld(LOCAL_GMIST_DEV_PORT), portIsHeld(LOCAL_GMIST_SIDECAR_PORT)]);
+    info.gmist = { devPortHeld: dev, sidecarPortHeld: sidecar, holder: dev ? describeLocalGmistHolder() : null };
+  }
+  return info;
+});
+
+/** Restart this TagFox. Under `npm start` (scripts/start.js) exit with the code the wrapper restarts
+    on, so it stays in Steve's terminal; otherwise app.relaunch, which starts it detached. */
+ipcMain.handle('tagfox-restart', () => {
+  const code = Number(process.env.TAGFOX_START_WRAPPER);
+  if (code) {
+    app.exit(code);
+  } else {
+    app.relaunch();
+    app.exit(0);
+  }
+});
 
 /** What is in the way, in words Steve can act on without going looking for the PID himself. */
 function localGmistPortHolderHint() {
