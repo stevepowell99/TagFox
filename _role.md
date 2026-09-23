@@ -33,3 +33,15 @@ always overrides the self-score; the gap between the two is the signal.
   technical detail per the Slack rule. One real mistake along the way, disclosed immediately rather
   than buried: killed Steve's own running gmist process during test cleanup (ports 5173/5199 are its
   real defaults, not spare) and restarted it before moving on. | (no verdict given)
+- 2026-08-31 | Stop the recurring "local gmist won't start" bug for good, on Steve's one-line
+  complaint "this keeps happening, stop it" (third occurrence, after 18 and 31 August) |
+  self 4/5 | Measured before designing: found the `HEAD /go` probe on a warm three-day-old gmist
+  answering in 1.3-11.3s against a 600ms budget, so it called a healthy gmist down on nearly every
+  click, then started a second `dev:local` that died on the sidecar port the running one already
+  held. Replaced the probe with a port-bind check (`portIsHeld`, microseconds, no subprocess) on the
+  common path, kept `netstat` only for naming a culprit on failure, wrote `test/gmist-start-guard.cjs`
+  to assert it, ran a real cold-start end to end, updated CLAUDE.md, committed and pushed both
+  commits. Docked one point for precision, not completeness: my own closing message flagged that I'd
+  confirmed TagFox spawns `dev:local` and the ports go live, but never actually saw
+  `startLocalGmist`'s return value reach the renderer, so "reported success back to the UI" was
+  asserted less firmly than the rest. | (no verdict given)
