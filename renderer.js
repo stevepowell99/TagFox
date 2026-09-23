@@ -3221,10 +3221,10 @@
       return tab;
     }
 
-    /** The last week's changes anywhere, in a tab whose scope is empty: reuse the first such tab (the
+    /** The last hour's changes anywhere, in a tab whose scope is empty: reuse the first such tab (the
      *  active one if it qualifies) so the shortcut cannot pile up tabs, else open a new one. Either way
      *  the tab is reset to defaults: no query, no scope folder, no tags, every option off, smart view,
-     *  1 week recency. Reached only by the global Ctrl+Shift+Space (main.js RECENT_TAB_ACCEL), so it
+     *  1 hour recency. Reached only by the global Ctrl+Shift+Space (main.js RECENT_TAB_ACCEL), so it
      *  works while TagFox is hidden. */
     async function openRecentTab() {
       saveActiveTabStateFromUi();
@@ -3242,7 +3242,7 @@
       excludedTagKeys.clear();
       tagFilterCombineOr = false;
       persistActiveTagFilter();
-      setRecencyFilterMode('1w');
+      setRecencyFilterMode('1h');
       for (const id of ['optCase', 'optWholeWord', 'optPath', 'optDiacritics', 'optHideSpecial', 'optHideTilde']) {
         const el = document.getElementById(id);
         if (el) el.checked = false;

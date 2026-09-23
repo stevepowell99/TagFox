@@ -15,7 +15,7 @@ guard:
   reorder, and spring-hover activation.
 - Every visible results column divider can actually be grabbed with the mouse.
 - The Viewer splitter follows the pointer across the previews, stops where the layout stops it, and lets go.
-- The global Ctrl+Shift+Space tab opens (or reuses an empty-scope tab) with every filter reset and a 1 week recency window, and leaves the scoped tab it came from alone.
+- The global Ctrl+Shift+Space tab opens (or reuses an empty-scope tab) with every filter reset and a 1 hour recency window, and leaves the scoped tab it came from alone.
 - Previewing a markdown file never writes it back, and an edit whose file has moved on disk is refused.
 
 ## Prerequisites

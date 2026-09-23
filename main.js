@@ -2435,7 +2435,7 @@ function openQuickTodoFromGlobalShortcut() {
   } catch (_) {}
 }
 
-/** Third global shortcut: raise TagFox on a new tab of the last week's changes anywhere. Fixed rather
+/** Third global shortcut: raise TagFox on a new tab of the last hour's changes anywhere. Fixed rather
  *  than configurable; a failed registration (another app holds it) is logged at startup. */
 const RECENT_TAB_ACCEL = 'Control+Shift+Space';
 function openRecentTabFromGlobalShortcut() {
