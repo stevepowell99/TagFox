@@ -52,7 +52,7 @@
     { score: 3, tip: [K('Ctrl+A'), ' checks all visible rows at once. ', K('Esc'), ' unchecks them all.'] },
     { score: 3, tip: ['Press ', K('Ctrl+Enter'), ' on a selected row to make its parent folder the current folder.'] },
     { score: 3, tip: ['The eye-slash button (Advanced, next to the search box) opens extra options like case-sensitive search.'] },
-    { score: 3, tip: ['Press ', K('Ctrl+Shift+Space'), ' to reset all view options back to their defaults in one go.'] },
+    { score: 3, tip: ['Press ', K('Ctrl+Shift+Space'), ' from anywhere in Windows to see every file changed in the last hour.'] },
     { score: 3, tip: ['Press ', K('Ctrl+Alt+Space'), ' (the default) to show or hide TagFox from anywhere in Windows.'] },
     { score: 2, tip: ['The left panel can collapse to a thin strip — hover it to peek, or click its icon to expand again.'] },
     { score: 2, tip: ['Drag favourite folder chips or saved-search chips to change their order.'] },

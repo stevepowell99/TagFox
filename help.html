@@ -141,7 +141,7 @@ Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when
               <ul>
               <li>The <strong>breadcrumb</strong> under the favourites row shows your <strong>scope folder</strong> (if set in Settings) as the first segment, then your <strong>current folder</strong> beneath it. Everything you search, create and paste uses the current folder when set; if only the scope is set, those actions use the scope root. Clear the current folder (×) to widen to the whole tree under the scope. <strong>Settings → Search scope folder</strong> sets or clears the hard ceiling. If the search box still has text when you change folder (double-click a folder row, breadcrumb, favourites, etc.), that filter stays on; the search row flashes briefly as a reminder.</li>
               <li>The ✏️ <strong>pen button</strong> lets you type a path directly. Press <code>Enter</code> to apply, <code>Esc</code> to cancel.</li>
-              <li>The 🕐 <strong>clock button</strong> (or <code>Ctrl</code>+<code>L</code>) lists <strong>recent folders</strong> only (paths you have used), not full search snapshots. Full search history is <code>Alt</code>+<code>←</code> / <code>→</code> (or the toolbar arrows).</li>
+              <li>The 🕐 <strong>clock button</strong> (or <code>Ctrl</code>+<code>L</code>) lists your last 300 <strong>recent folders</strong> (paths you have used), not full search snapshots. Type in its filter box to narrow them fuzzily (letters in order, any part of the path); <code>Enter</code> opens the best match. Full search history is <code>Alt</code>+<code>←</code> / <code>→</code> (or the toolbar arrows).</li>
               </ul>
               <h3>🔍 Searching</h3>
               <ul>
@@ -301,7 +301,7 @@ Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when
           <div class="tab-pane fade" id="help-pane-shortcuts" role="tabpanel" aria-labelledby="help-tab-shortcuts">
             <div class="help-md">
               <p class="text-muted mb-2 mt-3">Most shortcuts are disabled while a dialog is open. Bare-letter shortcuts work only outside text fields. Checked rows are the bulk selection. Repeating sort keys toggles direction; in <strong>Tree</strong>, sort keys switch to <strong>Flat</strong> first. <kbd>Esc</kbd> clears the query; with an empty query in the search box, it clears the current folder.</p>
-              
+
               <h5 class="help-md-section-title">Search &amp; view</h5>
               <div class="table-responsive">
               <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
@@ -309,7 +309,7 @@ Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when
               <tr><td><kbd>Esc</kbd></td><td>Close Viewer / flyouts, or clear query / current folder</td></tr>
               <tr><td><kbd>F5</kbd></td><td>Refresh results (or the <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> button in the header, which works even when the keyboard focus has slipped off the page). The status line then reports the time it ran and whether anything changed.</td></tr>
               <tr><td><kbd>i</kbd> / <kbd>Ctrl</kbd>+<kbd>I</kbd></td><td>Cycle layout</td></tr>
-              <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd></td><td>Reset to Smart view defaults (subfolders on, files + folders; not Flat), plus clear tag filters, recency <strong>All</strong>, whole word off</td></tr>
+              <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd></td><td>From anywhere in Windows: raise TagFox on the last hour's changes anywhere, in a tab with no scope folder, query, tags or search options (reuses an existing unscoped tab rather than opening another)</td></tr>
               <tr><td><kbd>w</kbd> / <kbd>Ctrl</kbd>+<kbd>W</kbd></td><td>Toggle whole word</td></tr>
               <tr><td><kbd>p</kbd> / <kbd>Ctrl</kbd>+<kbd>P</kbd></td><td>Toggle match path</td></tr>
               <tr><td><kbd>.</kbd> / <kbd>Ctrl</kbd>+<kbd>.</kbd></td><td>Toggle hide special (dot / <kbd>$</kbd> paths)</td></tr>
@@ -322,7 +322,7 @@ Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when
               <tr><td><kbd>m</kbd> / <kbd>Ctrl</kbd>+<kbd>M</kbd></td><td>Sort by modified</td></tr>
               <tr><td><kbd>n</kbd> / <kbd>Ctrl</kbd>+<kbd>N</kbd></td><td>Sort by name</td></tr>
               </tbody></table></div>
-              
+
               <h5 class="help-md-section-title">Navigation</h5>
               <div class="table-responsive">
               <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
@@ -342,7 +342,7 @@ Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when
               <tr><td><kbd>Ctrl</kbd>+<kbd>Tab</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd></td><td>Next / previous result tab</td></tr>
               <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>W</kbd></td><td>New / close result tab</td></tr>
               </tbody></table></div>
-              
+
               <h5 class="help-md-section-title">Selection &amp; file operations</h5>
               <div class="table-responsive">
               <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
@@ -360,7 +360,7 @@ Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when
               <tr><td><kbd>Shift</kbd>+<kbd>T</kbd></td><td>Remove tags from checked items</td></tr>
               <tr><td><kbd>Ctrl</kbd>+<kbd>H</kbd></td><td>Bulk rename with wildcards</td></tr>
               </tbody></table></div>
-              
+
               <h5 class="help-md-section-title">Favourites &amp; app</h5>
               <div class="table-responsive">
               <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
