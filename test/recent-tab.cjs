@@ -82,7 +82,9 @@ async function main() {
 
     // The tab cap: with every tab scoped and MAX_TABS open there is nothing to reuse and no room for
     // another. The press used to return without touching anything, leaving the window raised on the
-    // old scope and recency. It must reset the tab in view instead, and open no eleventh tab.
+    // old scope and recency. It must reset the oldest tab, bring it into view, and open no eleventh
+    // tab; the tab it was pressed from keeps its scope. When the oldest is already in view it is
+    // reset in place.
     const scopedRoot = JSON.parse(before).root;
     await T('activateTab', secondId);
     await settle('scope the second tab');
@@ -94,11 +96,29 @@ async function main() {
     const capBefore = JSON.parse(await ev(`JSON.stringify({ q: document.getElementById('query').value, root: document.getElementById('rootFolder').value, rec: document.querySelector('input[name="tagFoxRecencyFilter"]:checked').value })`));
     await ev(`document.getElementById('optRecency1d').checked = true; 1`);
     check('ten tabs are open and the one in view has a scope folder (positive control)', capIds.length === 10 && capBefore.root !== '', JSON.stringify(capBefore));
+    const pressedFromId = (await drv.state()).activeTabId;
     await T('openRecentTab');
     await settle('press at the cap');
     const capAfter = JSON.parse(await ev(`JSON.stringify({ q: document.getElementById('query').value, root: document.getElementById('rootFolder').value, rec: document.querySelector('input[name="tagFoxRecencyFilter"]:checked').value })`));
+    const oldestId = Math.min(...capIds);
+    check('the press came from a tab other than the oldest (positive control)', pressedFromId !== oldestId, 'from=' + pressedFromId + ' oldest=' + oldestId);
     check('at the cap, no tab is added', (await T('tabIds')).length === 10);
-    check('at the cap, the tab in view is reset to an empty scope on 1 hour', capAfter.root === '' && capAfter.q === '' && capAfter.rec === '1h', JSON.stringify(capAfter));
+    check('at the cap, the oldest tab is the one brought into view', (await drv.state()).activeTabId === oldestId);
+    check('at the cap, that tab is reset to an empty scope on 1 hour', capAfter.root === '' && capAfter.q === '' && capAfter.rec === '1h', JSON.stringify(capAfter));
+    await T('activateTab', pressedFromId);
+    await settle('back to the tab pressed from');
+    const kept = await ev(`document.getElementById('rootFolder').value`);
+    check('the tab it was pressed from keeps its scope', kept === capBefore.root, JSON.stringify(kept));
+
+    // Pressing again with the oldest already in view resets it in place: still ten tabs, still it.
+    await T('activateTab', oldestId);
+    await settle('oldest in view');
+    await T('setScope', scopedRoot);
+    await settle('oldest scoped again');
+    await T('openRecentTab');
+    await settle('press with the oldest in view');
+    const again = JSON.parse(await ev(`JSON.stringify({ root: document.getElementById('rootFolder').value, rec: document.querySelector('input[name="tagFoxRecencyFilter"]:checked').value })`));
+    check('with the oldest in view it is reset in place', (await T('tabIds')).length === 10 && (await drv.state()).activeTabId === oldestId && again.root === '' && again.rec === '1h', JSON.stringify(again));
   } catch (e) {
     failures.push('ERROR: ' + (e.stack || e.message || String(e)));
   } finally {
