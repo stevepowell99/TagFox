@@ -3225,15 +3225,17 @@
      *  active one if it qualifies) so the shortcut cannot pile up tabs, else open a new one. Either way
      *  the tab is reset to defaults: no query, no scope folder, no tags, every option off, smart view,
      *  1 hour recency. Reached only by the global Ctrl+Shift+Space (main.js RECENT_TAB_ACCEL), so it
-     *  works while TagFox is hidden. */
+     *  works while TagFox is hidden. At MAX_TABS with every tab scoped there is nothing to reuse and no
+     *  room for another, so the tab in view is reset in place: refusing would leave the window raised
+     *  on the old scope and recency with nothing on screen to say why. */
     async function openRecentTab() {
       saveActiveTabStateFromUi();
       const emptyScope = (t) => !!t.searchState && !String(t.searchState.rootFolder || '').trim();
       const reuse = tabs.find((t) => t.id === activeTabId && emptyScope(t)) || tabs.find(emptyScope);
       if (reuse) {
         await activateTab(reuse.id, { skipSearch: true });
-      } else if (!(await openNewTab({ skipSearch: true }))) {
-        return;
+      } else if (tabs.length < MAX_TABS) {
+        await openNewTab({ skipSearch: true });
       }
       leaveScopePathEditChrome();
       document.getElementById('rootFolder').value = '';

@@ -79,6 +79,26 @@ async function main() {
     await settle('first again');
     const last = await ev(`JSON.stringify({ q: document.getElementById('query').value, root: document.getElementById('rootFolder').value, rec: document.querySelector('input[name="tagFoxRecencyFilter"]:checked').value })`);
     check('the scoped tab still has its own state', last === before, last);
+
+    // The tab cap: with every tab scoped and MAX_TABS open there is nothing to reuse and no room for
+    // another. The press used to return without touching anything, leaving the window raised on the
+    // old scope and recency. It must reset the tab in view instead, and open no eleventh tab.
+    const scopedRoot = JSON.parse(before).root;
+    await T('activateTab', secondId);
+    await settle('scope the second tab');
+    await T('setScope', scopedRoot);
+    await settle('second tab scoped');
+    while ((await T('tabIds')).length < 10) await T('newTab');
+    await settle('filled to the cap');
+    const capIds = await T('tabIds');
+    const capBefore = JSON.parse(await ev(`JSON.stringify({ q: document.getElementById('query').value, root: document.getElementById('rootFolder').value, rec: document.querySelector('input[name="tagFoxRecencyFilter"]:checked').value })`));
+    await ev(`document.getElementById('optRecency1d').checked = true; 1`);
+    check('ten tabs are open and the one in view has a scope folder (positive control)', capIds.length === 10 && capBefore.root !== '', JSON.stringify(capBefore));
+    await T('openRecentTab');
+    await settle('press at the cap');
+    const capAfter = JSON.parse(await ev(`JSON.stringify({ q: document.getElementById('query').value, root: document.getElementById('rootFolder').value, rec: document.querySelector('input[name="tagFoxRecencyFilter"]:checked').value })`));
+    check('at the cap, no tab is added', (await T('tabIds')).length === 10);
+    check('at the cap, the tab in view is reset to an empty scope on 1 hour', capAfter.root === '' && capAfter.q === '' && capAfter.rec === '1h', JSON.stringify(capAfter));
   } catch (e) {
     failures.push('ERROR: ' + (e.stack || e.message || String(e)));
   } finally {
