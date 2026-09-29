@@ -52,6 +52,19 @@ const os = require('os');
 const path = require('path');
 const nodeCrypto = require('crypto');
 
+/* The same principle as disable-renderer-backgrounding, one process up. This process routes every
+   click and keystroke to the page, and Windows hands a launcher's BelowNormal priority on to its
+   children: the autostart task ran at Task Scheduler's default of 7, which is BelowNormal, and an
+   app.relaunch inherits whatever the old process had. Measured 29 September 2026: main read
+   BelowNormal (renderers Normal, GPU AboveNormal, which Chromium sets itself) after running for
+   14 hours, with the window taking no clicks while the machine was paging. Only ever raise to Normal;
+   a priority someone set higher stays. Set before app.whenReady so the helper processes Chromium
+   launches without an explicit priority inherit Normal too. */
+try {
+  const NORMAL = os.constants.priority.PRIORITY_NORMAL;
+  if (os.getPriority() > NORMAL) os.setPriority(NORMAL);
+} catch (_) {}
+
 /* Main-process perf probe: append to a temp log we can read after a repro, to localize freezes the
    renderer sees only as a slow IPC reply. Best-effort; never throws into a hot path. */
 const MAIN_PERF_LOG = path.join(os.tmpdir(), 'tagfox-mainperf.log');

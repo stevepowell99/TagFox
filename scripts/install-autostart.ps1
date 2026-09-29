@@ -83,7 +83,9 @@ $xml = @"
     <RunOnlyIfIdle>false</RunOnlyIfIdle>
     <WakeToRun>false</WakeToRun>
     <ExecutionTimeLimit>PT5M</ExecutionTimeLimit>
-    <Priority>7</Priority>
+    <!-- 4 is Normal. Task Scheduler's default of 7 is BelowNormal, and every process the task
+         starts inherits it: Everything's user instance, npm, and the TagFox main process. -->
+    <Priority>4</Priority>
   </Settings>
   <Actions Context="Author">
     <Exec>
