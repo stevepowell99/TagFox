@@ -1280,6 +1280,51 @@
       return true;
     }
 
+    /* Open in Obsidian: `obsidian://open?path=<absolute path>` opens a file in whichever registered vault
+       holds it, and fails with "Vault not found" for anything else, so the row button and the context-menu
+       entry are offered only for markdown inside a vault. Main reads the vault list from Obsidian's own
+       config; it is fetched at startup and on every window focus, and the table repaints when it changes. */
+    let obsidianVaultRootsLc = [];
+    function normaliseWinPathLc(p) {
+      return String(p || '').replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase();
+    }
+    async function refreshObsidianVaultRoots() {
+      if (!window.tagBrowser || typeof window.tagBrowser.obsidianVaultRoots !== 'function') return;
+      let r = null;
+      try {
+        r = await window.tagBrowser.obsidianVaultRoots();
+      } catch (e) {
+        r = { ok: false, error: String((e && e.message) || e) };
+      }
+      if (!r || !r.ok) {
+        console.warn('[TagFox] Obsidian vault list:', (r && r.error) || 'no answer');
+        return;
+      }
+      const next = (r.roots || []).map(normaliseWinPathLc).filter(Boolean);
+      if (next.join('|') === obsidianVaultRootsLc.join('|')) return;
+      obsidianVaultRootsLc = next;
+      if (lastRows.length) renderTable();
+    }
+    /** A .md file inside a registered vault, outside the dot-folders (.obsidian, .trash) Obsidian does not index. */
+    function pathInObsidianVault(fp) {
+      if (!obsidianVaultRootsLc.length || !/\.md$/i.test(String(fp || ''))) return false;
+      const s = normaliseWinPathLc(fp);
+      return obsidianVaultRootsLc.some((root) => {
+        if (!s.startsWith(root + '\\')) return false;
+        return !s.slice(root.length + 1).split('\\').some((seg) => seg.startsWith('.'));
+      });
+    }
+    async function openRowInObsidian(fp) {
+      const url = 'obsidian://open?path=' + encodeURIComponent(fp);
+      const r = await window.tagBrowser.openUrlDefaultBrowser({ url });
+      if (r && r.ok === false) {
+        setStatusMain('Open in Obsidian failed: ' + (r.error || 'unknown error'));
+        return;
+      }
+      setStatusMain('Opening in Obsidian…');
+      bumpFileFocusVisit(fp);
+    }
+
     /* opts.share ('suggest' | 'edit') asks gmist to copy the room's share link to the clipboard once it
        has opened, so a collaborator link is one click from a row. TagFox cannot build that link itself:
        it holds no gmist credentials, and minting a room needs the browser's own session cookie, so the
@@ -13730,6 +13775,7 @@
       const res = await window.tagBrowser.showItemActionsMenu({
         filePath: fp,
         scopeFolder: document.getElementById('rootFolder').value.trim(),
+        inObsidianVault: pathInObsidianVault(fp),
         x: Math.round(clientX),
         y: Math.round(clientY),
       });
@@ -13745,6 +13791,7 @@
         if (target) await applySearchScopeAndRefresh(target);
       } else if (res && res.action === 'printPdf') void printRowToPdf(fp, res.profile);
       else if (res && res.action === 'gmistShareLink') void openRowInOnlineGmist(fp, { share: res.share });
+      else if (res && res.action === 'openInObsidian') void openRowInObsidian(fp);
       else if (res && res.action === 'rename') void renameItemInteractive(fp);
       else if (res && res.action === 'bulkRename') openBulkRenameModal();
       else if (res && res.action === 'duplicate' && res.destPath)
@@ -14078,6 +14125,9 @@
           // Online: the deployed worker, only for a file under a Drive mount.
           if (pathUnderGoogleDrive(fp)) {
             gmistBtns.push(mkPen('fa-cloud', 'Open in gmist online (deployed, needs the file in Google Drive)', 'Open in gmist online', openRowInOnlineGmist));
+          }
+          if (pathInObsidianVault(fp)) {
+            gmistBtns.push(mkPen('fa-gem', 'Open in Obsidian (its vault holds this file)', 'Open in Obsidian', openRowInObsidian));
           }
           /* Print to PDF: any markdown, on Drive or not. The click opens the profile picker rather
              than guessing branded vs plain, the same per-click choice the two pens offer. */
@@ -18187,6 +18237,8 @@
     void refreshRunningNow(false);
     setInterval(() => void refreshRunningNow(false), 30_000);
     window.addEventListener('focus', () => void refreshRunningNow(false));
+    void refreshObsidianVaultRoots();
+    window.addEventListener('focus', () => void refreshObsidianVaultRoots());
     document.getElementById('btnRestartTagFox')?.addEventListener('click', () => void window.tagBrowser?.restartTagFox?.());
     document.getElementById('autoRefreshSec')?.addEventListener('change', () => {
       saveSettings();

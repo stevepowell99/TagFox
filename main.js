@@ -4284,6 +4284,30 @@ ipcMain.handle('open-url-default-browser', async (_event, { url }) => {
   }
 });
 
+/* Obsidian's registered vaults, read from its own config each time, so a vault added while TagFox
+   runs is picked up without a restart. `obsidian://open?path=` opens a file only when it sits inside
+   one of these, so the renderer offers Open in Obsidian for those files alone. Missing config means
+   Obsidian is not installed here, which is an answer (`found: false`), not an error. */
+ipcMain.handle('obsidian-vault-roots', async () => {
+  const cfg = path.join(app.getPath('appData'), 'obsidian', 'obsidian.json');
+  let raw;
+  try {
+    raw = await fs.readFile(cfg, 'utf8');
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return { ok: true, found: false, roots: [] };
+    return { ok: false, error: String(e.message || e), roots: [] };
+  }
+  try {
+    const vaults = (JSON.parse(raw) || {}).vaults || {};
+    const roots = Object.values(vaults)
+      .map((v) => String((v && v.path) || '').trim())
+      .filter(Boolean);
+    return { ok: true, found: true, roots };
+  } catch (e) {
+    return { ok: false, error: 'Could not read ' + cfg + ': ' + String(e.message || e), roots: [] };
+  }
+});
+
 /**
  * Is a local gmist (npm run dev:local) up at baseUrl? Probes from the main
  * process (Node fetch), NOT the renderer: a renderer fetch would carry an
@@ -5328,7 +5352,7 @@ ipcMain.handle('windows-recent-files', async () => {
  * Shell item menu: standard Electron pattern (Menu + shell + clipboard in main).
  * Full Explorer.context menu would need native IContextMenu bindings — not in core Electron.
  */
-ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFolder }) => {
+ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFolder, inObsidianVault }) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   const fp = path.normalize(String(filePath || '').trim());
   if (!fp) return { ok: false, error: 'No path' };
@@ -5474,6 +5498,11 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
           });
         },
       },
+      /* The renderer decides vault membership (it holds the vault list for the row button too) and
+         runs the open, so this entry and the row button are one action. */
+      ...(!isDir && inObsidianVault
+        ? [{ label: 'Open in Obsidian', click: () => done({ ok: true, action: 'openInObsidian' }) }]
+        : []),
       {
         label: 'Open in Google Workspace',
         enabled: canOpenInGoogleWorkspace,

@@ -53,6 +53,8 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   googleWorkspaceShortcutUrl: (payload) => ipcRenderer.invoke('google-workspace-shortcut-url', payload),
   openGoogleWorkspaceWindow: (payload) => ipcRenderer.invoke('open-google-workspace-window', payload),
   openUrlDefaultBrowser: (payload) => ipcRenderer.invoke('open-url-default-browser', payload),
+  /** Obsidian's registered vault folders, from its obsidian.json: { ok, found, roots }. */
+  obsidianVaultRoots: () => ipcRenderer.invoke('obsidian-vault-roots'),
   /** Start a local gmist, or report the one already listening on 5173. Returns at once when it is up. */
   startLocalGmist: () => ipcRenderer.invoke('start-local-gmist'),
   runtimeInfo: (opts) => ipcRenderer.invoke('tagfox-runtime-info', opts || {}),
