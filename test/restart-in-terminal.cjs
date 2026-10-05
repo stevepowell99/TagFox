@@ -24,31 +24,40 @@ async function pageWs() {
 }
 
 // A page that reloads during startup destroys the context mid-call; that is a retry, not a failure.
+// So is a reply that never comes: a call sent to a page on its way out can go unanswered, and this
+// test once waited on one for over ten minutes with the suite stalled behind it.
 async function evaluate(expr) {
   for (let i = 0; ; i++) {
     try {
       return await evaluateOnce(expr);
     } catch (e) {
-      if (i >= 10 || !/context was destroyed|Cannot find context/i.test(e.message)) throw e;
+      if (i >= 10 || !/context was destroyed|Cannot find context|no reply within|socket closed/i.test(e.message)) throw e;
       await sleep(300);
     }
   }
 }
 
+const EVALUATE_TIMEOUT_MS = 15000;
+
 async function evaluateOnce(expr) {
   const ws = new WebSocket(await pageWs());
-  await new Promise((res, rej) => { ws.addEventListener('open', res); ws.addEventListener('error', rej); });
-  const out = await new Promise((resolve, reject) => {
-    ws.addEventListener('message', (ev) => {
-      const m = JSON.parse(ev.data);
-      if (m.id !== 1) return;
-      if (m.error || m.result.exceptionDetails) reject(new Error(JSON.stringify(m.error || m.result.exceptionDetails)));
-      else resolve(m.result.result.value);
+  try {
+    await new Promise((res, rej) => { ws.addEventListener('open', res); ws.addEventListener('error', rej); });
+    return await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`no reply within ${EVALUATE_TIMEOUT_MS}ms`)), EVALUATE_TIMEOUT_MS);
+      ws.addEventListener('close', () => { clearTimeout(timer); reject(new Error('CDP socket closed')); });
+      ws.addEventListener('message', (ev) => {
+        const m = JSON.parse(ev.data);
+        if (m.id !== 1) return;
+        clearTimeout(timer);
+        if (m.error || m.result.exceptionDetails) reject(new Error(JSON.stringify(m.error || m.result.exceptionDetails)));
+        else resolve(m.result.result.value);
+      });
+      ws.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression: expr, awaitPromise: true, returnByValue: true } }));
     });
-    ws.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression: expr, awaitPromise: true, returnByValue: true } }));
-  });
-  ws.close();
-  return out;
+  } finally {
+    ws.close();
+  }
 }
 
 (async () => {
@@ -75,7 +84,8 @@ async function evaluateOnce(expr) {
     console.log('ok   first start: pid ' + info.pid + ', gmist ' + JSON.stringify(info.gmist));
     if (info.gmist.holder && info.gmist.holder.kind === 'unknown') fail('gmist is up but its runner was not recognised');
 
-    await evaluate('window.tagBrowser.restartTagFox(), 1').catch(() => {}); // the page dies mid-call
+    // Once only: the page dies mid-call, and a retry would restart the new TagFox as well.
+    await evaluateOnce('window.tagBrowser.restartTagFox(), 1').catch(() => {});
     let second = null;
     for (let i = 0; i < 60 && !second; i++) {
       await sleep(500);

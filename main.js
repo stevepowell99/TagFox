@@ -28,7 +28,9 @@ const {
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 
 // Dev: reload renderer / restart main when project files change (no manual npm start).
-if (!app.isPackaged) {
+// Never in a test instance (TAGFOX_TEST_HIDDEN): an edit anywhere in the repo reloaded the window under a
+// running test, which then lost its #tagfoxtest hook mid-run and failed for a reason it was not testing.
+if (!app.isPackaged && process.env.TAGFOX_TEST_HIDDEN !== '1') {
   /* Polling only on a synced mount (OneDrive / Google Drive), where native fs.watch often never fires.
      On local NTFS it is pure cost: measured 5% of a core in main, constantly, plus ~4k metadata ops/sec
      on the fs threadpool, which everything else in main queues behind. */

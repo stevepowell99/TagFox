@@ -42,8 +42,14 @@ temp folder), so do not run them in parallel; `run-all.cjs` runs them in sequenc
 your real TagFox profile.
 
 The harness spawns Electron with `TAGFOX_TEST_HIDDEN=1`, so the window never shows onscreen (no flashing
-during a run). A hidden window still renders and drives through the `#tagfoxtest` hook over CDP. Normal app
-runs are unaffected: `main.js` only skips `show()` when that env var is set.
+during a run). A hidden window still renders and drives through the `#tagfoxtest` hook over CDP. The same
+variable turns off the dev reloader, so editing a file in the repo while the suite runs no longer reloads a
+test's window and strips its hook mid-run. Normal app runs are unaffected: `main.js` only skips `show()` and
+the reloader when that variable is set.
+
+`run-all.cjs` gives each run five minutes. A run that overstays is killed along with the Electron it
+launched and counted as failed, so one hung test cannot stall the suite. Each run's time is printed after
+it.
 
 ## What each file covers
 
@@ -61,7 +67,7 @@ runs are unaffected: `main.js` only skips `show()` when that env var is set.
 | `menu-enter.cjs` | Ctrl+L opens the recent-folders menu, the arrows move through it without the results list also taking them, and Enter applies the focused folder. Sent as real key events over CDP, because a synthetic click would pass whether or not the global Enter handler swallowed the key. |
 | `recent-tab.cjs` | The renderer half of the global Ctrl+Shift+Space (`openRecentTab`, driven through the test hook): the tab is empty of query, scope folder, tags and every search option, carries a 1 week recency window that reaches the Everything query as `dm:`, an existing empty-scope tab is reused (from another tab, and in place after typing in it) instead of a third being opened, and the scoped tab it came from is unchanged. The OS-wide registration itself lives in `main.js` (`RECENT_TAB_ACCEL`) and is not pressable from a test without raising the window. |
 | `fuzz.cjs` | Random bursts of actions (type, refresh, new/close/cycle tab, recency, view, scope, auto-refresh tick) with a structural check plus a consistency re-search after every burst. |
-| `run-all.cjs` | Runs the above in sequence and prints a pass/fail summary. |
+| `run-all.cjs` | Runs the above in sequence, each under a five-minute deadline, and prints a pass/fail summary. |
 
 ## Invariants checked (`structuralProblems` in `harness.cjs`)
 
