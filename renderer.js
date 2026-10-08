@@ -4350,20 +4350,6 @@
       return isShowSubfolders();
     }
 
-    /**
-     * Tree + recency: folder mtime is often “touched” without meaningful content changes.
-     * Drop real folder *hits* from the filtered set; path-grouping still injects synthetic folder rows
-     * as ancestors of surviving files. Simple tree browse keeps folder rows.
-     */
-    function treeRecencyDropRealFolderHits() {
-      return (
-        !isFoldersOnly() &&
-        isShowSubfolders() &&
-        shouldShowPathFolderGrouping() &&
-        recencyFilterMode() !== 'all'
-      );
-    }
-
     /** Parent-dir segments for one result row (files and folders both use parent of full path). */
     function parentSegmentsForRow(row) {
       const fp = fullPathForRow(row);
@@ -9881,12 +9867,16 @@
 
     /**
      * Send recency to Everything as dm:>=… so max-results applies inside the time window (fixes path sort taking 200 “old” hits then client-filtering to a handful).
+     * Recency means a file's own modified time, so folders are excluded (file:) unless Folders only is on:
+     * Windows bumps a folder's modified time when a child is created, deleted or renamed, never when one is edited,
+     * so a folder hit in a recency window reports creation, not modification. Tree view still shows the folders
+     * of surviving files as synthetic ancestor rows.
      */
     function appendRecencyToEverythingQuery(searchText) {
       if (recencyFilterMode() === 'all') return searchText;
       const cut = recencyFilterCutoffMs();
       if (cut == null) return searchText;
-      const clause = 'dm:>=' + formatEverythingDmCutoffLocal(cut);
+      const clause = 'dm:>=' + formatEverythingDmCutoffLocal(cut) + (isFoldersOnly() ? '' : ' file:');
       return (String(searchText || '').trim() + ' ' + clause).trim();
     }
 
@@ -12962,19 +12952,6 @@
     /** Same pipeline as filteredRows but before Hide special / Hide ~ (for status hints). */
     function filteredRowsBeforeAdvancedPathHides() {
       let rows = filteredRowsAfterTagsOnly();
-      const cut = recencyFilterCutoffMs();
-      if (cut != null) {
-        const recencyInEverything = recencyFilterMode() !== 'all';
-        if (!recencyInEverything) {
-          rows = rows.filter((r) => {
-            if (treeRecencyDropRealFolderHits() && rowIsFolder(r)) return false;
-            const ms = modifiedTimeMs(r);
-            return ms != null && ms >= cut;
-          });
-        } else if (treeRecencyDropRealFolderHits()) {
-          rows = rows.filter((r) => !rowIsFolder(r));
-        }
-      }
       if (deadlineFilterActive()) {
         const b = deadlineRangeBounds();
         rows = rows.filter((r) => rowDeadlineDates(r).some((d) => deadlineDateInActiveRange(d, b)));
