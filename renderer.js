@@ -51,6 +51,7 @@
       helpModalTab: 'tagBrowserHelpModalTab',
       autoRefreshSec: 'tagBrowserAutoRefreshSec',
       autoRefreshDefaultMoved: 'tagBrowserAutoRefreshDefaultMoved',
+      optPathDefaultMoved: 'tagBrowserOptPathDefaultMoved',
       darkMode: 'tagBrowserDarkMode',
       pageZoom: 'tagBrowserPageZoom',
       treeFolding: 'tagBrowserTreeFolding',
@@ -3268,7 +3269,7 @@
 
     /** The last hour's changes anywhere, in a tab whose scope is empty: reuse the first such tab (the
      *  active one if it qualifies) so the shortcut cannot pile up tabs, else open a new one. Either way
-     *  the tab is reset to defaults: no query, no scope folder, no tags, every option off, smart view,
+     *  the tab is reset to defaults: no query, no scope folder, no tags, every option off but Match path, smart view,
      *  1 hour recency. Reached only by the global Ctrl+Shift+Space (main.js RECENT_TAB_ACCEL), so it
      *  works while TagFox is hidden. At MAX_TABS with every tab scoped there is nothing to reuse and no
      *  room for another, so the oldest tab (lowest id, so the one open longest) is activated and reset;
@@ -3296,7 +3297,7 @@
       setRecencyFilterMode('1h');
       for (const id of ['optCase', 'optWholeWord', 'optPath', 'optDiacritics', 'optHideSpecial', 'optHideTilde']) {
         const el = document.getElementById(id);
-        if (el) el.checked = false;
+        if (el) el.checked = id === 'optPath';
       }
       syncAdvancedSearchIconFilledState();
       renderScopeBreadcrumb();
@@ -11807,7 +11808,8 @@
       document.getElementById('httpUser').value = localStorage.getItem(LS.httpUser) || '';
       document.getElementById('optCase').checked = localStorage.getItem(LS.optCase) === '1';
       document.getElementById('optWholeWord').checked = localStorage.getItem(LS.optWholeWord) === '1';
-      document.getElementById('optPath').checked = localStorage.getItem(LS.optPath) === '1';
+      if (localStorage.getItem(LS.optPathDefaultMoved) !== '1') { localStorage.setItem(LS.optPathDefaultMoved, '1'); localStorage.setItem(LS.optPath, '1'); }
+      document.getElementById('optPath').checked = localStorage.getItem(LS.optPath) !== '0';
       document.getElementById('optDiacritics').checked = localStorage.getItem(LS.optDiacritics) === '1';
       document.getElementById('optHideSpecial').checked = localStorage.getItem(LS.optHideSpecial) === '1';
       document.getElementById('optHideTilde').checked = localStorage.getItem(LS.optHideTilde) === '1';
