@@ -26,6 +26,8 @@ Steve's spec, dictated 22 October 2026 (voice notes 138 and 139, transcripts lig
 
 Decided in the runner tab, 22 October 2026: drop the row actions column to save width; on row hover the action buttons fly out, anchored to a new row icon; remove the existing flaky hover-flyout code. Built into Runner first.
 
+Decided in the runner tab, 22 October 2026: inside a folder (reached with Left or Right), an empty search box lists only that folder's immediate contents; once text is typed, the search covers the folder recursively. This is a fixed rule, separate from smart view.
+
 ## Plan (coordinator, 22 October 2026)
 
 - Build it as a second layout of the same renderer, not a fork: `renderer.js` is about 800KB, and a fork would mean every fix landed twice.
