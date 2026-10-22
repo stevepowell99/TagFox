@@ -34,6 +34,8 @@ Decided in the runner tab, 22 October 2026: scattered fuzzy matches (letters suc
 
 Decided in the runner tab, 22 October 2026: Runner hides `AppData\Local\Temp` by default, excluded in the Everything query itself; the options panel and a `/` command switch it back on.
 
+Decided in the runner tab, 22 October 2026: defaults are a smart compromise, and every tweak is switchable from the filter panel and a `/` command, both built from one command table. Typing a file extension (`pdf`, `.docx`) lists the newest files of that type.
+
 ## Plan (coordinator, 22 October 2026)
 
 - Build it as a second layout of the same renderer, not a fork: `renderer.js` is about 800KB, and a fork would mean every fix landed twice.
