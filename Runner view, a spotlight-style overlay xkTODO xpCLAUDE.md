@@ -32,6 +32,8 @@ Decided in the coordinator chat, 22 October 2026: search works like Google by de
 
 Decided in the runner tab, 22 October 2026: scattered fuzzy matches (letters such as t…e…s spread across a path) rank far down. The change goes in the shared fuzzy scorer, so Ctrl+L recent folders in Classic gets it too.
 
+Decided in the runner tab, 22 October 2026: Runner hides `AppData\Local\Temp` by default, excluded in the Everything query itself; the options panel and a `/` command switch it back on.
+
 ## Plan (coordinator, 22 October 2026)
 
 - Build it as a second layout of the same renderer, not a fork: `renderer.js` is about 800KB, and a fork would mean every fix landed twice.
