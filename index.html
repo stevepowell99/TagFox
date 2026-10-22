@@ -712,17 +712,18 @@
           <div class="position-relative tagfox-query-field-wrap">
             <div id="queryGhostHint" class="tagfox-query-ghost-hint" aria-hidden="true"></div>
             <input type="text" id="query" class="form-control tagfox-query-empty" placeholder="" autocomplete="off" />
-            <!-- Runner only: the / command list, filled from RUNNER_COMMANDS. -->
-            <div id="runnerCmdList" class="tagfox-runner-only tagfox-runner-cmd-list shadow d-none" role="listbox" aria-label="Commands"></div>
           </div>
           <!-- Runner only: the toggles, one low-contrast control that opens on click. -->
           <div class="tagfox-runner-only position-relative d-flex align-self-stretch">
             <button type="button" id="btnRunnerOpts" class="btn tagfox-runner-opts-btn" aria-expanded="false" aria-controls="runnerOptsPanel" title="Options: sort, system files, folders only, match path (or type / in the box)" aria-label="Options">
               <i class="fa-solid fa-sliders" aria-hidden="true"></i>
             </button>
-            <div id="runnerOptsPanel" class="tagfox-runner-opts-panel border rounded bg-body shadow-sm" role="menu" aria-label="Options" hidden></div>
           </div>
         </div>
+        <!-- Runner only: the / command list and the options panel, both filled from RUNNER_COMMANDS. They sit
+             outside #queryInputGroup, whose overflow: hidden (for its rounded corners) would clip them. -->
+        <div id="runnerCmdList" class="tagfox-runner-only tagfox-runner-cmd-list shadow d-none" role="listbox" aria-label="Commands"></div>
+        <div id="runnerOptsPanel" class="tagfox-runner-only tagfox-runner-opts-panel border rounded bg-body shadow-sm" role="menu" aria-label="Options" hidden></div>
         <div class="d-flex align-items-center flex-shrink-0 flex-wrap gap-2 tagfox-search-opts-rhs tagfox-status-view-opts">
           <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair tagfox-view-trio tagfox-rv-layout-trio flex-shrink-0" role="group" aria-label="View mode">
             <input type="radio" class="btn-check" name="rvViewMode" id="optRvSmart" value="smart" autocomplete="off" checked />

@@ -154,6 +154,16 @@ async function main() {
     s = await R();
     if (process.env.RUNNER_DEBUG) console.log('    after typing:', JSON.stringify({ q: s.query, open: s.cmdListOpen, m: s.cmdMatches.slice(0, 3) }));
     check(s.cmdMatches[0] === 'sort-date', `the list filters as you type (first: ${s.cmdMatches[0]})`);
+    // On screen, not just in state: the search box clips its children, so the list must sit outside it.
+    const listSeen = await drv.ev(`(() => {
+      const b = document.querySelector('#runnerCmdList .tagfox-runner-cmd');
+      const box = document.getElementById('queryInputGroup').getBoundingClientRect();
+      if (!b) return { ok: false, why: 'no entry' };
+      const r = b.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return { ok: r.top >= box.bottom - 1 && !!hit && b.contains(hit), top: Math.round(r.top), boxBottom: Math.round(box.bottom), hit: hit && (hit.id || hit.className) };
+    })()`);
+    check(listSeen.ok, `the command list shows below the box, not clipped by it (${JSON.stringify(listSeen)})`);
     await key('Enter', 'Enter', 13, 0, '\r');
     await drv.settle('cmd');
     s = await R();
