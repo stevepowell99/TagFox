@@ -3008,7 +3008,7 @@ ipcMain.handle('everything-search', async (_event, payload) => {
         ' count=' + count + ' q=' + JSON.stringify(String(searchText || '').slice(0, 80))
     );
   }
-  return { ok: true, rows };
+  return { ok: true, rows, totalResults: typeof data.totalResults === 'number' ? data.totalResults : null };
 });
 
 ipcMain.handle('open-path', async (_event, fullPath) => {
@@ -6120,6 +6120,23 @@ function compareChildFolderDisplayName(a, b) {
   if (za !== zb) return za - zb;
   return sa.localeCompare(sb, undefined, { sensitivity: 'base', numeric: true });
 }
+
+/** File, folder or missing, per path: the favourites list holds both since Runner's stars write to it. */
+ipcMain.handle('path-kinds', async (_event, paths) => {
+  const list = Array.isArray(paths) ? paths.map((p) => String(p || '')).filter(Boolean) : [];
+  const kinds = {};
+  await Promise.all(
+    list.map(async (p) => {
+      try {
+        const st = await fs.stat(p);
+        kinds[p] = st.isDirectory() ? 'folder' : 'file';
+      } catch (_) {
+        kinds[p] = 'missing';
+      }
+    })
+  );
+  return { ok: true, kinds };
+});
 
 /** Subfolders only (breadcrumb sibling picker). */
 ipcMain.handle('list-child-folders', async (_event, { parentPath }) => {

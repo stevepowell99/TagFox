@@ -45,6 +45,7 @@ If search feels slow, open **Advanced** and turn off **Folder-contents highlight
 - **Three view switches.** Flat or Tree, subfolders on or off, files and folders or folders only, combined freely. Recency buttons (1h, 1d, 1w, 1m, 1y) filter to what changed recently.
 - **Fast previews.** Images, PDFs, Word, Excel, PowerPoint, text, JSON, markdown and more in the Viewer panel. For a folder it shows a folder readme you can edit in place.
 - **Smart view.** The default layout adjusts which results you see relative to **Max results**, so you rarely touch the subfolder and file toggles by hand.
+- **Runner layout.** Settings, "Toggle key opens: Runner", turns the window into one large search box over a ranked list, with the Viewer on the right third: arrows to move, right and left to go into a folder and back up, `/` for commands, `Ctrl`+`D` to star. Name matches rank above path matches, then recent, starred and often-used items. Classic stays the default.
 - **Favourite folders and saved searches.** Bookmark a folder or a whole search, reorder by drag, and jump back with `Ctrl`+`1` to `9` (searches) or `Ctrl`+`Shift`+`1` to `9` (folders). These are your persistent bookmarks; tabs (below) are for throwaway working views.
 - **The Shelf.** A staging strip beside the results. Collect files from several folders, navigate elsewhere, then paste or drag them in. A clipboard for files that does not empty when you move.
 - **Bulk rename.** Check several files, press `Ctrl`+`H`, and use wildcards on the last path segment with a live preview.
@@ -118,6 +119,14 @@ invariants checked and how to add a test, is in [`test/README.md`](test/README.m
 Everything's HTTP API returns all folders before all files for a given sort. With **Max results** capped, a folder-heavy scope can fill a page with folders and show no files. Everything 1.5a adds a `sort-mix:` prefix that interleaves files and folders in true sort order, and TagFox appends it when **Hide files** is off (see `runSearch()` in `renderer.js`). This is why 1.5a is required. Reference: the [Everything forum thread](https://www.voidtools.com/forum/viewtopic.php?t=8994).
 
 Active tag filters are sent to Everything as a regex clause, so matches exist before results load. The tag bar refresh control runs a full-index scan for `xk…` tag tokens and prunes tags that no longer appear; ordinary searches do not. **Hide special** and **Hide ~** are client-side filters in `filteredRows()`; the Everything query is unchanged, so paging still counts raw hits per page.
+
+### Runner layout
+
+Runner is a second layout of the same renderer, not a separate app: `body.tagfox-runner` hides the Classic chrome in CSS, and `isRunnerMode()` branches inside the shared functions (`runSearch`, `sortLastRowsForDisplay`, `renderTableImpl`, the key handler) rather than copying them. Runner keeps its own search state under `LS.runnerState` and stashes Classic's under `LS.runnerClassicStash`, so neither disturbs the other.
+
+- **Ranking.** Every weight is in `RUNNER_RANK` (`renderer.js`). `rankRowsForRunner` sorts first by how many query words the name contains, then by a score made of the match kind, recency, star and use counts. Use counts are the existing `fileFocusStats` and `folderFocusStats`, a boost and never a filter.
+- **Extra queries.** Everything returns rows in its own sort order, so a name match far down a large result set would never be seen. When Match path is on, a name-only query (`nopath:`) runs alongside the main one, and starred and often-used paths are fetched by exact path (`wfn:path:"..."`) in chunks of `pinChunk`; the rows are merged before ranking. When the hits exceed what was ranked, a line under the list says so.
+- **Render window.** Runner draws `RUNNER_RENDER_PAGE` rows and grows the window as you scroll or arrow down, because the first layout of a results row costs about 1.6ms.
 
 ### Search concurrency and result tabs
 

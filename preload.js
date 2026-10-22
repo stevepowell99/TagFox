@@ -81,6 +81,8 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   cutExplorerPaste: (paths) => ipcRenderer.invoke('cut-explorer-paste', paths),
   pasteClipboardIntoFolder: (payload) => ipcRenderer.invoke('paste-clipboard-into-folder', payload),
   listChildFolders: (payload) => ipcRenderer.invoke('list-child-folders', payload),
+  /** { ok, kinds: { [path]: 'file' | 'folder' | 'missing' } } */
+  pathKinds: (paths) => ipcRenderer.invoke('path-kinds', paths),
   listFolderEntries: (payload) => ipcRenderer.invoke('list-folder-entries', payload),
   debugFolderSnapshot: (payload) => ipcRenderer.invoke('debug-folder-snapshot', payload),
   listDriveRoots: () => ipcRenderer.invoke('list-drive-roots'),

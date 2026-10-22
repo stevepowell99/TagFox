@@ -2805,3 +2805,219 @@ body > .tooltip {
   min-width: 3.4rem;
   font-variant-numeric: tabular-nums;
 }
+
+/* ─── Runner layout (body.tagfox-runner; Settings → "Toggle key opens") ───
+   A second layout of the same page: one large search box, the results under it, the Viewer on the
+   right third. Everything Classic shows is still in the DOM; this block only hides and restyles it. */
+body:not(.tagfox-runner) .tagfox-runner-only {
+  display: none !important;
+}
+body.tagfox-runner .tagfox-app-header,
+body.tagfox-runner #favFoldersColumn,
+body.tagfox-runner #splitFavFolders,
+body.tagfox-runner .tag-toolbar-row,
+body.tagfox-runner .scope-breadcrumb-row,
+body.tagfox-runner .tagfox-search-toolbar-row > .d-flex:has(#favSearchesBar),
+body.tagfox-runner .tagfox-status-view-opts,
+body.tagfox-runner #resultsTabStrip,
+body.tagfox-runner #appShelf,
+body.tagfox-runner #splitProps,
+body.tagfox-runner #resultsTable thead {
+  display: none !important;
+}
+body.tagfox-runner .center-panel {
+  padding: 1rem 1.25rem 0.5rem;
+}
+body.tagfox-runner .tagfox-search-toolbar-row {
+  margin-bottom: 0.75rem;
+}
+body.tagfox-runner #queryInputGroup {
+  flex: 1 1 auto;
+  max-width: none;
+  border-radius: 0.6rem;
+}
+body.tagfox-runner #queryInputGroup #query.form-control,
+body.tagfox-runner #queryInputGroup .tagfox-query-ghost-hint {
+  font-size: 1.55rem;
+  line-height: 1.4;
+  padding: 0.55rem 0.85rem;
+}
+body.tagfox-runner #queryInputGroup .tagfox-query-clear.btn {
+  width: 2.75rem !important;
+  min-width: 2.75rem !important;
+}
+/* Current folder as a chip at the start of the box. */
+.tagfox-runner-scope-chip {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 40%;
+  margin-left: 0.5rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background-color: var(--tagfox-folder-row-bg, var(--bs-secondary-bg));
+  font-size: 1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+.tagfox-runner-scope-chip .tagfox-runner-scope-chip-x {
+  opacity: 0.45;
+  cursor: pointer;
+}
+.tagfox-runner-scope-chip .tagfox-runner-scope-chip-x:hover {
+  opacity: 1;
+}
+/* The toggles: one quiet control until clicked. */
+.tagfox-runner-opts-btn {
+  border: 0;
+  background: transparent;
+  color: var(--bs-secondary-color);
+  opacity: 0.3;
+  padding: 0 0.85rem;
+}
+.tagfox-runner-opts-btn:hover,
+.tagfox-runner-opts-btn[aria-expanded="true"] {
+  opacity: 1;
+}
+.tagfox-runner-opts-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 1100;
+  min-width: 17rem;
+  padding: 0.35rem 0;
+  font-size: 0.9rem;
+}
+/* The / command list: drops under the box. */
+.tagfox-runner-cmd-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 1100;
+  max-height: 50vh;
+  overflow-y: auto;
+  padding: 0.35rem 0;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.5rem;
+  background-color: var(--bs-body-bg);
+  font-size: 1rem;
+}
+.tagfox-runner-cmd {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.3rem 0.9rem;
+  border: 0;
+  background: transparent;
+  color: var(--bs-body-color);
+  text-align: left;
+}
+.tagfox-runner-cmd .tagfox-runner-cmd-state {
+  width: 1rem;
+  flex-shrink: 0;
+  color: var(--tb-accent);
+}
+.tagfox-runner-cmd .tagfox-runner-cmd-key {
+  margin-left: auto;
+  color: var(--bs-secondary-color);
+  font-size: 0.8em;
+}
+.tagfox-runner-cmd:hover,
+.tagfox-runner-cmd.tagfox-runner-cmd--active {
+  background-color: var(--tb-accent-soft);
+}
+.tagfox-runner-opts-panel .tagfox-runner-cmd-group {
+  padding: 0.35rem 0.9rem 0.1rem;
+  color: var(--bs-secondary-color);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+/* Results: name, path, the star column, modified. No checkbox or size column, no header. */
+body.tagfox-runner #resultsTable {
+  font-size: 0.95rem;
+}
+body.tagfox-runner #resultsTable col:nth-child(1),
+body.tagfox-runner #resultsTable col:nth-child(5) {
+  width: 0 !important;
+  min-width: 0 !important;
+}
+body.tagfox-runner #resultsTable col:nth-child(2) { width: 46% !important; }
+body.tagfox-runner #resultsTable col:nth-child(3) { width: 36% !important; }
+body.tagfox-runner #resultsTable col:nth-child(4) { width: 2.6rem !important; min-width: 2.6rem !important; }
+body.tagfox-runner #resultsTable col:nth-child(6) { width: 18% !important; }
+/* Zero-width, never display:none: a missing cell shifts every later cell into the wrong column. */
+body.tagfox-runner #resultsTable tbody td.results-td-cb,
+body.tagfox-runner #resultsTable tbody td.results-td-size {
+  visibility: hidden;
+  padding: 0 !important;
+  border-width: 0;
+  overflow: hidden;
+  font-size: 0;
+}
+body.tagfox-runner #resultsTable tbody tr > td {
+  padding-top: 0.22rem !important;
+  padding-bottom: 0.22rem !important;
+}
+/* Row actions fly out from the star, anchored to the row rather than the pointer. The strip is a
+   child of the row, so moving onto it keeps the row hovered and it stays open. */
+body.tagfox-runner #resultsTable tbody td.results-td-actions {
+  position: relative;
+  min-width: 2.6rem;
+  max-width: 2.6rem;
+  overflow: visible;
+  text-align: center;
+}
+body.tagfox-runner #resultsTable tbody .results-td-actions-inner {
+  display: none;
+  position: absolute;
+  right: calc(100% - 0.2rem);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.4rem;
+  background-color: var(--bs-body-bg);
+  box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.12);
+}
+body.tagfox-runner #resultsTable tbody tr:hover .results-td-actions-inner {
+  display: flex;
+}
+body.tagfox-runner #resultsTable tbody tr:hover .results-td-actions .tagfox-scope-bar-icon-btn:not(:disabled) {
+  opacity: 0.75;
+}
+.results-row-star {
+  border: 0;
+  background: transparent;
+  padding: 0.1rem 0.3rem;
+  line-height: 1;
+  color: var(--bs-secondary-color);
+  opacity: 0.25;
+}
+#resultsTable tbody tr:hover .results-row-star,
+#resultsTable tbody tr.table-active .results-row-star {
+  opacity: 0.7;
+}
+.results-row-star.results-row-star--on {
+  color: #d97706;
+  opacity: 1 !important;
+}
+.results-row-star:hover {
+  opacity: 1;
+}
+/* Viewer: the right third. */
+body.tagfox-runner #propsAside {
+  width: 33.333% !important;
+  flex: 0 0 33.333%;
+}
+[data-bs-theme="dark"] .tagfox-runner-cmd:hover,
+[data-bs-theme="dark"] .tagfox-runner-cmd.tagfox-runner-cmd--active {
+  background-color: #312e81;
+}
+/* ─── End Runner layout ─── */
