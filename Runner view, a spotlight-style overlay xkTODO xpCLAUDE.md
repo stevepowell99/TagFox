@@ -20,7 +20,7 @@ Steve's spec, dictated 22 October 2026 (voice notes 138 and 139, transcripts lig
 >
 > Much the same as current TagFox but a much simpler interface. Later we might add back the Shelf. No favourites column on the left, no tabs, and for the moment no special filters such as to-do.
 >
-> We won't have smart view.
+> We won't have smart view. Filters should be almost hidden by default.
 >
 > Addendum: while typing in the search box, a slash opens a fuzzy search over quick commands, such as sort by date descending.
 
