@@ -3501,9 +3501,10 @@
       useSaturates: 20,
       lastUse: 10,
       lastUseDays: 30,
-      /* Starred and most-used paths that could match are fetched by one extra query: stars first, then
-         by use, at most this many. Each costs Everything about 3.5ms (measured on 2.4 million items). */
-      pinMax: 60,
+      /* Every starred and used path that could match is fetched by one extra query. Up to this many, as
+         name-plus-parent terms at about 3.5ms each; above it, as one `filelist:`, which costs 0.5-1s
+         whatever its length (both measured on 2.4 million items, October 2026). */
+      pinTermsMax: 150,
     });
 
     /** Runner draws this many ranked rows and more as you scroll or arrow down: the first layout of a
@@ -3709,9 +3710,8 @@
       for (let i = 0; i < rows.length; i++) rows[i] = scored[i].r;
     }
 
-    /** Starred and used paths under the current folder whose path could match the query, stars first and
-        then by use, at most RUNNER_RANK.pinMax. The words test is only a pre-filter, so it runs only on
-        plain words; Everything applies the real query. */
+    /** Starred and used paths under the current folder whose path could match the query. The words
+        test is only a pre-filter, so it runs only on plain words; Everything applies the real query. */
     function runnerPinnedCandidatePaths(query, rootFolder, recursive) {
       const byKey = new Map();
       const add = (p) => {
@@ -3739,18 +3739,7 @@
         }
         out.push(p);
       }
-      const stars = new Set(loadFavouriteFolders().map((p) => pathNormKey(p)));
-      const use = runnerUseStats();
-      const now = Date.now();
-      const weight = (p) => {
-        const k = pathNormKey(p);
-        return (stars.has(k) ? RUNNER_RANK.star : 0) + runnerUseBoost(use.get(k), now);
-      };
-      return out
-        .map((p) => ({ p, w: weight(p) }))
-        .sort((a, b) => b.w - a.w)
-        .slice(0, RUNNER_RANK.pinMax)
-        .map((x) => x.p);
+      return out;
     }
 
     /** One Everything term for an exact path. `wfn:path:` compares every item's full path, about 50ms a
@@ -3785,13 +3774,11 @@
       const pins = runnerPinnedCandidatePaths(queryForEs, rootFolder, recursive);
       const base = everythingSearchTextForUi(ceilingNorms, rootFolder, queryForEs, recursive);
       if (pins.length) {
-        jobs.push(
-          everythingSearchOnce({
-            searchText: base + ' <' + pins.map(everythingExactPathTerm).join('|') + '>',
-            count: pins.length,
-            options: { ...options, offset: 0 },
-          })
-        );
+        const list =
+          pins.length <= RUNNER_RANK.pinTermsMax
+            ? '<' + pins.map(everythingExactPathTerm).join('|') + '>'
+            : 'filelist:"' + pins.map((p) => String(p).replace(/"/g, '').replace(/[/\\]+$/, '')).join('|') + '"';
+        jobs.push(everythingSearchOnce({ searchText: base + ' ' + list, count: pins.length, options: { ...options, offset: 0 } }));
       }
       if (!jobs.length) return [];
       let results;
@@ -3854,7 +3841,7 @@
       if (runnerSort === 'smart' && resultsPagingCtx && resultsPagingCtx.hasMore) {
         const seen = resultsPagingCtx.singleOffset;
         const of = typeof runnerTotalHits === 'number' ? ' of ' + runnerTotalHits.toLocaleString() : '';
-        parts.push('Ranked the ' + seen + ' newest' + of + ' matches, plus name matches, stars and your most-used items. Type more to narrow.');
+        parts.push('Ranked the ' + seen + ' newest' + of + ' matches, plus name matches and every starred or used item that matches. Type more to narrow.');
       }
       if (!parts.length) return '';
       return ' <span class="tagfox-status-hidden-hint">' + escStatusHtmlForStatus(parts.join(' ')) + '</span>';
@@ -5558,6 +5545,8 @@
         .filter(Boolean);
       const key = folderPath.toLowerCase();
       const existed = prev.some((p) => p.toLowerCase() === key);
+      /* Full: refuse, since saving would silently drop the last favourite. */
+      if (!existed && prev.length >= FAV_FOLDERS_MAX) return { changed: false, existed, full: true };
       const n = prev.length;
       const safeGapIdx = Number.isFinite(gapIdx) ? Math.max(0, Math.min(gapIdx, n)) : n;
       let removedBeforeGap = 0;
@@ -11326,6 +11315,7 @@
               clearFavBarDropGaps(bar);
               if (!Number.isFinite(gapIdx)) return;
               const r = upsertFavouriteFolderAtGap(favFolderInsertPath, gapIdx);
+              if (r.full) setStatusMain('Favourites are full (' + FAV_FOLDERS_MAX + '). Remove one first.');
               if (!r.changed) return;
               setStatusMain(r.existed ? 'Favourite folders reordered.' : 'Favourite folder saved.');
               return;
@@ -16604,6 +16594,10 @@
       const list = loadFavouriteFolders();
       if (list.some((x) => x.toLowerCase() === p.toLowerCase())) {
         setStatusMain('Already in favourites.');
+        return;
+      }
+      if (list.length >= FAV_FOLDERS_MAX) {
+        setStatusMain('Favourites are full (' + FAV_FOLDERS_MAX + '). Remove one first.');
         return;
       }
       list.push(p);
