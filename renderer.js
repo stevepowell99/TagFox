@@ -5089,8 +5089,9 @@
       else {
         if (showHideSpecialHint) segments.push(hideOptionHintStatusHtml('Hiding special files/folders'));
         if (showHideTildeHint) segments.push(hideOptionHintStatusHtml('Hiding paths with ~ segment'));
-        if (runnerHidesTemp(document.getElementById('rootFolder')?.value)) segments.push(hideOptionHintStatusHtml('Hiding AppData\\Local\\Temp'));
       }
+      /* Left out of the query itself, so it never counts as rows hidden from the page. */
+      if (runnerHidesTemp(document.getElementById('rootFolder')?.value)) segments.push(hideOptionHintStatusHtml('Hiding AppData\\Local\\Temp'));
       if (tagRecencyHintPlain) segments.push(tagRecencyStatusFilterHintHtml(tagRecencyHintPlain));
       if (!omitViewSuffix && viewModeSentence)
         segments.push('<span class="tagfox-status-view-suffix">' + escStatusHtmlForStatus(viewModeSentence) + '</span>');
@@ -5338,7 +5339,8 @@
     function pathColumnDisplayForRow(fp, isFolder) {
       const scope = currentScopeFolderPath();
       const parent = T.parentDir(fp);
-      if (!scope) return isFolder ? parent : fp;
+      /* Runner shows a file's name on its own, so the path is only ever the folder it is in. */
+      if (!scope) return isFolder || isRunnerMode() ? parent : fp;
       const rel = pathRelativeToScopeDir(parent);
       return rel || '—';
     }
@@ -14880,11 +14882,9 @@
         tdPath.className = 'col-path text-muted small';
         const pathBox = document.createElement('div');
         pathBox.className = 'path-ellip-start';
-        fillPathCellBox(
-          pathBox,
-          collapseGDriveShortcutDisplay(pathColumnDisplayForRow(fp, rowIsFolder(row))),
-          queryNeedle
-        );
+        const pathShown = collapseGDriveShortcutDisplay(pathColumnDisplayForRow(fp, rowIsFolder(row)));
+        if (pathShown === '—') tdPath.classList.add('col-path--here');
+        fillPathCellBox(pathBox, pathShown, queryNeedle);
         tdPath.title = fp;
         tdPath.appendChild(pathBox);
 
