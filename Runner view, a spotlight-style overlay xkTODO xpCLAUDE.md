@@ -28,6 +28,8 @@ Decided in the runner tab, 22 October 2026: drop the row actions column to save 
 
 Decided in the runner tab, 22 October 2026: inside a folder (reached with Left or Right), an empty search box lists only that folder's immediate contents; once text is typed, the search covers the folder recursively. This is a fixed rule, separate from smart view.
 
+Decided in the coordinator chat, 22 October 2026: search works like Google. Match path is always on, so each word must appear somewhere in the full path, in any order; a leading `-word` excludes it (sent to Everything as `!word`). In the smart order, a row whose terms match only in its path ranks below rows that match in the name.
+
 ## Plan (coordinator, 22 October 2026)
 
 - Build it as a second layout of the same renderer, not a fork: `renderer.js` is about 800KB, and a fork would mean every fix landed twice.
