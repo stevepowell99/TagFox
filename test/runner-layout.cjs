@@ -9,11 +9,13 @@
 //   - / opens the command list, Enter runs the command, and the box gets its text back;
 //   - Ctrl+D stars and unstars the selected row in the favourites list, where a starred file is a file chip;
 //   - hovering a row shows its action buttons, anchored in the row;
+//   - AppData\Local\Temp is hidden by default and the / command shows it;
 //   - switching back to Classic restores Classic's own view settings.
 //
 // Run: node test/runner-layout.cjs
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { connect, APP_DIR, structuralProblems, sleep } = require('./harness.cjs');
 
@@ -29,7 +31,13 @@ async function main() {
   fs.writeFileSync(path.join(root, 'alphafold-note.md'), '# note\n');
   fs.writeFileSync(path.join(alpha, 'inner.txt'), 'inner\n');
   fs.writeFileSync(path.join(root, 'zeta.txt'), 'zeta\n');
+  // Back-dated at the start, so Everything has indexed the old time by the time the type check reads it.
+  const olderMd = path.join(root, 'aaa-older.md');
+  fs.writeFileSync(olderMd, '# older\n');
+  const old = new Date(Date.now() - 30 * 864e5);
+  fs.utimesSync(olderMd, old, old);
   let drv;
+  let tempFile = null;
   try {
     drv = await connect({ port: 9316, profile: 'tagfox-test-runner', scope: root });
     console.log('Hook ready.');
@@ -91,6 +99,19 @@ async function main() {
     const iFold = s.rows.findIndex((r) => norm(r) === norm(alpha));
     check(iInner > iNote && iInner > iFold && iNote >= 0 && iFold >= 0, `name matches rank above a path-only match (folder ${iFold}, note ${iNote}, inner ${iInner})`);
     check(norm(s.selected) === norm(s.rows[0]), 'the top row is selected after typing');
+
+    // A typed file type filters by extension and, with no other words, lists the newest first.
+    await drv.T('setQuery', '.md');
+    let typeOk = false;
+    for (let i = 0; i < 20 && !typeOk; i++) {
+      await drv.T('runSearchNow', 'identity');
+      await drv.settle('type');
+      s = await R();
+      typeOk = has(s.rows, olderMd) && has(s.rows, path.join(root, 'alphafold-note.md'));
+      if (!typeOk) await sleep(400);
+    }
+    check(typeOk && s.rows.every((r) => /\.md$/i.test(r)), `.md lists markdown files only (${s.rows.map((r) => path.basename(r)).join(', ')})`);
+    check(norm(s.rows[0]) === norm(path.join(root, 'alphafold-note.md')) && norm(s.rows[s.rows.length - 1]) === norm(olderMd), '.md alone puts the newest first');
 
     // Exclusion.
     await drv.T('setQuery', 'alphafold -note');
@@ -174,6 +195,34 @@ async function main() {
     check(hover.display === 'flex' && hover.insideRow && hover.buttons > 3, `hovering a row shows its buttons in the row (${JSON.stringify(hover)})`);
     await drv.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
 
+    // AppData\Local\Temp is left out by default and comes back with the / command. Shown first: a row
+    // that never appears proves nothing about the default until it has been seen once.
+    if (/[\\/]appdata[\\/]local[\\/]temp$/i.test(os.tmpdir())) {
+      const tempName = 'runnertemp-' + process.pid + '-' + Date.now();
+      tempFile = path.join(os.tmpdir(), tempName + '.txt');
+      fs.writeFileSync(tempFile, 'temp\n');
+      await drv.T('configure', { rootFolder: '' });
+      await drv.T('setQuery', tempName);
+      await drv.settle('temp query');
+      const runCmd = async (filter) => {
+        await drv.ev(`(() => { const q = document.getElementById('query'); q.focus(); q.setSelectionRange(0, 0); return 1; })()`);
+        await key('/', 'Slash', 191, 0, '/');
+        await drv.send('Input.insertText', { text: filter });
+        await sleep(150);
+        await key('Enter', 'Enter', 13, 0, '\r');
+        await drv.settle('cmd ' + filter);
+      };
+      await runCmd('temp');
+      check(await waitForRow(tempFile, 'temp shown'), 'the / temp command shows a file in AppData\\Local\\Temp');
+      await runCmd('temp');
+      await drv.T('runSearchNow', 'identity');
+      await drv.settle('temp hidden');
+      s = await R();
+      check(!has(s.rows, tempFile) && s.query === tempName, `by default AppData\\Local\\Temp is hidden (${s.rows.length} rows)`);
+    } else {
+      console.log('  SKIP temp files: the temp folder here is not AppData\\Local\\Temp (' + os.tmpdir() + ')');
+    }
+
     const probs = structuralProblems(await drv.state());
     check(!probs.length, 'structural invariants hold in Runner' + (probs.length ? ': ' + probs.join('; ') : ''));
 
@@ -190,6 +239,7 @@ async function main() {
     if (drv) drv.close();
     try {
       fs.rmSync(root, { recursive: true, force: true });
+      if (tempFile) fs.rmSync(tempFile, { force: true });
     } catch (_) {}
   }
   if (failures.length) {

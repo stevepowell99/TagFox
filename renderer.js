@@ -74,6 +74,7 @@
       runnerState: 'tagBrowserRunnerState',
       runnerClassicStash: 'tagBrowserRunnerClassicStash',
       runnerSort: 'tagBrowserRunnerSort',
+      runnerShowTemp: 'tagBrowserRunnerShowTemp',
     };
 
     /** One-time copy when upgrading from the old app name (everythang* keys). */
@@ -3613,20 +3614,47 @@
       focusQueryBox(false);
     }
 
-    /** Google-style exclusion: a leading -word becomes Everything's !word. */
+    /** A typed file type: `.pdf` or `*.pdf`, or `-.tmp` to leave one out. */
+    const RUNNER_TYPE_WORD = /^([-!]?)\*?\.([\p{L}\p{N}]{1,12})$/u;
+
+    /** Google-style exclusion: a leading -word becomes Everything's !word. Typed file types become one
+        `ext:` filter (any of them) and one `!ext:` (none of them). */
     function runnerQueryForEverything(q) {
-      return String(q || '').replace(/(^|\s)-(?=\S)/g, '$1!');
+      const out = [];
+      const types = [];
+      const notTypes = [];
+      for (const t of String(q || '').split(/\s+/).filter(Boolean)) {
+        const m = RUNNER_TYPE_WORD.exec(t);
+        if (m) (m[1] ? notTypes : types).push(m[2].toLowerCase());
+        else out.push(t.replace(/^-(?=\S)/, '!'));
+      }
+      if (types.length) out.push('ext:' + types.join(';'));
+      if (notTypes.length) out.push('!ext:' + notTypes.join(';'));
+      return out.join(' ');
+    }
+
+    /** The file types a query asks for, from either the typed form (.pdf) or the Everything form (ext:pdf;md). */
+    function runnerQueryTypes(q) {
+      const types = [];
+      for (const t of String(q || '').split(/\s+/)) {
+        const m = RUNNER_TYPE_WORD.exec(t);
+        if (m && !m[1]) types.push(m[2].toLowerCase());
+        const e = /^ext:(.+)$/i.exec(t);
+        if (e) types.push(...e[1].toLowerCase().split(';').filter(Boolean));
+      }
+      return types;
     }
 
     function runnerFoldText(s) {
       return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
     }
 
-    /** Lower-cased, accent-free words of the query that must match (excluded words dropped). */
+    /** Lower-cased, accent-free words of the query that must match the name or path. Excluded words and
+        file types are filters, not name matches, so they are dropped. */
     function runnerQueryWords(q) {
       const kept = String(q || '')
         .split(/\s+/)
-        .filter((t) => t && !/^[-!]/.test(t))
+        .filter((t) => t && !/^[-!]/.test(t) && !RUNNER_TYPE_WORD.test(t) && !/^ext:/i.test(t))
         .join(' ');
       return runnerFoldText(kept).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
     }
@@ -3687,7 +3715,13 @@
     /** Smart order: rows with more query words in the name come first, then by score. */
     function rankRowsForRunner(rows) {
       if (!Array.isArray(rows) || !rows.length) return;
-      const words = runnerQueryWords(document.getElementById('query')?.value);
+      const qText = document.getElementById('query')?.value;
+      const words = runnerQueryWords(qText);
+      /* Only file types typed: nothing to match names against, so the newest of that type come first. */
+      if (!words.length && runnerQueryTypes(runnerQueryForEverything(qText)).length) {
+        rows.sort((a, b) => compareRowsBySort(a, b, 'date_modified', false));
+        return;
+      }
       const stars = new Set(loadFavouriteFolders().map((p) => pathNormKey(p)));
       const use = runnerUseStats();
       const now = Date.now();
@@ -3722,8 +3756,14 @@
       for (const st of [loadFileFocusStats(), loadFolderFocusStats()]) for (const v of Object.values(st)) add(v.path);
       const scope = normalizeFolderPathForEverything(String(rootFolder || '').trim()).replace(/[/\\]+$/, '');
       const scopeKey = scope ? pathNormKey(scope) : '';
-      const plain = /^[\p{L}\p{N}\s._!-]*$/u.test(String(query || '').trim());
-      const words = plain ? runnerQueryWords(query) : [];
+      const types = runnerQueryTypes(query);
+      const nameTerms = String(query || '')
+        .split(/\s+/)
+        .filter((t) => !/^!?ext:/i.test(t))
+        .join(' ')
+        .trim();
+      const plain = /^[\p{L}\p{N}\s._!-]*$/u.test(nameTerms);
+      const words = plain ? runnerQueryWords(nameTerms) : [];
       const pathOn = !!document.getElementById('optPath')?.checked;
       const out = [];
       for (const [k, p] of byKey) {
@@ -3736,6 +3776,10 @@
         if (words.length) {
           const hay = runnerFoldText(pathOn ? p : T.baseName(p));
           if (!words.every((w) => hay.includes(w))) continue;
+        }
+        if (types.length) {
+          const nm = T.baseName(p).toLowerCase();
+          if (!types.some((e) => nm.endsWith('.' + e))) continue;
         }
         out.push(p);
       }
@@ -3760,8 +3804,9 @@
       const jobs = [];
       const q = String(queryForEs || '').trim();
       const toks = q.split(/\s+/).filter(Boolean);
-      const positive = toks.filter((t) => !t.startsWith('!')).join(' ');
-      const negative = toks.filter((t) => t.startsWith('!')).join(' ');
+      /* File types stay outside the name-only group, so `budget ext:xlsx` asks for names with budget. */
+      const positive = toks.filter((t) => !t.startsWith('!') && !/^ext:/i.test(t)).join(' ');
+      const negative = toks.filter((t) => t.startsWith('!') || /^ext:/i.test(t)).join(' ');
       if (runnerSort === 'smart' && positive && options.pathSearch && !/[<>|"]/.test(q) && !/^nopath:/i.test(q)) {
         jobs.push(
           everythingSearchOnce({
@@ -3960,6 +4005,21 @@
       void runSearchNow('identity');
     }
 
+    /* Runner leaves AppData\Local\Temp out of the Everything query unless shown: on Steve's index it held
+       243 of the 300 newest "causal map" matches (test runs and caches), and the exclusion costs at most
+       about 0.2s a search. Inside a Temp folder nothing is hidden, or the folder would look empty. */
+    const RUNNER_TEMP_EXCLUDE = '!path:\\appdata\\local\\temp\\';
+    function runnerHidesTemp(rootFolder) {
+      if (!isRunnerMode() || localStorage.getItem(LS.runnerShowTemp) === '1') return false;
+      return !/[\\/]appdata[\\/]local[\\/]temp([\\/]|$)/i.test(String(rootFolder || ''));
+    }
+
+    function runnerToggleTemp() {
+      if (localStorage.getItem(LS.runnerShowTemp) === '1') localStorage.removeItem(LS.runnerShowTemp);
+      else localStorage.setItem(LS.runnerShowTemp, '1');
+      void runSearchNow('identity');
+    }
+
     function runnerSetContent(cm) {
       applyResultsViewRadiosToDom('flat', isShowSubfolders(), cm);
       syncViewRadioActiveFromDom();
@@ -3984,6 +4044,7 @@
       { id: 'sort-date', group: 'Sort', label: 'Sort by date, newest first', isOn: () => runnerSort === 'date', run: () => setRunnerSort('date') },
       { id: 'sort-name', group: 'Sort', label: 'Sort by name', isOn: () => runnerSort === 'name', run: () => setRunnerSort('name') },
       { id: 'system', group: 'Show', label: 'Show system files (. $ ~ desktop.ini)', isOn: () => !isHideSpecialPaths() && !isHideTildePaths(), run: () => runnerToggleSystemFiles() },
+      { id: 'temp', group: 'Show', label: 'Show temp files (AppData\\Local\\Temp)', isOn: () => localStorage.getItem(LS.runnerShowTemp) === '1', run: () => runnerToggleTemp() },
       { id: 'folders', group: 'Show', label: 'Folders only', isOn: () => isFoldersOnly(), run: () => runnerSetContent(isFoldersOnly() ? 'all' : 'folders') },
       { id: 'files', group: 'Show', label: 'Files only', isOn: () => isFilesOnly(), run: () => runnerSetContent(isFilesOnly() ? 'all' : 'files') },
       { id: 'path', group: 'Match', label: 'Match path (off: names only)', isOn: () => !!document.getElementById('optPath')?.checked, run: () => runnerToggleMatchPath() },
@@ -5028,6 +5089,7 @@
       else {
         if (showHideSpecialHint) segments.push(hideOptionHintStatusHtml('Hiding special files/folders'));
         if (showHideTildeHint) segments.push(hideOptionHintStatusHtml('Hiding paths with ~ segment'));
+        if (runnerHidesTemp(document.getElementById('rootFolder')?.value)) segments.push(hideOptionHintStatusHtml('Hiding AppData\\Local\\Temp'));
       }
       if (tagRecencyHintPlain) segments.push(tagRecencyStatusFilterHintHtml(tagRecencyHintPlain));
       if (!omitViewSuffix && viewModeSentence)
@@ -16233,6 +16295,7 @@
       // Deadline range filter: narrow to files carrying any xd- deadline; the exact range is
       // applied client-side (\s, never a literal space, so Everything keeps it as one regex term).
       if (deadlineFilterActive()) searchText = (String(searchText).trim() + ' regex:[\\s\\\\]xd-').trim();
+      if (runnerHidesTemp(rootFolder)) searchText = (String(searchText).trim() + ' ' + RUNNER_TEMP_EXCLUDE).trim();
       if (isFoldersOnly()) searchText = (String(searchText).trim() + ' folder:').trim();
       else if (isFilesOnly()) searchText = (String(searchText).trim() + ' file: sort-mix:').trim();
       else searchText = (String(searchText).trim() + ' sort-mix:').trim();

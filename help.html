@@ -188,14 +188,15 @@ Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when
               <li>Type to search. With the box empty you see the current folder&#39;s own contents; once you type, the search covers everything below it.</li>
               <li><code>↑</code> / <code>↓</code> move the selection without leaving the box; <code>Enter</code> opens the selected row.</li>
               <li><code>→</code> at the end of the box goes into the selected folder; <code>←</code> at the start goes up to the parent folder and selects the folder you came from. Both clear the box.</li>
-              <li><code>/</code> at the start of the box opens the command list: sort, system files, folders or files only, match path, modified time, refresh, dark mode, Settings and Classic. Type to filter it, <code>Enter</code> runs a command and gives the box its text back, <code>Esc</code> closes it.</li>
+              <li><code>/</code> at the start of the box opens the command list: sort, system files, temp files, folders or files only, match path, modified time, refresh, dark mode, Settings and Classic. Type to filter it, <code>Enter</code> runs a command and gives the box its text back, <code>Esc</code> closes it.</li>
               <li><code>Ctrl</code>+<code>D</code> stars or unstars the selected row. Stars are the same list as <strong>Favourite folders</strong>.</li>
               <li>A leading <code>-word</code> excludes anything matching that word.</li>
+              <li>A file type with its dot, such as <code>.pdf</code>, lists only that type, and several (<code>.docx .pdf</code>) list any of them; <code>-.tmp</code> leaves a type out. A file type on its own lists the newest first; with other words, as in <code>budget .xlsx</code>, the words decide the order.</li>
               </ul>
               <h3>📊 How the list is ordered</h3>
               <ul>
               <li>The smart order puts rows whose <strong>name</strong> matches above rows that match only in the <strong>path</strong>, then favours recent changes, starred items and things you open often. The <code>/</code> sort commands switch to date or name order.</li>
-              <li><strong>Match path</strong> is on by default; the faint options button at the right of the box, or a <code>/</code> command, turns it off.</li>
+              <li>The defaults: <strong>Match path</strong> on, and system files and anything under <code>AppData\Local\Temp</code> left out. The faint options button at the right of the box and the <code>/</code> commands change each of them.</li>
               <li>Runner ranks the 300 newest matches of each search, plus every name match and starred item it can find. When a search finds more, the status line says how many it ranked out of how many it found; type more to narrow it, or sort by date and scroll to page through them all.</li>
               </ul>
 

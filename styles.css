@@ -2934,9 +2934,8 @@ body.tagfox-runner #queryInputGroup .tagfox-query-clear.btn {
 .tagfox-runner-opts-panel .tagfox-runner-cmd-group {
   padding: 0.35rem 0.9rem 0.1rem;
   color: var(--bs-secondary-color);
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 /* Results: launcher rows. Each row is a two-line grid: a type tile, the name, then where it lives
    underneath; the modified time and the star on the right. The selected row carries the window's

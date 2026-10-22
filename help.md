@@ -141,14 +141,15 @@ Three icon-pair switches next to the search box — combine them freely:
 - Type to search. With the box empty you see the current folder's own contents; once you type, the search covers everything below it.
 - `↑` / `↓` move the selection without leaving the box; `Enter` opens the selected row.
 - `→` at the end of the box goes into the selected folder; `←` at the start goes up to the parent folder and selects the folder you came from. Both clear the box.
-- `/` at the start of the box opens the command list: sort, system files, folders or files only, match path, modified time, refresh, dark mode, Settings and Classic. Type to filter it, `Enter` runs a command and gives the box its text back, `Esc` closes it.
+- `/` at the start of the box opens the command list: sort, system files, temp files, folders or files only, match path, modified time, refresh, dark mode, Settings and Classic. Type to filter it, `Enter` runs a command and gives the box its text back, `Esc` closes it.
 - `Ctrl`+`D` stars or unstars the selected row. Stars are the same list as **Favourite folders**.
 - A leading `-word` excludes anything matching that word.
+- A file type with its dot, such as `.pdf`, lists only that type, and several (`.docx .pdf`) list any of them; `-.tmp` leaves a type out. A file type on its own lists the newest first; with other words, as in `budget .xlsx`, the words decide the order.
 
 ### 📊 How the list is ordered
 
 - The smart order puts rows whose **name** matches above rows that match only in the **path**, then favours recent changes, starred items and things you open often. The `/` sort commands switch to date or name order.
-- **Match path** is on by default; the faint options button at the right of the box, or a `/` command, turns it off.
+- The defaults: **Match path** on, and system files and anything under `AppData\Local\Temp` left out. The faint options button at the right of the box and the `/` commands change each of them.
 - Runner ranks the 300 newest matches of each search, plus every name match and starred item it can find. When a search finds more, the status line says how many it ranked out of how many it found; type more to narrow it, or sort by date and scroll to page through them all.
 
 <!-- help:tab {"id":"files-folders","label":"📁 Files & folders"} -->
