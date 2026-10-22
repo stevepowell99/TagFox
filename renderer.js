@@ -4039,6 +4039,25 @@
       void runSearchNow('identity');
     }
 
+    /** The Viewer's full-path line (Runner only; Classic has its Path column and breadcrumb). Click copies it. */
+    function setRunnerViewerPath(fp) {
+      const el = document.getElementById('runnerViewerPath');
+      if (!el) return;
+      el.textContent = fp || '';
+      el.dataset.path = fp || '';
+      el.classList.toggle('d-none', !fp);
+      if (el.dataset.bound === '1') return;
+      el.dataset.bound = '1';
+      el.addEventListener('click', () => {
+        const p = el.dataset.path;
+        if (!p) return;
+        void navigator.clipboard.writeText(p).then(
+          () => setStatusMain('Copied ' + p),
+          () => setStatusMain('Could not copy the path.')
+        );
+      });
+    }
+
     function runnerSetContent(cm) {
       applyResultsViewRadiosToDom('flat', isShowSubfolders(), cm);
       syncViewRadioActiveFromDom();
@@ -8534,6 +8553,7 @@
       document.getElementById('propsDetails').classList.add('d-none');
       const dn = document.getElementById('propDisplayName');
       if (dn) dn.textContent = '';
+      setRunnerViewerPath('');
       const tt = document.getElementById('propTitleTags');
       if (tt) { tt.innerHTML = ''; tt.classList.add('d-none'); tt.classList.remove('d-flex'); }
       const iconMount = document.getElementById('propTitleIconMount');
@@ -8869,6 +8889,7 @@
         if (gdPretty) displayName = gdPretty;
       }
       document.getElementById('propDisplayName').textContent = displayName;
+      setRunnerViewerPath(propPath);
       const tagBand = document.getElementById('propTitleTags');
       tagBand.innerHTML = '';
       for (const tag of parsedTitle.tags) appendTagPillWithRemove(tagBand, tag, propPath);

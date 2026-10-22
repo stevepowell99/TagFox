@@ -3196,6 +3196,18 @@ body.tagfox-runner #statusMain {
     transition: none;
   }
 }
+/* Viewer: the selected item's full path under its header; wraps rather than truncates, click copies. */
+.tagfox-runner-viewer-path {
+  color: var(--runner-muted, var(--bs-secondary-color));
+  font-size: 0.75rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  cursor: copy;
+  user-select: text;
+}
+.tagfox-runner-viewer-path:hover {
+  color: var(--runner-ink, var(--bs-body-color));
+}
 /* Viewer: the right third. */
 body.tagfox-runner #propsAside {
   width: 33.333% !important;
