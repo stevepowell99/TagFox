@@ -30,6 +30,8 @@ Decided in the runner tab, 22 October 2026: inside a folder (reached with Left o
 
 Decided in the coordinator chat, 22 October 2026: search works like Google by default. Match path is on by default (switchable from the filter control and a `/` command), so each word must appear somewhere in the full path, in any order; a leading `-word` excludes it (sent to Everything as `!word`). In the smart order, a row whose terms match only in its path ranks below rows that match in the name.
 
+Decided in the runner tab, 22 October 2026: scattered fuzzy matches (letters such as t…e…s spread across a path) rank far down. The change goes in the shared fuzzy scorer, so Ctrl+L recent folders in Classic gets it too.
+
 ## Plan (coordinator, 22 October 2026)
 
 - Build it as a second layout of the same renderer, not a fork: `renderer.js` is about 800KB, and a fork would mean every fix landed twice.
