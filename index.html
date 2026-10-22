@@ -13,30 +13,6 @@
 </head>
 <body class="app-shell bg-body-secondary">
   <button type="button" id="propsTheaterBackdrop" class="props-theater-backdrop d-none" aria-label="Close expanded viewer" title="Close"></button>
-  <!-- Bulk actions: fixed near cursor over checked rows (renderer.js pointer tracking) -->
-  <div
-    id="bulkBar"
-    class="tagfox-bulk-bar tagfox-bulk-bar--float d-none d-inline-flex flex-wrap align-items-center flex-shrink-0 small"
-    aria-label="Bulk selection actions"
-    role="toolbar"
-    aria-hidden="true"
-  >
-    <span id="bulkBarLabel" class="tagfox-bulk-bar-label text-muted flex-shrink-0"></span>
-    <div class="d-inline-flex align-items-center gap-1 tagfox-bulk-bar-actions" role="group" aria-label="Bulk actions">
-      <button type="button" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0 row-clip-btn tagfox-bulk-bar-icon" id="btnBulkClip" title="Copy selected (Windows Explorer paste) — Ctrl+C" aria-label="Copy">
-        <i class="fa-solid fa-clipboard" aria-hidden="true"></i>
-      </button>
-      <button type="button" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center p-0 tagfox-bulk-bar-icon" id="btnBulkTrash" title="Move checked or highlighted rows to the Recycle Bin (confirmation) — Del" aria-label="Delete — move to Recycle Bin">
-        <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
-      </button>
-      <button type="button" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center p-0 tagfox-bulk-bar-icon" id="btnBulkTags" title="Edit xk/xp/xx tags for all checked rows (or the highlighted row if none checked) — Ctrl+T or t" aria-label="Edit tags">
-        <i class="fa-solid fa-tags" aria-hidden="true"></i>
-      </button>
-      <button type="button" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0 tagfox-bulk-bar-icon" id="btnBulkClearSel" title="Uncheck every row in the results list — Esc" aria-label="Clear selection — Esc">
-        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-      </button>
-    </div>
-  </div>
   <!-- Top chrome: toolbar + title (status line is bottom footer) -->
   <header class="tagfox-app-header border-bottom bg-body px-2 py-2 d-flex align-items-center gap-2 flex-shrink-0 flex-wrap">
     <div class="d-flex align-items-center gap-1 flex-shrink-0">
@@ -853,6 +829,30 @@
           <span id="resultsLoadMoreHint" class="small text-muted ms-2" aria-live="polite"></span>
         </div>
         </div>
+        </div>
+        <!-- Bulk actions for two or more checked rows, docked at the bottom of the results pane. -->
+        <div
+          id="bulkBar"
+          class="tagfox-bulk-bar tagfox-bulk-bar--docked d-none d-inline-flex flex-wrap align-items-center flex-shrink-0 small"
+          aria-label="Bulk selection actions"
+          role="toolbar"
+          aria-hidden="true"
+        >
+          <span id="bulkBarLabel" class="tagfox-bulk-bar-label text-muted flex-shrink-0"></span>
+          <div class="d-inline-flex align-items-center gap-1 tagfox-bulk-bar-actions" role="group" aria-label="Bulk actions">
+            <button type="button" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0 row-clip-btn tagfox-bulk-bar-icon" id="btnBulkClip" title="Copy selected (Windows Explorer paste) — Ctrl+C" aria-label="Copy">
+              <i class="fa-solid fa-clipboard" aria-hidden="true"></i>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center p-0 tagfox-bulk-bar-icon" id="btnBulkTrash" title="Move checked or highlighted rows to the Recycle Bin (confirmation) — Del" aria-label="Delete — move to Recycle Bin">
+              <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center p-0 tagfox-bulk-bar-icon" id="btnBulkTags" title="Edit xk/xp/xx tags for all checked rows (or the highlighted row if none checked) — Ctrl+T or t" aria-label="Edit tags">
+              <i class="fa-solid fa-tags" aria-hidden="true"></i>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0 tagfox-bulk-bar-icon" id="btnBulkClearSel" title="Uncheck every row in the results list — Esc" aria-label="Clear selection — Esc">
+              <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            </button>
+          </div>
         </div>
         </div>
         <aside id="appShelf" class="app-shelf app-shelf--rhs border-start bg-body-secondary small" aria-label="Shelf staging area">

@@ -593,11 +593,6 @@
     let folderDocHeaderLastSyncedKey = '';
     /** Multi-select checkboxes: path key lowercase → canonical path */
     const checkedPathsMap = new Map();
-    /** document pointermove listener for floating #bulkBar (only while checkedPathsMap.size > 0). */
-    let bulkBarPointerBound = false;
-    /** Last pointer (viewport) — used to show/position bulk bar right after selection changes without wiggling the mouse. */
-    let lastPointerClientX = 0;
-    let lastPointerClientY = 0;
     /** Persisted set of folder paths the user has collapsed in tree view. */
     const collapsedFolderPaths = new Set();
     /** Invalidates in-flight j/k follow-up scroll when another sibling nav runs. */
@@ -10792,118 +10787,17 @@
       updateBulkBar();
     }
 
-    /** Clamp fixed #bulkBar inside the viewport (after layout). */
-    function positionBulkBarFloat(clientX, clientY) {
-      const bar = document.getElementById('bulkBar');
-      if (!bar || bar.classList.contains('d-none')) return;
-      const pad = 10;
-      let x = clientX + pad;
-      let y = clientY + pad;
-      bar.style.left = x + 'px';
-      bar.style.top = y + 'px';
-      const w = bar.offsetWidth;
-      const h = bar.offsetHeight;
-      const maxLeft = Math.max(4, window.innerWidth - w - 4);
-      const maxTop = Math.max(4, window.innerHeight - h - 4);
-      const nx = Math.min(Math.max(4, x), maxLeft);
-      const ny = Math.min(Math.max(4, y), maxTop);
-      if (nx !== x || ny !== y) {
-        bar.style.left = nx + 'px';
-        bar.style.top = ny + 'px';
-      }
-    }
-
-    /** True if pointer is in an expanded box around the visible bar (crossing empty space from row → buttons). */
-    function pointerNearBulkBar(clientX, clientY) {
-      const bar = document.getElementById('bulkBar');
-      if (!bar || bar.classList.contains('d-none')) return false;
-      const r = bar.getBoundingClientRect();
-      const pad = 72;
-      return (
-        clientX >= r.left - pad &&
-        clientX <= r.right + pad &&
-        clientY >= r.top - pad &&
-        clientY <= r.bottom + pad
-      );
-    }
-
-    /** After selection changes: if pointer is already over a checked row (or the bar), show/update without moving the mouse. */
-    function bulkBarSyncFloatFromLastPointer() {
-      if (!checkedPathsMap.size) return;
-      const bar = document.getElementById('bulkBar');
-      if (!bar) return;
-      const x = lastPointerClientX;
-      const y = lastPointerClientY;
-      const el = document.elementFromPoint(x, y);
-      if (!el) return;
-      if (el.closest && el.closest('#bulkBar')) {
-        const lbl = document.getElementById('bulkBarLabel');
-        if (lbl) lbl.textContent = checkedPathsMap.size + ' selected:';
-        bar.classList.remove('d-none');
-        bar.setAttribute('aria-hidden', 'false');
-        return;
-      }
-      const tr = el.closest && el.closest('#resultsTable tbody tr');
-      const fp = tr && tr.dataset && tr.dataset.rowPath ? String(tr.dataset.rowPath) : '';
-      if (fp && isCheckedPath(fp)) {
-        const lbl = document.getElementById('bulkBarLabel');
-        if (lbl) lbl.textContent = checkedPathsMap.size + ' selected:';
-        bar.classList.remove('d-none');
-        bar.setAttribute('aria-hidden', 'false');
-        requestAnimationFrame(() => positionBulkBarFloat(x, y));
-      }
-    }
-
-    /** Show bar near cursor on checked rows; keep visible while pointer is over #bulkBar. */
-    function onBulkBarPointerMove(e) {
-      if (!checkedPathsMap.size) return;
-      const bar = document.getElementById('bulkBar');
-      if (!bar) return;
-      if (e.target.closest && e.target.closest('#bulkBar')) return;
-      const tr = e.target.closest && e.target.closest('#resultsTable tbody tr');
-      const fp = tr && tr.dataset && tr.dataset.rowPath ? String(tr.dataset.rowPath) : '';
-      if (fp && isCheckedPath(fp)) {
-        const lbl = document.getElementById('bulkBarLabel');
-        if (lbl) lbl.textContent = checkedPathsMap.size + ' selected:';
-        bar.classList.remove('d-none');
-        bar.setAttribute('aria-hidden', 'false');
-        positionBulkBarFloat(e.clientX, e.clientY);
-      } else if (pointerNearBulkBar(e.clientX, e.clientY)) {
-        return;
-      } else {
-        bar.classList.add('d-none');
-        bar.setAttribute('aria-hidden', 'true');
-      }
-    }
-
-    function syncBulkBarPointerTracking() {
-      if (checkedPathsMap.size > 0) {
-        if (!bulkBarPointerBound) {
-          document.addEventListener('pointermove', onBulkBarPointerMove, true);
-          bulkBarPointerBound = true;
-        }
-      } else if (bulkBarPointerBound) {
-        document.removeEventListener('pointermove', onBulkBarPointerMove, true);
-        bulkBarPointerBound = false;
-      }
-    }
-
+    /** Two or more checked rows: the bulk bar sits docked at the bottom of the results pane. One checked
+        row needs none, since its own row buttons act on it. */
     function updateBulkBar() {
       const n = checkedPathsMap.size;
       const bar = document.getElementById('bulkBar');
       if (!bar) return;
       const lbl = document.getElementById('bulkBarLabel');
       if (lbl) lbl.textContent = n + ' selected:';
-      if (!n) {
-        bar.classList.add('d-none');
-        bar.setAttribute('aria-hidden', 'true');
-        syncBulkBarPointerTracking();
-        return;
-      }
-      bar.classList.add('d-none');
-      bar.setAttribute('aria-hidden', 'true');
-      syncBulkBarPointerTracking();
-      bulkBarSyncFloatFromLastPointer();
+      const show = n >= 2;
+      bar.classList.toggle('d-none', !show);
+      bar.setAttribute('aria-hidden', show ? 'false' : 'true');
     }
 
     /** Uncheck all result rows (bulk bar “Clear selection”). */
@@ -15780,14 +15674,6 @@
         });
       }
     }
-
-    /* Bulk float bar: fresh coords on click + move so updateBulkBar can sync without wiggling the mouse. */
-    const recordLastPointerClient = (e) => {
-      lastPointerClientX = e.clientX;
-      lastPointerClientY = e.clientY;
-    };
-    document.addEventListener('pointermove', recordLastPointerClient, { passive: true, capture: true });
-    document.addEventListener('pointerdown', recordLastPointerClient, { passive: true, capture: true });
 
     bindResultsDomListeners();
 

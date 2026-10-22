@@ -1807,13 +1807,14 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
   box-sizing: border-box;
   min-height: calc(2rem + 2 * 0.12rem);
 }
-/* Floated near cursor (see renderer.js); below Bootstrap modals (~1055). */
-#bulkBar.tagfox-bulk-bar--float {
-  position: fixed;
-  left: 0;
-  top: 0;
-  z-index: 1040;
-  max-width: min(100vw - 8px, 28rem);
+/* Docked at the bottom centre of the results pane (#resultsWrap is a .card, so position: relative). */
+#bulkBar.tagfox-bulk-bar--docked {
+  position: absolute;
+  left: 50%;
+  bottom: 0.75rem;
+  transform: translateX(-50%);
+  z-index: 6;
+  max-width: calc(100% - 1.5rem);
   box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.12);
 }
 .tagfox-bulk-bar-label {
