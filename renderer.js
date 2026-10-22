@@ -4805,31 +4805,59 @@
     const SCOPE_FOLDER_HISTORY_MAX = 300;
 
     /**
-     * Fuzzy match for the recent-folders filter: every space-separated token must appear in `text` as an in-order
-     * subsequence (case-insensitive). Returns null on no match, else a score: consecutive runs, word-boundary hits
-     * and hits inside the last path segment (the folder's own name) score higher. Best alignment by DP, so
-     * "cm ext" finds ...\causal-map-extension without an early stray "c" or "m" spoiling it.
+     * Fuzzy score of query against a path or label, or null when some token is not a subsequence of it.
+     * Fewer, longer pieces win by a wide margin: each extra piece costs FUZZY_PIECE_COST, more when it jumps a
+     * folder boundary, and each character that continues a run earns more the longer the run already is. So
+     * "tes" scores high on ...\test and far below zero on ...\TagFox-runner\scripts (t, e and s in three pieces).
      */
+    const FUZZY_PIECE_COST = 25;
+    const FUZZY_SEPARATOR_COST = 25;
+    const FUZZY_RUN_BONUS = 4;
     function fuzzyPathScore(query, text) {
       const t = String(text || '').toLowerCase();
       const tokens = String(query || '').toLowerCase().split(/\s+/).filter(Boolean);
       if (!tokens.length) return 0;
       const lastSep = Math.max(t.lastIndexOf('\\'), t.lastIndexOf('/'));
+      const isSep = (c) => c === '\\' || c === '/';
       const isBoundary = (i) => i === 0 || /[\\/\s._-]/.test(t[i - 1]);
       let total = 0;
       for (const q of tokens) {
-        let prev = null; // prev[i] = best score with the previous token char matched at text index i
+        // prev[i] / prevRun[i]: best score with the previous token char matched at text index i, and the length
+        // of the contiguous run that match ends.
+        let prev = null;
+        let prevRun = null;
         for (let j = 0; j < q.length; j++) {
           const cur = new Array(t.length).fill(-Infinity);
-          let maxPrev = -Infinity; // best prev[k] for k <= i-2: a match that is not adjacent
+          const curRun = new Array(t.length).fill(0);
+          let maxAny = -Infinity; // best prev[k], k <= i-2: a new piece
+          let maxSameSeg = -Infinity; // the same, with no folder separator between k and i
           for (let i = 0; i < t.length; i++) {
-            if (prev && i >= 2) maxPrev = Math.max(maxPrev, prev[i - 2]);
+            if (prev && i >= 2) {
+              maxAny = Math.max(maxAny, prev[i - 2]);
+              maxSameSeg = Math.max(maxSameSeg, prev[i - 2]);
+            }
+            if (i >= 1 && isSep(t[i - 1])) maxSameSeg = -Infinity;
             if (t[i] !== q[j]) continue;
-            const base = j === 0 ? 0 : Math.max(maxPrev, prev[i - 1] + 4);
-            if (base === -Infinity) continue;
-            cur[i] = base + 1 + (isBoundary(i) ? 3 : 0) + (i > lastSep ? 2 : 0);
+            const here = 1 + (i > lastSep ? 2 : 0);
+            if (j === 0) {
+              cur[i] = here + (isBoundary(i) ? 3 : 0);
+              curRun[i] = 1;
+              continue;
+            }
+            const cont = i > 0 && prev[i - 1] > -Infinity ? prev[i - 1] + here + FUZZY_RUN_BONUS * prevRun[i - 1] : -Infinity;
+            const jump = Math.max(maxSameSeg - FUZZY_PIECE_COST, maxAny - FUZZY_PIECE_COST - FUZZY_SEPARATOR_COST);
+            const piece = jump > -Infinity ? jump + here + (isBoundary(i) ? 3 : 0) : -Infinity;
+            if (cont === -Infinity && piece === -Infinity) continue;
+            if (cont >= piece) {
+              cur[i] = cont;
+              curRun[i] = prevRun[i - 1] + 1;
+            } else {
+              cur[i] = piece;
+              curRun[i] = 1;
+            }
           }
           prev = cur;
+          prevRun = curRun;
         }
         const best = Math.max(...prev);
         if (best === -Infinity) return null;
