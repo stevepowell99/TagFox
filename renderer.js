@@ -10765,6 +10765,23 @@
       return String(v);
     }
 
+    /** Runner's modified column: the time today, then Yesterday, a weekday, a day and month, and the year
+        when it is not this one. Absolute rather than "5 min ago", which would go stale on a list that
+        auto-refresh leaves alone while nothing changes. */
+    function formatModifiedShort(ms) {
+      if (!ms) return '—';
+      const d = new Date(ms);
+      const now = new Date();
+      const dayStart = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+      const days = Math.round((dayStart(now) - dayStart(d)) / 864e5);
+      if (days <= 0) return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      if (days === 1) return 'Yesterday';
+      if (days < 7) return d.toLocaleDateString('en-GB', { weekday: 'short' });
+      const opts = { day: 'numeric', month: 'short' };
+      if (d.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
+      return d.toLocaleDateString('en-GB', opts);
+    }
+
     /** Modified time as JS ms for sorting, filtering, row recency dot, and client recency filter (Everything FILETIME / ms / unix s). */
     function modifiedTimeMs(row) {
       if (!row) return null;
@@ -14816,7 +14833,9 @@
 
         const tdDate = document.createElement('td');
         tdDate.className = 'text-nowrap small';
-        tdDate.textContent = formatModified(row.date_modified ?? row.date_modified_unix);
+        tdDate.textContent = isRunnerMode()
+          ? formatModifiedShort(modifiedTimeMs(row))
+          : formatModified(row.date_modified ?? row.date_modified_unix);
 
         const tdAct = document.createElement('td');
         /* Toolbar: flex on inner div only — flex on <td> drew white row seams under the icon strip. */

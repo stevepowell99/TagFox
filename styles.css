@@ -2938,38 +2938,217 @@ body.tagfox-runner #queryInputGroup .tagfox-query-clear.btn {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-/* Results: name, path, the star column, modified. No checkbox or size column, no header. */
-body.tagfox-runner #resultsTable {
-  font-size: 0.95rem;
+/* Results: launcher rows. Each row is a two-line grid: a type tile, the name, then where it lives
+   underneath; the modified time and the star on the right. The selected row carries the window's
+   indigo-to-coral strip as a rail and shows the key that acts on it. No checkbox, size or header. */
+body.tagfox-runner {
+  --runner-canvas: #eceef5;
+  --runner-surface: #ffffff;
+  --runner-ink: #1a1b2e;
+  --runner-muted: #6b6e86;
+  --runner-hit: #4f46e5;
+  --runner-sel: rgba(99, 102, 241, 0.1);
+  --runner-key-border: rgba(79, 70, 229, 0.28);
+  background-color: var(--runner-canvas);
 }
-body.tagfox-runner #resultsTable col:nth-child(1),
-body.tagfox-runner #resultsTable col:nth-child(5) {
-  width: 0 !important;
-  min-width: 0 !important;
+[data-bs-theme="dark"] body.tagfox-runner {
+  --runner-canvas: #13141d;
+  --runner-surface: #1b1c28;
+  --runner-ink: #e6e7f2;
+  --runner-muted: #9497b0;
+  --runner-hit: #a5b4fc;
+  --runner-sel: rgba(129, 140, 248, 0.17);
+  --runner-key-border: rgba(165, 180, 252, 0.35);
 }
-body.tagfox-runner #resultsTable col:nth-child(2) { width: 46% !important; }
-body.tagfox-runner #resultsTable col:nth-child(3) { width: 36% !important; }
-body.tagfox-runner #resultsTable col:nth-child(4) { width: 2.6rem !important; min-width: 2.6rem !important; }
-body.tagfox-runner #resultsTable col:nth-child(6) { width: 18% !important; }
-/* Zero-width, never display:none: a missing cell shifts every later cell into the wrong column. */
-body.tagfox-runner #resultsTable tbody td.results-td-cb,
-body.tagfox-runner #resultsTable tbody td.results-td-size {
-  visibility: hidden;
+body.tagfox-runner .center-panel {
+  background-color: transparent;
+}
+body.tagfox-runner #queryInputGroup {
+  background-color: var(--runner-surface);
+  border-color: transparent;
+  box-shadow: 0 1px 2px rgba(26, 27, 46, 0.06), 0 10px 28px -14px rgba(79, 70, 229, 0.45);
+}
+body.tagfox-runner #queryInputGroup:focus-within {
+  border-color: rgba(99, 102, 241, 0.55);
+}
+body.tagfox-runner #queryInputGroup #query.form-control {
+  background-color: transparent;
+  color: var(--runner-ink);
+  font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+  font-weight: 400;
+  letter-spacing: -0.015em;
+}
+body.tagfox-runner .results-wrap.card {
+  background-color: var(--runner-surface);
+  border: 0;
+  border-radius: 0.9rem;
+  box-shadow: 0 1px 2px rgba(26, 27, 46, 0.05);
+}
+body.tagfox-runner #resultsScroll {
+  padding: 0.35rem;
+}
+body.tagfox-runner #resultsTable,
+body.tagfox-runner #resultsTable > tbody {
+  display: block;
+  width: 100%;
+}
+body.tagfox-runner #resultsTable > colgroup {
+  display: none;
+}
+body.tagfox-runner #resultsTable > tbody > tr {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 2.2rem;
+  grid-template-areas:
+    'name date act'
+    'path date act';
+  column-gap: 0.9rem;
+  row-gap: 0.05rem;
+  align-items: center;
+  min-height: 3.3rem;
+  padding: 0.4rem 0.5rem 0.4rem 3.4rem;
+  border-radius: 0.65rem;
+  font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  outline: none;
+  box-shadow: none;
+  transition: background-color 90ms ease-out;
+}
+body.tagfox-runner #resultsTable > tbody > tr > td {
+  display: block;
+  min-width: 0;
   padding: 0 !important;
-  border-width: 0;
-  overflow: hidden;
-  font-size: 0;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
-body.tagfox-runner #resultsTable tbody tr > td {
-  padding-top: 0.22rem !important;
-  padding-bottom: 0.22rem !important;
+body.tagfox-runner #resultsTable > tbody > tr > td.results-td-cb,
+body.tagfox-runner #resultsTable > tbody > tr > td.results-td-size {
+  display: none !important;
+}
+body.tagfox-runner #resultsTable > tbody > tr > td:nth-child(2) { grid-area: name; }
+body.tagfox-runner #resultsTable > tbody > tr > td.col-path { grid-area: path; }
+body.tagfox-runner #resultsTable > tbody > tr > td.results-td-actions { grid-area: act; }
+body.tagfox-runner #resultsTable > tbody > tr > td:last-child { grid-area: date; }
+body.tagfox-runner #resultsTable > tbody > tr:hover {
+  background-color: var(--tagfox-row-hover-bg);
+}
+body.tagfox-runner #resultsTable > tbody > tr.table-active {
+  background-color: var(--runner-sel);
+  outline: none;
+  box-shadow: none;
+}
+body.tagfox-runner #resultsTable > tbody > tr.table-active::before {
+  content: '';
+  position: absolute;
+  left: 0.3rem;
+  top: 0.5rem;
+  bottom: 0.5rem;
+  width: 3px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, var(--tb-accent), var(--tb-coral));
+}
+/* The type tile spans both lines; the td is static, so the row is its containing block. */
+body.tagfox-runner #resultsTable > tbody > tr .folder-type-icon,
+body.tagfox-runner #resultsTable > tbody > tr .file-type-icon {
+  position: absolute;
+  left: 0.8rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2.1rem;
+  height: 2.1rem;
+  justify-content: center;
+  border-radius: 0.6rem;
+  background-color: color-mix(in srgb, currentColor 13%, transparent);
+}
+body.tagfox-runner #resultsTable > tbody > tr .folder-type-icon i,
+body.tagfox-runner #resultsTable > tbody > tr .file-type-icon i {
+  font-size: 1.05rem;
+}
+body.tagfox-runner #resultsTable > tbody > tr .file-type-thumb {
+  width: 2.1rem;
+  height: 2.1rem;
+  object-fit: cover;
+  border-radius: 0.6rem;
+}
+/* Recency dot: a badge on the tile's corner. */
+body.tagfox-runner #resultsTable > tbody > tr .recency-blob {
+  position: absolute;
+  left: 2.6rem;
+  top: calc(50% - 1.2rem);
+  width: 0.55rem;
+  height: 0.55rem;
+  box-shadow: 0 0 0 2px var(--runner-surface);
+}
+body.tagfox-runner #resultsTable > tbody > tr.table-active .recency-blob,
+body.tagfox-runner #resultsTable > tbody > tr:hover .recency-blob {
+  box-shadow: 0 0 0 2px transparent;
+}
+body.tagfox-runner #resultsTable .name-badges-title {
+  color: var(--runner-ink);
+  font-size: 0.97rem;
+  font-weight: 500;
+}
+body.tagfox-runner #resultsTable .folder-child-count {
+  color: var(--runner-muted) !important;
+  font-size: 0.75rem;
+}
+/* Second line: the folder it lives in. A file's path cell ends with its own name, already on line one. */
+body.tagfox-runner #resultsTable td.col-path {
+  max-width: none;
+  color: var(--runner-muted) !important;
+  font-size: 0.78rem;
+  line-height: 1.25;
+}
+body.tagfox-runner #resultsTable tr:not(.results-folder-row) td.col-path .path-col-tail {
+  display: none;
+}
+body.tagfox-runner #resultsTable td.col-path .path-col-tail {
+  color: inherit;
+  font-weight: inherit;
+}
+body.tagfox-runner #resultsTable mark.tagfox-query-hit {
+  background: none;
+  color: var(--runner-hit);
+  font-weight: 650;
+}
+body.tagfox-runner #resultsTable td.col-path mark.tagfox-query-hit {
+  color: var(--runner-ink);
+  font-weight: 600;
+}
+/* Modified time, then the key that acts on the selected row: Enter opens a file, Right enters a folder. */
+body.tagfox-runner #resultsTable > tbody > tr > td:last-child {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  color: var(--runner-muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+body.tagfox-runner #resultsTable > tbody > tr > td:last-child::after {
+  content: '\21B5';
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.6rem;
+  height: 1.4rem;
+  border: 1px solid var(--runner-key-border);
+  border-bottom-width: 2px;
+  border-radius: 0.35rem;
+  color: var(--runner-hit);
+  font-size: 0.8rem;
+  visibility: hidden;
+}
+body.tagfox-runner #resultsTable > tbody > tr.results-folder-row > td:last-child::after {
+  content: '\2192';
+}
+body.tagfox-runner #resultsTable > tbody > tr.table-active > td:last-child::after {
+  visibility: visible;
 }
 /* Row actions fly out from the star, anchored to the row rather than the pointer. The strip is a
    child of the row, so moving onto it keeps the row hovered and it stays open. */
-body.tagfox-runner #resultsTable tbody td.results-td-actions {
+body.tagfox-runner #resultsTable > tbody > tr > td.results-td-actions {
   position: relative;
-  min-width: 2.6rem;
-  max-width: 2.6rem;
   overflow: visible;
   text-align: center;
 }
@@ -2982,9 +3161,9 @@ body.tagfox-runner #resultsTable tbody .results-td-actions-inner {
   z-index: 3;
   padding: 0.15rem 0.3rem;
   border: 1px solid var(--bs-border-color);
-  border-radius: 0.4rem;
-  background-color: var(--bs-body-bg);
-  box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.12);
+  border-radius: 0.5rem;
+  background-color: var(--runner-surface);
+  box-shadow: 0 0.35rem 1rem rgba(26, 27, 46, 0.14);
 }
 body.tagfox-runner #resultsTable tbody tr:hover .results-td-actions-inner {
   display: flex;
@@ -2995,21 +3174,30 @@ body.tagfox-runner #resultsTable tbody tr:hover .results-td-actions .tagfox-scop
 .results-row-star {
   border: 0;
   background: transparent;
-  padding: 0.1rem 0.3rem;
+  padding: 0.25rem 0.35rem;
   line-height: 1;
-  color: var(--bs-secondary-color);
-  opacity: 0.25;
+  color: var(--runner-muted, var(--bs-secondary-color));
+  opacity: 0;
 }
 #resultsTable tbody tr:hover .results-row-star,
 #resultsTable tbody tr.table-active .results-row-star {
-  opacity: 0.7;
+  opacity: 0.6;
 }
 .results-row-star.results-row-star--on {
   color: #d97706;
   opacity: 1 !important;
 }
-.results-row-star:hover {
+.results-row-star:hover,
+.results-row-star:focus-visible {
   opacity: 1;
+}
+body.tagfox-runner #statusMain {
+  color: var(--runner-muted);
+}
+@media (prefers-reduced-motion: reduce) {
+  body.tagfox-runner #resultsTable > tbody > tr {
+    transition: none;
+  }
 }
 /* Viewer: the right third. */
 body.tagfox-runner #propsAside {
