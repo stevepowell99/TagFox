@@ -38,6 +38,8 @@ Decided in the runner tab, 22 October 2026: defaults are a smart compromise, and
 
 Decided in the runner tab, 22 October 2026: a term matching at the start or end of a word ranks higher. The order is whole word, then start of word, then end of word, then inside a word, with camelCase counting as a word boundary.
 
+Decided in the runner tab, 22 October 2026: `/` commands work with a search term already in the box. A `/` at the start or after a space opens the command list, filtered on what follows the slash; Enter runs the command and the box returns to the term.
+
 ## Plan (coordinator, 22 October 2026)
 
 - Build it as a second layout of the same renderer, not a fork: `renderer.js` is about 800KB, and a fork would mean every fix landed twice.
