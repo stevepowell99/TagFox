@@ -3492,7 +3492,11 @@
       fetchCap: 300,
       /* All query words matched as the whole name stem. Words that match only the path score 0. */
       match: 50,
-      matchKind: Object.freeze({ exact: 1, prefix: 0.8, word: 0.6, sub: 0.4, path: 0 }),
+      /* A word found in the name scores `inside`, plus `wordStart` and `wordEnd` when it begins or ends at a
+         word boundary (space, punctuation, a camelCase hump or a letter-digit change), plus `nameStart` at
+         the start of the name. So a whole word scores 0.75, the start of a word 0.6, the end of one 0.55
+         and the middle 0.4; `exact` is the whole name without its extension. */
+      matchKind: Object.freeze({ exact: 1, inside: 0.4, wordStart: 0.2, wordEnd: 0.15, nameStart: 0.1, path: 0 }),
       /* Modified just now; decays with a time constant of recencyDays. */
       recency: 30,
       recencyDays: 14,
@@ -3645,8 +3649,13 @@
       return types;
     }
 
+    /** Accents dropped, case kept. */
+    function runnerFoldAccents(s) {
+      return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '');
+    }
+
     function runnerFoldText(s) {
-      return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+      return runnerFoldAccents(s).toLowerCase();
     }
 
     /** Lower-cased, accent-free words of the query that must match the name or path. Excluded words and
@@ -3660,31 +3669,40 @@
     }
 
     /** How well the words match the name, not the path: { quality 0..1, inName: words found in the name }. */
-    function runnerNameMatch(nameLc, stemLc, words) {
+    /** nameFold keeps its case (camelCase humps are word boundaries); stemLc is lower case, no extension. */
+    function runnerNameMatch(nameFold, stemLc, words) {
       if (!words.length) return { quality: 0, inName: 0 };
       const K = RUNNER_RANK.matchKind;
       if (stemLc === words.join(' ')) return { quality: K.exact, inName: words.length };
+      const nameLc = nameFold.toLowerCase();
+      const isAlnum = (c) => /[\p{L}\p{N}]/u.test(c);
+      const isLetter = (c) => /\p{L}/u.test(c);
+      /* A boundary between positions i-1 and i. */
+      const boundary = (i) => {
+        if (i <= 0 || i >= nameFold.length) return true;
+        const a = nameFold[i - 1];
+        const b = nameFold[i];
+        if (!isAlnum(a) || !isAlnum(b)) return true;
+        if (isLetter(a) !== isLetter(b)) return true;
+        return a !== a.toUpperCase() && b !== b.toLowerCase();
+      };
       let sum = 0;
       let inName = 0;
       for (const w of words) {
-        let kind = 'path';
-        if (stemLc === w) kind = 'exact';
+        let best = K.path;
+        if (stemLc === w) best = K.exact;
         else {
-          let at = nameLc.indexOf(w);
-          if (at === 0) kind = 'prefix';
-          else if (at > 0) {
-            kind = 'sub';
-            while (at > 0) {
-              if (!/[\p{L}\p{N}]/u.test(nameLc[at - 1])) {
-                kind = 'word';
-                break;
-              }
-              at = nameLc.indexOf(w, at + 1);
-            }
+          for (let at = nameLc.indexOf(w); at >= 0; at = nameLc.indexOf(w, at + 1)) {
+            const q =
+              K.inside +
+              (boundary(at) ? K.wordStart : 0) +
+              (boundary(at + w.length) ? K.wordEnd : 0) +
+              (at === 0 ? K.nameStart : 0);
+            if (q > best) best = q;
           }
         }
-        if (kind !== 'path') inName++;
-        sum += K[kind];
+        if (best > K.path) inName++;
+        sum += best;
       }
       return { quality: sum / words.length, inName };
     }
@@ -3729,10 +3747,11 @@
       const scored = rows.map((r) => {
         const fp = fullPathForRow(r);
         const k = pathNormKey(fp);
-        const nameLc = runnerFoldText(T.baseName(fp));
+        const nameFold = runnerFoldAccents(T.baseName(fp));
+        const nameLc = nameFold.toLowerCase();
         const dot = rowIsFolder(r) ? -1 : nameLc.lastIndexOf('.');
         const stemLc = dot > 0 ? nameLc.slice(0, dot) : nameLc;
-        const m = runnerNameMatch(nameLc, stemLc, words);
+        const m = runnerNameMatch(nameFold, stemLc, words);
         let s = RUNNER_RANK.match * m.quality;
         const mt = modifiedTimeMs(r);
         if (mt) s += RUNNER_RANK.recency * Math.exp(-Math.max(0, now - mt) / (RUNNER_RANK.recencyDays * day));
@@ -4099,8 +4118,10 @@
       panel.removeAttribute('hidden');
     }
 
-    /** The / list: the box holds "/" plus the filter; the query that was there comes back on close. */
+    /** The / list: the box keeps its search text, then " /" and the filter; the search text alone comes
+        back on close. The search does not re-run while the list is open. */
     let runnerCmdStash = null;
+    let runnerCmdPrefix = '/';
     let runnerCmdActive = 0;
     let runnerCmdMatches = [];
     function runnerCmdListIsOpen() {
@@ -4109,7 +4130,10 @@
     function openRunnerCmdList(stash) {
       const q = document.getElementById('query');
       runnerCmdStash = String(stash || '');
-      q.value = '/';
+      const term = runnerCmdStash.replace(/\s+$/, '');
+      runnerCmdPrefix = term ? term + ' /' : '/';
+      q.value = runnerCmdPrefix;
+      q.setSelectionRange(q.value.length, q.value.length);
       syncQueryGhostUi();
       runnerCmdActive = 0;
       renderRunnerCmdList();
@@ -4128,7 +4152,8 @@
       const el = document.getElementById('runnerCmdList');
       const q = document.getElementById('query');
       if (!el || !q) return;
-      const filter = String(q.value || '').replace(/^\//, '').trim();
+      const v = String(q.value || '');
+      const filter = v.startsWith(runnerCmdPrefix) ? v.slice(runnerCmdPrefix.length).trim() : '';
       runnerCmdMatches = RUNNER_COMMANDS.map((cmd, i) => ({ cmd, i, s: filter ? fuzzyPathScore(filter, cmd.label) : 0 }))
         .filter((m) => m.s !== null)
         .sort((a, b) => b.s - a.s || a.i - b.i)
@@ -4155,7 +4180,7 @@
     function runnerCmdOnInput() {
       if (!runnerCmdListIsOpen()) return false;
       const q = document.getElementById('query');
-      if (!String(q.value || '').startsWith('/')) {
+      if (!String(q.value || '').startsWith(runnerCmdPrefix)) {
         closeRunnerCmdList(true);
         return true;
       }
@@ -4200,12 +4225,10 @@
         toggleStarForSelection();
         return consume();
       }
+      /* / opens the commands wherever the caret is; Runner searches never need a literal / (paths use \). */
       if (inBox && !mod && !e.altKey && (e.key === '/' || e.code === 'NumpadDivide')) {
-        if (q.selectionStart === 0 && q.selectionEnd === 0) {
-          openRunnerCmdList(q.value);
-          return consume();
-        }
-        return true; /* a / anywhere else is just a character in the box */
+        openRunnerCmdList(q.value);
+        return consume();
       }
       if (mod || e.altKey) return false;
       if (inBox) {
@@ -5650,6 +5673,7 @@
       const lastSep = Math.max(t.lastIndexOf('\\'), t.lastIndexOf('/'));
       const isSep = (c) => c === '\\' || c === '/';
       const isBoundary = (i) => i === 0 || /[\\/\s._-]/.test(t[i - 1]);
+      const isWordEnd = (i) => i === t.length - 1 || /[\\/\s._-]/.test(t[i + 1]);
       let total = 0;
       for (const q of tokens) {
         // prev[i] / prevRun[i]: best score with the previous token char matched at text index i, and the length
@@ -5668,7 +5692,9 @@
             }
             if (i >= 1 && isSep(t[i - 1])) maxSameSeg = -Infinity;
             if (t[i] !== q[j]) continue;
-            const here = 1 + (i > lastSep ? 2 : 0);
+            /* A token that ends where a word ends earns what one starting a word does. */
+            const endsWord = j === q.length - 1 && isWordEnd(i);
+            const here = 1 + (i > lastSep ? 2 : 0) + (endsWord ? 3 : 0);
             if (j === 0) {
               cur[i] = here + (isBoundary(i) ? 3 : 0);
               curRun[i] = 1;

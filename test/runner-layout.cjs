@@ -32,6 +32,9 @@ async function main() {
   fs.writeFileSync(path.join(alpha, 'inner.txt'), 'inner\n');
   fs.writeFileSync(path.join(root, 'zeta.txt'), 'zeta\n');
   // Back-dated at the start, so Everything has indexed the old time by the time the type check reads it.
+  // Where "map" falls in the name: a whole word, the start of the name, the end of a word, inside a word.
+  const mapNames = ['old map.txt', 'mapping.txt', 'roadmap.txt', 'xmapx.txt'];
+  for (const n of mapNames) fs.writeFileSync(path.join(root, n), 'map\n');
   const olderMd = path.join(root, 'aaa-older.md');
   fs.writeFileSync(olderMd, '# older\n');
   const old = new Date(Date.now() - 30 * 864e5);
@@ -100,6 +103,13 @@ async function main() {
     check(iInner > iNote && iInner > iFold && iNote >= 0 && iFold >= 0, `name matches rank above a path-only match (folder ${iFold}, note ${iNote}, inner ${iInner})`);
     check(norm(s.selected) === norm(s.rows[0]), 'the top row is selected after typing');
 
+    // Matches at the start and end of a word rank above matches inside one.
+    await drv.T('setQuery', 'map');
+    await drv.settle('map');
+    s = await R();
+    const mapOrder = s.rows.map((r) => path.basename(r)).filter((n) => mapNames.includes(n));
+    check(JSON.stringify(mapOrder) === JSON.stringify(mapNames), `whole word, then start, end and inside a word (${mapOrder.join(', ')})`);
+
     // A typed file type filters by extension and, with no other words, lists the newest first.
     await drv.T('setQuery', '.md');
     let typeOk = false;
@@ -143,17 +153,21 @@ async function main() {
     check(norm(s.scope) === norm(root), `Left goes to the parent folder (scope ${s.scope})`);
     check(norm(s.selected) === norm(alpha), 'Left selects the folder it came from');
 
-    // / commands.
+    // / commands, typed after a search term: the term stays in the box ahead of the slash.
     await drv.T('setQuery', 'zeta');
     await drv.settle('zeta');
-    await drv.ev(`(() => { const q = document.getElementById('query'); q.focus(); q.setSelectionRange(0, 0); return 1; })()`);
+    const zetaRows = (await R()).rows.length;
+    await focusBox();
     await key('/', 'Slash', 191, 0, '/');
     s = await R();
-    check(s.cmdListOpen && s.query === '/', 'typing / at the start opens the command list');
+    check(s.cmdListOpen && s.query === 'zeta /', `typing / after a search term opens the command list and keeps the term (box "${s.query}")`);
     for (const ch of 'newest') await key(ch, 'Key' + ch.toUpperCase(), ch.toUpperCase().charCodeAt(0), 0, ch);
     s = await R();
     if (process.env.RUNNER_DEBUG) console.log('    after typing:', JSON.stringify({ q: s.query, open: s.cmdListOpen, m: s.cmdMatches.slice(0, 3) }));
     check(s.cmdMatches[0] === 'sort-date', `the list filters as you type (first: ${s.cmdMatches[0]})`);
+    await drv.settle('cmd typing');
+    s = await R();
+    check(zetaRows > 0 && s.rows.length === zetaRows, `the results stay those for the term while the list is open (${s.rows.length} of ${zetaRows})`);
     // On screen, not just in state: the search box clips its children, so the list must sit outside it.
     const listSeen = await drv.ev(`(() => {
       const b = document.querySelector('#runnerCmdList .tagfox-runner-cmd');
