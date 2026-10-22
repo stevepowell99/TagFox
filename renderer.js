@@ -12014,11 +12014,19 @@
       );
     }
 
+    /** One textarea write per frame: a search appends dozens of lines, and rewriting the whole log for
+        each one cost about 0.6s per search (profiled October 2026). */
+    let searchDebugRenderQueued = false;
     function searchDebugRender() {
-      const box = document.getElementById('searchDebugLog');
-      if (!box) return;
-      box.value = searchDebugLines.join('\n');
-      box.scrollTop = box.scrollHeight;
+      if (searchDebugRenderQueued) return;
+      searchDebugRenderQueued = true;
+      requestAnimationFrame(() => {
+        searchDebugRenderQueued = false;
+        const box = document.getElementById('searchDebugLog');
+        if (!box) return;
+        box.value = searchDebugLines.join('\n');
+        box.scrollTop = box.scrollHeight;
+      });
     }
 
     function searchDebugClear() {
@@ -13602,19 +13610,46 @@
         const t = normalizeTooltipTitleAttr(el);
         if (!t || !String(t).trim()) return;
         if (el.tagName === 'TEXTAREA') return;
-        try {
-          const inst = bootstrap.Tooltip.getInstance(el);
-          if (inst) inst.dispose();
-          el.setAttribute('data-bs-toggle', 'tooltip');
-          new bootstrap.Tooltip(el, {
-            container: 'body',
-            customClass: 'tagfox-ui-tooltip',
-            trigger: 'hover',
-            animation: false,
-            /* Show only on dwell: sweeping the pointer across chip lists must not build a popper per chip. */
-            delay: { show: 300, hide: 0 },
-          });
-        } catch (_) {}
+        makeChromeTooltip(el);
+      });
+    }
+
+    function makeChromeTooltip(el) {
+      try {
+        const inst = bootstrap.Tooltip.getInstance(el);
+        if (inst) inst.dispose();
+        el.setAttribute('data-bs-toggle', 'tooltip');
+        new bootstrap.Tooltip(el, {
+          container: 'body',
+          customClass: 'tagfox-ui-tooltip',
+          trigger: 'hover',
+          animation: false,
+          /* Show only on dwell: sweeping the pointer across chip lists must not build a popper per chip. */
+          delay: { show: 300, hide: 0 },
+        });
+      } catch (_) {}
+    }
+
+    /** Results rows build their tooltips on first hover, not on every render: an instance for every
+        cell and row button cost about 0.9s per 300 rows (profiled October 2026). The new instance has
+        missed the mouseover that created it, so the event is replayed on the element. */
+    function bindResultsLazyTooltipsOnce() {
+      const tbody = document.getElementById('tbody');
+      if (!tbody || tbody.dataset.lazyTipsBound === '1') return;
+      tbody.dataset.lazyTipsBound = '1';
+      tbody.addEventListener('mouseover', (e) => {
+        if (!window.bootstrap || !bootstrap.Tooltip || !e.isTrusted) return;
+        const el = e.target.closest && e.target.closest('td[data-bs-toggle="tooltip"], .results-td-actions-inner [title]');
+        if (!el || !tbody.contains(el) || bootstrap.Tooltip.getInstance(el)) return;
+        if (el.tagName === 'TD') new bootstrap.Tooltip(el, { container: 'body', trigger: 'hover', animation: false });
+        else {
+          const t = normalizeTooltipTitleAttr(el);
+          if (!t || !String(t).trim()) return;
+          makeChromeTooltip(el);
+        }
+        el.dispatchEvent(
+          new MouseEvent('mouseover', { bubbles: true, relatedTarget: e.relatedTarget, clientX: e.clientX, clientY: e.clientY })
+        );
       });
     }
 
@@ -13827,7 +13862,7 @@
       const tbody = document.getElementById('tbody');
       const status = document.getElementById('statusMain');
       /* Do not clear #statusSmartNote here — e.g. “Big folder!” must survive checkbox/selection redraws. Cleared by setStatusMain, smartAfterPaint, or empty chip. */
-      tbody.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {
+      tbody.querySelectorAll('[data-bs-toggle="tooltip"], .results-td-actions-inner [title], .results-td-actions-inner [data-bs-original-title]').forEach((el) => {
         const tip = bootstrap.Tooltip.getInstance(el);
         if (tip) tip.dispose();
       });
@@ -14269,8 +14304,7 @@
         bindCellTooltip(tdPath, fp);
         bindCellTooltip(tdSize, sizeStr);
         bindCellTooltip(tdDate, dateStr);
-        /* Per-button JS tooltips (same class as breadcrumb chrome), not one mega-tooltip on the cell. */
-        refreshTagFoxChromeTooltips(tdActInner, { allowInResultsTable: true });
+        /* Per-button JS tooltips (same class as breadcrumb chrome) are built on first hover: bindResultsLazyTooltipsOnce. */
 
         tr.appendChild(tdCb);
         tr.appendChild(tdName);
@@ -14383,9 +14417,6 @@
 
         tbody.appendChild(tr);
       }
-      tbody.querySelectorAll('td[data-bs-toggle="tooltip"]').forEach((td) => {
-        new bootstrap.Tooltip(td, { container: 'body', trigger: 'hover', animation: false });
-      });
       applyResultsTablePathColumnVisibility();
       syncResultsSelectionHighlight();
       if (treeFoldUi) {
@@ -15695,6 +15726,7 @@
     }
 
     function bindResultsDomListeners() {
+      bindResultsLazyTooltipsOnce();
       const resultsTableScrollEl = document.getElementById('resultsScroll');
       if (resultsTableScrollEl && resultsTableScrollEl.dataset.resultsScrollBound !== '1') {
         resultsTableScrollEl.dataset.resultsScrollBound = '1';
