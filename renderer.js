@@ -17152,7 +17152,9 @@
         ? new Set(lastRows.map((r) => pathNormKey(fullPathForRow(r))).filter(Boolean))
         : null;
 
-      setStatusMain(explicitRefresh ? 'Refreshing…' : 'Searching…', { progress: !explicitRefresh });
+      /* Not for an auto-refresh tick: one that finds nothing new returns from renderTableImpl before the
+         status is written, so its "Searching…" stayed on the line until the rows next changed. */
+      if (!quietAutoRefreshRender) setStatusMain(explicitRefresh ? 'Refreshing…' : 'Searching…', { progress: !explicitRefresh });
 
       searchDebugLog('runSearch.branch', {
         runId,

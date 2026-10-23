@@ -305,6 +305,8 @@ async function main() {
     s = await R();
     check(!s.statusShown, 'the bar goes again after a few seconds');
 
+    // The wait above spans an auto-refresh tick (every 5s), which can still be in flight.
+    await drv.settle('after the wait');
     const probs = structuralProblems(await drv.state());
     check(!probs.length, 'structural invariants hold in Runner' + (probs.length ? ': ' + probs.join('; ') : ''));
 
