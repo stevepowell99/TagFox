@@ -54,6 +54,19 @@ const os = require('os');
 const path = require('path');
 const nodeCrypto = require('crypto');
 
+/* Under `npm start`, scripts/start.js starts TagFox again when it exits with this code. Trust it only when
+   the parent really is that wrapper, and take it out of the environment, which every child and every
+   app.relaunch() inherits. It used to be read from the environment alone, so a TagFox that a Ctrl+F5 had
+   relaunched outside the wrapper still believed in it, and its Restart button exited with nothing left to
+   start it again: TagFox vanished and the global hotkey went dead (23 October 2026). */
+const START_WRAPPER_EXIT_CODE = (() => {
+  const code = Number(process.env.TAGFOX_START_WRAPPER);
+  const wrapperPid = Number(process.env.TAGFOX_START_WRAPPER_PID);
+  delete process.env.TAGFOX_START_WRAPPER;
+  delete process.env.TAGFOX_START_WRAPPER_PID;
+  return code > 0 && wrapperPid > 0 && wrapperPid === process.ppid ? code : 0;
+})();
+
 /* The same principle as disable-renderer-backgrounding, one process up. This process routes every
    click and keystroke to the page, and Windows hands a launcher's BelowNormal priority on to its
    children: the autostart task ran at Task Scheduler's default of 7, which is BelowNormal, and an
@@ -2130,10 +2143,7 @@ function restartAppWithUiFeedback(wc, source) {
   wc.send('tagfox-app-restart-imminent', {
     source: source === 'menu' ? 'menu' : 'shortcut',
   });
-  setTimeout(() => {
-    app.relaunch();
-    app.quit();
-  }, 350);
+  setTimeout(() => restartTagFoxProcess(), 350);
 }
 
 /** View menu: do not put F5 on “Reload” — on Windows the accelerator is registered and steals F5 from the page (TagFox uses F5 = refresh search). */
@@ -4667,7 +4677,7 @@ ipcMain.handle('tagfox-runtime-info', async (_e, { withGmist } = {}) => {
     pid: process.pid,
     startedAt: TAGFOX_STARTED_AT,
     changedSinceStart: mainCodeChangedSinceStart(),
-    restartsInTerminal: Boolean(process.env.TAGFOX_START_WRAPPER),
+    restartsInTerminal: START_WRAPPER_EXIT_CODE > 0,
   };
   if (withGmist) {
     const [dev, sidecar] = await Promise.all([portIsHeld(LOCAL_GMIST_DEV_PORT), portIsHeld(LOCAL_GMIST_SIDECAR_PORT)]);
@@ -4676,17 +4686,21 @@ ipcMain.handle('tagfox-runtime-info', async (_e, { withGmist } = {}) => {
   return info;
 });
 
-/** Restart this TagFox. Under `npm start` (scripts/start.js) exit with the code the wrapper restarts
-    on, so it stays in Steve's terminal; otherwise app.relaunch, which starts it detached. */
-ipcMain.handle('tagfox-restart', () => {
-  const code = Number(process.env.TAGFOX_START_WRAPPER);
-  if (code) {
-    app.exit(code);
+/** The one way TagFox restarts itself: the Restart button, Ctrl+F5 and the View menu all come here. Under
+    `npm start` (scripts/start.js) exit with the code the wrapper restarts on, so it stays in Steve's
+    terminal; otherwise app.relaunch, which starts it detached. */
+function restartTagFoxProcess() {
+  try {
+    globalShortcut.unregisterAll();
+  } catch (_) {}
+  if (START_WRAPPER_EXIT_CODE) {
+    app.exit(START_WRAPPER_EXIT_CODE);
   } else {
     app.relaunch();
     app.exit(0);
   }
-});
+}
+ipcMain.handle('tagfox-restart', () => restartTagFoxProcess());
 
 /** What is in the way, in words Steve can act on without going looking for the PID himself. */
 function localGmistPortHolderHint() {

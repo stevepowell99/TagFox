@@ -2,6 +2,11 @@
 // as such, and a restart request must bring up a NEW TagFox process under the SAME wrapper, which is
 // the whole point (app.relaunch detached it from Steve's terminal). Also checks the "Running now"
 // facts the Settings block and the header Restart button are drawn from.
+//
+// Then the case that made TagFox vanish on 23 October 2026: a TagFox carrying the wrapper's environment
+// with no wrapper above it, which is what app.relaunch() (Ctrl+F5, the View menu) used to leave behind.
+// It must not claim the terminal, and Restart must bring it back as a new process rather than exiting
+// with a code nobody is waiting for.
 const { spawn } = require('child_process');
 const path = require('path');
 const os = require('os');
@@ -9,12 +14,15 @@ const fs = require('fs');
 const { APP_DIR, sleep } = require('./harness.cjs');
 
 const PORT = 9347;
+const ORPHAN_PORT = 9348;
+let port = PORT;
 const userData = path.join(os.tmpdir(), 'tagfox-test-restart');
+const ELECTRON = path.join(APP_DIR, 'node_modules', 'electron', 'dist', 'electron.exe');
 
 async function pageWs() {
   for (let i = 0; i < 150; i++) {
     try {
-      const list = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json();
+      const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
       const p = list.find((t) => t.type === 'page' && /index\.html/.test(t.url));
       if (p) return p.webSocketDebuggerUrl;
     } catch (_) {}
@@ -102,6 +110,36 @@ async function evaluateOnce(expr) {
     fail(e.message);
   }
   spawn('taskkill', ['/PID', String(wrapper.pid), '/T', '/F']);
-  console.log('PASS restart stays in the terminal');
+
+  // The orphan: the wrapper's variables, naming a wrapper that is not this process's parent.
+  port = ORPHAN_PORT;
+  const kill = (pid) => { if (pid) spawn('taskkill', ['/PID', String(pid), '/T', '/F']); };
+  const orphan = spawn(ELECTRON, [APP_DIR, `--remote-debugging-port=${ORPHAN_PORT}`, `--user-data-dir=${userData}-orphan`], {
+    cwd: APP_DIR,
+    stdio: 'ignore',
+    env: { ...process.env, TAGFOX_TEST_HIDDEN: '1', TAGFOX_START_WRAPPER: '75', TAGFOX_START_WRAPPER_PID: String(wrapper.pid) },
+  });
+  let relaunched = null;
+  const failOrphan = (msg) => { kill(orphan.pid); kill(relaunched && relaunched.pid); console.error('FAIL ' + msg); process.exit(1); };
+  try {
+    const info = await evaluate('window.tagBrowser.runtimeInfo({})');
+    if (info.restartsInTerminal) failOrphan('a TagFox with no wrapper above it claims the terminal: ' + JSON.stringify(info));
+    await evaluateOnce('window.tagBrowser.restartTagFox(), 1').catch(() => {});
+    for (let i = 0; i < 60 && !relaunched; i++) {
+      await sleep(500);
+      try {
+        const again = await evaluate('window.tagBrowser.runtimeInfo({})');
+        if (again.pid !== info.pid) relaunched = again;
+      } catch (_) {}
+    }
+    if (!relaunched) failOrphan('Restart with no wrapper ended TagFox instead of relaunching it');
+    if (relaunched.restartsInTerminal) failOrphan('the relaunched TagFox claims the terminal');
+    console.log('ok   no wrapper: pid ' + info.pid + ' relaunched as ' + relaunched.pid + ', neither claiming the terminal');
+  } catch (e) {
+    failOrphan(e.message);
+  }
+  kill(relaunched.pid);
+  kill(orphan.pid);
+  console.log('PASS restart stays in the terminal, and comes back without one');
   process.exit(0);
 })();
