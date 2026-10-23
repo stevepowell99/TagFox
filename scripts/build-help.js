@@ -11,7 +11,13 @@ const srcPath = path.join(root, 'help.md');
 const outPath = path.join(root, 'help.html');
 const appVersion = require(path.join(root, 'package.json')).version;
 
-const src = fs.readFileSync(srcPath, 'utf8');
+/* Git's autocrlf checks help.md out with CRLF on one machine and LF on another. Read it as LF, or a blank
+   line arrives as "\r", takes the indent below, and every start rewrites help.html with trailing spaces.
+   Write help.html with the line endings help.md came with, which are the ones this checkout uses, or git
+   status calls it modified even where the text is identical. */
+const rawSrc = fs.readFileSync(srcPath, 'utf8');
+const checkoutEol = rawSrc.includes('\r\n') ? '\r\n' : '\n';
+const src = rawSrc.replace(/\r\n?/g, '\n');
 
 const tabRe = /<!--\s*help:tab\s+(\{[\s\S]*?\})\s*-->/g;
 const tabs = [];
@@ -125,5 +131,5 @@ ${panes}
 </div>
 `;
 
-fs.writeFileSync(outPath, out, 'utf8');
+fs.writeFileSync(outPath, out.replace(/\n/g, checkoutEol), 'utf8');
 console.log('Wrote', path.relative(root, outPath));
