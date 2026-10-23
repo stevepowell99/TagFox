@@ -5,6 +5,8 @@
 const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 
+const { killTestElectron } = require('./test-processes.cjs');
+
 const NODE = process.execPath;
 // One hung test must never stall the suite: past this, its whole process tree (the test, and the
 // Electron it launched) is killed and the run counts as failed.
@@ -58,7 +60,16 @@ function runOne(r) {
   let failed = 0;
   for (const r of runs) {
     console.log(`\n########## ${r.name} ##########`);
-    if (!(await runOne(r))) failed++;
+    let ok = await runOne(r);
+    // A test that leaves a TagFox running (a relaunch escapes the killed process tree) fails, and the
+    // TagFox is stopped, so it can neither sit on Steve's screen nor hold a port the next test wants.
+    await new Promise((res) => setTimeout(res, 1500));
+    const left = killTestElectron();
+    if (left.length) {
+      ok = false;
+      console.log(`LEFT RUNNING by ${r.name}, now stopped: ` + left.map((p) => `pid ${p.pid} (${p.profile})`).join(', '));
+    }
+    if (!ok) failed++;
   }
   console.log(`\n==================================================`);
   console.log(failed === 0 ? `SUITE PASSED (${runs.length}/${runs.length})` : `SUITE FAILED: ${failed}/${runs.length} runs failed`);

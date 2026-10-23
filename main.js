@@ -2915,12 +2915,17 @@ app.whenReady().then(() => {
   registerSearchScopeFolderIpc();
   registerShelfIpc();
   registerGlobalViewerDocsIpc();
-  const gt = registerGlobalToggleShortcut(loadGlobalToggleAccelFromDisk());
-  if (!gt.ok) console.warn('[TagFox] Global toggle shortcut:', gt.error);
-  const qt = registerQuickTodoShortcut(loadQuickTodoAccelFromDisk());
-  if (!qt.ok) console.warn('[TagFox] Quick TODO shortcut:', qt.error);
-  if (!globalShortcut.register(RECENT_TAB_ACCEL, openRecentTabFromGlobalShortcut)) {
-    console.warn('[TagFox] Recent-tab shortcut ' + RECENT_TAB_ACCEL + ' is already in use by another app.');
+  /* A test instance takes no OS-wide keys. Whichever TagFox registers first owns them, so a test
+     instance started while Steve's was down (or a relaunched one a test failed to stop) answered his
+     Ctrl+Space with its own window and blank profile, and his TagFox came back without its hotkey. */
+  if (process.env.TAGFOX_TEST_HIDDEN !== '1') {
+    const gt = registerGlobalToggleShortcut(loadGlobalToggleAccelFromDisk());
+    if (!gt.ok) console.warn('[TagFox] Global toggle shortcut:', gt.error);
+    const qt = registerQuickTodoShortcut(loadQuickTodoAccelFromDisk());
+    if (!qt.ok) console.warn('[TagFox] Quick TODO shortcut:', qt.error);
+    if (!globalShortcut.register(RECENT_TAB_ACCEL, openRecentTabFromGlobalShortcut)) {
+      console.warn('[TagFox] Recent-tab shortcut ' + RECENT_TAB_ACCEL + ' is already in use by another app.');
+    }
   }
   createWindow();
   app.on('activate', () => {

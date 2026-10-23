@@ -12,6 +12,7 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const { APP_DIR, sleep } = require('./harness.cjs');
+const { killTestElectron } = require('./test-processes.cjs');
 
 const PORT = 9347;
 const ORPHAN_PORT = 9348;
@@ -22,7 +23,7 @@ const ELECTRON = path.join(APP_DIR, 'node_modules', 'electron', 'dist', 'electro
 async function pageWs() {
   for (let i = 0; i < 150; i++) {
     try {
-      const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+      const list = await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(3000) })).json();
       const p = list.find((t) => t.type === 'page' && /index\.html/.test(t.url));
       if (p) return p.webSocketDebuggerUrl;
     } catch (_) {}
@@ -50,7 +51,11 @@ const EVALUATE_TIMEOUT_MS = 15000;
 async function evaluateOnce(expr) {
   const ws = new WebSocket(await pageWs());
   try {
-    await new Promise((res, rej) => { ws.addEventListener('open', res); ws.addEventListener('error', rej); });
+    await new Promise((res, rej) => {
+      const t = setTimeout(() => rej(new Error('no reply within 5000ms (CDP socket never opened)')), 5000);
+      ws.addEventListener('open', () => { clearTimeout(t); res(); });
+      ws.addEventListener('error', (e) => { clearTimeout(t); rej(e); });
+    });
     return await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`no reply within ${EVALUATE_TIMEOUT_MS}ms`)), EVALUATE_TIMEOUT_MS);
       ws.addEventListener('close', () => { clearTimeout(timer); reject(new Error('CDP socket closed')); });
@@ -111,35 +116,43 @@ async function evaluateOnce(expr) {
   }
   spawn('taskkill', ['/PID', String(wrapper.pid), '/T', '/F']);
 
-  // The orphan: the wrapper's variables, naming a wrapper that is not this process's parent.
+  // The orphan: the wrapper's variables, naming a wrapper that is not this process's parent. Its Restart
+  // relaunches it outside this test's process tree, so cleanup goes by its profile, not by the tree, and
+  // the wait for the relaunch is bounded: on 23 October 2026 an unanswered page held this test for the
+  // suite's whole five minutes and the relaunched TagFox was left open on Steve's screen.
   port = ORPHAN_PORT;
-  const kill = (pid) => { if (pid) spawn('taskkill', ['/PID', String(pid), '/T', '/F']); };
-  const orphan = spawn(ELECTRON, [APP_DIR, `--remote-debugging-port=${ORPHAN_PORT}`, `--user-data-dir=${userData}-orphan`], {
+  const orphanProfile = `${userData}-orphan`;
+  const orphan = spawn(ELECTRON, [APP_DIR, `--remote-debugging-port=${ORPHAN_PORT}`, `--user-data-dir=${orphanProfile}`], {
     cwd: APP_DIR,
     stdio: 'ignore',
     env: { ...process.env, TAGFOX_TEST_HIDDEN: '1', TAGFOX_START_WRAPPER: '75', TAGFOX_START_WRAPPER_PID: String(wrapper.pid) },
   });
-  let relaunched = null;
-  const failOrphan = (msg) => { kill(orphan.pid); kill(relaunched && relaunched.pid); console.error('FAIL ' + msg); process.exit(1); };
+  let failure = null;
   try {
     const info = await evaluate('window.tagBrowser.runtimeInfo({})');
-    if (info.restartsInTerminal) failOrphan('a TagFox with no wrapper above it claims the terminal: ' + JSON.stringify(info));
+    if (info.restartsInTerminal) throw new Error('a TagFox with no wrapper above it claims the terminal: ' + JSON.stringify(info));
     await evaluateOnce('window.tagBrowser.restartTagFox(), 1').catch(() => {});
-    for (let i = 0; i < 60 && !relaunched; i++) {
+    let relaunched = null;
+    for (const deadline = Date.now() + 60000; !relaunched && Date.now() < deadline; ) {
       await sleep(500);
       try {
-        const again = await evaluate('window.tagBrowser.runtimeInfo({})');
+        const again = await evaluateOnce('window.tagBrowser.runtimeInfo({})');
         if (again.pid !== info.pid) relaunched = again;
       } catch (_) {}
     }
-    if (!relaunched) failOrphan('Restart with no wrapper ended TagFox instead of relaunching it');
-    if (relaunched.restartsInTerminal) failOrphan('the relaunched TagFox claims the terminal');
+    if (!relaunched) throw new Error('Restart with no wrapper ended TagFox, or the relaunched one never answered within 60s');
+    if (relaunched.restartsInTerminal) throw new Error('the relaunched TagFox claims the terminal');
     console.log('ok   no wrapper: pid ' + info.pid + ' relaunched as ' + relaunched.pid + ', neither claiming the terminal');
   } catch (e) {
-    failOrphan(e.message);
+    failure = e.message;
+  } finally {
+    for (const p of killTestElectron(orphanProfile)) console.log('     stopped test TagFox pid ' + p.pid + ' (' + p.profile + ')');
+    spawn('taskkill', ['/PID', String(orphan.pid), '/T', '/F']);
   }
-  kill(relaunched.pid);
-  kill(orphan.pid);
+  if (failure) {
+    console.error('FAIL ' + failure);
+    process.exit(1);
+  }
   console.log('PASS restart stays in the terminal, and comes back without one');
   process.exit(0);
 })();
