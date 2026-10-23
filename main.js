@@ -2409,6 +2409,10 @@ function toggleMainWindowFromGlobalShortcut() {
     w.show();
     const tShow = Date.now();
     w.focus();
+    /* Tell the renderer this was the shortcut and not an alt-tab or a click, so it selects the query. */
+    try {
+      w.webContents.send('tagfox-hotkey-raised');
+    } catch (_) {}
     const shown = Date.now() - t0;
     /* Two probes, so a slow raise says which half is slow: a bare executeJavaScript measures the
        IPC round trip plus renderer main-thread availability; the rAF pair adds compositor paint. */

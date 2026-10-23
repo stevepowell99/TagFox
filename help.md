@@ -330,5 +330,5 @@ Things that might trip you up:
 <tr><td><kbd>Shift</kbd>+<kbd>Space</kbd></td><td>Toggle Viewer fullscreen</td></tr>
 <tr><td><kbd>F1</kbd> or <kbd>Ctrl</kbd>+<kbd>/</kbd></td><td>Open this help</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>,</kbd></td><td>Open / close Settings</td></tr>
-<tr><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd></td><td>Show / hide TagFox from anywhere (default; change in Settings)</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd></td><td>Show / hide TagFox from anywhere (default; change in Settings). Showing it puts the cursor in the search box with its text selected: type to replace it, or press an arrow key to step out of it</td></tr>
 </tbody></table></div>

@@ -18338,6 +18338,9 @@
     if (typeof window.tagBrowser.setRecentTabOpenHandler === 'function') {
       window.tagBrowser.setRecentTabOpenHandler(() => void openRecentTab());
     }
+    if (typeof window.tagBrowser.setHotkeyRaisedHandler === 'function') {
+      window.tagBrowser.setHotkeyRaisedHandler(() => onHotkeyRaised());
+    }
     document.getElementById('btnQuickTodoPopClose')?.addEventListener('click', () => hideQuickTodoPop());
     document.getElementById('btnQuickTodoPopCancel')?.addEventListener('click', () => {
       const inp = document.getElementById('quickTodoTitleInput');
@@ -18456,6 +18459,26 @@
     /** On load / window focus — query only. */
     function focusSearchBox() {
       focusQueryBox(false);
+    }
+
+    /* The global toggle shortcut raised the window (main sends tagfox-hotkey-raised after show + focus): put
+       the whole query under selection, so typing replaces it and an arrow key steps out of it. The window
+       'focus' event also fires for alt-tab and mouse clicks, which keep the caret where it was, so only a
+       raise main announced selects. The message and the focus event arrive in either order. Window already
+       focused: select now. Otherwise leave a short flag for the focus event to read, one-shot. */
+    let hotkeyRaiseSelectUntil = 0;
+    const HOTKEY_RAISE_FLAG_MS = 1500;
+    function onHotkeyRaised() {
+      if (document.querySelector('.dropdown-menu.show')) return;
+      if (document.hasFocus()) focusQueryBox(true);
+      else hotkeyRaiseSelectUntil = Date.now() + HOTKEY_RAISE_FLAG_MS;
+    }
+
+    /** Window 'focus' handler body: true once for a hotkey raise whose message arrived first. */
+    function takeHotkeyRaiseFlag() {
+      const raised = Date.now() < hotkeyRaiseSelectUntil;
+      hotkeyRaiseSelectUntil = 0;
+      return raised;
     }
 
     /** The one explicit-refresh path: F5 (either route) and the header Refresh button. Spins the button
@@ -20346,9 +20369,11 @@
     });
     window.addEventListener('focus', () => {
       searchDebugFocusSnapshot('window.focus');
+      /* Read the flag now, not in the frame: a slow raise can run the frame seconds later. */
+      const hotkeyRaise = takeHotkeyRaiseFlag();
       requestAnimationFrame(() => {
         /* An open menu survives alt-tab; leave its keyboard focus alone or ↑/↓/Enter go to the list. */
-        if (!document.querySelector('.dropdown-menu.show')) focusSearchBox();
+        if (!document.querySelector('.dropdown-menu.show')) hotkeyRaise ? focusQueryBox(true) : focusSearchBox();
         requestAnimationFrame(() => searchDebugFocusSnapshot('window.focus.afterRestore'));
       });
     });
@@ -20378,6 +20403,8 @@
         /* Tab drivers. springHoverTab models the spring-load result: a drag hovering a tab activates it. */
         newTab: () => openNewTab(),
         openRecentTab: () => openRecentTab(),
+        /* What main's tagfox-hotkey-raised message calls; a test cannot press the OS-wide shortcut. */
+        hotkeyRaised: () => onHotkeyRaised(),
         closeTab: (id) => closeTab(Number(id)),
         activateTab: (id) => activateTab(Number(id)),
         cycleTab: (dir) => cycleTab(Number(dir) || 1),

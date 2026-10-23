@@ -5,6 +5,7 @@ let onPathsMutated = null;
 let onShellActionError = null;
 let onQuickTodoOpen = null;
 let onRecentTabOpen = null;
+let onHotkeyRaised = null;
 let onSearchDebugLine = null;
 let onPlainF5SearchRefresh = null;
 let onAppRestartHint = null;
@@ -24,6 +25,9 @@ ipcRenderer.on('tagfox-open-quick-todo', () => {
 });
 ipcRenderer.on('tagfox-open-recent-tab', () => {
   if (onRecentTabOpen) onRecentTabOpen();
+});
+ipcRenderer.on('tagfox-hotkey-raised', () => {
+  if (onHotkeyRaised) onHotkeyRaised();
 });
 ipcRenderer.on('tagfox-plain-f5-refresh', () => {
   if (onPlainF5SearchRefresh) onPlainF5SearchRefresh();
@@ -136,6 +140,9 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   },
   setRecentTabOpenHandler: (fn) => {
     onRecentTabOpen = typeof fn === 'function' ? fn : null;
+  },
+  setHotkeyRaisedHandler: (fn) => {
+    onHotkeyRaised = typeof fn === 'function' ? fn : null;
   },
   pickScopeFolder: () => ipcRenderer.invoke('pick-scope-folder'),
   userHomeDir: () => ipcRenderer.invoke('user-home-dir'),
