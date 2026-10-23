@@ -3514,9 +3514,12 @@
       useSaturates: 20,
       lastUse: 10,
       lastUseDays: 30,
-      /* Taken off anything under an AppData folder (caches, logs, app state), unless the current folder is
-         inside AppData or the query names it. A ranking penalty, not a filter: such rows still come up. */
-      appData: 45,
+      /* Taken off anything under a folder of one of these names (AppData: caches, logs, app state;
+         ProgramData: the same for every user, with 518 of Steve's 7,289 ProgramData items Windows crash
+         reports named Report.wer, October 2026), unless the current folder is inside that folder or the
+         query names it. A ranking penalty, not a filter: such rows still come up. */
+      rankedDownFolders: Object.freeze(['appdata', 'programdata']),
+      rankedDown: 45,
       /* Taken off anything with a `~` segment in its path (Word's ~$ lock files, ~folders), which Runner lists
          rather than hides. Not taken when the whole name was typed (`keys.kdbx` in `~keys_and_ids`), when the
          query contains a ~, or inside a ~folder. Measured on Steve's keys.kdbx (test/runner-layout.cjs):
@@ -3798,9 +3801,9 @@
       return s;
     }
 
-    /** Smart order: rows with more query words in the name come first, then by score. */
-    const RUNNER_APPDATA_RE = /[\\/]appdata[\\/]/i;
+    const RUNNER_RANKED_DOWN = RUNNER_RANK.rankedDownFolders.map((name) => ({ name, re: new RegExp('[\\\\/]' + name + '[\\\\/]', 'i') }));
 
+    /** Smart order: rows with more query words in the name come first, then by score. */
     function rankRowsForRunner(rows) {
       if (!Array.isArray(rows) || !rows.length) return;
       const qText = document.getElementById('query')?.value;
@@ -3815,8 +3818,7 @@
       const now = Date.now();
       const day = 864e5;
       const scope = String(document.getElementById('rootFolder')?.value || '').trim();
-      const appDataPenalty =
-        RUNNER_APPDATA_RE.test(scope + '\\') || words.some((w) => w.includes('appdata')) ? 0 : RUNNER_RANK.appData;
+      const rankedDown = RUNNER_RANKED_DOWN.filter((f) => !f.re.test(scope + '\\') && !words.some((w) => w.includes(f.name)));
       const tildePenalty = pathUnderTildeSegment(scope) || String(qText || '').includes('~') ? 0 : RUNNER_RANK.tilde;
       const scored = rows.map((r) => {
         const fp = fullPathForRow(r);
@@ -3831,7 +3833,7 @@
         if (mt) s += RUNNER_RANK.recency * Math.exp(-Math.max(0, now - mt) / (RUNNER_RANK.recencyDays * day));
         if (stars.has(k)) s += RUNNER_RANK.star;
         s += runnerUseBoost(use.get(k), now);
-        if (appDataPenalty && RUNNER_APPDATA_RE.test(fp)) s -= appDataPenalty;
+        if (rankedDown.some((f) => f.re.test(fp))) s -= RUNNER_RANK.rankedDown;
         if (tildePenalty && m.quality < RUNNER_RANK.matchKind.exact && pathUnderTildeSegment(fp)) s -= tildePenalty;
         return { r, tier: m.inName, s };
       });

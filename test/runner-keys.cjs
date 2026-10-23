@@ -15,7 +15,7 @@
 //   - Alt+Home clears the text, the folder and every filter;
 //   - Ctrl+M sorts by date and again back to smart; Ctrl+Tab says tabs are Classic's;
 //   - F1 opens Help on Runner's own tab;
-//   - an AppData file ranks below an equally named file elsewhere;
+//   - an AppData or ProgramData file ranks below an equally named file elsewhere;
 //   - Esc steps through the selection, the text and the folder, then hides TagFox.
 //
 // Run: node test/runner-keys.cjs
@@ -39,12 +39,17 @@ async function main() {
   fs.mkdirSync(race, { recursive: true });
   for (let i = 1; i <= 40; i++) fs.mkdirSync(path.join(many, 'n' + String(i).padStart(2, '0')), { recursive: true });
   fs.writeFileSync(path.join(root, 'zeta.txt'), 'zeta\n');
-  // Same words in both names; the AppData one is the exact name, so only the penalty puts it second.
+  // Same words in all three names; the AppData and ProgramData ones are the exact name, so only the penalty
+  // puts them below the plain one.
   const appDir = path.join(process.env.LOCALAPPDATA || path.join(require('os').homedir(), 'AppData', 'Local'), 'TagFoxTest-' + process.pid);
+  const progDir = path.join(process.env.ProgramData || 'C:\\ProgramData', 'TagFoxTest-' + process.pid);
   fs.mkdirSync(appDir, { recursive: true });
+  fs.mkdirSync(progDir, { recursive: true });
   const appFile = path.join(appDir, 'apdx' + tag + '.txt');
+  const progFile = path.join(progDir, 'apdx' + tag + '.txt');
   const plainFile = path.join(root, 'apdx' + tag + ' notes.txt');
   fs.writeFileSync(appFile, 'app\n');
+  fs.writeFileSync(progFile, 'prog\n');
   fs.writeFileSync(plainFile, 'plain\n');
 
   let drv;
@@ -293,15 +298,20 @@ async function main() {
     await drv.ev(`bootstrap.Modal.getInstance(document.getElementById('helpModal'))?.hide(); 1`);
     await sleep(500);
 
-    // AppData ranks lower.
+    // AppData and ProgramData rank lower.
     await go('', 'apdx' + tag);
-    s = await waitRows((x) => x.rows.some((r) => norm(r) === norm(appFile)) && x.rows.some((r) => norm(r) === norm(plainFile)), 'appdata');
+    s = await waitRows((x) => [appFile, progFile, plainFile].every((f) => x.rows.some((r) => norm(r) === norm(f))), 'appdata');
     const iApp = s.rows.findIndex((r) => norm(r) === norm(appFile));
+    const iProg = s.rows.findIndex((r) => norm(r) === norm(progFile));
     const iPlain = s.rows.findIndex((r) => norm(r) === norm(plainFile));
     check(iApp >= 0 && iPlain >= 0 && iPlain < iApp, `an AppData file ranks below the same name elsewhere (plain ${iPlain}, AppData ${iApp})`);
+    check(iProg >= 0 && iPlain >= 0 && iPlain < iProg, `a ProgramData file ranks below the same name elsewhere (plain ${iPlain}, ProgramData ${iProg})`);
     await go(appDir, 'apdx' + tag);
     s = await R();
     check(norm(s.rows[0]) === norm(appFile), 'inside an AppData folder nothing is pushed down');
+    await go(progDir, 'apdx' + tag);
+    s = await R();
+    check(norm(s.rows[0]) === norm(progFile), 'inside a ProgramData folder nothing is pushed down');
 
     // Alt+Left and Alt+Right step through searches. History is shared with Classic, so a Classic entry brings
     // only its text and folder into Runner, never Classic's tree view.
@@ -354,10 +364,11 @@ async function main() {
     console.error(e);
   } finally {
     if (drv) drv.close();
-    try {
-      fs.rmSync(root, { recursive: true, force: true });
-      fs.rmSync(appDir, { recursive: true, force: true });
-    } catch (_) {}
+    for (const d of [root, appDir, progDir]) {
+      try {
+        fs.rmSync(d, { recursive: true, force: true });
+      } catch (_) {}
+    }
   }
   if (failures.length) {
     console.log(`\nrunner-keys: ${failures.length} failure(s)`);
