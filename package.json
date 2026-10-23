@@ -9,7 +9,7 @@
     "bundle:gmist": "node scripts/bundle-gmist.js",
     "postinstall": "node scripts/sync-vendor-assets.js",
     "prestart": "npm run vendor:sync && npm run build:help",
-    "predist": "npm run vendor:sync && npm run build:help && npm run bundle:gmist",
+    "predist": "npm run vendor:sync && npm run build:help",
     "start": "node scripts/start.js",
     "dist": "node scripts/run-dist.js",
     "test": "node test/run-all.cjs",
@@ -39,15 +39,6 @@
       "package.json",
       "google-oauth-client.json",
       "vendor/**/*"
-    ],
-    "extraResources": [
-      {
-        "from": "_gmist",
-        "to": "gmist",
-        "filter": [
-          "**/*"
-        ]
-      }
     ],
     "win": {
       "target": [
