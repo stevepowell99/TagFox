@@ -14186,7 +14186,11 @@
       else void loadThumbnail(holder); /* no IntersectionObserver: fall back to eager load */
     }
 
-    /* ---- Hover preview: a larger floating thumbnail while the pointer rests on an eligible row. ---- */
+    /* ---- Hover preview: a larger floating thumbnail while the pointer rests on an eligible row's icon. ----
+       Only the icon tile at the left of the row opens it, so moving down the list by name never does.
+       It closes on anything that is not that tile: another element under the pointer, a key, a scroll,
+       leaving the window, and a repaint of the table. A repaint matters most, because the row under a
+       resting pointer is replaced without any mouseout, which is what left previews stuck over the list. */
     function isHoverPreviewOn() {
       const el = document.getElementById('optHoverPreview');
       if (el) return !!el.checked;
@@ -14195,6 +14199,8 @@
     let hoverPreviewEl = null;
     let hoverPreviewTimer = null;
     let hoverPreviewActiveKey = null;
+    /** The icon tile the preview belongs to; a preview whose tile has left the page is never shown. */
+    let hoverPreviewAnchor = null;
     function ensureHoverPreviewEl() {
       if (hoverPreviewEl) return hoverPreviewEl;
       const d = document.createElement('div');
@@ -14211,6 +14217,7 @@
         hoverPreviewTimer = null;
       }
       hoverPreviewActiveKey = null;
+      hoverPreviewAnchor = null;
       if (hoverPreviewEl) {
         hoverPreviewEl.classList.add('d-none');
         const img = hoverPreviewEl.firstChild;
@@ -14244,13 +14251,14 @@
       el.style.left = left + 'px';
       el.style.top = top + 'px';
     }
-    async function showHoverPreviewFor(fp, key, x, y) {
+    async function showHoverPreviewFor(fp, key, x, y, anchor) {
       const dataUrl = await fetchThumbnail(fp, key, HOVER_PREVIEW_REQ_PX);
-      if (hoverPreviewActiveKey !== key || !dataUrl) return;
+      const current = () => hoverPreviewActiveKey === key && hoverPreviewAnchor === anchor && anchor.isConnected;
+      if (!current() || !dataUrl) return;
       const el = ensureHoverPreviewEl();
       const img = el.firstChild;
       const place = () => {
-        if (hoverPreviewActiveKey === key) positionHoverPreview(el, x, y);
+        if (current()) positionHoverPreview(el, x, y);
       };
       img.onload = place;
       img.src = dataUrl;
@@ -14258,27 +14266,25 @@
     }
     function onResultRowHoverOver(e) {
       if (!isHoverPreviewOn()) return;
-      const tr = e.target.closest && e.target.closest('tr[data-thumb-path]');
-      if (!tr) return;
-      const fp = tr.dataset.thumbPath;
-      if (!fp) return;
-      const key = thumbKey(fp, tr.dataset.thumbMtime, HOVER_PREVIEW_REQ_PX);
-      if (hoverPreviewActiveKey === key) return; /* still on the same row */
-      if (hoverPreviewTimer) clearTimeout(hoverPreviewTimer);
-      if (hoverPreviewEl && !hoverPreviewEl.classList.contains('d-none')) {
-        hoverPreviewEl.classList.add('d-none');
+      const tile = e.target.closest && e.target.closest('.file-type-icon');
+      const tr = tile && tile.closest('tr[data-thumb-path]');
+      const fp = tr && tr.dataset.thumbPath;
+      if (!fp) {
+        if (hoverPreviewActiveKey) hideHoverPreview();
+        return;
       }
+      const key = thumbKey(fp, tr.dataset.thumbMtime, HOVER_PREVIEW_REQ_PX);
+      if (hoverPreviewActiveKey === key && hoverPreviewAnchor === tile) return; /* still on the same icon */
+      hideHoverPreview();
       hoverPreviewActiveKey = key;
+      hoverPreviewAnchor = tile;
       const x = e.clientX;
       const y = e.clientY;
-      hoverPreviewTimer = setTimeout(() => void showHoverPreviewFor(fp, key, x, y), HOVER_PREVIEW_DELAY_MS);
+      hoverPreviewTimer = setTimeout(() => void showHoverPreviewFor(fp, key, x, y, tile), HOVER_PREVIEW_DELAY_MS);
     }
+    /** Leaving the window sends a mouseout with nowhere to go and no mouseover after it. */
     function onResultRowHoverOut(e) {
-      const tr = e.target.closest && e.target.closest('tr[data-thumb-path]');
-      if (!tr) return;
-      const to = e.relatedTarget;
-      if (to && tr.contains(to)) return; /* moving within the same row */
-      hideHoverPreview();
+      if (hoverPreviewActiveKey && !e.relatedTarget) hideHoverPreview();
     }
 
     function fileExtFromPretty(pretty) {
@@ -15407,6 +15413,7 @@
       }
       clearInternalPathDragDropTargetHints();
       resetThumbObserver();
+      hideHoverPreview(); /* its row is about to go, with no mouseout to say so */
       tbody.innerHTML = '';
       const rows = filteredRows();
       const rowsForDisplay = listRowsForUi();
@@ -17809,10 +17816,12 @@
       saveSettings();
       if (!isHoverPreviewOn()) hideHoverPreview();
     });
-    /* Hover preview: delegated so it spans both panes and survives re-renders; hidden on scroll / leaving the window. */
+    /* Hover preview: delegated so it survives re-renders; anything other than resting on the icon closes it. */
     document.addEventListener('mouseover', onResultRowHoverOver);
     document.addEventListener('mouseout', onResultRowHoverOut);
     document.addEventListener('scroll', hideHoverPreview, true);
+    document.addEventListener('keydown', hideHoverPreview, true);
+    document.addEventListener('visibilitychange', hideHoverPreview);
     window.addEventListener('blur', hideHoverPreview);
     document.getElementById('optSearchDebug').addEventListener('change', () => {
       saveSettings();
