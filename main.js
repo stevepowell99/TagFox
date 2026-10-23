@@ -3008,7 +3008,7 @@ ipcMain.handle('everything-search', async (_event, payload) => {
         ' count=' + count + ' q=' + JSON.stringify(String(searchText || '').slice(0, 80))
     );
   }
-  return { ok: true, rows };
+  return { ok: true, rows, totalResults: typeof data.totalResults === 'number' ? data.totalResults : null };
 });
 
 ipcMain.handle('open-path', async (_event, fullPath) => {
@@ -5830,6 +5830,15 @@ ipcMain.handle('cut-explorer-paste', async (_event, paths) => {
   return err ? { ok: false, error: err } : { ok: true };
 });
 
+/** What Ctrl+V would paste, without pasting: Runner sends files and images to the current folder and text to its box. */
+ipcMain.handle('clipboard-kind', async () => {
+  let files = 0;
+  try {
+    if (process.platform === 'win32') files = readClipboardFilePathsWin().length;
+  } catch (_) {}
+  return { files, image: !clipboard.readImage().isEmpty(), text: clipboard.readText() };
+});
+
 ipcMain.handle('paste-clipboard-into-folder', async (event, { destFolder, rootPrefix, replaceExisting }) => {
   if (process.platform !== 'win32') return { ok: false, error: 'Clipboard file paste is only supported on Windows.' };
   let sources;
@@ -6120,6 +6129,23 @@ function compareChildFolderDisplayName(a, b) {
   if (za !== zb) return za - zb;
   return sa.localeCompare(sb, undefined, { sensitivity: 'base', numeric: true });
 }
+
+/** File, folder or missing, per path: the favourites list holds both since Runner's stars write to it. */
+ipcMain.handle('path-kinds', async (_event, paths) => {
+  const list = Array.isArray(paths) ? paths.map((p) => String(p || '')).filter(Boolean) : [];
+  const kinds = {};
+  await Promise.all(
+    list.map(async (p) => {
+      try {
+        const st = await fs.stat(p);
+        kinds[p] = st.isDirectory() ? 'folder' : 'file';
+      } catch (_) {
+        kinds[p] = 'missing';
+      }
+    })
+  );
+  return { ok: true, kinds };
+});
 
 /** Subfolders only (breadcrumb sibling picker). */
 ipcMain.handle('list-child-folders', async (_event, { parentPath }) => {

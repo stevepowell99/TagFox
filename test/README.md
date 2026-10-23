@@ -29,7 +29,7 @@ guard:
 ## Running
 
 ```
-npm test                      # whole suite (smoke + tab-lifecycle + tab-isolation + load-more + column-resize + splitter-drag + refresh-visible + quiet-refresh + md-preview-no-write + menu-enter + recent-tab + 3 fuzz seeds)
+npm test                      # whole suite (smoke + tab-lifecycle + tab-isolation + load-more + column-resize + splitter-drag + refresh-visible + quiet-refresh + md-preview-no-write + menu-enter + recent-folders-filter + recent-tab + runner-layout + 3 fuzz seeds)
 npm run test:smoke            # readable walkthrough of the main flows
 npm run test:tabs             # tab lifecycle: open/close/cap/cycle/reorder/spring-hover
 npm run test:loadmore         # focused load-more / tab-state regression
@@ -66,6 +66,7 @@ it.
 | `md-preview-no-write.cjs` | Previewing a `.md`/`.txt` file must never write it back, opening the editor re-reads the file, and a write whose file has moved on disk is refused. The positive control is the half that matters: an edit made in the open editor, and one saved by closing it, must still reach disk, or a fix that simply stopped saving would pass. |
 | `menu-enter.cjs` | Ctrl+L opens the recent-folders menu, the arrows move through it without the results list also taking them, and Enter applies the focused folder. Sent as real key events over CDP, because a synthetic click would pass whether or not the global Enter handler swallowed the key. |
 | `recent-tab.cjs` | The renderer half of the global Ctrl+Shift+Space (`openRecentTab`, driven through the test hook): the tab is empty of query, scope folder, tags and every search option, carries a 1 week recency window that reaches the Everything query as `dm:`, an existing empty-scope tab is reused (from another tab, and in place after typing in it) instead of a third being opened, and the scoped tab it came from is unchanged. The OS-wide registration itself lives in `main.js` (`RECENT_TAB_ACCEL`) and is not pressable from a test without raising the window. |
+| `runner-layout.cjs` | The Runner layout, by real key events: an empty box lists only the current folder, a file created on disk appears (positive control), typing searches below the folder, name matches rank above path-only matches, `.md` lists markdown files only with the newest first, `-word` excludes, Down keeps focus in the box, Right and Left move into a folder and back to its parent, `/` filters commands and Enter runs one, `Ctrl`+`D` stars and unstars (and the favourites column shows a starred file as a file), hovering a row shows its buttons, AppData\Local\Temp is hidden by default and the `/` command shows it (shown first, so the hidden check cannot pass on a file Everything has not yet indexed), and switching back restores Classic's own view. |
 | `fuzz.cjs` | Random bursts of actions (type, refresh, new/close/cycle tab, recency, view, scope, auto-refresh tick) with a structural check plus a consistency re-search after every burst. |
 | `run-all.cjs` | Runs the above in sequence, each under a five-minute deadline, and prints a pass/fail summary. |
 

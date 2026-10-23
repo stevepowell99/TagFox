@@ -99,7 +99,7 @@ Meanwhile, tools like Google Drive train you to type a word and expect the right
 
 - The **breadcrumb** under the favourites row shows your **scope folder** (if set in Settings) as the first segment, then your **current folder** beneath it. Everything you search, create and paste uses the current folder when set; if only the scope is set, those actions use the scope root. Clear the current folder (×) to widen to the whole tree under the scope. **Settings → Search scope folder** sets or clears the hard ceiling. If the search box still has text when you change folder (double-click a folder row, breadcrumb, favourites, etc.), that filter stays on; the search row flashes briefly as a reminder.
 - The ✏️ **pen button** lets you type a path directly. Press `Enter` to apply, `Esc` to cancel.
-- The 🕐 **clock button** (or `Ctrl`+`L`) lists your last 300 **recent folders** (paths you have used), not full search snapshots. Type in its filter box to narrow them fuzzily (letters in order, any part of the path); `Enter` opens the best match. Full search history is `Alt`+`←` / `→` (or the toolbar arrows).
+- The 🕐 **clock button** (or `Ctrl`+`L`) lists your last 300 **recent folders** (paths you have used), not full search snapshots. Type in its filter box to narrow them fuzzily (letters in order, any part of the path); whole words and longer runs of letters rank well above letters scattered across the path, and `Enter` opens the best match. Full search history is `Alt`+`←` / `→` (or the toolbar arrows).
 
 ### 🔍 Searching
 
@@ -128,6 +128,30 @@ Three icon-pair switches next to the search box — combine them freely:
 ### ⏪ Search history
 
 - Use `Alt`+`←` / `→` (or the arrow buttons top-left) to step back and forward through your recent searches. Each step restores the full search — query, folder, Settings scope folder, tags, toggles, and sort.
+
+<!-- help:tab {"id":"runner","label":"🏃 Runner"} -->
+
+### 🏃 What Runner is
+
+- **Settings → Toggle key opens: Runner** turns TagFox into one large search box with a ranked list below it and the Viewer on the right third. **Classic** (the default) is the full layout. The `/` command **Switch to the Classic layout** goes back.
+- Runner keeps its own search settings, so switching back and forth leaves Classic's view, filters and folder as they were.
+
+### ⌨️ Keys
+
+- Type to search. With the box empty you see the current folder's own contents; once you type, the search covers everything below it.
+- `↑` / `↓` move the selection without leaving the box; `Enter` opens the selected row.
+- `→` at the end of the box goes into the selected folder; `←` at the start goes up to the parent folder and selects the folder you came from. Both clear the box. `Backspace` in an empty box drops the folder and searches everywhere.
+- With no text selected in the box, `Ctrl`+`C` and `Ctrl`+`X` copy or cut the selected files for pasting in Explorer, and `Ctrl`+`Shift`+`C` copies their full paths as text. `Ctrl`+`V` pastes copied files, or a screenshot, into the current folder, and pastes text into the box. With text selected, these keys act on the text as usual.
+- `/` opens the command list wherever you are in the box, and whatever you have typed stays there: sort, system files, temp files, folders or files only, match path, modified time, refresh, dark mode, Settings and Classic. Type after the slash to filter it, `Enter` runs a command and leaves your search text as it was, `Esc` closes it.
+- `Ctrl`+`D` stars or unstars the selected row. Stars are the same list as **Favourite folders**.
+- A leading `-word` excludes anything matching that word.
+- A file type with its dot, such as `.pdf`, lists only that type, and several (`.docx .pdf`) list any of them; `-.tmp` leaves a type out. A file type on its own lists the newest first; with other words, as in `budget .xlsx`, the words decide the order.
+
+### 📊 How the list is ordered
+
+- The smart order puts rows whose **name** matches above rows that match only in the **path**. Within the name, a whole word ranks highest, then a match at the start of a word, then one at the end of a word, then one inside a word (`map` finds `old map`, `mapping`, `roadmap`, then `xmapx`). After that it favours recent changes, starred items and things you open often. The `/` sort commands switch to date or name order.
+- The defaults: **Match path** on, and system files and anything under `AppData\Local\Temp` left out. The faint options button at the right of the box and the `/` commands change each of them.
+- Runner ranks the 300 newest matches of each search, plus every name match and starred item it can find. When a search finds more, the status line says how many it ranked out of how many it found; type more to narrow it, or sort by date and scroll to page through them all.
 
 <!-- help:tab {"id":"files-folders","label":"📁 Files & folders"} -->
 
@@ -164,7 +188,7 @@ Three icon-pair switches next to the search box — combine them freely:
 ### 📂 Favourite folders
 
 - The **left-hand folder sidebar** is the whole column on the left. It contains **Favourite folders** at the top, then **Recent folders** and **Recent files** below.
-- The 💾 **save button** saves the current folder into the **Favourite folders** part of that sidebar. Click a folder pill to jump there; × removes it.
+- The 💾 **save button** saves the current folder into the **Favourite folders** part of that sidebar. Click a folder pill to jump there; × removes it. Files starred in the Runner layout appear here too, as file pills: click one to open the file.
 - Each folder row has a main pill plus a ▾ button. Click the main pill to go there; use ▾ to browse subfolders without leaving your current place first.
 - The sidebar has two display modes:
   - **Fixed Mode**: the column stays open at its normal saved width, so long names are truncated to fit.

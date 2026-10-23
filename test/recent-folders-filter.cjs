@@ -1,10 +1,14 @@
-// Ctrl+L recent folders: the filter box narrows the list by fuzzy match, and Enter applies the best match.
+// Ctrl+L recent folders: the filter box narrows the list by fuzzy match, ranks a contiguous match above one
+// scattered across folders, and Enter applies the best match.
 //
 // The history holds up to 300 paths now, so the menu is filtered rather than scrolled. Positive control: with
 // no text typed every seeded path is listed, so "the filter hid everything" cannot pass as "the filter worked".
+// The match runs over the whole path, so the query uses letters the decoy paths cannot supply from the checkout's
+// own folder name (`TagFox-runner\scripts` holds t, e and s in order, which once made "tes" match it).
 //
 // Run: node test/recent-folders-filter.cjs
 
+const fs = require('fs');
 const path = require('path');
 const { connect, SCOPES, APP_DIR, structuralProblems, sleep } = require('./harness.cjs');
 
@@ -15,10 +19,20 @@ async function main() {
     drv = await connect({ port: 9315, profile: 'tagfox-test-recent-filter', scope: SCOPES.repo });
     await drv.settle('startup');
 
-    const target = path.join(APP_DIR, 'test');
+    const target = path.join(APP_DIR, '_tmp', 'quokka-' + process.pid);
+    fs.mkdirSync(target, { recursive: true });
     const decoy = path.join(APP_DIR, 'scripts');
     const other = path.join(APP_DIR, 'vendor');
-    await drv.ev(`localStorage.setItem('tagBrowserScopeFolderHist', ${JSON.stringify(JSON.stringify([decoy, other, target]))}); 1`);
+    // Matches "quok" only one letter per folder; seeded most recent, so only the ranking can put it second.
+    const scattered = path.join(APP_DIR, '_tmp', 'qa', 'ua', 'oa', 'ka');
+    const isSubsequence = (q, t) => {
+      let i = 0;
+      for (const c of t.toLowerCase()) if (c === q[i]) i++;
+      return i === q.length;
+    };
+    const QUERY = 'quok';
+    if (isSubsequence(QUERY, decoy) || isSubsequence(QUERY, other)) throw new Error(`fixture: "${QUERY}" already matches a decoy under ${APP_DIR}`);
+    await drv.ev(`localStorage.setItem('tagBrowserScopeFolderHist', ${JSON.stringify(JSON.stringify([scattered, decoy, other, target]))}); 1`);
 
     const key = async (k, code, vk, mods = 0) => {
       const text = k === 'Enter' ? '\r' : undefined;
@@ -39,15 +53,15 @@ async function main() {
     if (!focusOk) failures.push('filter box not focused after Ctrl+L');
 
     const all = await items();
-    const allOk = all.length === 3;
+    const allOk = all.length === 4;
     console.log(`  ${allOk ? 'PASS' : 'FAIL'} unfiltered list shows all ${all.length} seeded paths`);
-    if (!allOk) failures.push(`unfiltered list had ${all.length} entries, expected 3`);
+    if (!allOk) failures.push(`unfiltered list had ${all.length} entries, expected 4`);
 
-    await type('tes');
+    await type(QUERY);
     const one = await items();
-    const oneOk = one.length === 1 && one[0] === target;
-    console.log(`  ${oneOk ? 'PASS' : 'FAIL'} "tes" narrows to the test folder (${JSON.stringify(one.map((x) => path.basename(x)))})`);
-    if (!oneOk) failures.push(`"tes" listed ${JSON.stringify(one)}`);
+    const oneOk = one.length === 2 && one[0] === target && one[1] === scattered;
+    console.log(`  ${oneOk ? 'PASS' : 'FAIL'} "${QUERY}" narrows to its two matches, the contiguous one first (${JSON.stringify(one)})`);
+    if (!oneOk) failures.push(`"${QUERY}" listed ${JSON.stringify(one)}`);
 
     await drv.ev(`(() => { const f = document.getElementById('scopeFolderHistoryFilter'); f.value = ''; f.dispatchEvent(new Event('input')); return 1; })()`);
     await type('zzqx');
@@ -57,7 +71,7 @@ async function main() {
     if (!noneOk) failures.push('no "No folders match" message for a non-matching filter');
 
     await drv.ev(`(() => { const f = document.getElementById('scopeFolderHistoryFilter'); f.value = ''; f.dispatchEvent(new Event('input')); return 1; })()`);
-    await type('tes');
+    await type(QUERY);
     await key('Enter', 'Enter', 13);
     await drv.settle('after Enter');
     const scope = await drv.ev(`document.getElementById('rootFolder').value`);
@@ -72,6 +86,9 @@ async function main() {
     failures.push('ERROR: ' + (e.stack || e.message || String(e)));
   } finally {
     if (drv) drv.close();
+    try {
+      fs.rmSync(path.join(APP_DIR, '_tmp', 'quokka-' + process.pid), { recursive: true, force: true });
+    } catch (_) {}
   }
 
   console.log('\n========== RECENT FOLDERS FILTER RESULT ==========');

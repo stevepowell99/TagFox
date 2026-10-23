@@ -25,6 +25,7 @@ const runs = [
   { name: 'recent tab (global hotkey)', args: ['recent-tab.cjs'] },
   { name: 'zoom buttons', args: ['zoom-buttons.cjs'] },
   { name: 'restart stays in the terminal', args: ['restart-in-terminal.cjs'] },
+  { name: 'runner layout', args: ['runner-layout.cjs'] },
   { name: 'gmist start guard', args: ['gmist-start-guard.cjs'] }, // skips loudly if a real gmist holds 5173/5199
   { name: 'fuzz seed 999', args: ['fuzz.cjs', '40', '999'] },
   { name: 'fuzz seed 7', args: ['fuzz.cjs', '40', '7'] },
