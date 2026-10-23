@@ -10,7 +10,8 @@
 //   - / opens the command list, Enter runs the command, and the box gets its text back;
 //   - Ctrl+D stars and unstars the selected row in the favourites list, where a starred file is a file chip;
 //   - hovering a row shows its action buttons, anchored in the row;
-//   - AppData\Local\Temp is hidden by default and the / command shows it;
+//   - AppData\Local\Temp is listed by default, below a file of the same name elsewhere, and the / command
+//     hides it;
 //   - there is no standing status line: a search leaves the bar hidden, F5's report brings it up and it goes
 //     again, and a partly ranked list says so in the box;
 //   - switching back to Classic restores Classic's own view settings.
@@ -311,12 +312,14 @@ async function main() {
     s = await R();
     check(!s.scope, `Backspace in an empty box removes the current folder (scope "${s.scope}")`);
 
-    // AppData\Local\Temp is left out by default and comes back with the / command. Shown first: a row
-    // that never appears proves nothing about the default until it has been seen once.
+    // AppData\Local\Temp is listed by default, below a file of the same name elsewhere, and the / command
+    // hides it. The same-named plain file is the positive control for the hidden check: it must still come up.
     if (/[\\/]appdata[\\/]local[\\/]temp$/i.test(os.tmpdir())) {
       const tempName = 'runnertemp-' + process.pid + '-' + Date.now();
       tempFile = path.join(os.tmpdir(), tempName + '.txt');
+      const plainTwin = path.join(root, tempName + '.txt');
       fs.writeFileSync(tempFile, 'temp\n');
+      fs.writeFileSync(plainTwin, 'plain\n');
       await drv.T('configure', { rootFolder: '' });
       await drv.T('setQuery', tempName);
       await drv.settle('temp query');
@@ -328,13 +331,19 @@ async function main() {
         await key('Enter', 'Enter', 13, 0, '\r');
         await drv.settle('cmd ' + filter);
       };
-      await runCmd('temp');
-      check(await waitForRow(tempFile, 'temp shown'), 'the / temp command shows a file in AppData\\Local\\Temp');
+      const bothIn = (await waitForRow(tempFile, 'temp shown')) && (await waitForRow(plainTwin, 'plain twin'));
+      s = await R();
+      const iTemp = s.rows.findIndex((r) => norm(r) === norm(tempFile));
+      const iTwin = s.rows.findIndex((r) => norm(r) === norm(plainTwin));
+      check(bothIn && iTwin >= 0 && iTwin < iTemp, `by default a file in AppData\\Local\\Temp is listed, below the same name elsewhere (plain ${iTwin}, Temp ${iTemp})`);
       await runCmd('temp');
       await drv.T('runSearchNow', 'identity');
       await drv.settle('temp hidden');
       s = await R();
-      check(!has(s.rows, tempFile) && s.query === tempName, `by default AppData\\Local\\Temp is hidden (${s.rows.length} rows)`);
+      check(!has(s.rows, tempFile) && has(s.rows, plainTwin) && s.query === tempName, `the / temp command hides it and keeps the plain file (${s.rows.length} rows)`);
+      check(s.chips.includes('temp'), `hiding temp files shows a chip (${s.chips.join(', ')})`);
+      await runCmd('temp');
+      check(await waitForRow(tempFile, 'temp shown again'), 'the / temp command again lists it');
     } else {
       console.log('  SKIP temp files: the temp folder here is not AppData\\Local\\Temp (' + os.tmpdir() + ')');
     }

@@ -2,12 +2,15 @@
 // the temp directory whose name starts "tagfox-test-". Never by image name, so Steve's own TagFox, which runs
 // on its default profile, can never match. A test that relaunches TagFox makes a process outside its own
 // process tree, which killing the tree misses; this is how such a process is found and stopped.
+// Only this checkout's Electron binary counts (a relaunch keeps it), so a suite in C:\dev\TagFox and one
+// in a worktree such as C:\dev\TagFox-runner never stop each other's instances.
 
 const { execFileSync, spawnSync } = require('child_process');
 const os = require('os');
 const path = require('path');
 
 const PROFILE_PREFIX = 'tagfox-test-';
+const CHECKOUT = path.resolve(__dirname, '..').toLowerCase() + path.sep;
 
 /** [{ pid, profile }] for every Electron main process running on a test profile. `profile` narrows it to
     one profile folder (a full path). */
@@ -19,7 +22,7 @@ function testElectronProcesses(profile) {
       [
         '-NoProfile',
         '-Command',
-        "@(Get-CimInstance Win32_Process -Filter \"Name='electron.exe'\" | Where-Object { $_.CommandLine -notmatch '--type=' } | Select-Object ProcessId,CommandLine) | ConvertTo-Json -Compress",
+        "@(Get-CimInstance Win32_Process -Filter \"Name='electron.exe'\" | Where-Object { $_.CommandLine -notmatch '--type=' } | Select-Object ProcessId,ExecutablePath,CommandLine) | ConvertTo-Json -Compress",
       ],
       { encoding: 'utf8', windowsHide: true }
     );
@@ -32,6 +35,7 @@ function testElectronProcesses(profile) {
   const want = profile ? path.resolve(profile).toLowerCase() : null;
   const found = [];
   for (const r of rows) {
+    if (!String(r.ExecutablePath || '').toLowerCase().startsWith(CHECKOUT)) continue;
     // Both quotings occur: --user-data-dir="X" from a spawn, and "--user-data-dir=X" from app.relaunch().
     const m = /--user-data-dir=(?:"([^"]+)"|([^"\s]+))/.exec(String(r.CommandLine || ''));
     if (!m) continue;

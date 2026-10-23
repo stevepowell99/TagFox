@@ -74,7 +74,7 @@
       runnerState: 'tagBrowserRunnerState',
       runnerClassicStash: 'tagBrowserRunnerClassicStash',
       runnerSort: 'tagBrowserRunnerSort',
-      runnerShowTemp: 'tagBrowserRunnerShowTemp',
+      runnerHideTemp: 'tagBrowserRunnerHideTemp',
       runnerViewerOff: 'tagBrowserRunnerViewerOff',
       runnerWordStarts: 'tagBrowserRunnerWordStarts',
       /* Set once Runner's old hide-~ default has been carried over to showing ~ paths ranked down. */
@@ -3520,6 +3520,9 @@
          query names it. A ranking penalty, not a filter: such rows still come up. */
       rankedDownFolders: Object.freeze(['appdata', 'programdata']),
       rankedDown: 45,
+      /* Temp hits (AppData\Local\Temp) come from a query of their own, the newest this many, so they cannot
+         crowd ordinary matches out of fetchCap; being under AppData, they take rankedDown. */
+      tempFetch: 25,
       /* Taken off anything with a `~` segment in its path (Word's ~$ lock files, ~folders), which Runner lists
          rather than hides. Not taken when the whole name was typed (`keys.kdbx` in `~keys_and_ids`), when the
          query contains a ~, or inside a ~folder. Measured on Steve's keys.kdbx (test/runner-layout.cjs):
@@ -3895,8 +3898,8 @@
     }
 
     /** Rows the main query's page may have missed: names matching the words (with Match path on, a
-        common word matches thousands of paths and the page holds only the newest), and every starred
-        or used path that matches. Merged into the main rows; never paged. */
+        common word matches thousands of paths and the page holds only the newest), every starred or
+        used path that matches, and the newest Temp hits. Merged into the main rows; never paged. */
     async function runnerExtraRows({ runId, ceilingNorms, rootFolder, queryForEs, recursive, options, cap }) {
       const jobs = [];
       const q = String(queryForEs || '').trim();
@@ -3941,6 +3944,19 @@
             ? '<' + pins.map(everythingExactPathTerm).join('|') + '>'
             : 'filelist:"' + pins.map((p) => String(p).replace(/"/g, '').replace(/[/\\]+$/, '')).join('|') + '"';
         jobs.push(everythingSearchOnce({ searchText: base + ' ' + list, count: pins.length, options: { ...options, offset: 0 } }));
+      }
+      /* Temp hits, which every other query leaves out; smart order only, where they rank down. */
+      if (runnerSort === 'smart' && q && !runnerHideTempOn() && runnerLeavesOutTemp(rootFolder)) {
+        const tempDir = await runnerUserTempDir();
+        if (tempDir)
+          jobs.push(
+            everythingSearchOnce({
+              searchText: everythingSearchTextForUi(ceilingNorms, rootFolder, queryForEs, recursive, { tempDir }),
+              count: RUNNER_RANK.tempFetch,
+              options: { ...options, offset: 0 },
+            })
+          );
+        else searchDebugLog('runner.extraRows.noTempDir', { runId });
       }
       if (!jobs.length) return [];
       let results;
@@ -4132,13 +4148,35 @@
       void runSearchNow('identity');
     }
 
-    /* Runner leaves AppData\Local\Temp out of the Everything query unless shown: on Steve's index it held
-       243 of the 300 newest "causal map" matches (test runs and caches), and the exclusion costs at most
-       about 0.2s a search. Inside a Temp folder nothing is hidden, or the folder would look empty. */
+    /* Every Runner query leaves AppData\Local\Temp out, and Temp hits come from one query of their own
+       (runnerExtraRows). Mixed in, Temp crowds real matches out of the rows that get ranked: for "causal map"
+       on Steve's index, 259 of the 293 rows fetched were Temp (test runs and caches), and 18 of the top 30
+       ordinary rows were lost (October 2026). The exclusion costs at most about 0.2s a search. Inside a Temp
+       folder nothing is left out, or the folder would look empty. */
     const RUNNER_TEMP_EXCLUDE = '!path:\\appdata\\local\\temp\\';
-    function runnerHidesTemp(rootFolder) {
-      if (!isRunnerMode() || localStorage.getItem(LS.runnerShowTemp) === '1') return false;
-      return !/[\\/]appdata[\\/]local[\\/]temp([\\/]|$)/i.test(String(rootFolder || ''));
+    function runnerLeavesOutTemp(rootFolder) {
+      return isRunnerMode() && !/[\\/]appdata[\\/]local[\\/]temp([\\/]|$)/i.test(String(rootFolder || ''));
+    }
+
+    function runnerHideTempOn() {
+      return localStorage.getItem(LS.runnerHideTemp) === '1';
+    }
+
+    /* The Temp query names the user's own Temp folder: Everything answers a path prefix in about 0.06s,
+       against 0.23s for path:\appdata\local\temp\ (cold, 2.4 million items, October 2026), and it waits
+       behind the other queries, since Everything runs one at a time. Other accounts' Temp folders stay out. */
+    let runnerUserTempDirPromise = null;
+    function runnerUserTempDir() {
+      if (!runnerUserTempDirPromise) {
+        runnerUserTempDirPromise = Promise.resolve()
+          .then(() => window.tagBrowser.userHomeDir())
+          .then((r) => (r && r.ok && r.path ? String(r.path).replace(/[/\\]+$/, '') + '\\AppData\\Local\\Temp' : ''))
+          .catch(() => '');
+        void runnerUserTempDirPromise.then((d) => {
+          if (!d) runnerUserTempDirPromise = null;
+        });
+      }
+      return runnerUserTempDirPromise;
     }
 
     function runnerToggleWordStarts() {
@@ -4148,8 +4186,8 @@
     }
 
     function runnerToggleTemp() {
-      if (localStorage.getItem(LS.runnerShowTemp) === '1') localStorage.removeItem(LS.runnerShowTemp);
-      else localStorage.setItem(LS.runnerShowTemp, '1');
+      if (runnerHideTempOn()) localStorage.removeItem(LS.runnerHideTemp);
+      else localStorage.setItem(LS.runnerHideTemp, '1');
       void runSearchNow('identity');
     }
 
@@ -4224,7 +4262,7 @@
       { id: 'sort-name', group: 'Sort', label: 'Sort by name', isOn: () => runnerSort === 'name', run: () => setRunnerSort('name') },
       { id: 'system', group: 'Show', label: 'Show system files (. $ desktop.ini)', isOn: () => !isHideSpecialPaths(), run: () => runnerToggleSystemFiles() },
       { id: 'tilde', group: 'Show', label: 'Hide ~ paths (lock files, ~folders; listed lower when shown)', isOn: () => isHideTildePaths(), run: () => runnerToggleTilde() },
-      { id: 'temp', group: 'Show', label: 'Show temp files (AppData\\Local\\Temp)', isOn: () => localStorage.getItem(LS.runnerShowTemp) === '1', run: () => runnerToggleTemp() },
+      { id: 'temp', group: 'Show', label: 'Hide temp files (AppData\\Local\\Temp; listed lower when shown)', isOn: () => runnerHideTempOn(), run: () => runnerToggleTemp() },
       { id: 'folders', group: 'Show', label: 'Folders only', isOn: () => isFoldersOnly(), run: () => runnerSetContent(isFoldersOnly() ? 'all' : 'folders') },
       { id: 'files', group: 'Show', label: 'Files only', isOn: () => isFilesOnly(), run: () => runnerSetContent(isFilesOnly() ? 'all' : 'files') },
       { id: 'path', group: 'Match', label: 'Match path (off: names only)', isOn: () => !!document.getElementById('optPath')?.checked, run: () => runnerToggleMatchPath() },
@@ -4295,9 +4333,9 @@
       },
       {
         id: 'temp',
-        icon: 'fa-eye',
-        on: () => localStorage.getItem(LS.runnerShowTemp) === '1',
-        label: () => 'Showing temp files',
+        icon: 'fa-eye-slash',
+        on: () => runnerHideTempOn(),
+        label: () => 'Hiding temp files',
         reset: () => runnerToggleTemp(),
       },
       { id: 'word', icon: 'fa-spell-check', on: () => runnerOptOn('optWholeWord'), label: () => 'Whole words only', reset: () => toggleSearchOptCheckbox('optWholeWord') },
@@ -4388,7 +4426,7 @@
         ['optDiacritics', 'optDiacritics'],
       ])
         runnerSetOpt(id, d[key]);
-      localStorage.removeItem(LS.runnerShowTemp);
+      localStorage.removeItem(LS.runnerHideTemp);
       localStorage.removeItem(LS.runnerWordStarts);
       activeTagKeys.clear();
       excludedTagKeys.clear();
@@ -17089,14 +17127,16 @@
       return false;
     }
 
-    /** The Everything search text for the current filters: scope, query, tags, deadlines, content, recency. */
-    function everythingSearchTextForUi(ceilingNorms, rootFolder, query, recursive) {
+    /** The Everything search text for the current filters: scope, query, tags, deadlines, content, recency.
+        `tempDir` asks for Runner's Temp hits in that folder instead of leaving Temp out. */
+    function everythingSearchTextForUi(ceilingNorms, rootFolder, query, recursive, { tempDir = '' } = {}) {
       let searchText = composeScopedEverythingSearch(ceilingNorms, rootFolder, query, recursive);
       searchText = appendActiveTagToEverythingQuery(searchText);
       // Deadline range filter: narrow to files carrying any xd- deadline; the exact range is
       // applied client-side (\s, never a literal space, so Everything keeps it as one regex term).
       if (deadlineFilterActive()) searchText = (String(searchText).trim() + ' regex:[\\s\\\\]xd-').trim();
-      if (runnerHidesTemp(rootFolder)) searchText = (String(searchText).trim() + ' ' + RUNNER_TEMP_EXCLUDE).trim();
+      if (tempDir) searchText = (String(searchText).trim() + ' "' + tempDir + '\\"').trim();
+      else if (runnerLeavesOutTemp(rootFolder)) searchText = (String(searchText).trim() + ' ' + RUNNER_TEMP_EXCLUDE).trim();
       if (isFoldersOnly()) searchText = (String(searchText).trim() + ' folder:').trim();
       else if (isFilesOnly()) searchText = (String(searchText).trim() + ' file: sort-mix:').trim();
       else searchText = (String(searchText).trim() + ' sort-mix:').trim();
