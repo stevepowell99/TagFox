@@ -184,21 +184,21 @@ Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when
               <li>Runner keeps its own search settings, so switching back and forth leaves Classic&#39;s view, filters and folder as they were.</li>
               </ul>
               <h3>⌨️ Keys</h3>
+              <p>Type to search. With the box empty you see the current folder&#39;s own contents; once you type, the search covers everything below it. This list is drawn from the same table Runner&#39;s keys are read from, so it always matches them; <code>?</code> in an empty box opens it.</p>
+              <div id="runnerKeysTable"></div>
+
+              <h3>🔎 What you can type</h3>
               <ul>
-              <li>Type to search. With the box empty you see the current folder&#39;s own contents; once you type, the search covers everything below it.</li>
-              <li><code>↑</code> / <code>↓</code> move the selection without leaving the box; <code>Enter</code> opens the selected row.</li>
-              <li><code>→</code> at the end of the box goes into the selected folder; <code>←</code> at the start goes up to the parent folder and selects the folder you came from. Both clear the box. <code>Backspace</code> in an empty box drops the folder and searches everywhere.</li>
-              <li>With no text selected in the box, <code>Ctrl</code>+<code>C</code> and <code>Ctrl</code>+<code>X</code> copy or cut the selected files for pasting in Explorer, and <code>Ctrl</code>+<code>Shift</code>+<code>C</code> copies their full paths as text. <code>Ctrl</code>+<code>V</code> pastes copied files, or a screenshot, into the current folder, and pastes text into the box. With text selected, these keys act on the text as usual.</li>
-              <li><code>/</code> opens the command list wherever you are in the box, and whatever you have typed stays there: sort, system files, temp files, folders or files only, match path, modified time, refresh, dark mode, Settings and Classic. Type after the slash to filter it, <code>Enter</code> runs a command and leaves your search text as it was, <code>Esc</code> closes it.</li>
-              <li><code>Ctrl</code>+<code>D</code> stars or unstars the selected row. Stars are the same list as <strong>Favourite folders</strong>.</li>
-              <li>A leading <code>-word</code> excludes anything matching that word.</li>
-              <li>A file type with its dot, such as <code>.pdf</code>, lists only that type, and several (<code>.docx .pdf</code>) list any of them; <code>-.tmp</code> leaves a type out. A file type on its own lists the newest first; with other words, as in <code>budget .xlsx</code>, the words decide the order.</li>
+              <li>A leading <code>-word</code> leaves out anything matching that word.</li>
+              <li>A file type lists only that type: <code>.pdf</code>, or just <code>pdf</code> for the common document, image, audio and video types. Several (<code>.docx .pdf</code>) list any of them, and <code>-pdf</code> leaves a type out. A file type on its own lists the newest first; with other words, as in <code>budget xlsx</code>, the words decide the order. Words such as <code>map</code>, <code>log</code> and <code>key</code> stay words, so &quot;causal map&quot; is not a search for .map files.</li>
+              <li><code>^word</code> matches only where a word starts: <code>^map</code> finds <code>map.json</code> and <code>old map.md</code> but not <code>roadmap.txt</code>. The <code>/</code> command <strong>Word starts only</strong> does the same for every word.</li>
+              <li>Everything&#39;s own syntax works as it does in Everything: <code>a|b</code>, <code>!word</code>, <code>&quot;exact phrase&quot;</code>, the <code>*</code> and <code>?</code> wildcards (which match the whole name), <code>ext:</code>, <code>dm:today</code>, <code>size:&gt;1mb</code>, <code>regex:</code>, <code>path:</code>, <code>parent:</code>, <code>nopath:</code>, <code>wfn:</code>, <code>case:</code>, <code>startwith:</code> and <code>&lt;grouping&gt;</code>. See <a href="https://www.voidtools.com/support/everything/searching/">Everything searching</a>.</li>
               </ul>
               <h3>📊 How the list is ordered</h3>
               <ul>
-              <li>The smart order puts rows whose <strong>name</strong> matches above rows that match only in the <strong>path</strong>. Within the name, a whole word ranks highest, then a match at the start of a word, then one at the end of a word, then one inside a word (<code>map</code> finds <code>old map</code>, <code>mapping</code>, <code>roadmap</code>, then <code>xmapx</code>). After that it favours recent changes, starred items and things you open often. The <code>/</code> sort commands switch to date or name order.</li>
-              <li>The defaults: <strong>Match path</strong> on, and system files and anything under <code>AppData\Local\Temp</code> left out. The faint options button at the right of the box and the <code>/</code> commands change each of them.</li>
-              <li>Runner ranks the 300 newest matches of each search, plus every name match and starred item it can find. When a search finds more, the status line says how many it ranked out of how many it found; type more to narrow it, or sort by date and scroll to page through them all.</li>
+              <li>The smart order puts rows whose <strong>name</strong> matches above rows that match only in the <strong>path</strong>. Within the name, a whole word ranks highest, then a match at the start of a word, then one at the end of a word, then one inside a word (<code>map</code> finds <code>old map</code>, <code>mapping</code>, <code>roadmap</code>, then <code>xmapx</code>). After that it favours recent changes, starred items and things you open often, and it puts anything under an <code>AppData</code> folder lower down, unless you are in an AppData folder or typed &quot;appdata&quot;. The <code>/</code> sort commands switch to date or name order.</li>
+              <li>The defaults: <strong>Match path</strong> on, and system files and anything under <code>AppData\Local\Temp</code> left out. The faint options button at the right of the box and the <code>/</code> commands change each of them. Anything that differs from the defaults shows as a chip under the box, and its × puts the default back.</li>
+              <li>Runner ranks the 300 newest matches of each search, plus the 300 newest whose name matches, the names that are exactly what you typed, and every starred item it can find. When a search finds more, the status line says how many it ranked out of how many it found; type more to narrow it, or sort by date and scroll to page through them all.</li>
               </ul>
 
             </div>
@@ -330,8 +330,10 @@ Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when
           </div>
           <div class="tab-pane fade" id="help-pane-shortcuts" role="tabpanel" aria-labelledby="help-tab-shortcuts">
             <div class="help-md">
+              <p class="mb-2 mt-3"><strong>These are the Classic layout's keys.</strong> The Runner layout has its own, listed on the 🏃 Runner tab.</p>
+              
               <p class="text-muted mb-2 mt-3">Most shortcuts are disabled while a dialog is open. Bare-letter shortcuts work only outside text fields. Checked rows are the bulk selection. Repeating sort keys toggles direction; in <strong>Tree</strong>, sort keys switch to <strong>Flat</strong> first. <kbd>Esc</kbd> clears the query; with an empty query in the search box, it clears the current folder.</p>
-
+              
               <h5 class="help-md-section-title">Search &amp; view</h5>
               <div class="table-responsive">
               <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
@@ -352,7 +354,7 @@ Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when
               <tr><td><kbd>m</kbd> / <kbd>Ctrl</kbd>+<kbd>M</kbd></td><td>Sort by modified</td></tr>
               <tr><td><kbd>n</kbd> / <kbd>Ctrl</kbd>+<kbd>N</kbd></td><td>Sort by name</td></tr>
               </tbody></table></div>
-
+              
               <h5 class="help-md-section-title">Navigation</h5>
               <div class="table-responsive">
               <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
@@ -372,7 +374,7 @@ Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when
               <tr><td><kbd>Ctrl</kbd>+<kbd>Tab</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd></td><td>Next / previous result tab</td></tr>
               <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>W</kbd></td><td>New / close result tab</td></tr>
               </tbody></table></div>
-
+              
               <h5 class="help-md-section-title">Selection &amp; file operations</h5>
               <div class="table-responsive">
               <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
@@ -390,7 +392,7 @@ Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when
               <tr><td><kbd>Shift</kbd>+<kbd>T</kbd></td><td>Remove tags from checked items</td></tr>
               <tr><td><kbd>Ctrl</kbd>+<kbd>H</kbd></td><td>Bulk rename with wildcards</td></tr>
               </tbody></table></div>
-
+              
               <h5 class="help-md-section-title">Favourites &amp; app</h5>
               <div class="table-responsive">
               <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>

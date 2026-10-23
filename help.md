@@ -138,20 +138,22 @@ Three icon-pair switches next to the search box — combine them freely:
 
 ### ⌨️ Keys
 
-- Type to search. With the box empty you see the current folder's own contents; once you type, the search covers everything below it.
-- `↑` / `↓` move the selection without leaving the box; `Enter` opens the selected row.
-- `→` at the end of the box goes into the selected folder; `←` at the start goes up to the parent folder and selects the folder you came from. Both clear the box. `Backspace` in an empty box drops the folder and searches everywhere.
-- With no text selected in the box, `Ctrl`+`C` and `Ctrl`+`X` copy or cut the selected files for pasting in Explorer, and `Ctrl`+`Shift`+`C` copies their full paths as text. `Ctrl`+`V` pastes copied files, or a screenshot, into the current folder, and pastes text into the box. With text selected, these keys act on the text as usual.
-- `/` opens the command list wherever you are in the box, and whatever you have typed stays there: sort, system files, temp files, folders or files only, match path, modified time, refresh, dark mode, Settings and Classic. Type after the slash to filter it, `Enter` runs a command and leaves your search text as it was, `Esc` closes it.
-- `Ctrl`+`D` stars or unstars the selected row. Stars are the same list as **Favourite folders**.
-- A leading `-word` excludes anything matching that word.
-- A file type with its dot, such as `.pdf`, lists only that type, and several (`.docx .pdf`) list any of them; `-.tmp` leaves a type out. A file type on its own lists the newest first; with other words, as in `budget .xlsx`, the words decide the order.
+Type to search. With the box empty you see the current folder's own contents; once you type, the search covers everything below it. This list is drawn from the same table Runner's keys are read from, so it always matches them; `?` in an empty box opens it.
+
+<div id="runnerKeysTable"></div>
+
+### 🔎 What you can type
+
+- A leading `-word` leaves out anything matching that word.
+- A file type lists only that type: `.pdf`, or just `pdf` for the common document, image, audio and video types. Several (`.docx .pdf`) list any of them, and `-pdf` leaves a type out. A file type on its own lists the newest first; with other words, as in `budget xlsx`, the words decide the order. Words such as `map`, `log` and `key` stay words, so "causal map" is not a search for .map files.
+- `^word` matches only where a word starts: `^map` finds `map.json` and `old map.md` but not `roadmap.txt`. The `/` command **Word starts only** does the same for every word.
+- Everything's own syntax works as it does in Everything: `a|b`, `!word`, `"exact phrase"`, the `*` and `?` wildcards (which match the whole name), `ext:`, `dm:today`, `size:>1mb`, `regex:`, `path:`, `parent:`, `nopath:`, `wfn:`, `case:`, `startwith:` and `<grouping>`. See [Everything searching](https://www.voidtools.com/support/everything/searching/).
 
 ### 📊 How the list is ordered
 
-- The smart order puts rows whose **name** matches above rows that match only in the **path**. Within the name, a whole word ranks highest, then a match at the start of a word, then one at the end of a word, then one inside a word (`map` finds `old map`, `mapping`, `roadmap`, then `xmapx`). After that it favours recent changes, starred items and things you open often. The `/` sort commands switch to date or name order.
-- The defaults: **Match path** on, and system files and anything under `AppData\Local\Temp` left out. The faint options button at the right of the box and the `/` commands change each of them.
-- Runner ranks the 300 newest matches of each search, plus every name match and starred item it can find. When a search finds more, the status line says how many it ranked out of how many it found; type more to narrow it, or sort by date and scroll to page through them all.
+- The smart order puts rows whose **name** matches above rows that match only in the **path**. Within the name, a whole word ranks highest, then a match at the start of a word, then one at the end of a word, then one inside a word (`map` finds `old map`, `mapping`, `roadmap`, then `xmapx`). After that it favours recent changes, starred items and things you open often, and it puts anything under an `AppData` folder lower down, unless you are in an AppData folder or typed "appdata". The `/` sort commands switch to date or name order.
+- The defaults: **Match path** on, and system files and anything under `AppData\Local\Temp` left out. The faint options button at the right of the box and the `/` commands change each of them. Anything that differs from the defaults shows as a chip under the box, and its × puts the default back.
+- Runner ranks the 300 newest matches of each search, plus the 300 newest whose name matches, the names that are exactly what you typed, and every starred item it can find. When a search finds more, the status line says how many it ranked out of how many it found; type more to narrow it, or sort by date and scroll to page through them all.
 
 <!-- help:tab {"id":"files-folders","label":"📁 Files & folders"} -->
 
@@ -254,6 +256,8 @@ Things that might trip you up:
    In **Settings**, under **Connection to Everything Search**, use the same URL. Default: `http://127.0.0.1:8080`. If you set HTTP auth in Everything, enter the same username/password here. Optional: under **Search only inside one folder**, choose one main folder to keep searches narrower.
 
 <!-- help:tab {"id":"shortcuts","label":"⌨️ Shortcuts","format":"html"} -->
+
+<p class="mb-2 mt-3"><strong>These are the Classic layout's keys.</strong> The Runner layout has its own, listed on the 🏃 Runner tab.</p>
 
 <p class="text-muted mb-2 mt-3">Most shortcuts are disabled while a dialog is open. Bare-letter shortcuts work only outside text fields. Checked rows are the bulk selection. Repeating sort keys toggles direction; in <strong>Tree</strong>, sort keys switch to <strong>Flat</strong> first. <kbd>Esc</kbd> clears the query; with an empty query in the search box, it clears the current folder.</p>
 

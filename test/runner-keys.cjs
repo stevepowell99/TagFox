@@ -9,7 +9,10 @@
 //   - Ctrl+L lists recent folders under the box and Enter goes to the one typed;
 //   - Ctrl held alone numbers the rows on screen and Ctrl+2 opens the second;
 //   - PageDown, Ctrl+End and Ctrl+Home move by a page, to the end and back;
-//   - Tab goes into the selected folder and Shift+Tab back up;
+//   - Tab and Shift+Tab move between the box and the list, as in Everything, and Space in the list toggles
+//     the row's check; Right and Left still go into a folder and back;
+//   - Alt+P hides and shows the Viewer; ? in an empty box opens Help at Runner's keys, drawn from the table;
+//   - Alt+Home clears the text, the folder and every filter;
 //   - Ctrl+M sorts by date and again back to smart; Ctrl+Tab says tabs are Classic's;
 //   - F1 opens Help on Runner's own tab;
 //   - an AppData file ranks below an equally named file elsewhere;
@@ -211,16 +214,50 @@ async function main() {
     s = await R();
     check(norm(s.selected) === norm(s.rows[0]) && s.focusInBox, 'Ctrl+Home selects the first row, and the box keeps the focus');
 
-    // Tab into the selected folder, Shift+Tab back up.
+    // Tab between the box and the list, as in Everything; Space in the list checks the row.
     const first = s.selected;
     await key('Tab', 'Tab', 9);
-    await drv.settle('tab');
     s = await R();
-    check(norm(s.scope) === norm(first) && s.focusInBox, `Tab goes into the selected folder (scope ${path.basename(s.scope)})`);
+    check(s.focusInList && norm(s.selected) === norm(first), 'Tab moves the focus to the list, keeping the selection');
+    await key('ArrowDown', 'ArrowDown', 40);
+    const before = (await R()).checked;
+    await key(' ', 'Space', 32, 0, ' ');
+    s = await R();
+    check(s.focusInList && s.checked === before - 1 && s.query === '', `Space in the list unchecks the selected row (${before} then ${s.checked} checked, box "${s.query}")`);
+    await key(' ', 'Space', 32, 0, ' ');
+    check((await R()).checked === before, 'and checks it again');
     await key('Tab', 'Tab', 9, 8);
-    await drv.settle('shift tab');
     s = await R();
-    check(norm(s.scope) === norm(many) && norm(s.selected) === norm(first), 'Shift+Tab goes back up and selects the folder it came from');
+    check(s.focusInBox, 'Shift+Tab goes back to the box');
+    // Into a folder and back with the arrows still works from the box.
+    await key('ArrowRight', 'ArrowRight', 39);
+    await drv.settle('right');
+    s = await R();
+    const into = s.scope;
+    await key('ArrowLeft', 'ArrowLeft', 37);
+    await drv.settle('left');
+    s = await R();
+    check(norm(into) !== norm(many) && norm(s.scope) === norm(many), `Right goes into the folder and Left back up (${path.basename(into)})`);
+
+    // Alt+P hides and shows the Viewer.
+    const viewerShown = () => drv.ev(`getComputedStyle(document.getElementById('propsAside')).display !== 'none'`);
+    check(await viewerShown(), 'set up: the Viewer is showing');
+    await letter('p', 1);
+    s = await R();
+    check(s.viewerOff && !(await viewerShown()), 'Alt+P hides the Viewer');
+    await letter('p', 1);
+    s = await R();
+    check(!s.viewerOff && (await viewerShown()), 'Alt+P again shows it');
+
+    // ? in an empty box: Help at Runner's keys, drawn from the key table.
+    await drv.T('setQuery', '');
+    await focusBox();
+    await key('?', 'Slash', 191, 8, '?');
+    await sleep(500);
+    const keysHelp = await drv.ev(`(() => { const t = document.getElementById('runnerKeysTable'); const tab = document.querySelector('#helpModalTabs .nav-link.active')?.dataset.helpTab; return { tab, rows: t ? t.querySelectorAll('tbody tr').length : 0, altP: !!t && /Alt\\+P/.test(t.textContent.replace(/\\s+/g, '')) }; })()`);
+    check(keysHelp.tab === 'runner' && keysHelp.rows > 20 && keysHelp.altP, `? opens Help at Runner's keys (${JSON.stringify(keysHelp)})`);
+    await drv.ev(`bootstrap.Modal.getInstance(document.getElementById('helpModal'))?.hide(); 1`);
+    await sleep(500);
 
     // Classic-only keys are answered, not obeyed.
     const tabsBefore = s.tabs;
@@ -245,6 +282,16 @@ async function main() {
     await go(appDir, 'apdx' + tag);
     s = await R();
     check(norm(s.rows[0]) === norm(appFile), 'inside an AppData folder nothing is pushed down');
+
+    // Alt+Home starts again: no text, no folder, no filters.
+    await go(alpha, 'qq');
+    await focusBox();
+    await letter('m', 2);
+    await drv.settle('sort for alt home');
+    await key('Home', 'Home', 36, 1);
+    await drv.settle('alt home');
+    s = await R();
+    check(s.query === '' && !s.scope && !s.chips.length && s.sort === 'smart', `Alt+Home clears the text, the folder and the filters (${s.chips.join(', ')})`);
 
     // Esc: text, folder, then hide.
     await go(alpha, 'qq');

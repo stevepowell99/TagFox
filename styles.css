@@ -3308,6 +3308,10 @@ body.tagfox-runner #propsAside {
   width: 33.333% !important;
   flex: 0 0 33.333%;
 }
+/* Alt+P: the list takes the whole width. */
+body.tagfox-runner.tagfox-runner-viewer-off #propsAside {
+  display: none !important;
+}
 [data-bs-theme="dark"] .tagfox-runner-cmd:hover,
 [data-bs-theme="dark"] .tagfox-runner-cmd.tagfox-runner-cmd--active {
   background-color: #312e81;
