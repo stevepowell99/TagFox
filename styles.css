@@ -3303,8 +3303,8 @@ body.tagfox-runner #statusMain {
 .tagfox-runner-viewer-path:hover {
   color: var(--runner-ink, var(--bs-body-color));
 }
-/* Viewer: the right third. */
-body.tagfox-runner #propsAside {
+/* Viewer: the right third, unless Shift+Space has expanded it. */
+body.tagfox-runner #propsAside:not(.props-theater) {
   width: 33.333% !important;
   flex: 0 0 33.333%;
 }
@@ -3317,3 +3317,43 @@ body.tagfox-runner.tagfox-runner-viewer-off #propsAside {
   background-color: #312e81;
 }
 /* ─── End Runner layout ─── */
+
+/* ─── Settings → Hide the window's title bar (body.tagfox-frameless) ───
+   Windows draws only its window buttons, over the top right of the page (main.js titleBarOverlay), so the
+   page's top strip is the drag handle and nothing clickable may sit under those buttons.
+   env(titlebar-area-*) is the part of the top strip the buttons leave free, in CSS pixels, so it follows the
+   page zoom. The body is .app-shell, whose ::before is the 3px gradient, so the drag strip is ::after. */
+body.tagfox-frameless {
+  --tagfox-titlebar-h: env(titlebar-area-height, 34px);
+  --tagfox-window-buttons-w: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 140px)));
+}
+body.tagfox-frameless .tagfox-app-header {
+  -webkit-app-region: drag;
+  min-height: var(--tagfox-titlebar-h);
+  padding-right: calc(var(--tagfox-window-buttons-w) + 0.5rem) !important;
+}
+body.tagfox-frameless .tagfox-app-header :is(button, a, input, select, label, textarea, .dropdown, .dropdown-menu, .btn-group, .input-group, [role="button"], [tabindex]) {
+  -webkit-app-region: no-drag;
+}
+/* Runner has no header: an empty strip above everything is the handle. */
+body.tagfox-frameless.tagfox-runner {
+  padding-top: var(--tagfox-titlebar-h);
+}
+body.tagfox-frameless.tagfox-runner::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: var(--tagfox-window-buttons-w);
+  height: var(--tagfox-titlebar-h);
+  -webkit-app-region: drag;
+  z-index: 1;
+}
+body.tagfox-frameless.tagfox-runner .center-panel {
+  padding-top: 0.35rem;
+}
+/* The expanded Viewer starts below the strip, or its header buttons sit under the window buttons. */
+body.tagfox-frameless #propsAside.props-theater {
+  top: var(--tagfox-titlebar-h);
+  height: calc(100vh - var(--tagfox-titlebar-h)) !important;
+}

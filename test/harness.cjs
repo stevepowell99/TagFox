@@ -23,6 +23,8 @@ const SCOPES = {
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const HOOK_WAIT_MS = 45000;
+const HOOK_SLOW_MS = 5000;
 const httpGet = (url, timeoutMs = 2000) =>
   new Promise((resolve, reject) => {
     const req = http.get(url, (res) => { let d = ''; res.on('data', (c) => (d += c)); res.on('end', () => resolve(d)); });
@@ -77,13 +79,18 @@ function makeCdp(wsUrl) {
 
 // Launch Electron (isolated profile + remote debugging), load the app with the #tagfoxtest hook, and
 // return a driver. Each test passes a unique port + profile so runs do not collide.
-async function connect({ port, profile, maxResults = 60, scope = SCOPES.repo, disableAutofill = true } = {}) {
+// profileFiles: { name: text } written into the fresh profile before launch, for settings main reads at startup.
+async function connect({ port, profile, maxResults = 60, scope = SCOPES.repo, disableAutofill = true, profileFiles = {} } = {}) {
   if (!port || !profile) throw new Error('connect needs { port, profile }');
   const baseUrl = await resolveEverythingUrl();
   const userData = path.join(os.tmpdir(), profile);
   // Wipe the profile so every run starts fresh (deterministic startup: no tabsState/settings carried
   // over from a prior run — otherwise e.g. persisted tabs would break the "1 tab at startup" assertion).
   try { fs.rmSync(userData, { recursive: true, force: true }); } catch (_) {}
+  for (const [name, text] of Object.entries(profileFiles)) {
+    fs.mkdirSync(userData, { recursive: true });
+    fs.writeFileSync(path.join(userData, name), text, 'utf8');
+  }
   // TAGFOX_TEST_HIDDEN keeps the window offscreen (never shown) so test runs do not flash up onscreen;
   // the hidden window still renders and drives through the #tagfoxtest hook over CDP.
   const child = spawn(ELECTRON, [APP_DIR, `--remote-debugging-port=${port}`, `--user-data-dir=${userData}`], {
@@ -108,10 +115,23 @@ async function connect({ port, profile, maxResults = 60, scope = SCOPES.repo, di
   const diag = () => ev('window.__tagfoxTest.diag()');
 
   // reload with the hook hash; this also re-runs the dual-pane startup dance
+  // The hook is up in about 1s, but a machine busy with other Electron starts has taken over 12s, which
+  // failed whole test files before any check ran. So wait long, say when a start was slow, and on a real
+  // timeout report what the page was doing, so a loaded machine and a broken renderer read differently.
   await ev("location.hash = '#tagfoxtest'; location.reload(); 1");
+  const hookT0 = Date.now();
   let ok = false;
-  for (let i = 0; i < 80; i++) { try { if (await ev("typeof window.__tagfoxTest === 'object' && !!window.__tagfoxTest")) { ok = true; break; } } catch (_) {} await sleep(150); }
-  if (!ok) throw new Error('#tagfoxtest hook never appeared (renderer load failed?)');
+  while (Date.now() - hookT0 < HOOK_WAIT_MS) {
+    try { if (await ev("typeof window.__tagfoxTest === 'object' && !!window.__tagfoxTest")) { ok = true; break; } } catch (_) {}
+    await sleep(150);
+  }
+  const hookMs = Date.now() - hookT0;
+  if (!ok) {
+    let page = 'page unreachable';
+    try { page = JSON.stringify(await ev("({ href: location.href, readyState: document.readyState })")); } catch (_) {}
+    throw new Error(`#tagfoxtest hook never appeared after ${hookMs}ms (${page}); Electron stderr tail: ${stderr.slice(-600) || '(empty)'}`);
+  }
+  if (hookMs > HOOK_SLOW_MS) console.log(`(slow start: the test hook took ${hookMs}ms to appear)`);
 
   if (disableAutofill) await T('disableAutofill'); // headless viewport makes autofill page count nondeterministic
   await T('configure', { baseUrl, rootFolder: scope, maxResults });
@@ -131,7 +151,7 @@ async function connect({ port, profile, maxResults = 60, scope = SCOPES.repo, di
   };
 
   const close = () => { try { cdp.close(); } catch (_) {} try { child.kill('SIGKILL'); } catch (_) {} };
-  return { baseUrl, ev, T, state, diag, settle, send: cdp.send, stderr: () => stderr, close };
+  return { baseUrl, userData, ev, T, state, diag, settle, send: cdp.send, stderr: () => stderr, close };
 }
 
 // Standard structural invariants every settled state must satisfy. Returns an array of problem strings.

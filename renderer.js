@@ -3501,8 +3501,10 @@
          the start of the name. So a whole word scores 0.75, the start of a word 0.6, the end of one 0.55
          and the middle 0.4; `exact` is the whole name without its extension. */
       matchKind: Object.freeze({ exact: 1, inside: 0.4, wordStart: 0.2, wordEnd: 0.15, nameStart: 0.1, path: 0 }),
-      /* Modified just now; decays with a time constant of recencyDays. */
-      recency: 30,
+      /* Modified just now; decays with a time constant of recencyDays. Kept below a whole word's lead over an
+         inside-word match (37.5 against 20), so an old file named for the word beats today's file that only
+         contains it (Steve, October 2026; pinned by test/runner-layout.cjs). */
+      recency: 15,
       recencyDays: 14,
       star: 35,
       /* Opened or visited in TagFox; saturates at useSaturates times. */
@@ -3625,6 +3627,7 @@
       await runSearchNow('identity');
       saveActiveTabStateFromUi();
       focusQueryBox(false);
+      syncTitleBarOverlayColors();
     }
 
     /** A typed file type: `.pdf` or `*.pdf`, or `-.tmp` to leave one out. */
@@ -4405,23 +4408,20 @@
       panel.removeAttribute('hidden');
     }
 
-    /** One list under the box serves the / commands and Ctrl+L's recent folders, filtered by what is typed.
-        Commands: the box keeps its search text, then " /" and the filter. Folders: the whole box is the
-        filter. The search text alone comes back on close, and the search does not re-run while it is open. */
+    /** The / list: the box keeps its search text, then " /" and the filter; the search text alone comes
+        back on close. The search does not re-run while the list is open. */
     let runnerCmdStash = null;
     let runnerCmdPrefix = '/';
-    let runnerCmdSource = 'commands';
     let runnerCmdActive = 0;
     let runnerCmdMatches = [];
     function runnerCmdListIsOpen() {
       return runnerCmdStash !== null;
     }
-    function openRunnerCmdList(stash, source = 'commands') {
+    function openRunnerCmdList(stash) {
       const q = document.getElementById('query');
       runnerCmdStash = String(stash || '');
-      runnerCmdSource = source;
       const term = runnerCmdStash.replace(/\s+$/, '');
-      runnerCmdPrefix = source === 'folders' ? '' : term ? term + ' /' : '/';
+      runnerCmdPrefix = term ? term + ' /' : '/';
       q.value = runnerCmdPrefix;
       q.setSelectionRange(q.value.length, q.value.length);
       syncQueryGhostUi();
@@ -4438,35 +4438,19 @@
       runnerCmdStash = null;
       document.getElementById('runnerCmdList')?.classList.add('d-none');
     }
-    /** What the list offers, each with a label and a run(). */
-    function runnerCmdItems() {
-      if (runnerCmdSource !== 'folders') return RUNNER_COMMANDS;
-      return loadScopeFolderHistory().map((fp) => ({
-        id: fp,
-        label: fp,
-        run: () => void runnerNavigate(() => applySearchScopeAndRefresh(normalizeFolderPathForEverything(fp)), null),
-      }));
-    }
     function renderRunnerCmdList() {
       const el = document.getElementById('runnerCmdList');
       const q = document.getElementById('query');
       if (!el || !q) return;
       const v = String(q.value || '');
       const filter = v.startsWith(runnerCmdPrefix) ? v.slice(runnerCmdPrefix.length).trim() : '';
-      runnerCmdMatches = runnerCmdItems()
+      runnerCmdMatches = RUNNER_COMMANDS
         .map((cmd, i) => ({ cmd, i, s: filter ? fuzzyPathScore(filter, cmd.label) : 0 }))
         .filter((m) => m.s !== null)
         .sort((a, b) => b.s - a.s || a.i - b.i)
         .map((m) => m.cmd);
       if (runnerCmdActive >= runnerCmdMatches.length) runnerCmdActive = Math.max(0, runnerCmdMatches.length - 1);
       el.textContent = '';
-      const folders = runnerCmdSource === 'folders';
-      if (folders) {
-        const h = document.createElement('div');
-        h.className = 'tagfox-runner-cmd-group';
-        h.textContent = 'Recent folders: type to filter, Enter goes there';
-        el.appendChild(h);
-      }
       runnerCmdMatches.forEach((cmd, i) => {
         const b = runnerCmdButton(cmd, i === runnerCmdActive);
         b.dataset.idx = String(i);
@@ -4475,7 +4459,7 @@
       if (!runnerCmdMatches.length) {
         const none = document.createElement('div');
         none.className = 'px-3 py-1 text-muted small';
-        none.textContent = !folders ? 'No command matches.' : filter ? 'No recent folder matches.' : 'No recent folders yet.';
+        none.textContent = 'No command matches.';
         el.appendChild(none);
       }
       el.classList.remove('d-none');
@@ -4652,16 +4636,6 @@
       { group: 'Search', keys: ['?'], does: 'This list of keys, with the box empty', when: (c) => c.inBox && c.empty && c.key === '?', run: () => openRunnerKeysHelp() },
       {
         group: 'Search',
-        keys: ['Ctrl+L'],
-        does: 'Recent folders, filtered as you type; Enter goes there',
-        when: (c) => c.ctrl('l'),
-        run: (c) => {
-          openRunnerCmdList(c.q.value, 'folders');
-          focusQueryBox(false);
-        },
-      },
-      {
-        group: 'Search',
         keys: ['F3', 'Ctrl+F', 'Alt+D'],
         does: 'Back to the box, with its text selected',
         when: (c) => (c.plain && c.key === 'F3') || c.ctrl('f') || (c.alt && !c.mod && !c.shift && c.k === 'd'),
@@ -4813,7 +4787,9 @@
       { group: 'TagFox', keys: ['F1'], does: 'Help', when: (c) => c.plain && c.key === 'F1', run: () => 'classic' },
       { group: 'TagFox', keys: ['Ctrl+,'], does: 'Settings', when: (c) => c.ctrl(','), run: () => 'classic' },
 
-      /* Classic keys for parts Runner does not show: answered, not obeyed. */
+      /* Classic keys for parts Runner does not show: answered, or (Ctrl+L, whose recent folders Runner leaves
+         to the smart order's use boost) kept from opening a menu nobody can see. */
+      { when: (c) => c.ctrl('l'), run: () => {} },
       { when: (c) => c.mod && !c.alt && c.key === 'Tab', run: () => setStatusMain('Result tabs are only in the Classic layout.') },
       { when: (c) => c.mod && c.shift && !c.alt && (c.k === 't' || c.k === 'w'), run: () => setStatusMain('Result tabs are only in the Classic layout.') },
       {
@@ -20077,6 +20053,55 @@
       void step(saved);
     })();
 
+    /** Settings → Hide the window's title bar. The window's frame is fixed when it is created (main.js
+        loadWindowChrome), so the box shows the saved setting and a Restart button appears when it differs from
+        what this window was created with. */
+    let windowChromeState = null;
+    async function initWindowChrome() {
+      const cb = document.getElementById('optHideTitleBar');
+      const restart = document.getElementById('btnRestartForTitleBar');
+      try {
+        windowChromeState = await window.tagBrowser.windowChromeGet();
+      } catch (_) {
+        windowChromeState = null;
+      }
+      if (!windowChromeState) {
+        cb?.closest('.col-12')?.classList.add('d-none');
+        return;
+      }
+      if (cb) cb.checked = !!windowChromeState.hideTitleBar;
+      document.body.classList.toggle('tagfox-frameless', !!windowChromeState.active);
+      syncTitleBarOverlayColors();
+      cb?.addEventListener('change', async () => {
+        const r = await window.tagBrowser.windowChromeSet(cb.checked);
+        if (!r || !r.ok) {
+          setStatusMain('Could not save the title bar setting: ' + ((r && r.error) || 'unknown error'));
+          return;
+        }
+        windowChromeState.hideTitleBar = cb.checked;
+        restart?.classList.toggle('d-none', cb.checked === !!windowChromeState.active);
+        syncTitleBarOverlayColors();
+      });
+      restart?.addEventListener('click', () => void window.tagBrowser.restartTagFox());
+    }
+
+    function cssColorToHex(c) {
+      const m = /rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)(?:[\s,/]+([\d.]+))?/i.exec(String(c || ''));
+      if (!m || (m[4] != null && Number(m[4]) === 0)) return '';
+      return '#' + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, '0')).join('');
+    }
+
+    /** The window buttons take the colours of whatever page sits under them: Runner's strip or Classic's
+        header, light or dark. */
+    function syncTitleBarOverlayColors() {
+      if (!windowChromeState || (!windowChromeState.active && !windowChromeState.hideTitleBar)) return;
+      let el = document.elementFromPoint(Math.max(0, window.innerWidth - 12), 8) || document.body;
+      let bg = '';
+      while (el && !(bg = cssColorToHex(getComputedStyle(el).backgroundColor))) el = el.parentElement;
+      const fg = cssColorToHex(getComputedStyle(document.body).color);
+      if (bg && fg) void window.tagBrowser.windowChromeColors({ color: bg, symbolColor: fg });
+    }
+
     /* Dark / light mode: apply saved preference, wire toggle button */
     (function initDarkMode() {
       const html = document.documentElement;
@@ -20086,8 +20111,10 @@
         const isDark = html.getAttribute('data-bs-theme') === 'dark';
         if (isDark) { html.removeAttribute('data-bs-theme'); localStorage.setItem(LS.darkMode, '0'); }
         else { html.setAttribute('data-bs-theme', 'dark'); localStorage.setItem(LS.darkMode, '1'); }
+        syncTitleBarOverlayColors();
       });
     })();
+    void initWindowChrome();
 
     seedSearchHistoryFromCurrent();
     bindVerticalSplitters();

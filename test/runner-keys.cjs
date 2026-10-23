@@ -6,7 +6,7 @@
 //     row that was selected before;
 //   - typing with the focus off the box goes into the box instead of firing Classic's letter shortcuts;
 //   - a held Backspace that runs past the text keeps the folder, while a fresh press drops it;
-//   - Ctrl+L lists recent folders under the box and Enter goes to the one typed;
+//   - Ctrl+L, Classic's recent-folders menu, opens nothing in Runner;
 //   - Ctrl held alone numbers the rows on screen and Ctrl+2 opens the second;
 //   - PageDown, Ctrl+End and Ctrl+Home move by a page, to the end and back;
 //   - Tab and Shift+Tab move between the box and the list, as in Everything, and Space in the list toggles
@@ -169,20 +169,16 @@ async function main() {
     await drv.settle('backspace fresh');
     check(!(await R()).scope, 'a fresh Backspace in the empty box drops the folder');
 
-    // Ctrl+L: recent folders in the list under the box.
-    await drv.ev(`localStorage.setItem('tagBrowserScopeFolderHist', ${JSON.stringify(JSON.stringify([alpha, many, root]))}); 1`);
+    // Ctrl+L is Classic's recent-folders menu; Runner leaves it unbound, so nothing opens, seen or unseen.
     await go(root);
     await focusBox();
     await letter('l', 2);
     s = await R();
-    const entries = await drv.ev(`Array.from(document.querySelectorAll('#runnerCmdList .tagfox-runner-cmd')).map((b) => b.textContent.trim())`);
-    check(s.cmdListOpen && entries.length === 3, `Ctrl+L lists the recent folders under the box (${entries.length})`);
-    await drv.send('Input.insertText', { text: 'many' });
-    await sleep(150);
-    await key('Enter', 'Enter', 13, 0, '\r');
-    await drv.settle('ctrl l enter');
-    s = await R();
-    check(norm(s.scope) === norm(many) && !s.cmdListOpen && s.query === '', `typing filters them and Enter goes there (scope ${path.basename(s.scope)})`);
+    const menuOpen = await drv.ev(`!!document.querySelector('.dropdown-menu.show')`);
+    check(!s.cmdListOpen && !menuOpen && s.focusInBox, `Ctrl+L opens nothing in Runner (list ${s.cmdListOpen}, menu ${menuOpen})`);
+    await drv.T('configure', { rootFolder: many });
+    await drv.T('runSearchNow', 'identity');
+    await drv.settle('many');
 
     // Ctrl held alone numbers the rows; Ctrl+2 opens the second (all folders here, so nothing launches).
     await waitRows((x) => x.rows.length >= 40, 'many');

@@ -135,6 +135,7 @@ Three icon-pair switches next to the search box — combine them freely:
 
 - **Settings → Toggle key opens: Runner** turns TagFox into one large search box with a ranked list below it and the Viewer on the right third. **Classic** (the default) is the full layout. The `/` command **Switch to the Classic layout** goes back.
 - Runner keeps its own search settings, so switching back and forth leaves Classic's view, filters and folder as they were.
+- **Settings → Hide the window's title bar** gives the list the space Windows' title bar and menu took, in either layout, from the next start. The minimise, maximise and close buttons stay at the top right; drag the window by the strip along the top.
 
 ### ⌨️ Keys
 
@@ -151,7 +152,7 @@ Type to search. With the box empty you see the current folder's own contents; on
 
 ### 📊 How the list is ordered
 
-- The smart order puts rows whose **name** matches above rows that match only in the **path**. Within the name, a whole word ranks highest, then a match at the start of a word, then one at the end of a word, then one inside a word (`map` finds `old map`, `mapping`, `roadmap`, then `xmapx`). After that it favours recent changes, starred items and things you open often, and it puts anything under an `AppData` folder lower down, unless you are in an AppData folder or typed "appdata". The `/` sort commands switch to date or name order.
+- The smart order puts rows whose **name** matches above rows that match only in the **path**. Within the name, a whole word ranks highest, then a match at the start of a word, then one at the end of a word, then one inside a word (`map` finds `old map`, `mapping`, `roadmap`, then `xmapx`). After that it favours recent changes, though never enough to lift a file that only contains the word above an older one named for it, starred items and things you open often, and it puts anything under an `AppData` folder lower down, unless you are in an AppData folder or typed "appdata". The `/` sort commands switch to date or name order.
 - The defaults: **Match path** on, and system files and anything under `AppData\Local\Temp` left out. The faint options button at the right of the box and the `/` commands change each of them. Anything that differs from the defaults shows as a chip under the box, and its × puts the default back.
 - Runner ranks the 300 newest matches of each search, plus the 300 newest whose name matches, the names that are exactly what you typed, and every starred item it can find. When a search finds more, the status line says how many it ranked out of how many it found; type more to narrow it, or sort by date and scroll to page through them all.
 

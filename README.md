@@ -46,6 +46,7 @@ If search feels slow, open **Advanced** and turn off **Folder-contents highlight
 - **Fast previews.** Images, PDFs, Word, Excel, PowerPoint, text, JSON, markdown and more in the Viewer panel. For a folder it shows a folder readme you can edit in place.
 - **Smart view.** The default layout adjusts which results you see relative to **Max results**, so you rarely touch the subfolder and file toggles by hand.
 - **Runner layout.** Settings, "Toggle key opens: Runner", turns the window into one large search box over a ranked list, with the Viewer on the right third: arrows to move, right and left to go into a folder and back up, `/` for commands, `Ctrl`+`D` to star. Name matches rank above path matches, then recent, starred and often-used items. Classic stays the default.
+- **Hide the window's title bar.** A Settings box, off by default, applied on the next start. Windows then draws only the minimise, maximise and close buttons, over the top right of the page, and you drag the window by its top strip (Runner) or its header row (Classic). Double-clicking there maximises and restores as before.
 - **Favourite folders and saved searches.** Bookmark a folder or a whole search, reorder by drag, and jump back with `Ctrl`+`1` to `9` (searches) or `Ctrl`+`Shift`+`1` to `9` (folders). These are your persistent bookmarks; tabs (below) are for throwaway working views.
 - **The Shelf.** A staging strip beside the results. Collect files from several folders, navigate elsewhere, then paste or drag them in. A clipboard for files that does not empty when you move.
 - **Bulk rename.** Check several files, press `Ctrl`+`H`, and use wildcards on the last path segment with a live preview.
@@ -127,6 +128,15 @@ Runner is a second layout of the same renderer, not a separate app: `body.tagfox
 - **Ranking.** Every weight is in `RUNNER_RANK` (`renderer.js`). `rankRowsForRunner` sorts first by how many query words the name contains, then by a score made of the match kind, recency, star and use counts. Use counts are the existing `fileFocusStats` and `folderFocusStats`, a boost and never a filter.
 - **Extra queries.** Everything returns rows in its own sort order, so a name match far down a large result set would never be seen. When Match path is on, a name-only query (`nopath:`) runs alongside the main one, and every starred or used path that could match is fetched by exact path in one more query; the rows are merged before ranking. Up to `pinTermsMax` paths, each is `nopath:wfn:"name" parent:"dir"` (`everythingExactPathTerm`), about 3.5ms a term on 2.4 million items, because `wfn:path:` makes Everything compare every item's full path at about 50ms a term; above that, one `filelist:` query, which costs 0.5 to 1s whatever its length. When the hits exceed what was ranked, the status line says so.
 - **Render window.** Runner draws `RUNNER_RENDER_PAGE` rows and grows the window as you scroll or arrow down, because the first layout of a results row costs about 1.6ms.
+
+### Hidden title bar
+
+A window's frame is fixed when it is created, so `main.js` reads `tagfox-window-chrome.json` (userData) in `createWindow` and, when `hideTitleBar` is set, creates the window with `titleBarStyle: 'hidden'` and a `titleBarOverlay`. The Settings box writes the file and shows **Restart now** when the saved choice differs from the running window.
+
+- **The page owns its drag handle.** `body.tagfox-frameless` makes the Classic header a drag region with its controls marked `no-drag`; Runner has no header, so `body::after` is a fixed strip the height of the title bar. It is `::after` because the body is `.app-shell`, whose `::before` is the 3px gradient.
+- **Sizes come from `env(titlebar-area-*)`**, which is in CSS pixels and so follows the page zoom; a constant in pixels would be wrong at any zoom but 100%. The same values keep the expanded Viewer below the strip, since its header buttons otherwise sit under the window buttons.
+- **The window buttons take the page's colours.** `syncTitleBarOverlayColors` reads the background under the top right corner and the body text colour after a theme or layout change, and main keeps them in the same file so the next start opens in them.
+- Guarded by `test/window-chrome.cjs`, which seeds the setting into a fresh profile.
 
 ### Search concurrency and result tabs
 
