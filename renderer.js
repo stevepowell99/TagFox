@@ -75,6 +75,8 @@
       runnerClassicStash: 'tagBrowserRunnerClassicStash',
       runnerSort: 'tagBrowserRunnerSort',
       runnerShowTemp: 'tagBrowserRunnerShowTemp',
+      runnerViewerOff: 'tagBrowserRunnerViewerOff',
+      runnerWordStarts: 'tagBrowserRunnerWordStarts',
     };
 
     /** One-time copy when upgrading from the old app name (everythang* keys). */
@@ -369,6 +371,8 @@
     let searchDebugNextScopedProbe = false;
     /** Incremented at each runSearch start; in-flight HTTP from an older id must not touch UI (overlapping debounced runs). */
     let searchRunSeq = 0;
+    /** The main query's text as sent to Everything, for the test hook. */
+    let lastMainSearchText = '';
     /** True while runSearch() awaits Everything (auto-refresh skips ticks to avoid overlap). */
     let searchInFlight = false;
     /** True while loadMoreResults() is fetching the next Everything page. */
@@ -3506,6 +3510,9 @@
       useSaturates: 20,
       lastUse: 10,
       lastUseDays: 30,
+      /* Taken off anything under an AppData folder (caches, logs, app state), unless the current folder is
+         inside AppData or the query names it. A ranking penalty, not a filter: such rows still come up. */
+      appData: 45,
       /* Every starred and used path that could match is fetched by one extra query. Up to this many, as
          name-plus-parent terms at about 3.5ms each; above it, as one `filelist:`, which costs 0.5-1s
          whatever its length (both measured on 2.4 million items, October 2026). */
@@ -3599,6 +3606,8 @@
       closeRunnerCmdList(false);
       setRunnerOptsPanelOpen(false);
       renderRunnerScopeChip();
+      renderRunnerFilterChips();
+      applyRunnerViewerOff();
     }
 
     /** Switch layouts (Settings select, the / command) and re-run the search in the new one. */
@@ -3620,16 +3629,48 @@
 
     /** A typed file type: `.pdf` or `*.pdf`, or `-.tmp` to leave one out. */
     const RUNNER_TYPE_WORD = /^([-!]?)\*?\.([\p{L}\p{N}]{1,12})$/u;
+    /** Extensions that also count without the dot (`pdf`, `-docx`), as Steve asked. Only document and media
+        types that are rarely ordinary words: `map`, `log`, `key` and `old` stay words, or "causal map" would
+        become a filter for .map files. */
+    const RUNNER_BARE_TYPES = new Set(
+      'pdf md qmd rmd txt rtf doc docx odt xls xlsx ods csv tsv ppt pptx odp gdoc gsheet gslides epub html htm json yaml yml xml ipynb py js ts ps1 sql png jpg jpeg gif svg webp heic mp3 m4a wav ogg flac mp4 mov webm mkv avi zip eml msg ics vcf bib tex'.split(' ')
+    );
+
+    /** A file-type token, typed with the dot or as a bare known extension: { not, ext }, else null. */
+    function runnerTypeToken(t) {
+      const m = RUNNER_TYPE_WORD.exec(t);
+      if (m) return { not: !!m[1], ext: m[2].toLowerCase() };
+      const b = /^([-!]?)([a-z0-9]{1,6})$/i.exec(t);
+      if (b && RUNNER_BARE_TYPES.has(b[2].toLowerCase())) return { not: !!b[1], ext: b[2].toLowerCase() };
+      return null;
+    }
+
+    /** A plain word Everything can be asked to find at a word start (no operators, wildcards or quotes). */
+    const RUNNER_PLAIN_WORD = /^[\p{L}\p{N}][\p{L}\p{N}._'-]*$/u;
+    /** `^word`, or every plain word when "Word starts only" is on: the word itself first, which keeps the
+        regex to the names that already contain it (0.1-0.6s cold, against 5.5-6.3s for the regex alone on
+        2.4 million items, October 2026), then the regex that wants a word boundary before it. `^` means
+        nothing to Everything outside regex:, so the box can use it. */
+    function runnerWordStartTerm(w) {
+      const esc = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return w + ' regex:"(?:^|[^\\p{L}\\p{N}])' + esc + '"';
+    }
+    function runnerWordStartsOnly() {
+      return localStorage.getItem(LS.runnerWordStarts) === '1';
+    }
 
     /** Google-style exclusion: a leading -word becomes Everything's !word. Typed file types become one
-        `ext:` filter (any of them) and one `!ext:` (none of them). */
+        `ext:` filter (any of them) and one `!ext:` (none of them). `^word` matches at word starts only. */
     function runnerQueryForEverything(q) {
       const out = [];
       const types = [];
       const notTypes = [];
+      const starts = runnerWordStartsOnly();
       for (const t of String(q || '').split(/\s+/).filter(Boolean)) {
-        const m = RUNNER_TYPE_WORD.exec(t);
-        if (m) (m[1] ? notTypes : types).push(m[2].toLowerCase());
+        const ty = runnerTypeToken(t);
+        if (ty) (ty.not ? notTypes : types).push(ty.ext);
+        else if (t.startsWith('^') && RUNNER_PLAIN_WORD.test(t.slice(1))) out.push(runnerWordStartTerm(t.slice(1)));
+        else if (starts && RUNNER_PLAIN_WORD.test(t)) out.push(runnerWordStartTerm(t));
         else out.push(t.replace(/^-(?=\S)/, '!'));
       }
       if (types.length) out.push('ext:' + types.join(';'));
@@ -3637,12 +3678,12 @@
       return out.join(' ');
     }
 
-    /** The file types a query asks for, from either the typed form (.pdf) or the Everything form (ext:pdf;md). */
+    /** The file types a query asks for, from either the typed form (.pdf, pdf) or Everything's (ext:pdf;md). */
     function runnerQueryTypes(q) {
       const types = [];
       for (const t of String(q || '').split(/\s+/)) {
-        const m = RUNNER_TYPE_WORD.exec(t);
-        if (m && !m[1]) types.push(m[2].toLowerCase());
+        const ty = runnerTypeToken(t);
+        if (ty && !ty.not) types.push(ty.ext);
         const e = /^ext:(.+)$/i.exec(t);
         if (e) types.push(...e[1].toLowerCase().split(';').filter(Boolean));
       }
@@ -3658,12 +3699,18 @@
       return runnerFoldAccents(s).toLowerCase();
     }
 
-    /** Lower-cased, accent-free words of the query that must match the name or path. Excluded words and
-        file types are filters, not name matches, so they are dropped. */
+    /** Everything modifiers that wrap a text term (`wfn:budget`): the text still counts as a name word. */
+    const RUNNER_TEXT_MODIFIERS =
+      /^(?:(?:case|nocase|ww|wholeword|nowholeword|path|nopath|wfn|wholefilename|nowfn|file|folder|diacritics|nodiacritics|startwith|endwith):)+/i;
+
+    /** Lower-cased, accent-free words of the query that must match the name or path. Excluded words, file
+        types and Everything functions (`dm:today`, `size:>1mb`, `regex:`, `parent:`) are filters, not name
+        words, so they are dropped; a text modifier (`wfn:`, `case:`) is dropped and its text kept. */
     function runnerQueryWords(q) {
       const kept = String(q || '')
         .split(/\s+/)
-        .filter((t) => t && !/^[-!]/.test(t) && !RUNNER_TYPE_WORD.test(t) && !/^ext:/i.test(t))
+        .map((t) => t.replace(/^[<>]+|[<>]+$/g, '').replace(RUNNER_TEXT_MODIFIERS, ''))
+        .filter((t) => t && !/^[-!]/.test(t) && !runnerTypeToken(t) && !/^[\p{L}_-]+:/u.test(t))
         .join(' ');
       return runnerFoldText(kept).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
     }
@@ -3731,6 +3778,8 @@
     }
 
     /** Smart order: rows with more query words in the name come first, then by score. */
+    const RUNNER_APPDATA_RE = /[\\/]appdata[\\/]/i;
+
     function rankRowsForRunner(rows) {
       if (!Array.isArray(rows) || !rows.length) return;
       const qText = document.getElementById('query')?.value;
@@ -3744,6 +3793,9 @@
       const use = runnerUseStats();
       const now = Date.now();
       const day = 864e5;
+      const scope = String(document.getElementById('rootFolder')?.value || '').trim();
+      const appDataPenalty =
+        RUNNER_APPDATA_RE.test(scope + '\\') || words.some((w) => w.includes('appdata')) ? 0 : RUNNER_RANK.appData;
       const scored = rows.map((r) => {
         const fp = fullPathForRow(r);
         const k = pathNormKey(fp);
@@ -3757,6 +3809,7 @@
         if (mt) s += RUNNER_RANK.recency * Math.exp(-Math.max(0, now - mt) / (RUNNER_RANK.recencyDays * day));
         if (stars.has(k)) s += RUNNER_RANK.star;
         s += runnerUseBoost(use.get(k), now);
+        if (appDataPenalty && RUNNER_APPDATA_RE.test(fp)) s -= appDataPenalty;
         return { r, tier: m.inName, s };
       });
       scored.sort((a, b) => b.tier - a.tier || b.s - a.s || compareRowsBySort(a.r, b.r, 'date_modified', false));
@@ -3826,10 +3879,30 @@
       /* File types stay outside the name-only group, so `budget ext:xlsx` asks for names with budget. */
       const positive = toks.filter((t) => !t.startsWith('!') && !/^ext:/i.test(t)).join(' ');
       const negative = toks.filter((t) => t.startsWith('!') || /^ext:/i.test(t)).join(' ');
-      if (runnerSort === 'smart' && positive && options.pathSearch && !/[<>|"]/.test(q) && !/^nopath:/i.test(q)) {
+      /* Name matches, so the main fetch's newest 300 (mostly path matches for a common word) cannot crowd
+         them out. nopath:<...> also takes groups, | and regex: terms (checked against Everything 1.5a). */
+      if (runnerSort === 'smart' && positive && options.pathSearch && !/^nopath:/i.test(q)) {
         jobs.push(
           everythingSearchOnce({
             searchText: everythingSearchTextForUi(ceilingNorms, rootFolder, ('nopath:<' + positive + '> ' + negative).trim(), recursive),
+            count: cap,
+            options: { ...options, offset: 0 },
+          })
+        );
+      }
+      /* Names that are exactly the typed words, so an old `map.json` is not lost among 50,000 newer names
+         that merely contain "map" (353 exact against 49,966; 0.07-0.11s cold, about 0 warm). */
+      const plainToks = toks.filter((t) => !t.startsWith('!') && !/^ext:/i.test(t));
+      if (runnerSort === 'smart' && plainToks.length && plainToks.every((t) => RUNNER_PLAIN_WORD.test(t))) {
+        const stem = plainToks.join(' ').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        jobs.push(
+          everythingSearchOnce({
+            searchText: everythingSearchTextForUi(
+              ceilingNorms,
+              rootFolder,
+              ('nopath:<' + plainToks.join(' ') + ' regex:"^' + stem + '(\\.[^.\\\\]+)?$"> ' + negative).trim(),
+              recursive
+            ),
             count: cap,
             options: { ...options, offset: 0 },
           })
@@ -4033,6 +4106,12 @@
       return !/[\\/]appdata[\\/]local[\\/]temp([\\/]|$)/i.test(String(rootFolder || ''));
     }
 
+    function runnerToggleWordStarts() {
+      if (runnerWordStartsOnly()) localStorage.removeItem(LS.runnerWordStarts);
+      else localStorage.setItem(LS.runnerWordStarts, '1');
+      void runSearchNow('identity');
+    }
+
     function runnerToggleTemp() {
       if (localStorage.getItem(LS.runnerShowTemp) === '1') localStorage.removeItem(LS.runnerShowTemp);
       else localStorage.setItem(LS.runnerShowTemp, '1');
@@ -4113,6 +4192,10 @@
       { id: 'folders', group: 'Show', label: 'Folders only', isOn: () => isFoldersOnly(), run: () => runnerSetContent(isFoldersOnly() ? 'all' : 'folders') },
       { id: 'files', group: 'Show', label: 'Files only', isOn: () => isFilesOnly(), run: () => runnerSetContent(isFilesOnly() ? 'all' : 'files') },
       { id: 'path', group: 'Match', label: 'Match path (off: names only)', isOn: () => !!document.getElementById('optPath')?.checked, run: () => runnerToggleMatchPath() },
+      { id: 'word', group: 'Match', label: 'Whole words only', isOn: () => runnerOptOn('optWholeWord'), run: () => toggleSearchOptCheckbox('optWholeWord') },
+      { id: 'case', group: 'Match', label: 'Match case', isOn: () => runnerOptOn('optCase'), run: () => toggleSearchOptCheckbox('optCase') },
+      { id: 'word-starts', group: 'Match', label: 'Word starts only (one word: type ^word)', isOn: () => runnerWordStartsOnly(), run: () => runnerToggleWordStarts() },
+      { id: 'accents', group: 'Match', label: 'Accents must match', isOn: () => runnerOptOn('optDiacritics'), run: () => toggleSearchOptCheckbox('optDiacritics') },
       { id: 'recent-all', group: 'Modified', label: 'Modified: any time', isOn: () => recencyFilterMode() === 'all', run: () => runnerSetRecency('all') },
       { id: 'recent-1h', group: 'Modified', label: 'Modified in the last hour', isOn: () => recencyFilterMode() === '1h', run: () => runnerSetRecency('1h') },
       { id: 'recent-1d', group: 'Modified', label: 'Modified in the last day', isOn: () => recencyFilterMode() === '1d', run: () => runnerSetRecency('1d') },
@@ -4122,6 +4205,164 @@
       { id: 'settings', group: 'TagFox', label: 'Settings', run: () => document.getElementById('btnToggleSettings')?.click() },
       { id: 'classic', group: 'TagFox', label: 'Switch to the Classic layout', run: () => void setRunnerMode(false) },
     ];
+
+    function runnerOptOn(id) {
+      return !!document.getElementById(id)?.checked;
+    }
+
+    const RUNNER_RECENCY_WORDS = { '1h': 'hour', '1d': 'day', '1w': 'week', '1m': 'month', '1y': 'year' };
+
+    /** Every setting that differs from Runner's default shows as a chip under the box, and its x puts the
+        default back, so a filter switched on by a key or a / command never hides rows without saying so. */
+    const RUNNER_FILTER_CHIPS = [
+      {
+        id: 'sort',
+        icon: 'fa-arrow-down-wide-short',
+        on: () => runnerSort !== 'smart',
+        label: () => (runnerSort === 'date' ? 'Sorted by date' : 'Sorted by name'),
+        reset: () => setRunnerSort('smart'),
+      },
+      {
+        id: 'recency',
+        icon: 'fa-clock',
+        on: () => recencyFilterMode() !== 'all',
+        label: () => 'Modified in the last ' + (RUNNER_RECENCY_WORDS[recencyFilterMode()] || recencyFilterMode()),
+        reset: () => runnerSetRecency('all'),
+      },
+      {
+        id: 'content',
+        icon: 'fa-filter',
+        on: () => isFoldersOnly() || isFilesOnly(),
+        label: () => (isFoldersOnly() ? 'Folders only' : 'Files only'),
+        reset: () => runnerSetContent('all'),
+      },
+      {
+        id: 'path',
+        icon: 'fa-route',
+        on: () => !runnerOptOn('optPath'),
+        label: () => 'Names only, path not searched',
+        reset: () => runnerToggleMatchPath(),
+      },
+      {
+        id: 'system',
+        icon: 'fa-eye',
+        on: () => !isHideSpecialPaths() || !isHideTildePaths(),
+        label: () =>
+          !isHideSpecialPaths() && !isHideTildePaths()
+            ? 'Showing system files'
+            : !isHideSpecialPaths()
+              ? 'Showing . and $ files'
+              : 'Showing ~ paths',
+        reset: () => {
+          runnerSetOpt('optHideSpecial', true);
+          runnerSetOpt('optHideTilde', true);
+          saveSettings();
+          void runSearchNow('identity');
+        },
+      },
+      {
+        id: 'temp',
+        icon: 'fa-eye',
+        on: () => localStorage.getItem(LS.runnerShowTemp) === '1',
+        label: () => 'Showing temp files',
+        reset: () => runnerToggleTemp(),
+      },
+      { id: 'word', icon: 'fa-spell-check', on: () => runnerOptOn('optWholeWord'), label: () => 'Whole words only', reset: () => toggleSearchOptCheckbox('optWholeWord') },
+      { id: 'case', icon: 'fa-font', on: () => runnerOptOn('optCase'), label: () => 'Match case', reset: () => toggleSearchOptCheckbox('optCase') },
+      { id: 'word-starts', icon: 'fa-i-cursor', on: () => runnerWordStartsOnly(), label: () => 'Word starts only', reset: () => runnerToggleWordStarts() },
+      { id: 'accents', icon: 'fa-language', on: () => runnerOptOn('optDiacritics'), label: () => 'Accents must match', reset: () => toggleSearchOptCheckbox('optDiacritics') },
+      {
+        id: 'tags',
+        icon: 'fa-tags',
+        on: () => activeTagKeys.size > 0 || excludedTagKeys.size > 0,
+        label: () => 'Tags: ' + [...activeTagKeys, ...[...excludedTagKeys].map((k) => 'not ' + k)].join(', '),
+        reset: () => {
+          activeTagKeys.clear();
+          excludedTagKeys.clear();
+          persistActiveTagFilter();
+          saveSettings();
+          void runSearchNow('identity');
+        },
+      },
+    ];
+
+    function runnerActiveFilterChips() {
+      return isRunnerMode() ? RUNNER_FILTER_CHIPS.filter((c) => c.on()) : [];
+    }
+
+    function renderRunnerFilterChips() {
+      const wrap = document.getElementById('runnerFilterChips');
+      const btn = document.getElementById('btnRunnerOpts');
+      if (!wrap) return;
+      const chips = runnerActiveFilterChips();
+      btn?.classList.toggle('tagfox-runner-opts-btn--changed', chips.length > 0);
+      wrap.textContent = '';
+      wrap.classList.toggle('d-none', !chips.length);
+      for (const c of chips) {
+        const chip = document.createElement('span');
+        chip.className = 'tagfox-runner-filter-chip';
+        chip.dataset.filterId = c.id;
+        const ic = document.createElement('i');
+        ic.className = 'fa-solid ' + c.icon;
+        ic.setAttribute('aria-hidden', 'true');
+        const lbl = document.createElement('span');
+        lbl.textContent = c.label();
+        const x = document.createElement('button');
+        x.type = 'button';
+        x.className = 'tagfox-runner-filter-chip-x';
+        x.title = 'Back to the default';
+        x.setAttribute('aria-label', 'Remove filter: ' + c.label());
+        x.innerHTML = '<i class="fa-solid fa-xmark" aria-hidden="true"></i>';
+        x.addEventListener('click', (e) => {
+          e.stopPropagation();
+          c.reset();
+          focusQueryBox(false);
+        });
+        chip.append(ic, lbl, x);
+        wrap.appendChild(chip);
+      }
+      if (chips.length > 1) {
+        const all = document.createElement('button');
+        all.type = 'button';
+        all.className = 'tagfox-runner-filter-reset';
+        all.textContent = 'Reset all';
+        all.addEventListener('click', () => {
+          runnerResetAllFilters();
+          focusQueryBox(false);
+        });
+        wrap.appendChild(all);
+      }
+    }
+
+    /** Every chip's default at once, with one search. */
+    function runnerResetAllFilters() {
+      runnerSort = 'smart';
+      localStorage.setItem(LS.runnerSort, 'smart');
+      const sc = runnerSortColumnFor('smart');
+      sortColumn = sc.col;
+      sortAsc = sc.asc;
+      runnerSelectKey = null;
+      setRecencyFilterMode('all');
+      applyResultsViewRadiosToDom('flat', isShowSubfolders(), 'all');
+      syncViewRadioActiveFromDom();
+      const d = runnerDefaultSearchState();
+      for (const [id, key] of [
+        ['optPath', 'optPath'],
+        ['optHideSpecial', 'optHideSpecial'],
+        ['optHideTilde', 'optHideTilde'],
+        ['optWholeWord', 'optWholeWord'],
+        ['optCase', 'optCase'],
+        ['optDiacritics', 'optDiacritics'],
+      ])
+        runnerSetOpt(id, d[key]);
+      localStorage.removeItem(LS.runnerShowTemp);
+      localStorage.removeItem(LS.runnerWordStarts);
+      activeTagKeys.clear();
+      excludedTagKeys.clear();
+      persistActiveTagFilter();
+      saveSettings();
+      void runSearchNow('identity');
+    }
 
     function runnerCmdButton(cmd, active) {
       const b = document.createElement('button');
@@ -4164,20 +4405,23 @@
       panel.removeAttribute('hidden');
     }
 
-    /** The / list: the box keeps its search text, then " /" and the filter; the search text alone comes
-        back on close. The search does not re-run while the list is open. */
+    /** One list under the box serves the / commands and Ctrl+L's recent folders, filtered by what is typed.
+        Commands: the box keeps its search text, then " /" and the filter. Folders: the whole box is the
+        filter. The search text alone comes back on close, and the search does not re-run while it is open. */
     let runnerCmdStash = null;
     let runnerCmdPrefix = '/';
+    let runnerCmdSource = 'commands';
     let runnerCmdActive = 0;
     let runnerCmdMatches = [];
     function runnerCmdListIsOpen() {
       return runnerCmdStash !== null;
     }
-    function openRunnerCmdList(stash) {
+    function openRunnerCmdList(stash, source = 'commands') {
       const q = document.getElementById('query');
       runnerCmdStash = String(stash || '');
+      runnerCmdSource = source;
       const term = runnerCmdStash.replace(/\s+$/, '');
-      runnerCmdPrefix = term ? term + ' /' : '/';
+      runnerCmdPrefix = source === 'folders' ? '' : term ? term + ' /' : '/';
       q.value = runnerCmdPrefix;
       q.setSelectionRange(q.value.length, q.value.length);
       syncQueryGhostUi();
@@ -4194,23 +4438,44 @@
       runnerCmdStash = null;
       document.getElementById('runnerCmdList')?.classList.add('d-none');
     }
+    /** What the list offers, each with a label and a run(). */
+    function runnerCmdItems() {
+      if (runnerCmdSource !== 'folders') return RUNNER_COMMANDS;
+      return loadScopeFolderHistory().map((fp) => ({
+        id: fp,
+        label: fp,
+        run: () => void runnerNavigate(() => applySearchScopeAndRefresh(normalizeFolderPathForEverything(fp)), null),
+      }));
+    }
     function renderRunnerCmdList() {
       const el = document.getElementById('runnerCmdList');
       const q = document.getElementById('query');
       if (!el || !q) return;
       const v = String(q.value || '');
       const filter = v.startsWith(runnerCmdPrefix) ? v.slice(runnerCmdPrefix.length).trim() : '';
-      runnerCmdMatches = RUNNER_COMMANDS.map((cmd, i) => ({ cmd, i, s: filter ? fuzzyPathScore(filter, cmd.label) : 0 }))
+      runnerCmdMatches = runnerCmdItems()
+        .map((cmd, i) => ({ cmd, i, s: filter ? fuzzyPathScore(filter, cmd.label) : 0 }))
         .filter((m) => m.s !== null)
         .sort((a, b) => b.s - a.s || a.i - b.i)
         .map((m) => m.cmd);
       if (runnerCmdActive >= runnerCmdMatches.length) runnerCmdActive = Math.max(0, runnerCmdMatches.length - 1);
       el.textContent = '';
-      runnerCmdMatches.forEach((cmd, i) => el.appendChild(runnerCmdButton(cmd, i === runnerCmdActive)));
+      const folders = runnerCmdSource === 'folders';
+      if (folders) {
+        const h = document.createElement('div');
+        h.className = 'tagfox-runner-cmd-group';
+        h.textContent = 'Recent folders: type to filter, Enter goes there';
+        el.appendChild(h);
+      }
+      runnerCmdMatches.forEach((cmd, i) => {
+        const b = runnerCmdButton(cmd, i === runnerCmdActive);
+        b.dataset.idx = String(i);
+        el.appendChild(b);
+      });
       if (!runnerCmdMatches.length) {
         const none = document.createElement('div');
         none.className = 'px-3 py-1 text-muted small';
-        none.textContent = 'No command matches.';
+        none.textContent = !folders ? 'No command matches.' : filter ? 'No recent folder matches.' : 'No recent folders yet.';
         el.appendChild(none);
       }
       el.classList.remove('d-none');
@@ -4222,7 +4487,7 @@
       if (runnerOptsPanelOpen) setRunnerOptsPanelOpen(true);
     }
 
-    /** #query input while the / list is open: filter it, and never search for the "/" text. */
+    /** #query input while the list is open: filter it, and never search for the "/" text. */
     function runnerCmdOnInput() {
       if (!runnerCmdListIsOpen()) return false;
       const q = document.getElementById('query');
@@ -4235,21 +4500,377 @@
       return true;
     }
 
-    /** Runner's keys, ahead of Classic's in the window keydown handler. True: handled, Classic must not act. */
-    function runnerHandleKeydown(e) {
-      if (document.querySelector('.modal.show')) return false;
+    /** Rows a page key moves by: what fits in the list, less one so the last row stays in view. */
+    function runnerPageRows() {
+      const sc = document.getElementById('resultsScroll');
+      const tr = document.querySelector('#resultsTable tbody tr');
+      const h = (tr && tr.getBoundingClientRect().height) || 28;
+      return Math.max(1, Math.floor((sc ? sc.clientHeight : 300) / h) - 1);
+    }
+
+    /** The rows Ctrl+1…9 open: the first nine on screen. */
+    function runnerNumberedRows() {
+      const sc = document.getElementById('resultsScroll');
+      const trs = [...document.querySelectorAll('#resultsTable tbody tr[data-row-path]')];
+      if (!sc || !trs.length) return [];
+      const top = sc.getBoundingClientRect().top;
+      const first = trs.findIndex((tr) => tr.getBoundingClientRect().bottom > top + 4);
+      return first < 0 ? [] : trs.slice(first, first + 9);
+    }
+
+    /** Holding Ctrl on its own for a moment numbers those rows. */
+    let runnerCtrlHintTimer = null;
+    function runnerShowCtrlHints(on) {
+      if (runnerCtrlHintTimer) clearTimeout(runnerCtrlHintTimer);
+      runnerCtrlHintTimer = null;
+      if (!on && !document.body.classList.contains('tagfox-runner-ctrl-hints')) return;
+      document.querySelectorAll('#resultsTable tbody tr[data-runner-n]').forEach((tr) => tr.removeAttribute('data-runner-n'));
+      document.body.classList.toggle('tagfox-runner-ctrl-hints', !!on);
+      if (on) runnerNumberedRows().forEach((tr, i) => tr.setAttribute('data-runner-n', String(i + 1)));
+    }
+
+    /** Enter and its variants. A row on screen must belong to what is typed, or Enter straight after typing
+        (inside the search's 300ms wait) opens a row from the previous search; so a stale list re-runs first. */
+    async function runnerActivateSelection(how = 'open') {
+      if (searchDebounceTimer || runnerListKey() !== runnerSelectKey) await runSearchNow();
+      if (!selectedFullPath) return;
+      const k = pathNormKey(selectedFullPath);
+      if (!listRowsForUi().some((r) => pathNormKey(fullPathForRow(r)) === k)) return;
+      if (how === 'reveal') {
+        await window.tagBrowser.showInFolder(selectedFullPath);
+        setStatusMain('Shown in File Explorer: ' + selectedFullPath);
+        return;
+      }
+      if (how === 'folder') {
+        await runnerNavigate(() => keyboardScopeParentOfSelection(), selectedFullPath);
+        return;
+      }
+      if (how === 'properties') {
+        const r = await window.tagBrowser.showProperties(selectedFullPath);
+        if (r && !r.ok) setStatusMain('Properties: ' + (r.error || 'failed'));
+        return;
+      }
+      await keyboardActivateSelection();
+    }
+
+    function runnerOpenNumberedRow(n) {
+      const tr = runnerNumberedRows()[n - 1];
+      if (!tr) return;
+      const k = pathNormKey(tr.dataset.rowPath);
+      const row = listRowsForUi().find((r) => pathNormKey(fullPathForRow(r)) === k);
+      if (!row) return;
+      resultsExclusiveSelectRow(row, fullPathForRow(row));
+      void keyboardActivateSelection();
+    }
+
+    /** Esc, one step a press: the multi-selection, the text, the folder, then TagFox hides. Menus, dialogs,
+        Settings and the full-screen Viewer close themselves first, so those are left to Classic's handler. */
+    let runnerEscapeLastStep = '';
+    function runnerEscape() {
+      if (document.querySelector('.dropdown-menu.show, .offcanvas.show') || isPropsTheaterOn() || breadcrumbSubfolderFlyoutsAreOpen()) return false;
+      const pop = document.getElementById('quickTodoPop');
+      if (pop && !pop.classList.contains('d-none')) return false;
+      if (checkedPathsMap.size > 1) {
+        const row = selectedFullPath ? selectedRowForActions() : null;
+        clearResultsCheckedSelection();
+        if (row) resultsExclusiveSelectRow(row, fullPathForRow(row));
+        runnerEscapeLastStep = 'checks';
+        return true;
+      }
+      if (document.getElementById('query').value) {
+        clearSearchQuery();
+        runnerEscapeLastStep = 'text';
+        return true;
+      }
+      if (document.getElementById('rootFolder').value.trim()) {
+        clearSearchScope();
+        runnerEscapeLastStep = 'folder';
+        return true;
+      }
+      runnerEscapeLastStep = 'hide';
+      void window.tagBrowser?.hideMainWindow?.();
+      return true;
+    }
+
+    /** The Viewer on or off (Alt+P, Everything's own preview-pane key); remembered. */
+    function runnerViewerOff() {
+      return localStorage.getItem(LS.runnerViewerOff) === '1';
+    }
+    function applyRunnerViewerOff() {
+      document.body.classList.toggle('tagfox-runner-viewer-off', isRunnerMode() && runnerViewerOff());
+    }
+    function runnerToggleViewer() {
+      if (runnerViewerOff()) localStorage.removeItem(LS.runnerViewerOff);
+      else localStorage.setItem(LS.runnerViewerOff, '1');
+      applyRunnerViewerOff();
+      setStatusMain(runnerViewerOff() ? 'Viewer hidden (Alt+P shows it).' : 'Viewer shown.');
+    }
+
+    /** Alt+Home: no text, no folder, every filter at its default. */
+    function runnerStartAgain() {
+      clearSearchQueryInputOnly();
+      leaveScopePathEditChrome();
+      document.getElementById('rootFolder').value = '';
+      renderScopeBreadcrumb();
+      renderRunnerScopeChip();
+      runnerResetAllFilters();
+    }
+
+    /** Tab and Shift+Tab: between the box and the list, as in Everything. */
+    function runnerSwitchBoxAndList(inBox) {
+      if (!inBox) {
+        focusQueryBox(false);
+        return;
+      }
+      const wrap = document.getElementById('resultsWrap');
+      if (!wrap || !enterResultsListKeepingSelection()) return;
+      wrap.focus({ preventScroll: true });
+    }
+
+    /** Shift+F10 or the Menu key: the selected row's menu, at the row. */
+    function runnerOpenRowMenu() {
+      if (!selectedFullPath) return;
+      const row = selectedRowForActions();
+      const tr = document.querySelector('#resultsTable tbody tr.table-active');
+      const r = tr ? tr.getBoundingClientRect() : { left: 40, bottom: 120 };
+      void openResultsRowItemActionsMenu(selectedFullPath, r.left + 40, r.bottom, row);
+    }
+
+    /** Runner's keys, in the order the handler tries them. Help's key list is drawn from this table, so the
+        two cannot drift apart. `when(c)` decides; `run(c)` acts, returning nothing to consume the key,
+        'native' to leave it to the browser (and keep Classic out), or 'classic' to hand it to Classic's
+        handler. An entry without `does` works but is not listed. */
+    const RUNNER_KEYS = [
+      /* Search */
+      {
+        group: 'Search',
+        keys: ['/'],
+        does: 'Commands: sort, filters, match options, Settings. Type to filter them, ↑ ↓ or Tab to choose, Enter runs one, Esc closes the list',
+        when: (c) => c.inBox && !c.mod && !c.alt && (c.key === '/' || c.code === 'NumpadDivide'),
+        run: (c) => openRunnerCmdList(c.q.value),
+      },
+      { group: 'Search', keys: ['?'], does: 'This list of keys, with the box empty', when: (c) => c.inBox && c.empty && c.key === '?', run: () => openRunnerKeysHelp() },
+      {
+        group: 'Search',
+        keys: ['Ctrl+L'],
+        does: 'Recent folders, filtered as you type; Enter goes there',
+        when: (c) => c.ctrl('l'),
+        run: (c) => {
+          openRunnerCmdList(c.q.value, 'folders');
+          focusQueryBox(false);
+        },
+      },
+      {
+        group: 'Search',
+        keys: ['F3', 'Ctrl+F', 'Alt+D'],
+        does: 'Back to the box, with its text selected',
+        when: (c) => (c.plain && c.key === 'F3') || c.ctrl('f') || (c.alt && !c.mod && !c.shift && c.k === 'd'),
+        run: () => focusQueryBox(true),
+      },
+      { group: 'Search', keys: ['Ctrl+B'], does: 'Whole words only, on or off', when: (c) => c.ctrl('b'), run: () => toggleSearchOptCheckbox('optWholeWord') },
+      { group: 'Search', keys: ['Ctrl+I'], does: 'Match case, on or off', when: (c) => c.ctrl('i'), run: () => toggleSearchOptCheckbox('optCase') },
+      { group: 'Search', keys: ['Ctrl+U', 'Ctrl+P'], does: 'Match path, on or off (off: names only)', when: (c) => c.ctrl('u') || c.ctrl('p'), run: () => runnerToggleMatchPath() },
+      { group: 'Search', keys: ['Ctrl+R'], does: 'Modified within the last hour, day, week, month, year or any time, in turn', when: (c) => c.ctrl('r'), run: () => 'classic' },
+      { group: 'Search', keys: ['Ctrl+M'], does: 'Sort by date; again for the smart order', when: (c) => c.ctrl('m'), run: () => setRunnerSort(runnerSort === 'date' ? 'smart' : 'date') },
+      { group: 'Search', keys: ['Ctrl+N'], does: 'Sort by name; again for the smart order', when: (c) => c.ctrl('n'), run: () => setRunnerSort(runnerSort === 'name' ? 'smart' : 'name') },
+      { group: 'Search', keys: ['Alt+Home'], does: 'Start again: no text, no folder, every filter at its default', when: (c) => c.alt && !c.mod && c.key === 'Home', run: () => runnerStartAgain() },
+      { group: 'Search', keys: ['Alt+←', 'Alt+→'], does: 'Back and forward through earlier searches', when: (c) => c.alt && !c.mod && (c.key === 'ArrowLeft' || c.key === 'ArrowRight'), run: () => 'classic' },
+      { group: 'Search', keys: ['F5'], does: 'Search again', when: (c) => c.plain && c.key === 'F5', run: () => 'classic' },
+
+      /* Move */
+      {
+        group: 'Move and select',
+        keys: ['↑', '↓'],
+        does: 'Move the selection, from the box or the list',
+        when: (c) => c.inBox && c.plain && !c.shift && (c.key === 'ArrowDown' || c.key === 'ArrowUp'),
+        run: (c) => moveResultsSelection(c.key === 'ArrowDown' ? 1 : -1),
+      },
+      {
+        group: 'Move and select',
+        keys: ['Shift+↑', 'Shift+↓'],
+        does: 'Check a run of rows; their checkboxes appear',
+        when: (c) => c.inBox && c.plain && c.shift && (c.key === 'ArrowDown' || c.key === 'ArrowUp'),
+        run: (c) => moveResultsSelectionWithShift(c.key === 'ArrowDown' ? 1 : -1),
+      },
+      {
+        group: 'Move and select',
+        keys: ['PgUp', 'PgDn'],
+        does: 'Move a page; with Shift, check the rows on the way',
+        when: (c) => c.plain && (c.key === 'PageDown' || c.key === 'PageUp'),
+        run: (c) => {
+          const d = (c.key === 'PageDown' ? 1 : -1) * runnerPageRows();
+          if (c.shift) moveResultsSelectionWithShift(d);
+          else moveResultsSelection(d);
+        },
+      },
+      {
+        group: 'Move and select',
+        keys: ['Ctrl+Home', 'Ctrl+End'],
+        does: 'First or last row',
+        when: (c) => c.mod && !c.alt && !c.shift && (c.key === 'Home' || c.key === 'End'),
+        run: (c) => moveResultsSelectionToEdge(c.key === 'End'),
+      },
+      {
+        group: 'Move and select',
+        keys: ['Ctrl+1…9'],
+        does: 'Open one of the first nine rows on screen; hold Ctrl to see their numbers',
+        when: (c) => c.mod && !c.alt && !c.shift && /^[1-9]$/.test(c.key),
+        run: (c) => runnerOpenNumberedRow(Number(c.key)),
+      },
+      {
+        group: 'Move and select',
+        keys: ['Tab', 'Shift+Tab'],
+        does: 'Between the box and the list',
+        when: (c) => c.plain && c.key === 'Tab' && (c.inBox || c.inList),
+        run: (c) => runnerSwitchBoxAndList(c.inBox),
+      },
+      { group: 'Move and select', keys: ['Space'], does: 'In the list: check or uncheck the selected row', when: (c) => c.inList && c.plain && !c.shift && c.key === ' ', run: () => 'classic' },
+      { group: 'Move and select', keys: ['Ctrl+A'], does: 'In the box, select its text; in the list, check every row', when: (c) => c.ctrl('a'), run: (c) => (c.inBox ? 'native' : 'classic') },
+      {
+        group: 'Move and select',
+        keys: ['Esc'],
+        does: 'One step back a press: a list or menu, the checked rows, the text, the folder, then TagFox hides',
+        when: (c) => c.plain && !c.shift && c.key === 'Escape',
+        run: () => (runnerEscape() ? undefined : 'classic'),
+      },
+
+      /* Folders */
+      {
+        group: 'Folders',
+        keys: ['→'],
+        does: 'Into the selected folder (from the box: with the caret at the end)',
+        when: (c) => c.plain && !c.shift && c.key === 'ArrowRight' && (c.inBox ? c.caretEnd : c.inList),
+        run: (c) => {
+          if (!c.held) runnerEnterSelectedFolder();
+        },
+      },
+      {
+        group: 'Folders',
+        keys: ['←'],
+        does: 'Up to the parent folder, with the one you left selected (from the box: with the caret at the start)',
+        when: (c) => c.plain && !c.shift && c.key === 'ArrowLeft' && (c.inBox ? c.caretStart : c.inList),
+        run: (c) => {
+          if (!c.held) runnerGoUp();
+        },
+      },
+      {
+        group: 'Folders',
+        keys: ['Backspace'],
+        does: 'With the box empty: leave the folder and search everywhere',
+        when: (c) => c.inBox && c.plain && c.key === 'Backspace' && c.empty && !c.e.repeat && !!currentScopeFolderPath(),
+        run: () => clearSearchScope(),
+      },
+      { group: 'Folders', keys: ['Shift+Enter'], does: 'Go to the folder holding the selected row, here in TagFox', when: (c) => c.plain && c.shift && c.key === 'Enter', run: () => void runnerActivateSelection('folder') },
+      { group: 'Folders', keys: ['Ctrl+Shift+1…9'], does: 'Starred item 1 to 9', when: (c) => c.mod && c.shift && !c.alt && /^Digit[1-9]$/.test(c.code), run: () => 'classic' },
+
+      /* Open and act */
+      { group: 'Open and act', keys: ['Enter'], does: 'Open the selected row; a folder opens here', when: (c) => c.plain && !c.shift && c.key === 'Enter' && (c.inBox || c.inList), run: () => void runnerActivateSelection('open') },
+      { group: 'Open and act', keys: ['Ctrl+Enter'], does: 'Open its folder in File Explorer, with it selected', when: (c) => c.mod && !c.alt && !c.shift && c.key === 'Enter', run: () => void runnerActivateSelection('reveal') },
+      { group: 'Open and act', keys: ['Alt+Enter'], does: 'Properties', when: (c) => c.alt && !c.mod && !c.shift && c.key === 'Enter', run: () => void runnerActivateSelection('properties') },
+      { group: 'Open and act', keys: ['Alt+P'], does: 'Show or hide the Viewer', when: (c) => c.alt && !c.mod && !c.shift && c.k === 'p', run: () => runnerToggleViewer() },
+      { group: 'Open and act', keys: ['Shift+Space'], does: 'The Viewer full screen', when: (c) => c.plain && c.shift && c.key === ' ', run: () => 'classic' },
+      { group: 'Open and act', keys: ['Shift+F10', 'Menu'], does: "The selected row's menu", when: (c) => (c.plain && c.shift && c.key === 'F10') || c.key === 'ContextMenu', run: () => runnerOpenRowMenu() },
+      { group: 'Open and act', keys: ['Ctrl+D'], does: 'Star or unstar the selected row', when: (c) => c.ctrl('d'), run: () => toggleStarForSelection() },
+      { group: 'Open and act', keys: ['F2'], does: 'Rename', when: (c) => c.plain && !c.shift && c.key === 'F2', run: () => 'classic' },
+      {
+        group: 'Open and act',
+        keys: ['Del', 'Shift+Del'],
+        does: 'Move the checked rows to the Recycle Bin (from the box: with it empty). TagFox never deletes for good, so Shift+Del recycles too',
+        when: (c) => c.plain && c.key === 'Delete' && (c.inList || (c.inBox && c.empty)),
+        run: (c) => {
+          if (!c.e.repeat) void keyboardRecycleConfirm();
+        },
+      },
+      {
+        group: 'Open and act',
+        keys: ['Ctrl+C', 'Ctrl+X'],
+        does: 'Copy or cut the selected files, to paste in Explorer (in the box: with no text selected)',
+        when: (c) => c.ctrl('c') || c.ctrl('x'),
+        run: (c) => {
+          if (c.textSel) return 'native';
+          if (c.k === 'c') void copyShortcutExplorerFiles();
+          else void cutShortcutExplorerFiles();
+        },
+      },
+      {
+        group: 'Open and act',
+        keys: ['Ctrl+Shift+C'],
+        does: 'Copy their full paths as text',
+        when: (c) => c.mod && c.shift && !c.alt && c.k === 'c',
+        run: (c) => (c.textSel ? 'native' : void keyboardCopyFullPathsText()),
+      },
+      {
+        group: 'Open and act',
+        keys: ['Ctrl+V'],
+        does: 'Paste copied files or a screenshot into the folder; copied text goes into the box',
+        when: (c) => c.ctrl('v'),
+        run: () => void runnerPaste(),
+      },
+      { group: 'Open and act', keys: ['Ctrl+Shift+N'], does: 'New folder here', when: (c) => c.mod && c.shift && !c.alt && c.k === 'n', run: () => 'classic' },
+      { group: 'Open and act', keys: ['Ctrl+H'], does: 'Rename the checked rows with wildcards', when: (c) => c.ctrl('h'), run: () => 'classic' },
+
+      /* TagFox */
+      { group: 'TagFox', keys: ['F1'], does: 'Help', when: (c) => c.plain && c.key === 'F1', run: () => 'classic' },
+      { group: 'TagFox', keys: ['Ctrl+,'], does: 'Settings', when: (c) => c.ctrl(','), run: () => 'classic' },
+
+      /* Classic keys for parts Runner does not show: answered, not obeyed. */
+      { when: (c) => c.mod && !c.alt && c.key === 'Tab', run: () => setStatusMain('Result tabs are only in the Classic layout.') },
+      { when: (c) => c.mod && c.shift && !c.alt && (c.k === 't' || c.k === 'w'), run: () => setStatusMain('Result tabs are only in the Classic layout.') },
+      {
+        when: (c) => c.ctrl('s'),
+        run: () => setStatusMain('In Runner an empty box shows the folder itself and typing searches everything below it.'),
+      },
+    ];
+
+    /** One key event, described once for every `when`. */
+    function runnerKeyCtx(e) {
       const q = document.getElementById('query');
       const inBox = e.target === q;
+      const len = q.value.length;
       const mod = e.ctrlKey || e.metaKey;
+      const k = String(e.key || '').toLowerCase();
+      const wrap = document.getElementById('resultsWrap');
+      return {
+        e,
+        q,
+        inBox,
+        inList: !!wrap && !inBox && (e.target === wrap || wrap.contains(e.target)),
+        key: e.key,
+        code: e.code,
+        k,
+        mod,
+        alt: e.altKey,
+        shift: e.shiftKey,
+        plain: !mod && !e.altKey,
+        ctrl: (ch) => mod && !e.altKey && !e.shiftKey && k === ch,
+        empty: q.value === '',
+        caretEnd: inBox && q.selectionStart === len && q.selectionEnd === len,
+        caretStart: inBox && q.selectionStart === 0 && q.selectionEnd === 0,
+        textSel: inBox && q.selectionStart !== q.selectionEnd,
+        /* A held key that started in the text: its repeats must not run on into folder changes. */
+        held: e.repeat && inBox && len > 0,
+      };
+    }
+
+    /** Runner's keys, ahead of Classic's in the window keydown handler. True: handled, Classic must not act. */
+    function runnerHandleKeydown(e) {
+      if (e.key === 'Control') {
+        if (!e.repeat && !runnerCtrlHintTimer) runnerCtrlHintTimer = setTimeout(() => runnerShowCtrlHints(true), 450);
+        return false;
+      }
+      runnerShowCtrlHints(false);
+      if (document.querySelector('.modal.show')) return false;
+      const c = runnerKeyCtx(e);
       const consume = () => {
         e.preventDefault();
         e.stopPropagation();
         return true;
       };
       if (runnerCmdListIsOpen()) {
-        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-          const n = runnerCmdMatches.length;
-          if (n) runnerCmdActive = (runnerCmdActive + (e.key === 'ArrowDown' ? 1 : -1) + n) % n;
+        const n = runnerCmdMatches.length;
+        const step = e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey) ? 1 : e.key === 'ArrowUp' || e.key === 'Tab' ? -1 : 0;
+        if (step && !c.mod && !c.alt) {
+          if (n) runnerCmdActive = (runnerCmdActive + step + n) % n;
           renderRunnerCmdList();
           return consume();
         }
@@ -4261,76 +4882,80 @@
           closeRunnerCmdList(true);
           return consume();
         }
-        if (inBox) return true;
+        if (c.inBox) return true;
       }
       if (e.key === 'Escape' && runnerOptsPanelOpen) {
         setRunnerOptsPanelOpen(false);
         return consume();
       }
-      if (mod && !e.shiftKey && !e.altKey && (e.key === 'd' || e.key === 'D')) {
-        toggleStarForSelection();
+      /* Another text field (the Viewer's editor, Settings) or an open menu keeps its own keys. */
+      if (!c.inBox && (isTypingTarget(e.target) || isInMarkdownEditSurface(e.target))) return false;
+      if (isMenuKeyboardNavTarget(e.target)) return false;
+      const entry = RUNNER_KEYS.find((x) => x.when(c));
+      if (entry) {
+        const r = entry.run(c);
+        if (r === 'classic') return false;
+        if (r === 'native') return true;
         return consume();
       }
-      /* / opens the commands wherever the caret is; Runner searches never need a literal / (paths use \). */
-      if (inBox && !mod && !e.altKey && (e.key === '/' || e.code === 'NumpadDivide')) {
-        openRunnerCmdList(q.value);
+      if (c.inBox || !c.plain) return false;
+      /* Typing with the focus anywhere but a text field goes into the box, so Classic's one-letter
+         shortcuts (t opens tags, s, f, r...) never fire unseen in Runner. */
+      if (e.key === '/') {
+        focusQueryBox(false);
+        openRunnerCmdList(c.q.value);
         return consume();
       }
-      /* Clipboard keys from the box: with text selected they act on the text; otherwise Ctrl+C, Ctrl+X and
-         Ctrl+Shift+C act on the selected rows, as Classic's do from the list. */
-      if (inBox && mod && !e.altKey && /^[cxv]$/i.test(e.key)) {
-        const k = e.key.toLowerCase();
-        if (k !== 'v') {
-          if (q.selectionStart !== q.selectionEnd) return true;
-          if (k === 'c' && e.shiftKey) void keyboardCopyFullPathsText();
-          else if (k === 'c') void copyShortcutExplorerFiles();
-          else void cutShortcutExplorerFiles();
-          return consume();
-        }
-        if (e.shiftKey) return true;
-        e.preventDefault();
-        e.stopPropagation();
-        void runnerPaste();
-        return true;
-      }
-      if (mod || e.altKey) return false;
-      if (inBox) {
-        if (e.key === 'Backspace' && q.value === '' && document.getElementById('rootFolder').value.trim()) {
-          clearSearchScope();
-          return consume();
-        }
-        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-          const d = e.key === 'ArrowDown' ? 1 : -1;
-          if (e.shiftKey) moveResultsSelectionWithShift(d);
-          else moveResultsSelection(d);
-          return consume();
-        }
-        if (e.key === 'Enter') {
-          if (selectedFullPath) void keyboardActivateSelection();
-          else void runSearchNow();
-          return consume();
-        }
-        const len = q.value.length;
-        if (e.key === 'ArrowRight' && !e.shiftKey && q.selectionStart === len && q.selectionEnd === len) {
-          runnerEnterSelectedFolder();
-          return consume();
-        }
-        if (e.key === 'ArrowLeft' && !e.shiftKey && q.selectionStart === 0 && q.selectionEnd === 0) {
-          runnerGoUp();
-          return consume();
-        }
-        return false;
-      }
-      if (isTypingTarget(e.target) || isInMarkdownEditSurface(e.target) || isMenuKeyboardNavTarget(e.target)) return false;
-      if (e.key === 'ArrowRight') {
-        runnerEnterSelectedFolder();
+      if (e.key === 'Backspace') {
+        focusQueryBox(false);
+        if (c.q.value) {
+          c.q.value = c.q.value.slice(0, -1);
+          c.q.dispatchEvent(new Event('input', { bubbles: true }));
+        } else if (!e.repeat && currentScopeFolderPath()) clearSearchScope();
         return consume();
       }
-      if (e.key === 'ArrowLeft') {
-        runnerGoUp();
+      if (e.key.length === 1 && e.key !== ' ') {
+        focusQueryBox(false);
+        c.q.setRangeText(e.key, c.q.value.length, c.q.value.length, 'end');
+        c.q.dispatchEvent(new Event('input', { bubbles: true }));
         return consume();
       }
       return false;
+    }
+
+    /** Help's Runner tab: the keys, drawn from RUNNER_KEYS. */
+    function renderRunnerKeysHelp() {
+      const host = document.getElementById('runnerKeysTable');
+      if (!host) return;
+      const kbd = (combo) =>
+        combo
+          .split(/\+(?=.)/)
+          .map((p) => '<kbd>' + escapeHtmlForPreview(p) + '</kbd>')
+          .join('+');
+      const groups = new Map();
+      for (const x of RUNNER_KEYS) {
+        if (!x.does) continue;
+        if (!groups.has(x.group)) groups.set(x.group, []);
+        groups.get(x.group).push(x);
+      }
+      let html = '';
+      for (const [g, list] of groups) {
+        html +=
+          '<h5 class="help-md-section-title">' +
+          escapeHtmlForPreview(g) +
+          '</h5><div class="table-responsive"><table class="table table-sm table-striped mb-2"><thead><tr><th scope="col" style="width:32%">Key</th><th scope="col">Does</th></tr></thead><tbody>';
+        for (const x of list) html += '<tr><td>' + x.keys.map(kbd).join(' / ') + '</td><td>' + escapeHtmlForPreview(x.does) + '</td></tr>';
+        html += '</tbody></table></div>';
+      }
+      host.innerHTML = html;
+    }
+
+    /** `?` in an empty box: Help, on Runner's tab, at the keys. */
+    function openRunnerKeysHelp() {
+      const hm = document.getElementById('helpModal');
+      if (!hm) return;
+      hm.addEventListener('shown.bs.modal', () => document.getElementById('runnerKeysTable')?.scrollIntoView({ block: 'start' }), { once: true });
+      bootstrap.Modal.getOrCreateInstance(hm).show();
     }
 
     /** Current folder as a chip at the start of the box; its x searches everywhere again. */
@@ -4366,21 +4991,31 @@
         e.stopPropagation();
         setRunnerOptsPanelOpen(!runnerOptsPanelOpen);
       });
-      const onCmdClick = (e) => {
+      document.getElementById('runnerOptsPanel')?.addEventListener('click', (e) => {
         const b = e.target.closest('.tagfox-runner-cmd');
         if (!b) return;
         e.preventDefault();
         e.stopPropagation();
         runRunnerCommand(RUNNER_COMMANDS.find((c) => c.id === b.dataset.cmdId));
-        if (!runnerOptsPanelOpen) focusQueryBox(false);
-      };
-      document.getElementById('runnerOptsPanel')?.addEventListener('click', onCmdClick);
-      /* mousedown, so the box keeps focus and the command runs before anything closes the list */
-      document.getElementById('runnerCmdList')?.addEventListener('mousedown', onCmdClick);
+      });
+      /* mousedown, so the box keeps focus and the item runs before anything closes the list */
+      document.getElementById('runnerCmdList')?.addEventListener('mousedown', (e) => {
+        const b = e.target.closest('.tagfox-runner-cmd');
+        if (!b) return;
+        e.preventDefault();
+        e.stopPropagation();
+        runRunnerCommand(runnerCmdMatches[Number(b.dataset.idx)]);
+        focusQueryBox(false);
+      });
       document.addEventListener('pointerdown', (e) => {
+        runnerShowCtrlHints(false);
         if (runnerOptsPanelOpen && !e.target.closest('#runnerOptsPanel, #btnRunnerOpts')) setRunnerOptsPanelOpen(false);
         if (runnerCmdListIsOpen() && !e.target.closest('#runnerCmdList, #query')) closeRunnerCmdList(true);
       });
+      window.addEventListener('keyup', (e) => {
+        if (e.key === 'Control') runnerShowCtrlHints(false);
+      });
+      window.addEventListener('blur', () => runnerShowCtrlHints(false));
       document.getElementById('selToggleOpens')?.addEventListener('change', (e) => {
         void setRunnerMode(e.target.value === 'runner');
       });
@@ -11782,6 +12417,8 @@
       const show = n >= 2;
       bar.classList.toggle('d-none', !show);
       bar.setAttribute('aria-hidden', show ? 'false' : 'true');
+      /* Runner hides the checkbox column until a multi-selection starts; this brings it back. */
+      document.body.classList.toggle('tagfox-multi-checked', show);
     }
 
     /** Uncheck all result rows (bulk bar “Clear selection”). */
@@ -13237,7 +13874,8 @@
 
     function commitSearchHistoryIfChanged() {
       if (searchHistNavigating) return;
-      const s = serializeSearchState();
+      /* The two layouts share one history; the mark says whose view and filters an entry carries. */
+      const s = { ...serializeSearchState(), runner: isRunnerMode() };
       const cur = searchHist[searchHistIdx];
       if (cur && searchStatesEqual(s, cur)) return;
       searchHist = searchHist.slice(0, searchHistIdx + 1);
@@ -13329,7 +13967,10 @@
       searchHistNavigating = true;
       try {
         searchHistIdx = next;
-        applySearchState(searchHist[searchHistIdx]);
+        const entry = searchHist[searchHistIdx];
+        /* Each layout keeps its own view and filters, so a step to an entry made in the other layout
+           brings back only its text and folder. */
+        applySearchState(!!entry.runner === isRunnerMode() ? entry : { ...serializeSearchState(), query: entry.query, rootFolder: entry.rootFolder });
         persistActiveTagFilter();
         saveSettings();
         updateSortHeaders();
@@ -13363,7 +14004,7 @@
     }
 
     function seedSearchHistoryFromCurrent() {
-      searchHist = [serializeSearchState()];
+      searchHist = [{ ...serializeSearchState(), runner: isRunnerMode() }];
       searchHistIdx = 0;
       updateSearchHistoryNavUI();
     }
@@ -14858,6 +15499,7 @@
         });
         if (isRunnerMode()) status.insertAdjacentHTML('beforeend', runnerPartialHintHtml());
       }
+      renderRunnerFilterChips();
       const showPathFolderGrouping = shouldShowPathFolderGrouping();
       const showPathTreeGutter = isTreeViewOn() && sortColumn === 'path' && isShowSubfolders();
       const pathTreeDepths = rowsForDisplay.map((r) => pathTreeUiDepth(r, showPathFolderGrouping));
@@ -16471,6 +17113,7 @@
       const recursive = showSub || !hasScope;
       const queryForEs = isRunnerMode() ? runnerQueryForEverything(query) : query;
       const searchText = everythingSearchTextForUi(ceilingNorms, rootFolder, queryForEs, recursive);
+      lastMainSearchText = searchText;
       const cap = isRunnerMode() ? Math.max(parseMaxResultsCap(), RUNNER_RANK.fetchCap) : parseMaxResultsCap();
       const countStr = String(cap);
       const baseSearchOpts = everythingOptionsForRequest();
@@ -17739,7 +18382,7 @@
       if (isTypingTarget(document.activeElement)) return;
       pullWebContentsKeyboardFocus();
       const rows = listRowsForUi();
-      if (selectedFullPath && rows.length) document.getElementById('resultsWrap')?.focus({ preventScroll: true });
+      if (selectedFullPath && rows.length && !isRunnerMode()) document.getElementById('resultsWrap')?.focus({ preventScroll: true });
       else focusQueryBox(false);
     }
 
@@ -19309,6 +19952,7 @@
       'motivation',
       'features',
       'search',
+      'runner',
       'files-folders',
       'favourites',
       'shelf',
@@ -19317,9 +19961,10 @@
       'installation',
       'shortcuts',
     ];
+    /** Runner's keys are its own, so Help opens on them there; Classic reopens the tab last read. */
     function restoreHelpModalTab() {
       const raw = localStorage.getItem(LS.helpModalTab);
-      const id = HELP_TAB_IDS.includes(raw) ? raw : 'essentials';
+      const id = isRunnerMode() ? 'runner' : HELP_TAB_IDS.includes(raw) ? raw : 'essentials';
       const btn = document.getElementById('help-tab-' + id);
       if (btn) bootstrap.Tab.getOrCreateInstance(btn).show();
     }
@@ -19343,7 +19988,10 @@
             const inst = bootstrap.Dropdown.getInstance(btn);
             if (inst) inst.hide();
           });
-        if (modalEl.id === 'helpModal') restoreHelpModalTab();
+        if (modalEl.id === 'helpModal') {
+          renderRunnerKeysHelp();
+          restoreHelpModalTab();
+        }
       });
     });
     installTagFoxTooltipGuardsOnce();
@@ -19608,6 +20256,8 @@
         /* Runner layout. */
         setRunnerMode: (on) => setRunnerMode(!!on),
         setRunnerSort: (sort) => setRunnerSort(String(sort)),
+        runCommand: (id) => runRunnerCommand(RUNNER_COMMANDS.find((c) => c.id === String(id))),
+        commitHistory: () => commitSearchHistoryNow(),
         toggleStar: (p) => toggleStarPath(String(p)),
         runnerState: () => ({
           on: isRunnerMode(),
@@ -19624,6 +20274,14 @@
           cmdMatches: runnerCmdMatches.map((c) => c.id),
           focusInBox: document.activeElement === document.getElementById('query'),
           status: (document.getElementById('statusMain')?.textContent || '').trim(),
+          chips: runnerActiveFilterChips().map((c) => c.id),
+          checked: checkedPathsMap.size,
+          escStep: runnerEscapeLastStep,
+          recency: recencyFilterMode(),
+          tabs: tabs.length,
+          sent: lastMainSearchText,
+          viewerOff: document.body.classList.contains('tagfox-runner-viewer-off'),
+          focusInList: !!document.activeElement?.closest?.('#resultsWrap'),
         }),
         autoStart: (sec) => { const e = document.getElementById('autoRefreshSec'); if (e) { e.value = String(sec); } syncAutoRefreshTimer(); },
         autoStop: () => { const e = document.getElementById('autoRefreshSec'); if (e) e.value = '0'; syncAutoRefreshTimer(); },

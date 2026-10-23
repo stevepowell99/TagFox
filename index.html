@@ -724,6 +724,8 @@
              outside #queryInputGroup, whose overflow: hidden (for its rounded corners) would clip them. -->
         <div id="runnerCmdList" class="tagfox-runner-only tagfox-runner-cmd-list shadow d-none" role="listbox" aria-label="Commands"></div>
         <div id="runnerOptsPanel" class="tagfox-runner-only tagfox-runner-opts-panel border rounded bg-body shadow-sm" role="menu" aria-label="Options" hidden></div>
+        <!-- Runner only: one chip per setting that differs from Runner's defaults (RUNNER_FILTER_CHIPS). -->
+        <div id="runnerFilterChips" class="tagfox-runner-only tagfox-runner-filter-chips d-none" aria-label="Filters in use"></div>
         <div class="d-flex align-items-center flex-shrink-0 flex-wrap gap-2 tagfox-search-opts-rhs tagfox-status-view-opts">
           <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair tagfox-view-trio tagfox-rv-layout-trio flex-shrink-0" role="group" aria-label="View mode">
             <input type="radio" class="btn-check" name="rvViewMode" id="optRvSmart" value="smart" autocomplete="off" checked />

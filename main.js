@@ -3019,6 +3019,21 @@ ipcMain.handle('show-in-folder', async (_event, fullPath) => {
   shell.showItemInFolder(fullPath);
 });
 
+/** Alt+Enter in Runner: the same Properties dialog as the row menu's entry. */
+ipcMain.handle('show-properties', async (_event, fullPath) => {
+  const { stdout, stderr, ...diag } = openShellPropertiesWin(fullPath);
+  return diag;
+});
+
+/** Runner's last Esc: hide as the toggle shortcut does, so the next press of it raises the window again. */
+ipcMain.handle('hide-main-window', async (event) => {
+  const w = BrowserWindow.fromWebContents(event.sender);
+  if (!w || w.isDestroyed() || w !== mainWindowRef) return { ok: false };
+  w.hide();
+  lastHiddenAt = Date.now();
+  return { ok: true };
+});
+
 ipcMain.handle('open-terminal-at', async (event, cwdPath) => {
   if (process.platform !== 'win32') return { ok: false, error: 'Open in Terminal: Windows only.' };
   const diag = await openTerminalAtPath(cwdPath);
