@@ -77,13 +77,18 @@ function makeCdp(wsUrl) {
 
 // Launch Electron (isolated profile + remote debugging), load the app with the #tagfoxtest hook, and
 // return a driver. Each test passes a unique port + profile so runs do not collide.
-async function connect({ port, profile, maxResults = 60, scope = SCOPES.repo, disableAutofill = true } = {}) {
+// profileFiles: { name: text } written into the fresh profile before launch, for settings main reads at startup.
+async function connect({ port, profile, maxResults = 60, scope = SCOPES.repo, disableAutofill = true, profileFiles = {} } = {}) {
   if (!port || !profile) throw new Error('connect needs { port, profile }');
   const baseUrl = await resolveEverythingUrl();
   const userData = path.join(os.tmpdir(), profile);
   // Wipe the profile so every run starts fresh (deterministic startup: no tabsState/settings carried
   // over from a prior run — otherwise e.g. persisted tabs would break the "1 tab at startup" assertion).
   try { fs.rmSync(userData, { recursive: true, force: true }); } catch (_) {}
+  for (const [name, text] of Object.entries(profileFiles)) {
+    fs.mkdirSync(userData, { recursive: true });
+    fs.writeFileSync(path.join(userData, name), text, 'utf8');
+  }
   // TAGFOX_TEST_HIDDEN keeps the window offscreen (never shown) so test runs do not flash up onscreen;
   // the hidden window still renders and drives through the #tagfoxtest hook over CDP.
   const child = spawn(ELECTRON, [APP_DIR, `--remote-debugging-port=${port}`, `--user-data-dir=${userData}`], {
@@ -131,7 +136,7 @@ async function connect({ port, profile, maxResults = 60, scope = SCOPES.repo, di
   };
 
   const close = () => { try { cdp.close(); } catch (_) {} try { child.kill('SIGKILL'); } catch (_) {} };
-  return { baseUrl, ev, T, state, diag, settle, send: cdp.send, stderr: () => stderr, close };
+  return { baseUrl, userData, ev, T, state, diag, settle, send: cdp.send, stderr: () => stderr, close };
 }
 
 // Standard structural invariants every settled state must satisfy. Returns an array of problem strings.

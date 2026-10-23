@@ -135,6 +135,7 @@ Three icon-pair switches next to the search box — combine them freely:
 
 - **Settings → Toggle key opens: Runner** turns TagFox into one large search box with a ranked list below it and the Viewer on the right third. **Classic** (the default) is the full layout. The `/` command **Switch to the Classic layout** goes back.
 - Runner keeps its own search settings, so switching back and forth leaves Classic's view, filters and folder as they were.
+- **Settings → Hide the window's title bar** gives the list the space Windows' title bar and menu took, in either layout, from the next start. The minimise, maximise and close buttons stay at the top right; drag the window by the strip along the top.
 
 ### ⌨️ Keys
 

@@ -2529,12 +2529,71 @@ function registerQuickTodoShortcut(accelRaw) {
   return { ok: true, accelerator: accel };
 }
 
+/** Settings → "Hide the window's title bar". A BrowserWindow's frame is fixed when it is created, so this is
+ *  read once in createWindow and a change applies on the next start. With it on, Windows draws only the
+ *  minimise, maximise and close buttons, over the page's top right (titleBarOverlay), and the page marks its
+ *  own top strip as the drag handle. */
+const TITLE_BAR_OVERLAY_HEIGHT = 34;
+function windowChromeFile() {
+  return path.join(app.getPath('userData'), 'tagfox-window-chrome.json');
+}
+function loadWindowChrome() {
+  try {
+    const j = JSON.parse(fssync.readFileSync(windowChromeFile(), 'utf8'));
+    return j && typeof j === 'object' ? j : {};
+  } catch (_) {
+    return {};
+  }
+}
+function saveWindowChrome(patch) {
+  const next = { ...loadWindowChrome(), ...patch };
+  fssync.writeFileSync(windowChromeFile(), JSON.stringify(next, null, 2), 'utf8');
+  return next;
+}
+function titleBarOverlayFor(chrome) {
+  return {
+    color: chrome.overlayColor || '#f8f9fa',
+    symbolColor: chrome.overlaySymbolColor || '#212529',
+    height: TITLE_BAR_OVERLAY_HEIGHT,
+  };
+}
+
+ipcMain.handle('window-chrome-get', (event) => {
+  const w = BrowserWindow.fromWebContents(event.sender);
+  return {
+    hideTitleBar: !!loadWindowChrome().hideTitleBar,
+    active: !!(w && w.tagfoxTitleBarHidden),
+  };
+});
+ipcMain.handle('window-chrome-set', (_event, hideTitleBar) => {
+  try {
+    saveWindowChrome({ hideTitleBar: !!hideTitleBar });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+/** The overlay's colours follow the page's theme; kept on disk too, so the next start opens in them. */
+ipcMain.handle('window-chrome-colors', (event, colors) => {
+  const w = BrowserWindow.fromWebContents(event.sender);
+  const c = colors || {};
+  if (!/^#[0-9a-f]{6}$/i.test(c.color || '') || !/^#[0-9a-f]{6}$/i.test(c.symbolColor || '')) return { ok: false };
+  try {
+    saveWindowChrome({ overlayColor: c.color, overlaySymbolColor: c.symbolColor });
+  } catch (_) {}
+  if (w && w.tagfoxTitleBarHidden) w.setTitleBarOverlay({ color: c.color, symbolColor: c.symbolColor, height: TITLE_BAR_OVERLAY_HEIGHT });
+  return { ok: true };
+});
+
 function createWindow() {
   // `maximized` is not a BrowserWindow option — use maximize() so we get OS chrome, not fullscreen.
+  const chrome = loadWindowChrome();
+  const hideTitleBar = !!chrome.hideTitleBar && process.platform === 'win32';
   const win = new BrowserWindow({
     width: 1480,
     height: 820,
     show: false,
+    ...(hideTitleBar ? { titleBarStyle: 'hidden', titleBarOverlay: titleBarOverlayFor(chrome) } : {}),
     // false: File / View stay visible (Alt-only bar hid the menu — looked like “no File menu”).
     autoHideMenuBar: false,
     webPreferences: {
@@ -2548,6 +2607,7 @@ function createWindow() {
     },
   });
   mainWindowRef = win;
+  win.tagfoxTitleBarHidden = hideTitleBar;
   win.on('closed', () => {
     if (mainWindowRef === win) mainWindowRef = null;
   });

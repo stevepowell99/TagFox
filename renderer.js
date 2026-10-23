@@ -3625,6 +3625,7 @@
       await runSearchNow('identity');
       saveActiveTabStateFromUi();
       focusQueryBox(false);
+      syncTitleBarOverlayColors();
     }
 
     /** A typed file type: `.pdf` or `*.pdf`, or `-.tmp` to leave one out. */
@@ -20050,6 +20051,55 @@
       void step(saved);
     })();
 
+    /** Settings → Hide the window's title bar. The window's frame is fixed when it is created (main.js
+        loadWindowChrome), so the box shows the saved setting and a Restart button appears when it differs from
+        what this window was created with. */
+    let windowChromeState = null;
+    async function initWindowChrome() {
+      const cb = document.getElementById('optHideTitleBar');
+      const restart = document.getElementById('btnRestartForTitleBar');
+      try {
+        windowChromeState = await window.tagBrowser.windowChromeGet();
+      } catch (_) {
+        windowChromeState = null;
+      }
+      if (!windowChromeState) {
+        cb?.closest('.col-12')?.classList.add('d-none');
+        return;
+      }
+      if (cb) cb.checked = !!windowChromeState.hideTitleBar;
+      document.body.classList.toggle('tagfox-frameless', !!windowChromeState.active);
+      syncTitleBarOverlayColors();
+      cb?.addEventListener('change', async () => {
+        const r = await window.tagBrowser.windowChromeSet(cb.checked);
+        if (!r || !r.ok) {
+          setStatusMain('Could not save the title bar setting: ' + ((r && r.error) || 'unknown error'));
+          return;
+        }
+        windowChromeState.hideTitleBar = cb.checked;
+        restart?.classList.toggle('d-none', cb.checked === !!windowChromeState.active);
+        syncTitleBarOverlayColors();
+      });
+      restart?.addEventListener('click', () => void window.tagBrowser.restartTagFox());
+    }
+
+    function cssColorToHex(c) {
+      const m = /rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)(?:[\s,/]+([\d.]+))?/i.exec(String(c || ''));
+      if (!m || (m[4] != null && Number(m[4]) === 0)) return '';
+      return '#' + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, '0')).join('');
+    }
+
+    /** The window buttons take the colours of whatever page sits under them: Runner's strip or Classic's
+        header, light or dark. */
+    function syncTitleBarOverlayColors() {
+      if (!windowChromeState || (!windowChromeState.active && !windowChromeState.hideTitleBar)) return;
+      let el = document.elementFromPoint(Math.max(0, window.innerWidth - 12), 8) || document.body;
+      let bg = '';
+      while (el && !(bg = cssColorToHex(getComputedStyle(el).backgroundColor))) el = el.parentElement;
+      const fg = cssColorToHex(getComputedStyle(document.body).color);
+      if (bg && fg) void window.tagBrowser.windowChromeColors({ color: bg, symbolColor: fg });
+    }
+
     /* Dark / light mode: apply saved preference, wire toggle button */
     (function initDarkMode() {
       const html = document.documentElement;
@@ -20059,8 +20109,10 @@
         const isDark = html.getAttribute('data-bs-theme') === 'dark';
         if (isDark) { html.removeAttribute('data-bs-theme'); localStorage.setItem(LS.darkMode, '0'); }
         else { html.setAttribute('data-bs-theme', 'dark'); localStorage.setItem(LS.darkMode, '1'); }
+        syncTitleBarOverlayColors();
       });
     })();
+    void initWindowChrome();
 
     seedSearchHistoryFromCurrent();
     bindVerticalSplitters();

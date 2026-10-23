@@ -232,6 +232,16 @@
             <div class="form-text text-muted small">Runner is one large search box with the results under it and a preview on the right. Classic is the full layout with favourites, tabs and the Shelf.</div>
           </div>
           <div class="col-12 col-lg-8">
+            <div class="form-check mb-0">
+              <input class="form-check-input" type="checkbox" id="optHideTitleBar" autocomplete="off" />
+              <label class="form-check-label small" for="optHideTitleBar">Hide the window's title bar</label>
+            </div>
+            <div class="form-text text-muted small">
+              Windows then draws only the minimise, maximise and close buttons, over the top right of TagFox. Drag the window by its top strip (in Classic, the empty parts of the header); double-click the strip to maximise. Applies when TagFox restarts.
+              <button type="button" class="btn btn-sm btn-warning py-0 ms-1 d-none" id="btnRestartForTitleBar">Restart now</button>
+            </div>
+          </div>
+          <div class="col-12 col-lg-8">
             <label class="form-label small mb-0" for="quickTodoHotkeyDisplay">Quick TODO hotkey -- save notes from anywhere in Windows</label>
             <div class="input-group input-group-sm">
               <input
