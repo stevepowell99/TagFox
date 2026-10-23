@@ -140,7 +140,8 @@ Three icon-pair switches next to the search box — combine them freely:
 
 - Type to search. With the box empty you see the current folder's own contents; once you type, the search covers everything below it.
 - `↑` / `↓` move the selection without leaving the box; `Enter` opens the selected row.
-- `→` at the end of the box goes into the selected folder; `←` at the start goes up to the parent folder and selects the folder you came from. Both clear the box.
+- `→` at the end of the box goes into the selected folder; `←` at the start goes up to the parent folder and selects the folder you came from. Both clear the box. `Backspace` in an empty box drops the folder and searches everywhere.
+- With no text selected in the box, `Ctrl`+`C` and `Ctrl`+`X` copy or cut the selected files for pasting in Explorer, and `Ctrl`+`Shift`+`C` copies their full paths as text. `Ctrl`+`V` pastes copied files, or a screenshot, into the current folder, and pastes text into the box. With text selected, these keys act on the text as usual.
 - `/` opens the command list wherever you are in the box, and whatever you have typed stays there: sort, system files, temp files, folders or files only, match path, modified time, refresh, dark mode, Settings and Classic. Type after the slash to filter it, `Enter` runs a command and leaves your search text as it was, `Esc` closes it.
 - `Ctrl`+`D` stars or unstars the selected row. Stars are the same list as **Favourite folders**.
 - A leading `-word` excludes anything matching that word.

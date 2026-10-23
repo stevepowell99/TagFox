@@ -4039,6 +4039,33 @@
       void runSearchNow('identity');
     }
 
+    /** Ctrl+V in Runner's box: files or an image on the clipboard go into the current folder, as Classic's
+        paste does; text goes into the box. With no current folder there is no target, and it says so. */
+    async function runnerPaste() {
+      const q = document.getElementById('query');
+      let kind = null;
+      try {
+        kind = await window.tagBrowser.clipboardKind();
+      } catch (_) {}
+      if (kind && (kind.files > 0 || kind.image)) {
+        if (!currentScopeFolderPath()) {
+          setStatusMain('No current folder to paste into. Go into a folder first (Right on a folder row), then paste.');
+          return;
+        }
+        await pasteShortcutClipboardIntoScope();
+        return;
+      }
+      let text = kind && typeof kind.text === 'string' ? kind.text : '';
+      if (!kind) {
+        try {
+          text = await navigator.clipboard.readText();
+        } catch (_) {}
+      }
+      if (!text) return;
+      q.setRangeText(text.replace(/[\r\n]+/g, ' '), q.selectionStart, q.selectionEnd, 'end');
+      q.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
     /** The Viewer's full-path line (Runner only; Classic has its Path column and breadcrumb). Click copies it. */
     function setRunnerViewerPath(fp) {
       const el = document.getElementById('runnerViewerPath');
@@ -4249,8 +4276,29 @@
         openRunnerCmdList(q.value);
         return consume();
       }
+      /* Clipboard keys from the box: with text selected they act on the text; otherwise Ctrl+C, Ctrl+X and
+         Ctrl+Shift+C act on the selected rows, as Classic's do from the list. */
+      if (inBox && mod && !e.altKey && /^[cxv]$/i.test(e.key)) {
+        const k = e.key.toLowerCase();
+        if (k !== 'v') {
+          if (q.selectionStart !== q.selectionEnd) return true;
+          if (k === 'c' && e.shiftKey) void keyboardCopyFullPathsText();
+          else if (k === 'c') void copyShortcutExplorerFiles();
+          else void cutShortcutExplorerFiles();
+          return consume();
+        }
+        if (e.shiftKey) return true;
+        e.preventDefault();
+        e.stopPropagation();
+        void runnerPaste();
+        return true;
+      }
       if (mod || e.altKey) return false;
       if (inBox) {
+        if (e.key === 'Backspace' && q.value === '' && document.getElementById('rootFolder').value.trim()) {
+          clearSearchScope();
+          return consume();
+        }
         if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
           const d = e.key === 'ArrowDown' ? 1 : -1;
           if (e.shiftKey) moveResultsSelectionWithShift(d);

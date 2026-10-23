@@ -5830,6 +5830,15 @@ ipcMain.handle('cut-explorer-paste', async (_event, paths) => {
   return err ? { ok: false, error: err } : { ok: true };
 });
 
+/** What Ctrl+V would paste, without pasting: Runner sends files and images to the current folder and text to its box. */
+ipcMain.handle('clipboard-kind', async () => {
+  let files = 0;
+  try {
+    if (process.platform === 'win32') files = readClipboardFilePathsWin().length;
+  } catch (_) {}
+  return { files, image: !clipboard.readImage().isEmpty(), text: clipboard.readText() };
+});
+
 ipcMain.handle('paste-clipboard-into-folder', async (event, { destFolder, rootPrefix, replaceExisting }) => {
   if (process.platform !== 'win32') return { ok: false, error: 'Clipboard file paste is only supported on Windows.' };
   let sources;

@@ -219,6 +219,23 @@ async function main() {
     check(hover.display === 'flex' && hover.insideRow && hover.buttons > 3, `hovering a row shows its buttons in the row (${JSON.stringify(hover)})`);
     await drv.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
 
+    // Backspace in an empty box drops the current folder; with text in the box it only edits the text.
+    await drv.T('configure', { rootFolder: root });
+    await drv.T('setQuery', 'ze');
+    await drv.settle('backspace setup');
+    await focusBox();
+    await key('Backspace', 'Backspace', 8);
+    await drv.settle('backspace text');
+    s = await R();
+    check(s.query === 'z' && norm(s.scope) === norm(root), `Backspace with text in the box edits the text and keeps the folder (box "${s.query}")`);
+    await drv.T('setQuery', '');
+    await drv.settle('backspace empty');
+    await focusBox();
+    await key('Backspace', 'Backspace', 8);
+    await drv.settle('backspace folder');
+    s = await R();
+    check(!s.scope, `Backspace in an empty box removes the current folder (scope "${s.scope}")`);
+
     // AppData\Local\Temp is left out by default and comes back with the / command. Shown first: a row
     // that never appears proves nothing about the default until it has been seen once.
     if (/[\\/]appdata[\\/]local[\\/]temp$/i.test(os.tmpdir())) {
