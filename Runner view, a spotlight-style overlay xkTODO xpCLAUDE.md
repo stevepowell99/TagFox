@@ -42,6 +42,8 @@ Decided in the runner tab, 22 October 2026: `/` commands work with a search term
 
 Decided in the runner tab, 22 October 2026: any filter that differs from Runner's defaults shows on screen as a removable chip under the search box, and its x resets that filter.
 
+Decided in the runner tab, 23 October 2026: anything under `AppData` ranks lower in the smart order but stays visible (Temp stays hidden by default). The penalty does not apply when the current folder is inside `AppData` or the query names it.
+
 ## Plan (coordinator, 22 October 2026)
 
 - Build it as a second layout of the same renderer, not a fork: `renderer.js` is about 800KB, and a fork would mean every fix landed twice.
