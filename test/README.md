@@ -66,6 +66,7 @@ kill reaches, which is how one was once left open on Steve's screen.
 | File | Covers |
 |------|--------|
 | `harness.cjs` | Shared library: launch Electron under CDP, the `#tagfoxtest` driver, `settle()`, and `structuralProblems()` (the invariants below). Not a test itself. |
+| `help-build.cjs` | No Electron. Builds a copy of the working `help.md` in a temp folder, once with LF and once with CRLF line endings, and checks that each build writes one line ending (the one `help.md` had) and says exactly what the working `help.html` says. So a start on a CRLF checkout leaves `help.html` unmodified in `git status`, and a `help.md` edited without rebuilding fails here. It fails on the build script from before 23 October 2026, which turned a CRLF blank line into an indented one. |
 | `smoke.cjs` | Startup, a 10x F5 refresh loop, type+refresh races, opening a 2nd/3rd tab and searching different scopes, cycling tabs, and closing the active tab. Checks the structural invariants after each step. |
 | `tab-lifecycle.cjs` | Open to the cap, refuse the 11th, cycle with wraparound, reorder by index, spring-hover activation, and close down to one (never zero). |
 | `crud-pane-isolation.cjs` | A delete in the active tab must leave another tab's stored rows untouched (cross-tab CRUD bleed). Guards the passive-inactive-tab rule. |

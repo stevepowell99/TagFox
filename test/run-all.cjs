@@ -13,6 +13,7 @@ const NODE = process.execPath;
 const RUN_DEADLINE_MS = 5 * 60 * 1000;
 const runs = [
   { name: 'tag date families', args: ['tags-dates.cjs'] }, // pure logic, no Electron; first because it is instant
+  { name: 'help build', args: ['help-build.cjs'] }, // no Electron either
   { name: 'smoke', args: ['smoke.cjs'] },
   { name: 'tab lifecycle', args: ['tab-lifecycle.cjs'] },
   { name: 'crud tab-isolation', args: ['crud-pane-isolation.cjs'] },
