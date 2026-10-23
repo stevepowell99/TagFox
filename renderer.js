@@ -4405,23 +4405,20 @@
       panel.removeAttribute('hidden');
     }
 
-    /** One list under the box serves the / commands and Ctrl+L's recent folders, filtered by what is typed.
-        Commands: the box keeps its search text, then " /" and the filter. Folders: the whole box is the
-        filter. The search text alone comes back on close, and the search does not re-run while it is open. */
+    /** The / list: the box keeps its search text, then " /" and the filter; the search text alone comes
+        back on close. The search does not re-run while the list is open. */
     let runnerCmdStash = null;
     let runnerCmdPrefix = '/';
-    let runnerCmdSource = 'commands';
     let runnerCmdActive = 0;
     let runnerCmdMatches = [];
     function runnerCmdListIsOpen() {
       return runnerCmdStash !== null;
     }
-    function openRunnerCmdList(stash, source = 'commands') {
+    function openRunnerCmdList(stash) {
       const q = document.getElementById('query');
       runnerCmdStash = String(stash || '');
-      runnerCmdSource = source;
       const term = runnerCmdStash.replace(/\s+$/, '');
-      runnerCmdPrefix = source === 'folders' ? '' : term ? term + ' /' : '/';
+      runnerCmdPrefix = term ? term + ' /' : '/';
       q.value = runnerCmdPrefix;
       q.setSelectionRange(q.value.length, q.value.length);
       syncQueryGhostUi();
@@ -4438,35 +4435,19 @@
       runnerCmdStash = null;
       document.getElementById('runnerCmdList')?.classList.add('d-none');
     }
-    /** What the list offers, each with a label and a run(). */
-    function runnerCmdItems() {
-      if (runnerCmdSource !== 'folders') return RUNNER_COMMANDS;
-      return loadScopeFolderHistory().map((fp) => ({
-        id: fp,
-        label: fp,
-        run: () => void runnerNavigate(() => applySearchScopeAndRefresh(normalizeFolderPathForEverything(fp)), null),
-      }));
-    }
     function renderRunnerCmdList() {
       const el = document.getElementById('runnerCmdList');
       const q = document.getElementById('query');
       if (!el || !q) return;
       const v = String(q.value || '');
       const filter = v.startsWith(runnerCmdPrefix) ? v.slice(runnerCmdPrefix.length).trim() : '';
-      runnerCmdMatches = runnerCmdItems()
+      runnerCmdMatches = RUNNER_COMMANDS
         .map((cmd, i) => ({ cmd, i, s: filter ? fuzzyPathScore(filter, cmd.label) : 0 }))
         .filter((m) => m.s !== null)
         .sort((a, b) => b.s - a.s || a.i - b.i)
         .map((m) => m.cmd);
       if (runnerCmdActive >= runnerCmdMatches.length) runnerCmdActive = Math.max(0, runnerCmdMatches.length - 1);
       el.textContent = '';
-      const folders = runnerCmdSource === 'folders';
-      if (folders) {
-        const h = document.createElement('div');
-        h.className = 'tagfox-runner-cmd-group';
-        h.textContent = 'Recent folders: type to filter, Enter goes there';
-        el.appendChild(h);
-      }
       runnerCmdMatches.forEach((cmd, i) => {
         const b = runnerCmdButton(cmd, i === runnerCmdActive);
         b.dataset.idx = String(i);
@@ -4475,7 +4456,7 @@
       if (!runnerCmdMatches.length) {
         const none = document.createElement('div');
         none.className = 'px-3 py-1 text-muted small';
-        none.textContent = !folders ? 'No command matches.' : filter ? 'No recent folder matches.' : 'No recent folders yet.';
+        none.textContent = 'No command matches.';
         el.appendChild(none);
       }
       el.classList.remove('d-none');
@@ -4652,16 +4633,6 @@
       { group: 'Search', keys: ['?'], does: 'This list of keys, with the box empty', when: (c) => c.inBox && c.empty && c.key === '?', run: () => openRunnerKeysHelp() },
       {
         group: 'Search',
-        keys: ['Ctrl+L'],
-        does: 'Recent folders, filtered as you type; Enter goes there',
-        when: (c) => c.ctrl('l'),
-        run: (c) => {
-          openRunnerCmdList(c.q.value, 'folders');
-          focusQueryBox(false);
-        },
-      },
-      {
-        group: 'Search',
         keys: ['F3', 'Ctrl+F', 'Alt+D'],
         does: 'Back to the box, with its text selected',
         when: (c) => (c.plain && c.key === 'F3') || c.ctrl('f') || (c.alt && !c.mod && !c.shift && c.k === 'd'),
@@ -4813,7 +4784,9 @@
       { group: 'TagFox', keys: ['F1'], does: 'Help', when: (c) => c.plain && c.key === 'F1', run: () => 'classic' },
       { group: 'TagFox', keys: ['Ctrl+,'], does: 'Settings', when: (c) => c.ctrl(','), run: () => 'classic' },
 
-      /* Classic keys for parts Runner does not show: answered, not obeyed. */
+      /* Classic keys for parts Runner does not show: answered, or (Ctrl+L, whose recent folders Runner leaves
+         to the smart order's use boost) kept from opening a menu nobody can see. */
+      { when: (c) => c.ctrl('l'), run: () => {} },
       { when: (c) => c.mod && !c.alt && c.key === 'Tab', run: () => setStatusMain('Result tabs are only in the Classic layout.') },
       { when: (c) => c.mod && c.shift && !c.alt && (c.k === 't' || c.k === 'w'), run: () => setStatusMain('Result tabs are only in the Classic layout.') },
       {
