@@ -46,6 +46,8 @@ Decided in the runner tab, 23 October 2026: anything under `AppData` ranks lower
 
 Decided in the coordinator chat, 23 October 2026: Runner has no recent-folders list and no Ctrl+L, because folders Steve uses already rank high in the smart order. Classic keeps both until Classic itself is retired, and they go with it.
 
+Decided in the coordinator chat, 23 October 2026: recency weighs 15 points rather than 30, so a whole-word name match beats a fresher match inside a word.
+
 ## Plan (coordinator, 22 October 2026)
 
 - Build it as a second layout of the same renderer, not a fork: `renderer.js` is about 800KB, and a fork would mean every fix landed twice.
