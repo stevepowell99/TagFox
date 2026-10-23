@@ -13874,7 +13874,8 @@
 
     function commitSearchHistoryIfChanged() {
       if (searchHistNavigating) return;
-      const s = serializeSearchState();
+      /* The two layouts share one history; the mark says whose view and filters an entry carries. */
+      const s = { ...serializeSearchState(), runner: isRunnerMode() };
       const cur = searchHist[searchHistIdx];
       if (cur && searchStatesEqual(s, cur)) return;
       searchHist = searchHist.slice(0, searchHistIdx + 1);
@@ -13966,7 +13967,10 @@
       searchHistNavigating = true;
       try {
         searchHistIdx = next;
-        applySearchState(searchHist[searchHistIdx]);
+        const entry = searchHist[searchHistIdx];
+        /* Each layout keeps its own view and filters, so a step to an entry made in the other layout
+           brings back only its text and folder. */
+        applySearchState(!!entry.runner === isRunnerMode() ? entry : { ...serializeSearchState(), query: entry.query, rootFolder: entry.rootFolder });
         persistActiveTagFilter();
         saveSettings();
         updateSortHeaders();
@@ -14000,7 +14004,7 @@
     }
 
     function seedSearchHistoryFromCurrent() {
-      searchHist = [serializeSearchState()];
+      searchHist = [{ ...serializeSearchState(), runner: isRunnerMode() }];
       searchHistIdx = 0;
       updateSearchHistoryNavUI();
     }
@@ -20253,6 +20257,7 @@
         setRunnerMode: (on) => setRunnerMode(!!on),
         setRunnerSort: (sort) => setRunnerSort(String(sort)),
         runCommand: (id) => runRunnerCommand(RUNNER_COMMANDS.find((c) => c.id === String(id))),
+        commitHistory: () => commitSearchHistoryNow(),
         toggleStar: (p) => toggleStarPath(String(p)),
         runnerState: () => ({
           on: isRunnerMode(),

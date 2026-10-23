@@ -283,6 +283,29 @@ async function main() {
     s = await R();
     check(norm(s.rows[0]) === norm(appFile), 'inside an AppData folder nothing is pushed down');
 
+    // Alt+Left and Alt+Right step through searches. History is shared with Classic, so a Classic entry brings
+    // only its text and folder into Runner, never Classic's tree view.
+    await drv.T('setRunnerMode', false);
+    await drv.settle('classic for history');
+    await drv.T('configure', { rootFolder: root });
+    await drv.T('setQuery', 'classicword');
+    await drv.ev(`(() => { const t = document.getElementById('optRvTree'); t.checked = true; t.dispatchEvent(new Event('change', { bubbles: true })); return 1; })()`);
+    await drv.settle('classic tree');
+    await drv.T('commitHistory');
+    await drv.T('setRunnerMode', true);
+    await drv.settle('runner for history');
+    await go(alpha, 'runnerword');
+    await drv.T('commitHistory');
+    await focusBox();
+    await key('ArrowLeft', 'ArrowLeft', 37, 1);
+    await drv.settle('alt left');
+    s = await R();
+    check(s.query === 'classicword' && norm(s.scope) === norm(root) && s.layout === 'flat', `Alt+Left brings back a Classic search's text and folder, not its tree view (box "${s.query}", ${s.layout})`);
+    await key('ArrowRight', 'ArrowRight', 39, 1);
+    await drv.settle('alt right');
+    s = await R();
+    check(s.query === 'runnerword' && norm(s.scope) === norm(alpha), `Alt+Right goes forward again (box "${s.query}")`);
+
     // Alt+Home starts again: no text, no folder, no filters.
     await go(alpha, 'qq');
     await focusBox();
