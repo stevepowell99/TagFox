@@ -5,6 +5,7 @@
 //   - Right on a folder makes it the current folder and clears the box; Left goes back up and
 //     selects the folder it came from;
 //   - the smart order puts name matches above rows that match only in the path;
+//   - recency never outweighs the match: a year-old whole-word name ranks above today's inside-word one;
 //   - a leading -word excludes;
 //   - / opens the command list, Enter runs the command, and the box gets its text back;
 //   - Ctrl+D stars and unstars the selected row in the favourites list, where a starred file is a file chip;
@@ -35,6 +36,14 @@ async function main() {
   // Where "map" falls in the name: a whole word, the start of the name, the end of a word, inside a word.
   const mapNames = ['old map.txt', 'mapping.txt', 'roadmap.txt', 'xmapx.txt'];
   for (const n of mapNames) fs.writeFileSync(path.join(root, n), 'map\n');
+  // Recency must not outweigh the match: a year-old file with "atlas" as a whole word in its name ranks
+  // above one modified today that has it only inside a word.
+  const atlasOld = path.join(root, 'old atlas.txt');
+  const atlasNew = path.join(root, 'xatlasx.txt');
+  fs.writeFileSync(atlasOld, 'atlas\n');
+  fs.writeFileSync(atlasNew, 'atlas\n');
+  const yearAgo = new Date(Date.now() - 365 * 864e5);
+  fs.utimesSync(atlasOld, yearAgo, yearAgo);
   const olderMd = path.join(root, 'aaa-older.md');
   fs.writeFileSync(olderMd, '# older\n');
   const old = new Date(Date.now() - 30 * 864e5);
@@ -109,6 +118,12 @@ async function main() {
     s = await R();
     const mapOrder = s.rows.map((r) => path.basename(r)).filter((n) => mapNames.includes(n));
     check(JSON.stringify(mapOrder) === JSON.stringify(mapNames), `whole word, then start, end and inside a word (${mapOrder.join(', ')})`);
+
+    await drv.T('setQuery', 'atlas');
+    await drv.settle('atlas');
+    s = await R();
+    const atlasOrder = s.rows.map((r) => path.basename(r)).filter((n) => n === 'old atlas.txt' || n === 'xatlasx.txt');
+    check(atlasOrder.join(', ') === 'old atlas.txt, xatlasx.txt', `a year-old whole word above today's inside-word match (${atlasOrder.join(', ')})`);
 
     // A typed file type filters by extension and, with no other words, lists the newest first.
     await drv.T('setQuery', '.md');

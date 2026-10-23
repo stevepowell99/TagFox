@@ -3501,8 +3501,10 @@
          the start of the name. So a whole word scores 0.75, the start of a word 0.6, the end of one 0.55
          and the middle 0.4; `exact` is the whole name without its extension. */
       matchKind: Object.freeze({ exact: 1, inside: 0.4, wordStart: 0.2, wordEnd: 0.15, nameStart: 0.1, path: 0 }),
-      /* Modified just now; decays with a time constant of recencyDays. */
-      recency: 30,
+      /* Modified just now; decays with a time constant of recencyDays. Kept below a whole word's lead over an
+         inside-word match (37.5 against 20), so an old file named for the word beats today's file that only
+         contains it (Steve, October 2026; pinned by test/runner-layout.cjs). */
+      recency: 15,
       recencyDays: 14,
       star: 35,
       /* Opened or visited in TagFox; saturates at useSaturates times. */
