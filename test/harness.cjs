@@ -23,6 +23,8 @@ const SCOPES = {
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const HOOK_WAIT_MS = 45000;
+const HOOK_SLOW_MS = 5000;
 const httpGet = (url, timeoutMs = 2000) =>
   new Promise((resolve, reject) => {
     const req = http.get(url, (res) => { let d = ''; res.on('data', (c) => (d += c)); res.on('end', () => resolve(d)); });
@@ -113,10 +115,23 @@ async function connect({ port, profile, maxResults = 60, scope = SCOPES.repo, di
   const diag = () => ev('window.__tagfoxTest.diag()');
 
   // reload with the hook hash; this also re-runs the dual-pane startup dance
+  // The hook is up in about 1s, but a machine busy with other Electron starts has taken over 12s, which
+  // failed whole test files before any check ran. So wait long, say when a start was slow, and on a real
+  // timeout report what the page was doing, so a loaded machine and a broken renderer read differently.
   await ev("location.hash = '#tagfoxtest'; location.reload(); 1");
+  const hookT0 = Date.now();
   let ok = false;
-  for (let i = 0; i < 80; i++) { try { if (await ev("typeof window.__tagfoxTest === 'object' && !!window.__tagfoxTest")) { ok = true; break; } } catch (_) {} await sleep(150); }
-  if (!ok) throw new Error('#tagfoxtest hook never appeared (renderer load failed?)');
+  while (Date.now() - hookT0 < HOOK_WAIT_MS) {
+    try { if (await ev("typeof window.__tagfoxTest === 'object' && !!window.__tagfoxTest")) { ok = true; break; } } catch (_) {}
+    await sleep(150);
+  }
+  const hookMs = Date.now() - hookT0;
+  if (!ok) {
+    let page = 'page unreachable';
+    try { page = JSON.stringify(await ev("({ href: location.href, readyState: document.readyState })")); } catch (_) {}
+    throw new Error(`#tagfoxtest hook never appeared after ${hookMs}ms (${page}); Electron stderr tail: ${stderr.slice(-600) || '(empty)'}`);
+  }
+  if (hookMs > HOOK_SLOW_MS) console.log(`(slow start: the test hook took ${hookMs}ms to appear)`);
 
   if (disableAutofill) await T('disableAutofill'); // headless viewport makes autofill page count nondeterministic
   await T('configure', { baseUrl, rootFolder: scope, maxResults });

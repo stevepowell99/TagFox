@@ -47,6 +47,11 @@ variable turns off the dev reloader, so editing a file in the repo while the sui
 test's window and strips its hook mid-run. Normal app runs are unaffected: `main.js` only skips `show()` and
 the reloader when that variable is set.
 
+The hook normally appears about a second after launch, but a machine busy with other Electron starts has
+taken over 12s, so `connect()` waits up to 45s and prints `(slow start: …)` for any start over 5s. A start
+that never produces the hook fails with the page's URL and load state and the tail of Electron's stderr, so
+a loaded machine and a renderer that failed to load read differently.
+
 `run-all.cjs` gives each run five minutes. A run that overstays is killed along with the Electron it
 launched and counted as failed, so one hung test cannot stall the suite. Each run's time is printed after
 it.
@@ -111,4 +116,5 @@ The hook is the only test-specific code in the shipped app and adds no behaviour
 
 Require `./harness.cjs`, call `connect({ port, profile })` for a driver, drive via `T('method', ...args)`,
 `await settle('label')`, and assert with `structuralProblems(s)`. Use a unique `port` and `profile` per
-file. Add new drivers or inspectors to the `#tagfoxtest` hook in `renderer.js` if you need more control.
+file. `connect({ profileFiles: { name: text } })` writes files into the fresh profile before launch, for
+settings main reads at startup (`window-chrome.cjs` seeds `tagfox-window-chrome.json`). Add new drivers or inspectors to the `#tagfoxtest` hook in `renderer.js` if you need more control.
