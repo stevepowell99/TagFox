@@ -11,6 +11,8 @@
 //   - Ctrl+D stars and unstars the selected row in the favourites list, where a starred file is a file chip;
 //   - hovering a row shows its action buttons, anchored in the row;
 //   - AppData\Local\Temp is hidden by default and the / command shows it;
+//   - there is no standing status line: a search leaves the bar hidden, F5's report brings it up and it goes
+//     again, and a partly ranked list says so in the box;
 //   - switching back to Classic restores Classic's own view settings.
 //
 // Run: node test/runner-layout.cjs
@@ -279,6 +281,30 @@ async function main() {
       console.log('  SKIP temp files: the temp folder here is not AppData\\Local\\Temp (' + os.tmpdir() + ')');
     }
 
+    // No standing status line: a search leaves the bar hidden, a message (here the F5 report) brings it up,
+    // and it goes again. A search over the whole index ranks only part of the matches and says so in the box.
+    for (let i = 0; i < 40 && (await R()).statusShown; i++) await sleep(250);
+    await drv.T('configure', { rootFolder: '' });
+    await drv.T('setQuery', 'a');
+    await drv.settle('whole index');
+    s = await R();
+    check(!s.statusShown && !/\bhits?\b|Hiding/.test(s.status), `a search leaves the status bar hidden and writes no standing line ("${s.status.slice(0, 60)}")`);
+    check(!!s.rankNote && /^\d+ of [\d.]+[KMB]? ranked$/.test(s.rankNote.text) && /^Ranked the \d+ newest of [\d,]+ matches/.test(s.rankNote.title),
+      `a partly ranked list says so in the box (${JSON.stringify(s.rankNote)})`);
+    await drv.T('configure', { rootFolder: root });
+    await drv.T('setQuery', 'zeta');
+    await drv.settle('narrow');
+    s = await R();
+    check(!s.rankNote, `a list ranked in full shows no note (${JSON.stringify(s.rankNote)})`);
+    await focusBox();
+    await key('F5', 'F5', 116);
+    await drv.settle('f5');
+    s = await R();
+    check(s.statusShown && /^Refreshed /.test(s.status), `F5 brings the bar up with its report ("${s.status.slice(0, 60)}")`);
+    await sleep(6000);
+    s = await R();
+    check(!s.statusShown, 'the bar goes again after a few seconds');
+
     const probs = structuralProblems(await drv.state());
     check(!probs.length, 'structural invariants hold in Runner' + (probs.length ? ': ' + probs.join('; ') : ''));
 
@@ -288,6 +314,7 @@ async function main() {
     s = await R();
     const layout = await drv.ev(`document.querySelector('input[name="rvViewMode"]:checked')?.value`);
     check(!s.on && !s.bodyClass && layout === classicLayout, `Classic is back with its own view (${layout}, was ${classicLayout})`);
+    check(/\bhits?\b/.test(s.status), `Classic keeps its standing status line ("${s.status.slice(0, 60)}")`);
   } catch (e) {
     failures.push('threw: ' + (e && e.stack ? e.stack : e));
     console.error(e);

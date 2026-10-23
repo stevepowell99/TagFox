@@ -3973,18 +3973,24 @@
       return true;
     }
 
-    /** Status suffix: how much of the list is drawn, and when the smart order ranked only part of the matches. */
-    function runnerPartialHintHtml() {
-      const parts = [];
-      const total = listRowsForUi().length;
-      if (total > runnerRenderLimit) parts.push('Showing the top ' + runnerRenderLimit + '; scroll or arrow down for more.');
-      if (runnerSort === 'smart' && resultsPagingCtx && resultsPagingCtx.hasMore) {
-        const seen = resultsPagingCtx.singleOffset;
-        const of = typeof runnerTotalHits === 'number' ? ' of ' + runnerTotalHits.toLocaleString() : '';
-        parts.push('Ranked the ' + seen + ' newest' + of + ' matches, plus name matches and every starred or used item that matches. Type more to narrow.');
-      }
-      if (!parts.length) return '';
-      return ' <span class="tagfox-status-hidden-hint">' + escStatusHtmlForStatus(parts.join(' ')) + '</span>';
+    /** When the smart order ranked only part of the matches, say so in the box: "300 of 1.9M ranked", with
+        the whole sentence as its tooltip. Runner has no standing status line, and a list that looks complete
+        but is not must still say so. */
+    function renderRunnerRankNote() {
+      const el = document.getElementById('runnerRankNote');
+      if (!el) return;
+      const partial = isRunnerMode() && runnerSort === 'smart' && resultsPagingCtx && resultsPagingCtx.hasMore;
+      el.classList.toggle('d-none', !partial);
+      if (!partial) return;
+      const seen = resultsPagingCtx.singleOffset;
+      const known = typeof runnerTotalHits === 'number';
+      const compact = known
+        ? new Intl.NumberFormat('en-GB', { notation: 'compact', maximumFractionDigits: 1 }).format(runnerTotalHits)
+        : '';
+      el.textContent = known ? seen + ' of ' + compact + ' ranked' : seen + ' newest ranked';
+      el.title =
+        'Ranked the ' + seen + ' newest' + (known ? ' of ' + runnerTotalHits.toLocaleString() : '') +
+        ' matches, plus name matches and every starred or used item that matches. Type more to narrow.';
     }
 
     /** After a search: a new list (scope or query changed) selects its top row, or the folder just left. */
@@ -5456,6 +5462,7 @@
               st.textContent = cur ? cur + ' — ' + statusNoteAfterSearch : statusNoteAfterSearch;
             }
             pulseStatusBarBrief();
+            flashRunnerStatus();
           }
         }
       })();
@@ -5605,6 +5612,7 @@
       el.classList.toggle('tagfox-status-hidden-hint--warn', kind === 'warn');
       /* Chip already says Smart/layout context — remove trailing “Smart view, …” from main line. */
       stripViewModeSentenceFromStatusMain();
+      flashRunnerStatus();
     }
 
     /** Drop last " · Flat|Tree|Smart view…" segment from #statusMain (smart chip is the sole layout hint). */
@@ -5623,11 +5631,31 @@
       if (/^(Flat|Tree|Smart) view/.test(tail)) main.textContent = t.slice(0, idx);
     }
 
-    /** Main status line; clears Smart chip so transient messages don’t stack. */
-    function setStatusMain(text) {
+    /** Main status line; clears Smart chip so transient messages don’t stack. `progress`: routine progress
+        ("Searching…") that Runner does not bring its hidden bar up for. */
+    function setStatusMain(text, { progress = false } = {}) {
       const el = document.getElementById('statusMain');
       if (el) el.textContent = text == null ? '' : String(text);
       clearStatusSmartNote();
+      if (text && !progress) flashRunnerStatus();
+    }
+
+    /** Runner hides the status bar, so a message (an error, an action's result, the F5 report) brings it up
+        over the bottom edge for a few seconds, and longer while the pointer is on it. */
+    const RUNNER_STATUS_SHOW_MS = 5000;
+    let runnerStatusTimer = null;
+    function flashRunnerStatus() {
+      if (!isRunnerMode()) return;
+      document.body.classList.add('tagfox-runner-status-on');
+      clearTimeout(runnerStatusTimer);
+      const hide = () => {
+        if (document.getElementById('tagfoxNavbarStatus')?.matches(':hover')) {
+          runnerStatusTimer = setTimeout(hide, 1500);
+          return;
+        }
+        document.body.classList.remove('tagfox-runner-status-on');
+      };
+      runnerStatusTimer = setTimeout(hide, RUNNER_STATUS_SHOW_MS);
     }
 
     /* ===== Single-level undo (Ctrl+Z): rename/tag-edit, move, copy/paste, new folder.
@@ -5791,8 +5819,6 @@
         if (showHideSpecialHint) segments.push(hideOptionHintStatusHtml('Hiding special files/folders'));
         if (showHideTildeHint) segments.push(hideOptionHintStatusHtml('Hiding paths with ~ segment'));
       }
-      /* Left out of the query itself, so it never counts as rows hidden from the page. */
-      if (runnerHidesTemp(document.getElementById('rootFolder')?.value)) segments.push(hideOptionHintStatusHtml('Hiding AppData\\Local\\Temp'));
       if (tagRecencyHintPlain) segments.push(tagRecencyStatusFilterHintHtml(tagRecencyHintPlain));
       if (!omitViewSuffix && viewModeSentence)
         segments.push('<span class="tagfox-status-view-suffix">' + escStatusHtmlForStatus(viewModeSentence) + '</span>');
@@ -15430,7 +15456,9 @@
       const tildeDrop = isHideTildePaths() ? afterSpecial.length - afterTilde.length : 0;
       /* Recency status chip only when client pipeline drops rows (Everything-only window may drop 0 here). */
       const recencyNarrows = recencyDrop > 0;
-      if (status) {
+      /* Runner keeps no standing status line: its filters are chips, and the bar shows only for messages
+         (setStatusMain → flashRunnerStatus). */
+      if (status && !isRunnerMode()) {
         let hiddenDueHtml = '';
         if (someRowsHidden) {
           const hiddenN = rawN - visN;
@@ -15471,11 +15499,11 @@
           showHideTildeHint: hideTildeDrops > 0,
           omitViewSuffix:
             !!pendingSmartStatusNote || smartNoteVisible || capStressOmitsViewSuffix,
-          viewModeSentence: isRunnerMode() ? '' : viewModeStatusSentence(),
+          viewModeSentence: viewModeStatusSentence(),
         });
-        if (isRunnerMode()) status.insertAdjacentHTML('beforeend', runnerPartialHintHtml());
       }
       renderRunnerFilterChips();
+      renderRunnerRankNote();
       const showPathFolderGrouping = shouldShowPathFolderGrouping();
       const showPathTreeGutter = isTreeViewOn() && sortColumn === 'path' && isShowSubfolders();
       const pathTreeDepths = rowsForDisplay.map((r) => pathTreeUiDepth(r, showPathFolderGrouping));
@@ -17124,7 +17152,7 @@
         ? new Set(lastRows.map((r) => pathNormKey(fullPathForRow(r))).filter(Boolean))
         : null;
 
-      setStatusMain(explicitRefresh ? 'Refreshing…' : 'Searching…');
+      setStatusMain(explicitRefresh ? 'Refreshing…' : 'Searching…', { progress: !explicitRefresh });
 
       searchDebugLog('runSearch.branch', {
         runId,
@@ -20301,6 +20329,11 @@
           cmdMatches: runnerCmdMatches.map((c) => c.id),
           focusInBox: document.activeElement === document.getElementById('query'),
           status: (document.getElementById('statusMain')?.textContent || '').trim(),
+          statusShown: document.body.classList.contains('tagfox-runner-status-on'),
+          rankNote: (() => {
+            const el = document.getElementById('runnerRankNote');
+            return el && !el.classList.contains('d-none') ? { text: el.textContent, title: el.title } : null;
+          })(),
           chips: runnerActiveFilterChips().map((c) => c.id),
           checked: checkedPathsMap.size,
           escStep: runnerEscapeLastStep,
