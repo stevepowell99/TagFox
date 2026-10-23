@@ -18,7 +18,7 @@ const net = require('net');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const { connect, SCOPES } = require('./harness.cjs');
 
 const DEV_PORT = 5173;
@@ -103,13 +103,14 @@ async function main() {
        vite several seconds later, so a click in that window sees exactly what case 2 sees and used to
        be told to kill the gmist it was about to use (Steve, 3 September 2026, against a gmist that had
        been up since 08:34). The two are told apart by who owns the sidecar, so the fake runner below
-       is a process whose command line looks like dev:local with the port holder as its child. */
+       is a process whose command line looks like dev:local with the port holder as its child. The
+       holder has to be a separate process: main.js reads the command line of the holder's PARENT, so a
+       runner that listened itself would be judged by this test's own command line and read as an orphan. */
     const runnerPath = path.join(os.tmpdir(), 'tagfox-test-dev-local-runner.mjs');
+    const holderSrc = `require('net').createServer((s) => s.on('error', () => {})).listen(${SIDECAR_PORT}, '127.0.0.1'); setInterval(() => {}, 1000);`;
     fs.writeFileSync(runnerPath, [
-      "import { createServer } from 'net';",
-      "const srv = createServer((s) => s.on('error', () => {}));",
-      `srv.listen(${SIDECAR_PORT}, '127.0.0.1');`,
-      'process.on("SIGTERM", () => process.exit(0));',
+      "import { spawn } from 'child_process';",
+      `spawn(process.execPath, ['-e', ${JSON.stringify(holderSrc)}], { stdio: 'ignore' });`,
       'setInterval(() => {}, 1000);',
     ].join(String.fromCharCode(10)));
     let runner = null;
@@ -132,7 +133,8 @@ async function main() {
         console.log('  PASS sidecar held by a live dev:local -> waited for the dev port instead of reporting an orphan');
       }
     } finally {
-      if (runner) { try { runner.kill(); } catch (_) {} }
+      /* The tree, since the holder is the runner's child and outlives a plain kill on Windows. */
+      if (runner) spawnSync('taskkill', ['/PID', String(runner.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
       try { fs.unlinkSync(runnerPath); } catch (_) {}
       for (const s of held.splice(0)) await new Promise((r) => s.close(r));
     }

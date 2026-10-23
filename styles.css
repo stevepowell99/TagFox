@@ -2887,6 +2887,32 @@ body.tagfox-runner #queryInputGroup .tagfox-query-clear.btn {
   opacity: 1;
   color: var(--tb-accent);
 }
+/* Partial ranking: a muted note in the box, the full sentence in its tooltip. */
+.tagfox-runner-rank-note {
+  align-self: center;
+  flex-shrink: 0;
+  padding: 0 0.35rem;
+  font-size: 0.8rem;
+  color: var(--bs-secondary-color);
+  white-space: nowrap;
+  cursor: help;
+}
+/* Runner has no standing status line: the bar sits over the bottom edge, hidden, and a message brings it up
+   for a few seconds (flashRunnerStatus). Fixed, so showing it never moves the list. */
+body.tagfox-runner #tagfoxNavbarStatus {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  box-shadow: 0 -0.25rem 0.75rem rgba(0, 0, 0, 0.08);
+}
+body.tagfox-runner.tagfox-runner-status-on #tagfoxNavbarStatus {
+  opacity: 1;
+  pointer-events: auto;
+}
 /* Filters in use: a line of chips under the box, only when something differs from the defaults. */
 .tagfox-runner-filter-chips {
   flex-basis: 100%;

@@ -94,6 +94,8 @@ async function main() {
     check('the list is long enough to scroll', start.scrollTop > 0, 'scrollTop=' + start.scrollTop);
     if (!start.rows) throw new Error('nothing to test against');
 
+    const statusLine = () => ev(`document.getElementById('statusMain').textContent`);
+    const statusBefore = await statusLine();
     for (let i = 0; i < 4; i++) {
       await T('autoTick');
       await sleep(400);
@@ -101,6 +103,9 @@ async function main() {
     const quiet = JSON.parse(await ev(SNAP));
     check('four quiet ticks rebuilt nothing', quiet.stamped === start.rows, JSON.stringify(quiet));
     check('the scroll position survived the quiet ticks', quiet.scrollTop === start.scrollTop, 'scrollTop=' + quiet.scrollTop);
+    /* A tick that found nothing used to leave "Searching…" on the status line for good. */
+    const statusQuiet = await statusLine();
+    check('the status line is unchanged by the quiet ticks', /\bhits?\b/.test(statusBefore) && statusQuiet === statusBefore, `"${statusBefore}" then "${statusQuiet}"`);
 
     fs.writeFileSync(LATE, 'late\n');
     const late = await waitForIndex(baseUrl, STEM + '-b', 1);

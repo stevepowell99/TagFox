@@ -3973,18 +3973,24 @@
       return true;
     }
 
-    /** Status suffix: how much of the list is drawn, and when the smart order ranked only part of the matches. */
-    function runnerPartialHintHtml() {
-      const parts = [];
-      const total = listRowsForUi().length;
-      if (total > runnerRenderLimit) parts.push('Showing the top ' + runnerRenderLimit + '; scroll or arrow down for more.');
-      if (runnerSort === 'smart' && resultsPagingCtx && resultsPagingCtx.hasMore) {
-        const seen = resultsPagingCtx.singleOffset;
-        const of = typeof runnerTotalHits === 'number' ? ' of ' + runnerTotalHits.toLocaleString() : '';
-        parts.push('Ranked the ' + seen + ' newest' + of + ' matches, plus name matches and every starred or used item that matches. Type more to narrow.');
-      }
-      if (!parts.length) return '';
-      return ' <span class="tagfox-status-hidden-hint">' + escStatusHtmlForStatus(parts.join(' ')) + '</span>';
+    /** When the smart order ranked only part of the matches, say so in the box: "300 of 1.9M ranked", with
+        the whole sentence as its tooltip. Runner has no standing status line, and a list that looks complete
+        but is not must still say so. */
+    function renderRunnerRankNote() {
+      const el = document.getElementById('runnerRankNote');
+      if (!el) return;
+      const partial = isRunnerMode() && runnerSort === 'smart' && resultsPagingCtx && resultsPagingCtx.hasMore;
+      el.classList.toggle('d-none', !partial);
+      if (!partial) return;
+      const seen = resultsPagingCtx.singleOffset;
+      const known = typeof runnerTotalHits === 'number';
+      const compact = known
+        ? new Intl.NumberFormat('en-GB', { notation: 'compact', maximumFractionDigits: 1 }).format(runnerTotalHits)
+        : '';
+      el.textContent = known ? seen + ' of ' + compact + ' ranked' : seen + ' newest ranked';
+      el.title =
+        'Ranked the ' + seen + ' newest' + (known ? ' of ' + runnerTotalHits.toLocaleString() : '') +
+        ' matches, plus name matches and every starred or used item that matches. Type more to narrow.';
     }
 
     /** After a search: a new list (scope or query changed) selects its top row, or the folder just left. */
@@ -4383,8 +4389,12 @@
     }
 
     let runnerOptsPanelOpen = false;
-    function setRunnerOptsPanelOpen(open) {
+    /** The keyboard's place in the options panel (an index into RUNNER_COMMANDS); -1 when opened by mouse. */
+    let runnerOptsActive = -1;
+    function setRunnerOptsPanelOpen(open, active) {
       runnerOptsPanelOpen = !!open;
+      if (!runnerOptsPanelOpen) runnerOptsActive = -1;
+      else if (active != null) runnerOptsActive = active;
       const panel = document.getElementById('runnerOptsPanel');
       const btn = document.getElementById('btnRunnerOpts');
       if (!panel || !btn) return;
@@ -4395,7 +4405,7 @@
       }
       panel.textContent = '';
       let group = '';
-      for (const cmd of RUNNER_COMMANDS) {
+      RUNNER_COMMANDS.forEach((cmd, i) => {
         if (cmd.group !== group) {
           group = cmd.group;
           const h = document.createElement('div');
@@ -4403,9 +4413,10 @@
           h.textContent = group;
           panel.appendChild(h);
         }
-        panel.appendChild(runnerCmdButton(cmd, false));
-      }
+        panel.appendChild(runnerCmdButton(cmd, i === runnerOptsActive));
+      });
       panel.removeAttribute('hidden');
+      panel.querySelector('.tagfox-runner-cmd--active')?.scrollIntoView({ block: 'nearest' });
     }
 
     /** The / list: the box keeps its search text, then " /" and the filter; the search text alone comes
@@ -4636,6 +4647,13 @@
       { group: 'Search', keys: ['?'], does: 'This list of keys, with the box empty', when: (c) => c.inBox && c.empty && c.key === '?', run: () => openRunnerKeysHelp() },
       {
         group: 'Search',
+        keys: ['Alt+O'],
+        does: 'Options: sort, filters, match options. ↑ ↓ or Tab to choose, Enter switches one, Esc or Alt+O closes',
+        when: (c) => c.alt && !c.mod && !c.shift && c.k === 'o',
+        run: () => setRunnerOptsPanelOpen(!runnerOptsPanelOpen, 0),
+      },
+      {
+        group: 'Search',
         keys: ['F3', 'Ctrl+F', 'Alt+D'],
         does: 'Back to the box, with its text selected',
         when: (c) => (c.plain && c.key === 'F3') || c.ctrl('f') || (c.alt && !c.mod && !c.shift && c.k === 'd'),
@@ -4860,9 +4878,23 @@
         }
         if (c.inBox) return true;
       }
-      if (e.key === 'Escape' && runnerOptsPanelOpen) {
-        setRunnerOptsPanelOpen(false);
-        return consume();
+      /* The options panel, open: its items take ↑ ↓ Tab and Enter, as the / list's do. Enter runs an item
+         only once one is chosen, so a panel opened by mouse leaves Enter opening the selected row. */
+      if (runnerOptsPanelOpen) {
+        const n = RUNNER_COMMANDS.length;
+        const step = e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey) ? 1 : e.key === 'ArrowUp' || e.key === 'Tab' ? -1 : 0;
+        if (step && n && !c.mod && !c.alt) {
+          setRunnerOptsPanelOpen(true, runnerOptsActive < 0 ? (step > 0 ? 0 : n - 1) : (runnerOptsActive + step + n) % n);
+          return consume();
+        }
+        if (e.key === 'Enter' && c.plain && !c.shift && runnerOptsActive >= 0) {
+          runRunnerCommand(RUNNER_COMMANDS[runnerOptsActive]);
+          return consume();
+        }
+        if (e.key === 'Escape') {
+          setRunnerOptsPanelOpen(false);
+          return consume();
+        }
       }
       /* Another text field (the Viewer's editor, Settings) or an open menu keeps its own keys. */
       if (!c.inBox && (isTypingTarget(e.target) || isInMarkdownEditSurface(e.target))) return false;
@@ -5456,6 +5488,7 @@
               st.textContent = cur ? cur + ' — ' + statusNoteAfterSearch : statusNoteAfterSearch;
             }
             pulseStatusBarBrief();
+            flashRunnerStatus();
           }
         }
       })();
@@ -5605,6 +5638,7 @@
       el.classList.toggle('tagfox-status-hidden-hint--warn', kind === 'warn');
       /* Chip already says Smart/layout context — remove trailing “Smart view, …” from main line. */
       stripViewModeSentenceFromStatusMain();
+      flashRunnerStatus();
     }
 
     /** Drop last " · Flat|Tree|Smart view…" segment from #statusMain (smart chip is the sole layout hint). */
@@ -5623,11 +5657,31 @@
       if (/^(Flat|Tree|Smart) view/.test(tail)) main.textContent = t.slice(0, idx);
     }
 
-    /** Main status line; clears Smart chip so transient messages don’t stack. */
-    function setStatusMain(text) {
+    /** Main status line; clears Smart chip so transient messages don’t stack. `progress`: routine progress
+        ("Searching…") that Runner does not bring its hidden bar up for. */
+    function setStatusMain(text, { progress = false } = {}) {
       const el = document.getElementById('statusMain');
       if (el) el.textContent = text == null ? '' : String(text);
       clearStatusSmartNote();
+      if (text && !progress) flashRunnerStatus();
+    }
+
+    /** Runner hides the status bar, so a message (an error, an action's result, the F5 report) brings it up
+        over the bottom edge for a few seconds, and longer while the pointer is on it. */
+    const RUNNER_STATUS_SHOW_MS = 5000;
+    let runnerStatusTimer = null;
+    function flashRunnerStatus() {
+      if (!isRunnerMode()) return;
+      document.body.classList.add('tagfox-runner-status-on');
+      clearTimeout(runnerStatusTimer);
+      const hide = () => {
+        if (document.getElementById('tagfoxNavbarStatus')?.matches(':hover')) {
+          runnerStatusTimer = setTimeout(hide, 1500);
+          return;
+        }
+        document.body.classList.remove('tagfox-runner-status-on');
+      };
+      runnerStatusTimer = setTimeout(hide, RUNNER_STATUS_SHOW_MS);
     }
 
     /* ===== Single-level undo (Ctrl+Z): rename/tag-edit, move, copy/paste, new folder.
@@ -5791,8 +5845,6 @@
         if (showHideSpecialHint) segments.push(hideOptionHintStatusHtml('Hiding special files/folders'));
         if (showHideTildeHint) segments.push(hideOptionHintStatusHtml('Hiding paths with ~ segment'));
       }
-      /* Left out of the query itself, so it never counts as rows hidden from the page. */
-      if (runnerHidesTemp(document.getElementById('rootFolder')?.value)) segments.push(hideOptionHintStatusHtml('Hiding AppData\\Local\\Temp'));
       if (tagRecencyHintPlain) segments.push(tagRecencyStatusFilterHintHtml(tagRecencyHintPlain));
       if (!omitViewSuffix && viewModeSentence)
         segments.push('<span class="tagfox-status-view-suffix">' + escStatusHtmlForStatus(viewModeSentence) + '</span>');
@@ -14160,7 +14212,11 @@
       else void loadThumbnail(holder); /* no IntersectionObserver: fall back to eager load */
     }
 
-    /* ---- Hover preview: a larger floating thumbnail while the pointer rests on an eligible row. ---- */
+    /* ---- Hover preview: a larger floating thumbnail while the pointer rests on an eligible row's icon. ----
+       Only the icon tile at the left of the row opens it, so moving down the list by name never does.
+       It closes on anything that is not that tile: another element under the pointer, a key, a scroll,
+       leaving the window, and a repaint of the table. A repaint matters most, because the row under a
+       resting pointer is replaced without any mouseout, which is what left previews stuck over the list. */
     function isHoverPreviewOn() {
       const el = document.getElementById('optHoverPreview');
       if (el) return !!el.checked;
@@ -14169,6 +14225,8 @@
     let hoverPreviewEl = null;
     let hoverPreviewTimer = null;
     let hoverPreviewActiveKey = null;
+    /** The icon tile the preview belongs to; a preview whose tile has left the page is never shown. */
+    let hoverPreviewAnchor = null;
     function ensureHoverPreviewEl() {
       if (hoverPreviewEl) return hoverPreviewEl;
       const d = document.createElement('div');
@@ -14185,6 +14243,7 @@
         hoverPreviewTimer = null;
       }
       hoverPreviewActiveKey = null;
+      hoverPreviewAnchor = null;
       if (hoverPreviewEl) {
         hoverPreviewEl.classList.add('d-none');
         const img = hoverPreviewEl.firstChild;
@@ -14218,13 +14277,14 @@
       el.style.left = left + 'px';
       el.style.top = top + 'px';
     }
-    async function showHoverPreviewFor(fp, key, x, y) {
+    async function showHoverPreviewFor(fp, key, x, y, anchor) {
       const dataUrl = await fetchThumbnail(fp, key, HOVER_PREVIEW_REQ_PX);
-      if (hoverPreviewActiveKey !== key || !dataUrl) return;
+      const current = () => hoverPreviewActiveKey === key && hoverPreviewAnchor === anchor && anchor.isConnected;
+      if (!current() || !dataUrl) return;
       const el = ensureHoverPreviewEl();
       const img = el.firstChild;
       const place = () => {
-        if (hoverPreviewActiveKey === key) positionHoverPreview(el, x, y);
+        if (current()) positionHoverPreview(el, x, y);
       };
       img.onload = place;
       img.src = dataUrl;
@@ -14232,27 +14292,25 @@
     }
     function onResultRowHoverOver(e) {
       if (!isHoverPreviewOn()) return;
-      const tr = e.target.closest && e.target.closest('tr[data-thumb-path]');
-      if (!tr) return;
-      const fp = tr.dataset.thumbPath;
-      if (!fp) return;
-      const key = thumbKey(fp, tr.dataset.thumbMtime, HOVER_PREVIEW_REQ_PX);
-      if (hoverPreviewActiveKey === key) return; /* still on the same row */
-      if (hoverPreviewTimer) clearTimeout(hoverPreviewTimer);
-      if (hoverPreviewEl && !hoverPreviewEl.classList.contains('d-none')) {
-        hoverPreviewEl.classList.add('d-none');
+      const tile = e.target.closest && e.target.closest('.file-type-icon');
+      const tr = tile && tile.closest('tr[data-thumb-path]');
+      const fp = tr && tr.dataset.thumbPath;
+      if (!fp) {
+        if (hoverPreviewActiveKey) hideHoverPreview();
+        return;
       }
+      const key = thumbKey(fp, tr.dataset.thumbMtime, HOVER_PREVIEW_REQ_PX);
+      if (hoverPreviewActiveKey === key && hoverPreviewAnchor === tile) return; /* still on the same icon */
+      hideHoverPreview();
       hoverPreviewActiveKey = key;
+      hoverPreviewAnchor = tile;
       const x = e.clientX;
       const y = e.clientY;
-      hoverPreviewTimer = setTimeout(() => void showHoverPreviewFor(fp, key, x, y), HOVER_PREVIEW_DELAY_MS);
+      hoverPreviewTimer = setTimeout(() => void showHoverPreviewFor(fp, key, x, y, tile), HOVER_PREVIEW_DELAY_MS);
     }
+    /** Leaving the window sends a mouseout with nowhere to go and no mouseover after it. */
     function onResultRowHoverOut(e) {
-      const tr = e.target.closest && e.target.closest('tr[data-thumb-path]');
-      if (!tr) return;
-      const to = e.relatedTarget;
-      if (to && tr.contains(to)) return; /* moving within the same row */
-      hideHoverPreview();
+      if (hoverPreviewActiveKey && !e.relatedTarget) hideHoverPreview();
     }
 
     function fileExtFromPretty(pretty) {
@@ -15381,6 +15439,7 @@
       }
       clearInternalPathDragDropTargetHints();
       resetThumbObserver();
+      hideHoverPreview(); /* its row is about to go, with no mouseout to say so */
       tbody.innerHTML = '';
       const rows = filteredRows();
       const rowsForDisplay = listRowsForUi();
@@ -15430,7 +15489,9 @@
       const tildeDrop = isHideTildePaths() ? afterSpecial.length - afterTilde.length : 0;
       /* Recency status chip only when client pipeline drops rows (Everything-only window may drop 0 here). */
       const recencyNarrows = recencyDrop > 0;
-      if (status) {
+      /* Runner keeps no standing status line: its filters are chips, and the bar shows only for messages
+         (setStatusMain → flashRunnerStatus). */
+      if (status && !isRunnerMode()) {
         let hiddenDueHtml = '';
         if (someRowsHidden) {
           const hiddenN = rawN - visN;
@@ -15471,11 +15532,11 @@
           showHideTildeHint: hideTildeDrops > 0,
           omitViewSuffix:
             !!pendingSmartStatusNote || smartNoteVisible || capStressOmitsViewSuffix,
-          viewModeSentence: isRunnerMode() ? '' : viewModeStatusSentence(),
+          viewModeSentence: viewModeStatusSentence(),
         });
-        if (isRunnerMode()) status.insertAdjacentHTML('beforeend', runnerPartialHintHtml());
       }
       renderRunnerFilterChips();
+      renderRunnerRankNote();
       const showPathFolderGrouping = shouldShowPathFolderGrouping();
       const showPathTreeGutter = isTreeViewOn() && sortColumn === 'path' && isShowSubfolders();
       const pathTreeDepths = rowsForDisplay.map((r) => pathTreeUiDepth(r, showPathFolderGrouping));
@@ -17124,7 +17185,9 @@
         ? new Set(lastRows.map((r) => pathNormKey(fullPathForRow(r))).filter(Boolean))
         : null;
 
-      setStatusMain(explicitRefresh ? 'Refreshing…' : 'Searching…');
+      /* Not for an auto-refresh tick: one that finds nothing new returns from renderTableImpl before the
+         status is written, so its "Searching…" stayed on the line until the rows next changed. */
+      if (!quietAutoRefreshRender) setStatusMain(explicitRefresh ? 'Refreshing…' : 'Searching…', { progress: !explicitRefresh });
 
       searchDebugLog('runSearch.branch', {
         runId,
@@ -17779,10 +17842,12 @@
       saveSettings();
       if (!isHoverPreviewOn()) hideHoverPreview();
     });
-    /* Hover preview: delegated so it spans both panes and survives re-renders; hidden on scroll / leaving the window. */
+    /* Hover preview: delegated so it survives re-renders; anything other than resting on the icon closes it. */
     document.addEventListener('mouseover', onResultRowHoverOver);
     document.addEventListener('mouseout', onResultRowHoverOut);
     document.addEventListener('scroll', hideHoverPreview, true);
+    document.addEventListener('keydown', hideHoverPreview, true);
+    document.addEventListener('visibilitychange', hideHoverPreview);
     window.addEventListener('blur', hideHoverPreview);
     document.getElementById('optSearchDebug').addEventListener('change', () => {
       saveSettings();
@@ -20301,6 +20366,11 @@
           cmdMatches: runnerCmdMatches.map((c) => c.id),
           focusInBox: document.activeElement === document.getElementById('query'),
           status: (document.getElementById('statusMain')?.textContent || '').trim(),
+          statusShown: document.body.classList.contains('tagfox-runner-status-on'),
+          rankNote: (() => {
+            const el = document.getElementById('runnerRankNote');
+            return el && !el.classList.contains('d-none') ? { text: el.textContent, title: el.title } : null;
+          })(),
           chips: runnerActiveFilterChips().map((c) => c.id),
           checked: checkedPathsMap.size,
           escStep: runnerEscapeLastStep,

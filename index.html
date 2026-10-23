@@ -373,7 +373,7 @@
           <label
             class="btn btn-outline-secondary btn-sm"
             for="optHoverPreview"
-            title="Show a larger floating preview when the pointer rests on an image, video, PDF or Office row"
+            title="Show a larger floating preview when the pointer rests on the icon at the left of an image, video, PDF or Office row"
             >Hover preview</label>
         </div>
       </div>
@@ -723,6 +723,8 @@
             <div id="queryGhostHint" class="tagfox-query-ghost-hint" aria-hidden="true"></div>
             <input type="text" id="query" class="form-control tagfox-query-empty" placeholder="" autocomplete="off" />
           </div>
+          <!-- Runner only: shown when the smart order ranked only part of the matches (renderRunnerRankNote). -->
+          <span id="runnerRankNote" class="tagfox-runner-only tagfox-runner-rank-note d-none"></span>
           <!-- Runner only: the toggles, one low-contrast control that opens on click. -->
           <div class="tagfox-runner-only position-relative d-flex align-self-stretch">
             <button type="button" id="btnRunnerOpts" class="btn tagfox-runner-opts-btn" aria-expanded="false" aria-controls="runnerOptsPanel" title="Options: sort, system files, folders only, match path (or type / in the box)" aria-label="Options">

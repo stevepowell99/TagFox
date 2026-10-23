@@ -245,6 +245,30 @@ async function main() {
     s = await R();
     check(!s.viewerOff && (await viewerShown()), 'Alt+P again shows it');
 
+    // Alt+O: the options panel, worked from the keyboard.
+    const opts = () => drv.ev(`(() => { const p = document.getElementById('runnerOptsPanel'); const a = p && p.querySelector('.tagfox-runner-cmd--active'); return { open: !!p && !p.hidden, active: a ? a.dataset.cmdId : null, activeOn: !!(a && a.querySelector('.fa-check')) }; })()`);
+    await focusBox();
+    await letter('o', 1);
+    let o = await opts();
+    check(o.open && o.active === 'sort-smart', `Alt+O opens the options with the first one chosen (${JSON.stringify(o)})`);
+    await key('ArrowDown', 'ArrowDown', 40);
+    await key('ArrowDown', 'ArrowDown', 40);
+    await key('Enter', 'Enter', 13, 0, '\r');
+    await drv.settle('alt o enter');
+    o = await opts();
+    s = await R();
+    check(o.open && o.active === 'sort-name' && o.activeOn && s.sort === 'name', `Down twice and Enter switches on Sort by name, leaving the panel open (${JSON.stringify(o)}, sort ${s.sort})`);
+    const beforeEsc = await R();
+    await key('Escape', 'Escape', 27);
+    s = await R();
+    check(!(await opts()).open && s.query === beforeEsc.query && s.scope === beforeEsc.scope, 'Esc closes the options and nothing else');
+    await letter('o', 1);
+    await letter('o', 1);
+    check(!(await opts()).open, 'Alt+O again closes them');
+    await letter('n', 2); // Ctrl+N: back to the smart order
+    await drv.settle('ctrl n');
+    check((await R()).sort === 'smart', 'set up: back to the smart order');
+
     // ? in an empty box: Help at Runner's keys, drawn from the key table.
     await drv.T('setQuery', '');
     await focusBox();
