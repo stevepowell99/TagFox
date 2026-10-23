@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   search: (payload) => ipcRenderer.invoke('everything-search', payload),
   openPath: (fullPath) => ipcRenderer.invoke('open-path', fullPath),
   showInFolder: (fullPath) => ipcRenderer.invoke('show-in-folder', fullPath),
+  hideMainWindow: () => ipcRenderer.invoke('hide-main-window'),
   openTerminalAt: (cwdPath) => ipcRenderer.invoke('open-terminal-at', cwdPath),
   renamePath: (payload) => ipcRenderer.invoke('rename-path', payload),
   movePathsIntoFolder: (payload) => ipcRenderer.invoke('move-paths-into-folder', payload),

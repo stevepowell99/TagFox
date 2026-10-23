@@ -2882,6 +2882,63 @@ body.tagfox-runner #queryInputGroup .tagfox-query-clear.btn {
 .tagfox-runner-opts-btn[aria-expanded="true"] {
   opacity: 1;
 }
+/* Something differs from the defaults: the options control stops being faint. */
+.tagfox-runner-opts-btn.tagfox-runner-opts-btn--changed {
+  opacity: 1;
+  color: var(--tb-accent);
+}
+/* Filters in use: a line of chips under the box, only when something differs from the defaults. */
+.tagfox-runner-filter-chips {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: -0.25rem;
+  font-size: 0.8rem;
+}
+.tagfox-runner-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.1rem 0.15rem 0.1rem 0.6rem;
+  border-radius: 999px;
+  color: var(--bs-body-color);
+  background: color-mix(in srgb, var(--tb-accent) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tb-accent) 35%, transparent);
+}
+.tagfox-runner-filter-chip > .fa-solid {
+  color: var(--tb-accent);
+  font-size: 0.72rem;
+}
+.tagfox-runner-filter-chip-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--bs-secondary-color);
+  font-size: 0.7rem;
+}
+.tagfox-runner-filter-chip-x:hover {
+  color: var(--bs-body-color);
+  background: color-mix(in srgb, var(--tb-accent) 22%, transparent);
+}
+.tagfox-runner-filter-reset {
+  border: 0;
+  background: transparent;
+  padding: 0 0.35rem;
+  color: var(--bs-secondary-color);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.tagfox-runner-filter-reset:hover {
+  color: var(--bs-body-color);
+}
 .tagfox-runner-opts-panel {
   position: absolute;
   top: calc(100% + 4px);
@@ -3021,6 +3078,44 @@ body.tagfox-runner #resultsTable > tbody > tr > td {
 body.tagfox-runner #resultsTable > tbody > tr > td.results-td-cb,
 body.tagfox-runner #resultsTable > tbody > tr > td.results-td-size {
   display: none !important;
+}
+/* Ctrl held on its own: the first nine rows on screen carry the digit that opens them, over the type tile. */
+body.tagfox-runner.tagfox-runner-ctrl-hints #resultsTable > tbody > tr[data-runner-n]::after {
+  content: attr(data-runner-n);
+  position: absolute;
+  left: 0.55rem;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 0.35rem;
+  background: var(--tb-accent);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+/* Two or more checked rows (the bulk bar is up): the checkboxes come back, in the row's left padding,
+   and the type tile moves over to make room. */
+body.tagfox-runner.tagfox-multi-checked #resultsTable > tbody > tr {
+  padding-left: 3.5rem;
+}
+body.tagfox-runner.tagfox-multi-checked #resultsTable > tbody > tr > td.results-td-cb {
+  display: block !important;
+  position: absolute;
+  left: 0.6rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+body.tagfox-runner.tagfox-multi-checked #resultsTable > tbody > tr .folder-type-icon,
+body.tagfox-runner.tagfox-multi-checked #resultsTable > tbody > tr .file-type-icon {
+  left: 1.9rem;
+}
+body.tagfox-runner.tagfox-multi-checked #resultsTable > tbody > tr .recency-blob {
+  left: 2.85rem;
 }
 body.tagfox-runner #resultsTable > tbody > tr > td:nth-child(2) { grid-area: name; }
 body.tagfox-runner #resultsTable > tbody > tr > td.col-path { grid-area: path; }
