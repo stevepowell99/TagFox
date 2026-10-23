@@ -44,6 +44,8 @@ Decided in the runner tab, 22 October 2026: any filter that differs from Runner'
 
 Decided in the runner tab, 23 October 2026: anything under `AppData` ranks lower in the smart order but stays visible (Temp stays hidden by default). The penalty does not apply when the current folder is inside `AppData` or the query names it.
 
+Decided in the coordinator chat, 23 October 2026: Runner has no recent-folders list and no Ctrl+L, because folders Steve uses already rank high in the smart order.
+
 ## Plan (coordinator, 22 October 2026)
 
 - Build it as a second layout of the same renderer, not a fork: `renderer.js` is about 800KB, and a fork would mean every fix landed twice.
