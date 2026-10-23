@@ -77,6 +77,8 @@
       runnerShowTemp: 'tagBrowserRunnerShowTemp',
       runnerViewerOff: 'tagBrowserRunnerViewerOff',
       runnerWordStarts: 'tagBrowserRunnerWordStarts',
+      /* Set once Runner's old hide-~ default has been carried over to showing ~ paths ranked down. */
+      runnerTildeShownMoved: 'tagBrowserRunnerTildeShownMoved',
     };
 
     /** One-time copy when upgrading from the old app name (everythang* keys). */
@@ -3515,6 +3517,11 @@
       /* Taken off anything under an AppData folder (caches, logs, app state), unless the current folder is
          inside AppData or the query names it. A ranking penalty, not a filter: such rows still come up. */
       appData: 45,
+      /* Taken off anything with a `~` segment in its path (Word's ~$ lock files, ~folders), which Runner lists
+         rather than hides. Not taken when the whole name was typed (`keys.kdbx` in `~keys_and_ids`), when the
+         query contains a ~, or inside a ~folder. Measured on Steve's keys.kdbx (test/runner-layout.cjs):
+         without the whole-name exception an xk note that only mentions keys.kdbx ranks above it. */
+      tilde: 45,
       /* Every starred and used path that could match is fetched by one extra query. Up to this many, as
          name-plus-parent terms at about 3.5ms each; above it, as one `filelist:`, which costs 0.5-1s
          whatever its length (both measured on 2.4 million items, October 2026). */
@@ -3557,7 +3564,8 @@
         optPath: true,
         optDiacritics: false,
         optHideSpecial: true,
-        optHideTilde: true,
+        /* ~ paths are listed and ranked down (RUNNER_RANK.tilde), not hidden. */
+        optHideTilde: false,
         recencyFilter: 'all',
         sortColumn: 'date_modified',
         sortAsc: false,
@@ -3594,6 +3602,13 @@
         st.sortAsc = sc.asc;
         st.resultsLayout = 'flat';
         applySearchState(st);
+        /* Runner hid ~ paths by default until October 2026; carry that saved hide over to showing them once.
+           A hide chosen after this survives, because the marker is written either way. */
+        if (localStorage.getItem(LS.runnerTildeShownMoved) !== '1') {
+          localStorage.setItem(LS.runnerTildeShownMoved, '1');
+          runnerSetOpt('optHideTilde', false);
+          lsSetJson(LS.runnerState, serializeSearchState());
+        }
       } else if (runnerModeOn) {
         lsSetJson(LS.runnerState, serializeSearchState());
         const stash = lsGetJson(LS.runnerClassicStash, null);
@@ -3725,6 +3740,9 @@
       const K = RUNNER_RANK.matchKind;
       if (stemLc === words.join(' ')) return { quality: K.exact, inName: words.length };
       const nameLc = nameFold.toLowerCase();
+      /* The whole name typed, extension included (`keys.kdbx`). A leading separator survives the split as
+         an empty word, so `~$report.docx` is not an exact match for `report.docx`. */
+      if (nameLc.split(/[^\p{L}\p{N}]+/u).join(' ') === words.join(' ')) return { quality: K.exact, inName: words.length };
       const isAlnum = (c) => /[\p{L}\p{N}]/u.test(c);
       const isLetter = (c) => /\p{L}/u.test(c);
       /* A boundary between positions i-1 and i. */
@@ -3799,6 +3817,7 @@
       const scope = String(document.getElementById('rootFolder')?.value || '').trim();
       const appDataPenalty =
         RUNNER_APPDATA_RE.test(scope + '\\') || words.some((w) => w.includes('appdata')) ? 0 : RUNNER_RANK.appData;
+      const tildePenalty = pathUnderTildeSegment(scope) || String(qText || '').includes('~') ? 0 : RUNNER_RANK.tilde;
       const scored = rows.map((r) => {
         const fp = fullPathForRow(r);
         const k = pathNormKey(fp);
@@ -3813,6 +3832,7 @@
         if (stars.has(k)) s += RUNNER_RANK.star;
         s += runnerUseBoost(use.get(k), now);
         if (appDataPenalty && RUNNER_APPDATA_RE.test(fp)) s -= appDataPenalty;
+        if (tildePenalty && m.quality < RUNNER_RANK.matchKind.exact && pathUnderTildeSegment(fp)) s -= tildePenalty;
         return { r, tier: m.inName, s };
       });
       scored.sort((a, b) => b.tier - a.tier || b.s - a.s || compareRowsBySort(a.r, b.r, 'date_modified', false));
@@ -4099,9 +4119,13 @@
     }
 
     function runnerToggleSystemFiles() {
-      const showing = !isHideSpecialPaths() && !isHideTildePaths();
-      runnerSetOpt('optHideSpecial', showing);
-      runnerSetOpt('optHideTilde', showing);
+      runnerSetOpt('optHideSpecial', !isHideSpecialPaths());
+      saveSettings();
+      void runSearchNow('identity');
+    }
+
+    function runnerToggleTilde() {
+      runnerSetOpt('optHideTilde', !isHideTildePaths());
       saveSettings();
       void runSearchNow('identity');
     }
@@ -4196,7 +4220,8 @@
       { id: 'sort-smart', group: 'Sort', label: 'Sort: smart (name matches, recent, starred, used)', isOn: () => runnerSort === 'smart', run: () => setRunnerSort('smart') },
       { id: 'sort-date', group: 'Sort', label: 'Sort by date, newest first', isOn: () => runnerSort === 'date', run: () => setRunnerSort('date') },
       { id: 'sort-name', group: 'Sort', label: 'Sort by name', isOn: () => runnerSort === 'name', run: () => setRunnerSort('name') },
-      { id: 'system', group: 'Show', label: 'Show system files (. $ ~ desktop.ini)', isOn: () => !isHideSpecialPaths() && !isHideTildePaths(), run: () => runnerToggleSystemFiles() },
+      { id: 'system', group: 'Show', label: 'Show system files (. $ desktop.ini)', isOn: () => !isHideSpecialPaths(), run: () => runnerToggleSystemFiles() },
+      { id: 'tilde', group: 'Show', label: 'Hide ~ paths (lock files, ~folders; listed lower when shown)', isOn: () => isHideTildePaths(), run: () => runnerToggleTilde() },
       { id: 'temp', group: 'Show', label: 'Show temp files (AppData\\Local\\Temp)', isOn: () => localStorage.getItem(LS.runnerShowTemp) === '1', run: () => runnerToggleTemp() },
       { id: 'folders', group: 'Show', label: 'Folders only', isOn: () => isFoldersOnly(), run: () => runnerSetContent(isFoldersOnly() ? 'all' : 'folders') },
       { id: 'files', group: 'Show', label: 'Files only', isOn: () => isFilesOnly(), run: () => runnerSetContent(isFilesOnly() ? 'all' : 'files') },
@@ -4255,19 +4280,16 @@
       {
         id: 'system',
         icon: 'fa-eye',
-        on: () => !isHideSpecialPaths() || !isHideTildePaths(),
-        label: () =>
-          !isHideSpecialPaths() && !isHideTildePaths()
-            ? 'Showing system files'
-            : !isHideSpecialPaths()
-              ? 'Showing . and $ files'
-              : 'Showing ~ paths',
-        reset: () => {
-          runnerSetOpt('optHideSpecial', true);
-          runnerSetOpt('optHideTilde', true);
-          saveSettings();
-          void runSearchNow('identity');
-        },
+        on: () => !isHideSpecialPaths(),
+        label: () => 'Showing system files',
+        reset: () => runnerToggleSystemFiles(),
+      },
+      {
+        id: 'tilde',
+        icon: 'fa-eye-slash',
+        on: () => isHideTildePaths(),
+        label: () => 'Hiding ~ paths',
+        reset: () => runnerToggleTilde(),
       },
       {
         id: 'temp',
@@ -13482,6 +13504,9 @@
 
     function saveSettings() {
       if (!settingsLoadCompleted) return;
+      /* Runner's own search state is applied at every start in Runner, so it is kept current here: written
+         only on leaving Runner, a change made in Runner (system files, whole words) was gone after a restart. */
+      if (runnerModeOn) lsSetJson(LS.runnerState, serializeSearchState());
       localStorage.setItem(LS.baseUrl, document.getElementById('baseUrl').value.trim());
       localStorage.setItem(LS.rootFolder, document.getElementById('rootFolder').value.trim());
       {

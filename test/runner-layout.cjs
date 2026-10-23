@@ -46,6 +46,27 @@ async function main() {
   fs.writeFileSync(atlasNew, 'atlas\n');
   const yearAgo = new Date(Date.now() - 365 * 864e5);
   fs.utimesSync(atlasOld, yearAgo, yearAgo);
+  // ~ paths are listed and ranked down. Steve's own case: keys.kdbx in a ~folder, typed in full, comes
+  // first, above its .bak siblings and above an xk note that only mentions it; the ages mirror his files.
+  const tildeDir = path.join(root, '~keys_and_ids');
+  const kdbx = path.join(tildeDir, 'keys.kdbx');
+  const kdbxBaks = [path.join(tildeDir, 'keys.kdbx.2026-10-23-100926.bak'), path.join(tildeDir, 'keys.kdbx.2026-10-22-172604.bak')];
+  const kdbxNote = path.join(root, 'notes', 'check keys.kdbx then retire Bitwarden xkTODO xpSTEVE.md');
+  fs.mkdirSync(tildeDir, { recursive: true });
+  fs.mkdirSync(path.dirname(kdbxNote), { recursive: true });
+  for (const [p, hoursAgo] of [[kdbx, 1], [kdbxBaks[0], 19], [kdbxBaks[1], 76], [kdbxNote, 188]]) {
+    fs.writeFileSync(p, 'k\n');
+    const t = new Date(Date.now() - hoursAgo * 36e5);
+    fs.utimesSync(p, t, t);
+  }
+  // A Word lock file is new and the document it locks is two months old, so without the ~ penalty the
+  // lock file's recency would put it first.
+  const reportDoc = path.join(root, 'report.docx');
+  const reportLock = path.join(root, '~$report.docx');
+  fs.writeFileSync(reportDoc, 'doc\n');
+  fs.writeFileSync(reportLock, 'lock\n');
+  const twoMonths = new Date(Date.now() - 60 * 864e5);
+  fs.utimesSync(reportDoc, twoMonths, twoMonths);
   const olderMd = path.join(root, 'aaa-older.md');
   fs.writeFileSync(olderMd, '# older\n');
   const old = new Date(Date.now() - 30 * 864e5);
@@ -79,8 +100,13 @@ async function main() {
     };
 
     await key('Shift', 'ShiftLeft', 16); // a hidden window runs no frames until its first input
+    // Runner used to hide ~ paths by default: a saved Runner state that still says so is carried over to
+    // showing them, once, and the carried value is saved.
+    await drv.ev(`(localStorage.setItem('tagBrowserRunnerState', JSON.stringify({ optHideTilde: true })), 1)`);
     await drv.T('setRunnerMode', true);
     await drv.settle('runner on');
+    const carried = await drv.ev(`JSON.stringify({ live: document.getElementById('optHideTilde').checked, saved: JSON.parse(localStorage.getItem('tagBrowserRunnerState')).optHideTilde })`);
+    check(carried === '{"live":false,"saved":false}', `an old saved hide-~ is carried over to showing ~ paths (${carried})`);
     let s = await R();
     check(s.on && s.bodyClass && s.layout === 'flat', `Runner is on with a flat list (layout ${s.layout})`);
     // Runner keeps its own search state, so its current folder is set here rather than inherited from Classic.
@@ -126,6 +152,38 @@ async function main() {
     s = await R();
     const atlasOrder = s.rows.map((r) => path.basename(r)).filter((n) => n === 'old atlas.txt' || n === 'xatlasx.txt');
     check(atlasOrder.join(', ') === 'old atlas.txt, xatlasx.txt', `a year-old whole word above today's inside-word match (${atlasOrder.join(', ')})`);
+
+    // ~ paths: listed by default, ranked down, and the penalty gives way to a name typed in full.
+    await drv.T('setQuery', 'keys.kdbx');
+    const kdbxListed = (await waitForRow(kdbxNote, 'keys.kdbx')) && (await waitForRow(kdbxBaks[1], 'keys.kdbx bak'));
+    s = await R();
+    const at = (p) => s.rows.findIndex((r) => norm(r) === norm(p));
+    check(kdbxListed && has(s.rows, kdbx), `~ paths are listed by default (${s.rows.map((r) => path.basename(r)).join(', ')})`);
+    check(
+      at(kdbx) === 0 && kdbxBaks.every((b) => at(b) > 0) && at(kdbxNote) > 0,
+      `keys.kdbx typed in full comes first, above its .bak siblings and the note that mentions it (${s.rows.map((r) => path.basename(r)).join(', ')})`
+    );
+    await drv.T('setQuery', 'report');
+    await waitForRow(reportLock, 'report');
+    s = await R();
+    check(at(reportDoc) >= 0 && at(reportLock) > at(reportDoc), `~$report.docx sinks below report.docx (doc ${at(reportDoc)}, lock ${at(reportLock)})`);
+    await drv.T('setQuery', 'keys_and_ids');
+    await drv.settle('tilde folder');
+    s = await R();
+    check(at(tildeDir) === 0, `typing a ~folder's name puts it first (${s.rows.map((r) => path.basename(r)).slice(0, 3).join(', ')})`);
+    // Hiding them is still a switch: the / command, with a chip that says so.
+    await drv.T('setQuery', 'report');
+    await drv.ev(`(document.getElementById('btnRunnerOpts').click(), document.querySelector('#runnerOptsPanel [data-cmd-id="tilde"]').click(), 1)`);
+    await drv.settle('hide tilde');
+    s = await R();
+    check(!has(s.rows, reportLock) && has(s.rows, reportDoc) && s.chips.includes('tilde'), `Hide ~ paths hides them and a chip says so (${s.chips.join(', ')})`);
+    // Saved as it changes, because Runner's saved state is what a restart in Runner applies.
+    const savedHide = await drv.ev(`JSON.parse(localStorage.getItem('tagBrowserRunnerState') || '{}').optHideTilde`);
+    check(savedHide === true, `a change made in Runner is saved at once (saved optHideTilde ${savedHide})`);
+    await drv.ev(`(document.querySelector('#runnerOptsPanel [data-cmd-id="tilde"]').click(), document.getElementById('btnRunnerOpts').click(), 1)`);
+    await drv.settle('show tilde');
+    s = await R();
+    check(has(s.rows, reportLock) && !s.chips.includes('tilde'), 'and again shows them');
 
     // A typed file type filters by extension and, with no other words, lists the newest first.
     await drv.T('setQuery', '.md');
