@@ -19519,7 +19519,16 @@
     /** Drive API hello-world (navbar tick after New dbg). */
     setTimeout(() => void refreshGoogleDriveApiPingSegment(), 1200);
     void renderShelf().then(() => refreshTagFoxChromeTooltips(document.body));
-    requestAnimationFrame(() => requestAnimationFrame(focusSearchBox));
+    /* A hidden window (autostart, tests) runs no frames until it is shown or gets a key, so this can land after the
+       user has already opened a menu or focused something; it must not take focus back from them. */
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const ae = document.activeElement;
+        if (document.querySelector('.dropdown-menu.show')) return;
+        if (ae && ae !== document.body) return;
+        focusSearchBox();
+      })
+    );
     window.addEventListener('blur', () => searchDebugFocusSnapshot('window.blur'));
     startEverythingKeepalive();
     document.addEventListener('visibilitychange', () => {
