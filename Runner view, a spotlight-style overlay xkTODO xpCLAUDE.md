@@ -40,6 +40,8 @@ Decided in the runner tab, 22 October 2026: a term matching at the start or end 
 
 Decided in the runner tab, 22 October 2026: `/` commands work with a search term already in the box. A `/` at the start or after a space opens the command list, filtered on what follows the slash; Enter runs the command and the box returns to the term.
 
+Decided in the runner tab, 22 October 2026: any filter that differs from Runner's defaults shows on screen as a removable chip under the search box, and its x resets that filter.
+
 ## Plan (coordinator, 22 October 2026)
 
 - Build it as a second layout of the same renderer, not a fork: `renderer.js` is about 800KB, and a fork would mean every fix landed twice.
