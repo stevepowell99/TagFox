@@ -4389,8 +4389,12 @@
     }
 
     let runnerOptsPanelOpen = false;
-    function setRunnerOptsPanelOpen(open) {
+    /** The keyboard's place in the options panel (an index into RUNNER_COMMANDS); -1 when opened by mouse. */
+    let runnerOptsActive = -1;
+    function setRunnerOptsPanelOpen(open, active) {
       runnerOptsPanelOpen = !!open;
+      if (!runnerOptsPanelOpen) runnerOptsActive = -1;
+      else if (active != null) runnerOptsActive = active;
       const panel = document.getElementById('runnerOptsPanel');
       const btn = document.getElementById('btnRunnerOpts');
       if (!panel || !btn) return;
@@ -4401,7 +4405,7 @@
       }
       panel.textContent = '';
       let group = '';
-      for (const cmd of RUNNER_COMMANDS) {
+      RUNNER_COMMANDS.forEach((cmd, i) => {
         if (cmd.group !== group) {
           group = cmd.group;
           const h = document.createElement('div');
@@ -4409,9 +4413,10 @@
           h.textContent = group;
           panel.appendChild(h);
         }
-        panel.appendChild(runnerCmdButton(cmd, false));
-      }
+        panel.appendChild(runnerCmdButton(cmd, i === runnerOptsActive));
+      });
       panel.removeAttribute('hidden');
+      panel.querySelector('.tagfox-runner-cmd--active')?.scrollIntoView({ block: 'nearest' });
     }
 
     /** The / list: the box keeps its search text, then " /" and the filter; the search text alone comes
@@ -4642,6 +4647,13 @@
       { group: 'Search', keys: ['?'], does: 'This list of keys, with the box empty', when: (c) => c.inBox && c.empty && c.key === '?', run: () => openRunnerKeysHelp() },
       {
         group: 'Search',
+        keys: ['Alt+O'],
+        does: 'Options: sort, filters, match options. ↑ ↓ or Tab to choose, Enter switches one, Esc or Alt+O closes',
+        when: (c) => c.alt && !c.mod && !c.shift && c.k === 'o',
+        run: () => setRunnerOptsPanelOpen(!runnerOptsPanelOpen, 0),
+      },
+      {
+        group: 'Search',
         keys: ['F3', 'Ctrl+F', 'Alt+D'],
         does: 'Back to the box, with its text selected',
         when: (c) => (c.plain && c.key === 'F3') || c.ctrl('f') || (c.alt && !c.mod && !c.shift && c.k === 'd'),
@@ -4866,9 +4878,23 @@
         }
         if (c.inBox) return true;
       }
-      if (e.key === 'Escape' && runnerOptsPanelOpen) {
-        setRunnerOptsPanelOpen(false);
-        return consume();
+      /* The options panel, open: its items take ↑ ↓ Tab and Enter, as the / list's do. Enter runs an item
+         only once one is chosen, so a panel opened by mouse leaves Enter opening the selected row. */
+      if (runnerOptsPanelOpen) {
+        const n = RUNNER_COMMANDS.length;
+        const step = e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey) ? 1 : e.key === 'ArrowUp' || e.key === 'Tab' ? -1 : 0;
+        if (step && n && !c.mod && !c.alt) {
+          setRunnerOptsPanelOpen(true, runnerOptsActive < 0 ? (step > 0 ? 0 : n - 1) : (runnerOptsActive + step + n) % n);
+          return consume();
+        }
+        if (e.key === 'Enter' && c.plain && !c.shift && runnerOptsActive >= 0) {
+          runRunnerCommand(RUNNER_COMMANDS[runnerOptsActive]);
+          return consume();
+        }
+        if (e.key === 'Escape') {
+          setRunnerOptsPanelOpen(false);
+          return consume();
+        }
       }
       /* Another text field (the Viewer's editor, Settings) or an open menu keeps its own keys. */
       if (!c.inBox && (isTypingTarget(e.target) || isInMarkdownEditSurface(e.target))) return false;
