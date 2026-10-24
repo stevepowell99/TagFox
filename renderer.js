@@ -1169,7 +1169,7 @@
          Open button, Enter and a double-click all land in the editor Steve actually edits markdown in.
          The row context menu's "Open with default app" is the way to reach Obsidian or an editor. */
       if (GMIST_EXT.has(ext)) {
-        const r = await openRowInLocalGmist(fp);
+        const r = machineHas('gmist') ? await openRowInLocalGmist(fp) : 'no-gmist-repo';
         if (r === 'no-gmist-repo') {
           /* No gmist checkout on this machine, so there is nothing to start and nothing to wait for.
              Open the file the way TagFox always did rather than failing on every markdown row. */
@@ -1315,6 +1315,26 @@
       obsidianVaultRootsLc = next;
       if (lastRows.length) renderTable();
     }
+    /* What this machine has for the buttons that depend on it (main's machineFeatures: a gmist, JobCat's
+       make_pdf.py, a Google OAuth client), fetched at startup and on every focus like the vault list. Until
+       the first answer, everything counts as present, so no button goes missing on a slow start. */
+    let machineFeaturesSeen = null;
+    async function refreshMachineFeatures() {
+      if (!window.tagBrowser || typeof window.tagBrowser.machineFeatures !== 'function') return;
+      let r = null;
+      try {
+        r = await window.tagBrowser.machineFeatures();
+      } catch (e) {
+        console.warn('[TagFox] machine features:', String((e && e.message) || e));
+        return;
+      }
+      if (!r || JSON.stringify(r) === JSON.stringify(machineFeaturesSeen)) return;
+      machineFeaturesSeen = r;
+      if (lastRows.length) renderTable();
+    }
+    function machineHas(feature) {
+      return !machineFeaturesSeen || !!machineFeaturesSeen[feature];
+    }
     /** A .md file inside a registered vault, outside the dot-folders (.obsidian, .trash) Obsidian does not index. */
     function pathInObsidianVault(fp) {
       if (!obsidianVaultRootsLc.length || !/\.md$/i.test(String(fp || ''))) return false;
@@ -1339,6 +1359,18 @@
        has opened, so a collaborator link is one click from a row. TagFox cannot build that link itself:
        it holds no gmist credentials, and minting a room needs the browser's own session cookie, so the
        round trip happens in the browser and gmist does the copying (see gmist's ShareOnOpen). */
+    /** Why a row's Drive file id was not found (resolveGoogleDriveFileIdRobust's answer), in words; `notFound`
+        when Drive was asked and had no such file. */
+    function driveIdFailureReason(r, notFound) {
+      if (r && r.reason === 'drive-name-ambiguous') return 'several Drive files share this name; rename one or open it from drive.google.com.';
+      if (r && r.reason === 'no-drive-api') {
+        return machineHas('googleSignIn')
+          ? 'Google Drive sign-in did not complete' + (r.error ? ' (' + r.error + ')' : '') + '.'
+          : 'this file carries no Drive id, and this TagFox has no Google sign-in set up to look one up.';
+      }
+      return notFound;
+    }
+
     async function openRowInOnlineGmist(fp, opts) {
       const share = opts && opts.share ? String(opts.share) : '';
       if (!window.tagBrowser || typeof window.tagBrowser.resolveGoogleDriveFileId !== 'function') {
@@ -1348,12 +1380,10 @@
       setStatusMain(share ? 'Getting a gmist share link…' : 'Opening in gmist online…');
       const r = await window.tagBrowser.resolveGoogleDriveFileId({ fullPath: fp });
       if (!r || !r.ok || !r.fileId) {
-        const why =
-          r && r.reason === 'drive-name-ambiguous'
-            ? 'several Drive files share this name; rename one or open it from drive.google.com.'
-            : r && r.reason === 'no-drive-api'
-              ? 'Google Drive sign-in is needed first (Settings).'
-              : 'could not find this file in Google Drive (only Drive files open online; a local gmist opens any file).';
+        const why = driveIdFailureReason(
+          r,
+          'could not find this file in Google Drive (only Drive files open online; a local gmist opens any file).'
+        );
         setStatusMain('Open in gmist online: ' + why);
         return;
       }
@@ -1417,13 +1447,7 @@
       setStatusMain('Opening in Google Workspace…');
       const r = await window.tagBrowser.resolveGoogleDriveFileId({ fullPath: fp });
       if (!r || !r.ok || !r.fileId) {
-        const why =
-          r && r.reason === 'drive-name-ambiguous'
-            ? 'several Drive files share this name; rename one or open it from drive.google.com.'
-            : r && r.reason === 'no-drive-api'
-              ? 'Google Drive sign-in is needed first (Settings).'
-              : 'could not find this file in Google Drive.';
-        setStatusMain('Open in Google Workspace: ' + why);
+        setStatusMain('Open in Google Workspace: ' + driveIdFailureReason(r, 'could not find this file in Google Drive.'));
         return;
       }
       const url = googleEditorUrlForExt(ext, r.fileId);
@@ -3556,6 +3580,8 @@
     let runnerSort = 'smart';
     /** Scope and query the selection was last reset for: a new list selects its top row. */
     let selectAfterSearchKey = null;
+    /** The list key and row Runner's early paint of that list selected, until its merged list arrives. */
+    let earlySelect = null;
     /** After Left, select the folder we came up from. */
     let runnerPendingSelectPath = null;
     /** Everything's match count for the last main query, to say when the re-rank saw only part of it. */
@@ -3980,12 +4006,13 @@
       return out;
     }
 
+    /** A list's identity for selection and the render window: its scope and query. */
+    function selectAfterSearchKeyFor(query, rootFolder) {
+      return pathNormKey(normalizeFolderPathForEverything(String(rootFolder || '').trim())) + '\n' + String(query || '').trim();
+    }
+
     function runnerListKey() {
-      return (
-        pathNormKey(normalizeFolderPathForEverything(document.getElementById('rootFolder').value.trim())) +
-        '\n' +
-        String(document.getElementById('query')?.value || '').trim()
-      );
+      return selectAfterSearchKeyFor(document.getElementById('query')?.value, document.getElementById('rootFolder').value);
     }
 
     /** A new list (scope or query changed) starts with one window of rows drawn. */
@@ -4037,15 +4064,18 @@
     /** After a search: a new list (scope or query changed) selects its top row, or the folder just left, so ↓, Tab
         and Enter start from it. Classic does so only for typed text, and never re-selects within the same list:
         a folder browsed with an empty box keeps its folder doc in the Viewer, and rows unchecked by hand stay
-        unchecked through F5 and auto-refresh. */
-    function selectRowAfterSearch(query, rootFolder) {
-      const key =
-        pathNormKey(normalizeFolderPathForEverything(String(rootFolder || '').trim())) + '\n' + String(query || '').trim();
+        unchecked through F5 and auto-refresh. `early` is Runner's paint of the main rows before the merged list
+        (runSearch): it selects the same way but leaves the list unrecorded, so the merged list selects its own top
+        row, unless the selection has been moved by hand in between. */
+    function selectRowAfterSearch(query, rootFolder, { early = false } = {}) {
+      const key = selectAfterSearchKeyFor(query, rootFolder);
       const rows = listRowsForUi();
       const classic = !isRunnerMode();
+      const earlyPick = earlySelect && earlySelect.key === key ? earlySelect.path : null;
+      earlySelect = null;
       /* Classic records no key for an empty list, so the same text finding rows on a later run still selects. */
       if (!rows.length) {
-        if (!classic) selectAfterSearchKey = key;
+        if (!classic && !early) selectAfterSearchKey = key;
         return;
       }
       if (classic && (key === selectAfterSearchKey || !String(query || '').trim())) {
@@ -4056,16 +4086,22 @@
         const k = pathNormKey(p);
         return rows.findIndex((r) => pathNormKey(fullPathForRow(r)) === k);
       };
+      if (earlyPick && selectedFullPath && pathNormKey(selectedFullPath) !== pathNormKey(earlyPick) && idxOf(selectedFullPath) >= 0) {
+        runnerPendingSelectPath = null;
+        selectAfterSearchKey = key;
+        return;
+      }
       let idx = -1;
       if (runnerPendingSelectPath) {
         idx = idxOf(runnerPendingSelectPath);
-        runnerPendingSelectPath = null;
+        if (!early) runnerPendingSelectPath = null;
       }
       if (idx < 0) {
         if (key === selectAfterSearchKey && selectedFullPath && idxOf(selectedFullPath) >= 0) return;
         idx = 0;
       }
-      selectAfterSearchKey = key;
+      if (early) earlySelect = { key, path: fullPathForRow(rows[idx]) };
+      else selectAfterSearchKey = key;
       resultsExclusiveSelectRow(rows[idx], fullPathForRow(rows[idx]));
       if (idx === 0) {
         const sc = document.getElementById('resultsScroll');
@@ -4690,7 +4726,12 @@
     /** Enter and its variants. A row on screen must belong to what is typed, or Enter straight after typing
         (inside the search's 300ms wait) opens a row from the previous search; so a stale list re-runs first. */
     async function runnerActivateSelection(how = 'open') {
-      if (searchDebounceTimer || runnerListKey() !== selectAfterSearchKey) await runSearchNow();
+      if (searchDebounceTimer) await runSearchNow();
+      else if (runnerListKey() !== selectAfterSearchKey) {
+        /* The list on screen may be a search's early paint: wait for that search's merged list, not another search. */
+        if (searchInFlight) await searchMutex;
+        if (runnerListKey() !== selectAfterSearchKey) await runSearchNow();
+      }
       if (!selectedFullPath) return;
       const k = pathNormKey(selectedFullPath);
       if (!listRowsForUi().some((r) => pathNormKey(fullPathForRow(r)) === k)) return;
@@ -15645,6 +15686,7 @@
         filePath: fp,
         scopeFolder: document.getElementById('rootFolder').value.trim(),
         inObsidianVault: pathInObsidianVault(fp),
+        underGoogleDrive: pathUnderGoogleDrive(fp),
         x: Math.round(clientX),
         y: Math.round(clientY),
       });
@@ -16005,9 +16047,11 @@
             b.addEventListener('click', async (e) => { e.stopPropagation(); await handler(fp); });
             return b;
           };
-          /* Local: any markdown, always offered. A stopped gmist used to remove the button, which
-             reads as the feature having gone; the click starts `npm run dev:local` instead. */
-          gmistBtns.push(mkPen('fa-pen-to-square', 'Open in local gmist (a TagFox window; starts npm run preview:local if it is not up)', 'Open in local gmist', openRowInLocalGmist));
+          /* Local: any markdown, on any machine that has a gmist, running or not. A stopped gmist used to
+             remove the button, which reads as the feature having gone; the click starts it instead. */
+          if (machineHas('gmist')) {
+            gmistBtns.push(mkPen('fa-pen-to-square', 'Open in local gmist (a TagFox window; starts npm run preview:local if it is not up)', 'Open in local gmist', openRowInLocalGmist));
+          }
           // Online: the deployed worker, only for a file under a Drive mount.
           if (pathUnderGoogleDrive(fp)) {
             gmistBtns.push(mkPen('fa-cloud', 'Open in gmist online (deployed, needs the file in Google Drive)', 'Open in gmist online', openRowInOnlineGmist));
@@ -16015,9 +16059,9 @@
           if (pathInObsidianVault(fp)) {
             gmistBtns.push(mkPen('fa-gem', 'Open in Obsidian (its vault holds this file)', 'Open in Obsidian', openRowInObsidian));
           }
-          /* Print to PDF: any markdown, on Drive or not. The click opens the profile picker rather
-             than guessing branded vs plain, the same per-click choice the two pens offer. */
-          {
+          /* Print to PDF: any markdown, on Drive or not, where JobCat's make_pdf.py is found. The click opens
+             the profile picker rather than guessing branded vs plain, the same per-click choice the pens offer. */
+          if (machineHas('makePdf')) {
             const btnPdf = mkPen('fa-file-pdf', 'Print to PDF (JobCat make_pdf.py)', 'Print to PDF', async (p) => {
               const rr = btnPdf.getBoundingClientRect();
               await pickProfileAndPrintRowToPdf(p, rr.left, rr.bottom);
@@ -17492,16 +17536,20 @@
         httpPassword,
       };
 
-      /* Runner's extra queries run alongside the main one, not after it. */
-      const runnerExtraPromise = isRunnerMode()
-        ? runnerExtraRows({ runId, ceilingNorms, rootFolder, queryForEs, recursive, options, cap })
-        : null;
-      const res = await everythingSearchWithDirectionFallback({
+      /* Runner's extra queries are sent straight after the main one. Everything answers one query at a time, in
+         the order they arrive, so the main rows come back first and a new list can paint them while it waits. */
+      const mainPromise = everythingSearchWithDirectionFallback({
         ...pageArgs,
         searchText,
         offset: 0,
         seedOptions: options,
       });
+      const runnerExtraPromise = isRunnerMode()
+        ? runnerExtraRows({ runId, ceilingNorms, rootFolder, queryForEs, recursive, options, cap })
+        : null;
+      let runnerExtrasIn = false;
+      if (runnerExtraPromise) runnerExtraPromise.then(() => (runnerExtrasIn = true), () => (runnerExtrasIn = true));
+      const res = await mainPromise;
       if (res == null) return;
       if (runId !== searchRunSeq) return;
 
@@ -17548,6 +17596,16 @@
       if (isRunnerMode()) {
         runnerTotalHits = typeof res.totalResults === 'number' ? res.totalResults : null;
         if (!usedLocalFolderFallback && runnerExtraPromise) {
+          /* A new list paints the main rows while the extra queries finish, 0.1-0.4s later; the merged list then
+             replaces them. Not for an auto-refresh tick, whose list would shrink and grow back every few seconds. */
+          if (!runnerExtrasIn && !quietAutoRefreshRender && selectAfterSearchKeyFor(query, rootFolder) !== selectAfterSearchKey) {
+            lastRows = got;
+            dedupeLastRowsByPathKey();
+            sortLastRowsForDisplay(!!res.usedFallbackSort);
+            applyTagRenamePendingToLastRows();
+            renderTable();
+            selectRowAfterSearch(query, rootFolder, { early: true });
+          }
           let extra = await runnerExtraPromise;
           if (runId !== searchRunSeq) return;
           if (fo) extra = extra.filter(rowIsFolder);
@@ -20257,7 +20315,9 @@
       const gm = document.getElementById('runningNowGmist');
       if (gm && withGmist && info.gmist) {
         const g = info.gmist;
-        gm.textContent = !g.devPortHeld
+        gm.textContent = !machineHas('gmist')
+          ? 'gmist: none on this machine, so markdown opens in its default app.'
+          : !g.devPortHeld
           ? 'gmist: not running' + (g.sidecarPortHeld ? ', but something holds its sidecar port 5199' : '') +
             '. TagFox starts it the first time a markdown file is opened.'
           : 'gmist: ' + (g.holder ? g.holder.kind : 'running') +
@@ -20270,6 +20330,8 @@
     window.addEventListener('focus', () => void refreshRunningNow(false));
     void refreshObsidianVaultRoots();
     window.addEventListener('focus', () => void refreshObsidianVaultRoots());
+    void refreshMachineFeatures();
+    window.addEventListener('focus', () => void refreshMachineFeatures());
     document.getElementById('btnRestartTagFox')?.addEventListener('click', () => void window.tagBrowser?.restartTagFox?.());
     document.getElementById('autoRefreshSec')?.addEventListener('change', () => {
       saveSettings();
@@ -20696,6 +20758,7 @@
         reorderTab: (from, to) => reorderTab(Number(from), Number(to)),
         springHoverTab: (id) => activateTab(Number(id)),
         tabIds: () => tabs.map((t) => t.id),
+        machineFeatures: () => machineFeaturesSeen,
         /* Drive the real disk-mutation handler (the IPC callback) so tests can assert refresh behaviour. */
         mutate: (payload) => onPathsMutated(payload),
         /* Simulate the renderer side of a delete: tombstone the paths + repaint the active pane. Used by

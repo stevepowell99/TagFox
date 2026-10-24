@@ -66,6 +66,8 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   openUrlDefaultBrowser: (payload) => ipcRenderer.invoke('open-url-default-browser', payload),
   /** Obsidian's registered vault folders, from its obsidian.json: { ok, found, roots }. */
   obsidianVaultRoots: () => ipcRenderer.invoke('obsidian-vault-roots'),
+  /** What this machine has for the buttons that depend on it: { gmist, makePdf, googleSignIn }. */
+  machineFeatures: () => ipcRenderer.invoke('machine-features'),
   /** Start a local gmist, or report the one already listening on 5173. Returns at once when it is up. */
   startLocalGmist: () => ipcRenderer.invoke('start-local-gmist'),
   runtimeInfo: (opts) => ipcRenderer.invoke('tagfox-runtime-info', opts || {}),

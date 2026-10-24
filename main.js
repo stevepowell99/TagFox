@@ -4748,6 +4748,32 @@ function findBundledGmistDir() {
   return null;
 }
 
+/** Where a local gmist runs from on this machine: a checkout, else the bundled copy, else null, meaning this
+    machine has no gmist (a packaged build handed to someone else). TAGFOX_GMIST_FORCE_BUNDLED=1 skips the
+    checkout, so the packaged cases can run on the machine they are written on. */
+function localGmistSource() {
+  const repoDir = process.env.TAGFOX_GMIST_FORCE_BUNDLED === '1' ? null : findLocalGmistRepoDir();
+  if (repoDir) return { repoDir };
+  const bundledDir = findBundledGmistDir();
+  return bundledDir ? { bundledDir } : null;
+}
+
+/* What this machine has beyond Everything and the disk, for the row buttons and menu entries that cannot work
+   without it: a gmist, JobCat's make_pdf.py, and a Google OAuth client for Drive sign-in. A packaged TagFox on
+   someone else's machine usually has none of the three, and a button that can only ever fail is worse than no
+   button. Read from disk on each ask: a few existsSync calls. Whether gmist is running is a different question,
+   never this one, since a button that vanished whenever the dev server stopped read as a deleted feature
+   (August 2026). */
+function machineFeatures() {
+  return {
+    gmist: !!localGmistSource(),
+    makePdf: !!findMakePdfScript(),
+    googleSignIn: !!readGoogleOAuthClientConfigSync(),
+  };
+}
+
+ipcMain.handle('machine-features', () => machineFeatures());
+
 /**
  * The sidecar token is the whole access control on a server that reads and writes any
  * file this user can (see gmist's CLAUDE.md), so it is generated once per install and
@@ -4931,10 +4957,10 @@ async function startLocalGmist() {
        means the bundled path never runs on the machine it is developed on, which is the shape of
        the bug this whole feature fixes, so TAGFOX_GMIST_FORCE_BUNDLED=1 exercises it here. Stop the
        dev gmist first: both want ports 5173 and 5199. */
-    const repoDir = process.env.TAGFOX_GMIST_FORCE_BUNDLED === '1' ? null : findLocalGmistRepoDir();
+    const source = localGmistSource();
+    if (source && source.bundledDir) return startBundledGmist(source.bundledDir);
+    const repoDir = source && source.repoDir;
     if (!repoDir) {
-      const bundledDir = findBundledGmistDir();
-      if (bundledDir) return startBundledGmist(bundledDir);
       /* No checkout at all is a different case from a start that failed, and callers must be able to
          tell them apart: on a machine without the gmist repo (a packaged build handed to someone else)
          markdown has to fall back to the shell rather than report an error for every file opened. */
@@ -5452,7 +5478,7 @@ ipcMain.handle('windows-recent-files', async () => {
  * Shell item menu: standard Electron pattern (Menu + shell + clipboard in main).
  * Full Explorer.context menu would need native IContextMenu bindings — not in core Electron.
  */
-ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFolder, inObsidianVault }) => {
+ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFolder, inObsidianVault, underGoogleDrive }) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   const fp = path.normalize(String(filePath || '').trim());
   if (!fp) return { ok: false, error: 'No path' };
@@ -5472,6 +5498,9 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
   const shortcutExt = path.extname(fp).toLowerCase();
   const isGoogleShortcutFile = !isDir && ['.gdoc', '.gsheet', '.gslides'].includes(shortcutExt);
   const canOpenInGoogleWorkspace = !isDir && isGoogleWorkspaceOfficeFilePath(fp);
+  /* Entries that cannot work on this machine are left out or greyed. Whether the path is in Google Drive is the
+     renderer's call (pathUnderGoogleDrive, which also decides the row's cloud and Workspace pens). */
+  const features = machineFeatures();
   let fileUrl = '';
   try {
     fileUrl = pathToFileURL(fpPlain).href;
@@ -5605,7 +5634,7 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
         : []),
       {
         label: 'Open in Google Workspace',
-        enabled: canOpenInGoogleWorkspace,
+        enabled: canOpenInGoogleWorkspace && !!underGoogleDrive,
         click: () => {
           void (async () => {
             const dFile = {};
@@ -5669,7 +5698,7 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
       },
       {
         label: 'Create new Google Doc here',
-        enabled: true,
+        enabled: features.googleSignIn && !!underGoogleDrive,
         click: () => {
           void (async () => {
             // For files, resolve parent folder via file id (Drive API). For folders, resolve folder id directly.
@@ -5843,7 +5872,7 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
     }
     /* Markdown only: JobCat's make_pdf.py renders it, and the profile is picked per click because
        a personal note and a client proposal want different branding (see makePdfFromMarkdown). */
-    if (!isDir && isMarkdownFilePath(fp)) {
+    if (!isDir && isMarkdownFilePath(fp) && features.makePdf) {
       template.push({
         label: 'Print to PDF',
         submenu: PRINT_PDF_PROFILES.map((p) => ({
@@ -5851,9 +5880,11 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
           click: () => done({ ok: true, action: 'printPdf', profile: p.key }),
         })),
       });
-      /* Open the file in the deployed gmist and put a share link on the clipboard, for pasting to a
-         collaborator in Slack. Whether the file is actually in Drive is the renderer's call: it owns
-         the Drive-mount test and the id resolver, and says so in its own words when it is not. */
+    }
+    /* Open the file in the deployed gmist and put a share link on the clipboard, for pasting to a
+       collaborator in Slack. Only for a file in Google Drive, as the deployed gmist opens files by Drive id;
+       the renderer owns the Drive-mount test and the id resolver, and words a failure in its own terms. */
+    if (!isDir && isMarkdownFilePath(fp) && underGoogleDrive) {
       template.push({
         label: 'Copy gmist share link',
         submenu: [
