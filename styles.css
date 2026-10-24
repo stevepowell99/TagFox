@@ -3219,9 +3219,9 @@ body.tagfox-runner.tagfox-runner-status-on #tagfoxNavbarStatus {
   outline-offset: 1px;
 }
 /* Results: compact launcher rows. One line each: a small type tile, the name, the folder it lives in
-   (muted, taking whatever width the name leaves), the modified time and the star. The selected row
-   carries the window's indigo-to-coral strip as a rail and shows the key that acts on it. No checkbox,
-   size or header. */
+   (muted, taking whatever width the name leaves), the size, the modified time and the star. The selected
+   row carries the window's indigo-to-coral strip as a rail and shows the key that acts on it. No checkbox
+   or header. */
 body.tagfox-runner {
   --runner-canvas: #eceef5;
   --runner-surface: #ffffff;
@@ -3279,8 +3279,9 @@ body.tagfox-runner #resultsTable > colgroup {
 body.tagfox-runner #resultsTable > tbody > tr {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, max-content) minmax(0, 1fr) auto 1.8rem;
-  grid-template-areas: 'name path date act';
+  /* Each row is its own grid, so the size and the date have fixed widths or they would not line up. */
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr) 3rem 6.4rem 1.8rem;
+  grid-template-areas: 'name path size date act';
   column-gap: 0.75rem;
   align-items: center;
   min-height: 1.75rem;
@@ -3299,8 +3300,7 @@ body.tagfox-runner #resultsTable > tbody > tr > td {
   background: transparent !important;
   box-shadow: none !important;
 }
-body.tagfox-runner #resultsTable > tbody > tr > td.results-td-cb,
-body.tagfox-runner #resultsTable > tbody > tr > td.results-td-size {
+body.tagfox-runner #resultsTable > tbody > tr > td.results-td-cb {
   display: none !important;
 }
 /* Ctrl held on its own: the first nine rows on screen carry the digit that opens them, over the type tile. */
@@ -3344,7 +3344,22 @@ body.tagfox-runner.tagfox-multi-checked #resultsTable > tbody > tr .recency-blob
 body.tagfox-runner #resultsTable > tbody > tr > td:nth-child(2) { grid-area: name; }
 body.tagfox-runner #resultsTable > tbody > tr > td.col-path { grid-area: path; }
 body.tagfox-runner #resultsTable > tbody > tr > td.results-td-actions { grid-area: act; }
+body.tagfox-runner #resultsTable > tbody > tr > td.results-td-size { grid-area: size; }
 body.tagfox-runner #resultsTable > tbody > tr > td:last-child { grid-area: date; }
+/* Size: smaller than the date and muted, with none of Classic's heat colours, and its unit fainter still. */
+body.tagfox-runner #resultsTable > tbody > tr > td.results-td-size {
+  color: var(--runner-muted) !important;
+  font-size: 0.72rem;
+  font-weight: 400 !important;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+body.tagfox-runner #resultsTable .tagfox-runner-size-unit {
+  margin-left: 0.2em;
+  font-size: 0.88em;
+  opacity: 0.65;
+}
 body.tagfox-runner #resultsTable > tbody > tr:hover {
   background-color: var(--tagfox-row-hover-bg);
 }

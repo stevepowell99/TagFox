@@ -3540,7 +3540,8 @@
     let runnerRenderKey = null;
 
     let runnerModeOn = false;
-    /** 'smart' re-ranks; 'date' (newest first) and 'name' are plain sorts. */
+    /** 'smart' re-ranks; 'date' (newest first), 'name', 'size' (largest first) and 'size-asc' are plain sorts. */
+    const RUNNER_SORTS = ['smart', 'date', 'name', 'size', 'size-asc'];
     let runnerSort = 'smart';
     /** Scope and query the selection was last reset for: a new list selects its top row. */
     let selectAfterSearchKey = null;
@@ -3586,7 +3587,9 @@
     }
 
     function runnerSortColumnFor(sort) {
-      return sort === 'name' ? { col: 'name', asc: true } : { col: 'date_modified', asc: false };
+      if (sort === 'name') return { col: 'name', asc: true };
+      if (sort === 'size' || sort === 'size-asc') return { col: 'size', asc: sort === 'size-asc' };
+      return { col: 'date_modified', asc: false };
     }
 
     /** Apply a layout to the live UI without searching. startup: the UI already holds this layout's state. */
@@ -3598,7 +3601,7 @@
           lsSetJson(LS.runnerClassicStash, serializeSearchState());
         }
         const savedSort = localStorage.getItem(LS.runnerSort);
-        runnerSort = ['smart', 'date', 'name'].includes(savedSort) ? savedSort : 'smart';
+        runnerSort = RUNNER_SORTS.includes(savedSort) ? savedSort : 'smart';
         const saved = lsGetJson(LS.runnerState, null);
         const st = searchStateWithoutCeiling({ ...runnerDefaultSearchState(), ...(saved || {}) });
         const sc = runnerSortColumnFor(runnerSort);
@@ -4104,7 +4107,7 @@
     }
 
     function setRunnerSort(sort) {
-      if (!['smart', 'date', 'name'].includes(sort)) return;
+      if (!RUNNER_SORTS.includes(sort)) return;
       runnerSort = sort;
       localStorage.setItem(LS.runnerSort, sort);
       const sc = runnerSortColumnFor(sort);
@@ -4259,6 +4262,8 @@
       { id: 'sort-smart', group: 'Sort', label: 'Sort: smart (name matches, recent, starred, used)', isOn: () => runnerSort === 'smart', run: () => setRunnerSort('smart') },
       { id: 'sort-date', group: 'Sort', label: 'Sort by date, newest first', isOn: () => runnerSort === 'date', run: () => setRunnerSort('date') },
       { id: 'sort-name', group: 'Sort', label: 'Sort by name', isOn: () => runnerSort === 'name', run: () => setRunnerSort('name') },
+      { id: 'sort-size', group: 'Sort', label: 'Sort by size, largest first', isOn: () => runnerSort === 'size', run: () => setRunnerSort('size') },
+      { id: 'sort-size-asc', group: 'Sort', label: 'Sort by size, smallest first', isOn: () => runnerSort === 'size-asc', run: () => setRunnerSort('size-asc') },
       { id: 'edit-tags', group: 'Tags', label: 'Edit tags of the selected or checked rows (Ctrl+T)', run: () => runnerEditTags() },
       /* One filter per vocabulary word; the options panel draws these as a row of small buttons. */
       ...Object.keys(T.TAG_VOCAB).map((word) => ({
@@ -4311,7 +4316,8 @@
         id: 'sort',
         icon: 'fa-arrow-down-wide-short',
         on: () => runnerSort !== 'smart',
-        label: () => (runnerSort === 'date' ? 'Sorted by date' : 'Sorted by name'),
+        label: () =>
+          ({ date: 'Sorted by date', name: 'Sorted by name', size: 'Largest first', 'size-asc': 'Smallest first' })[runnerSort],
         reset: () => setRunnerSort('smart'),
       },
       {
@@ -11734,6 +11740,26 @@
       return (x / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
     }
 
+    /** Runner's size: at most three figures and the unit ("14 MB", "1.4 MB", "335 KB"), or null. */
+    function runnerSizeParts(n) {
+      if (n == null) return null;
+      if (n < 1024) return { num: String(n), unit: 'B' };
+      const units = ['KB', 'MB', 'GB', 'TB'];
+      let v = n / 1024;
+      let i = 0;
+      while (v >= 1024 && i < units.length - 1) {
+        v /= 1024;
+        i++;
+      }
+      let num = v < 10 ? Math.round(v * 10) / 10 : Math.round(v);
+      /* 1023.7 KB rounds to 1024: carry it into the next unit. */
+      if (num >= 1024 && i < units.length - 1) {
+        num = 1;
+        i++;
+      }
+      return { num: String(num), unit: units[i] };
+    }
+
     const SIZE_HEAT_GB = 1024 * 1024 * 1024;
     const SIZE_HEAT_MB100 = 100 * 1024 * 1024;
     const SIZE_HEAT_MB10 = 10 * 1024 * 1024;
@@ -15857,12 +15883,21 @@
         const pathShown = collapseGDriveShortcutDisplay(pathColumnDisplayForRow(fp, rowIsFolder(row)));
         if (pathShown === '—') tdPath.classList.add('col-path--here');
         fillPathCellBox(pathBox, pathShown, queryNeedle);
-        tdPath.title = fp;
         tdPath.appendChild(pathBox);
 
         const tdSize = document.createElement('td');
         tdSize.className = 'text-end text-nowrap small results-td-size';
-        tdSize.textContent = formatSize(row.size);
+        if (isRunnerMode()) {
+          /* Blank where the size is unknown, rather than a column of dashes. */
+          const sp = runnerSizeParts(rowSizeBytes(row));
+          if (sp) {
+            tdSize.textContent = sp.num;
+            const unit = document.createElement('span');
+            unit.className = 'tagfox-runner-size-unit';
+            unit.textContent = sp.unit;
+            tdSize.appendChild(unit);
+          }
+        } else tdSize.textContent = formatSize(row.size);
         applySizeHeatToElement(tdSize, row);
 
         const tdDate = document.createElement('td');
@@ -16079,9 +16114,14 @@
 
         const sizeStr = formatSize(row.size);
         const dateStr = formatModified(row.date_modified ?? row.date_modified_unix);
-        bindCellTooltip(tdName, nameTip);
-        bindCellTooltip(tdPath, fp);
-        bindCellTooltip(tdSize, sizeStr);
+        /* Runner gives a cell a tooltip only when it says more than the cell: the name on disk where tags
+           were taken out of the one shown, and the modified time. The selected row's full path is the
+           Viewer's path line. */
+        if (!isRunnerMode() || parsedName.pretty !== baseName) bindCellTooltip(tdName, nameTip);
+        if (!isRunnerMode()) {
+          bindCellTooltip(tdPath, fp);
+          bindCellTooltip(tdSize, sizeStr);
+        }
         bindCellTooltip(tdDate, dateStr);
         /* Per-button JS tooltips (same class as breadcrumb chrome) are built on first hover: bindResultsLazyTooltipsOnce. */
 

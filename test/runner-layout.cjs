@@ -8,6 +8,8 @@
 //   - recency never outweighs the match: a year-old whole-word name ranks above today's inside-word one;
 //   - a leading -word excludes;
 //   - / opens the command list, Enter runs the command, and the box gets its text back;
+//   - a row's size shows muted in a column of its own, /size sorts largest first and the other size
+//     command smallest first, and a cell has a tooltip only where it says more than the cell;
 //   - Ctrl+D stars and unstars the selected row in the favourites list, where a starred file is a file chip;
 //   - hovering a row shows its action buttons, anchored in the row;
 //   - AppData\Local\Temp is listed by default, below a file of the same name elsewhere, and the / command
@@ -35,6 +37,20 @@ async function main() {
   fs.writeFileSync(path.join(root, 'alphafold-note.md'), '# note\n');
   fs.writeFileSync(path.join(alpha, 'inner.txt'), 'inner\n');
   fs.writeFileSync(path.join(root, 'zeta.txt'), 'zeta\n');
+  // Four sizes for the size sorts, the second tagged so its name cell keeps a tooltip, and one a year old
+  // so its date ("12 Sep 2025") is wider than today's time.
+  const sizeFiles = [
+    ['sizecheck large.bin', 1.44 * 1024 * 1024],
+    ['sizecheck mid.bin', 300 * 1024],
+    ['sizecheck tagged xkTODO.bin', 40 * 1024],
+    ['sizecheck small.bin', 10],
+  ].map(([n, bytes]) => {
+    const p = path.join(root, n);
+    fs.writeFileSync(p, Buffer.alloc(Math.round(bytes), 120));
+    return p;
+  });
+  const sizeOld = new Date(Date.now() - 400 * 864e5);
+  fs.utimesSync(sizeFiles[0], sizeOld, sizeOld);
   // Back-dated at the start, so Everything has indexed the old time by the time the type check reads it.
   // Where "map" falls in the name: a whole word, the start of the name, the end of a word, inside a word.
   const mapNames = ['old map.txt', 'mapping.txt', 'roadmap.txt', 'xmapx.txt'];
@@ -260,6 +276,75 @@ async function main() {
     check(!s.cmdListOpen && s.sort === 'date' && s.query === 'zeta', `Enter runs it and the box gets its text back (sort ${s.sort}, box "${s.query}")`);
     await drv.T('setRunnerSort', 'smart');
     await drv.settle('smart again');
+
+    // Size: /size sorts largest first, the column shows each size muted and in line, and only the cells
+    // that say more than they show carry a tooltip.
+    await drv.T('setQuery', 'sizecheck');
+    let sizesSeen = false;
+    for (let i = 0; i < 20 && !sizesSeen; i++) {
+      await drv.T('runSearchNow', 'identity');
+      await drv.settle('sizecheck');
+      const rowsNow = (await R()).rows;
+      sizesSeen = sizeFiles.every((p) => has(rowsNow, p));
+      if (!sizesSeen) await sleep(400);
+    }
+    check(sizesSeen, 'the four size files are listed (positive control)');
+    await focusBox();
+    await key('/', 'Slash', 191, 0, '/');
+    for (const ch of 'size') await key(ch, 'Key' + ch.toUpperCase(), ch.toUpperCase().charCodeAt(0), 0, ch);
+    s = await R();
+    check(s.cmdMatches[0] === 'sort-size' && s.cmdMatches[1] === 'sort-size-asc', `/size offers largest first, then smallest first (${s.cmdMatches.slice(0, 3)})`);
+    await key('Enter', 'Enter', 13, 0, '\r');
+    await drv.settle('size sort');
+    s = await R();
+    const sizeOrder = () => s.rows.filter((r) => sizeFiles.some((p) => norm(p) === norm(r))).map(norm);
+    check(s.sort === 'size' && JSON.stringify(sizeOrder()) === JSON.stringify(sizeFiles.map(norm)), `Enter sorts by size, largest first (${s.sort}: ${sizeOrder().map((p) => path.basename(p))})`);
+    check(s.chips.includes('sort'), 'the size order shows as a chip');
+    const cells = await drv.ev(`(() => {
+      const want = ${JSON.stringify(sizeFiles.map(norm))};
+      const rows = Array.from(document.querySelectorAll('#tbody tr[data-row-path]')).filter((tr) => want.includes(tr.dataset.rowPath.toLowerCase()));
+      const tip = (td) => !!td && !!(td.getAttribute('data-bs-title') || td.getAttribute('title'));
+      return rows.map((tr) => {
+        const sz = tr.querySelector('td.results-td-size');
+        const r = sz.getBoundingClientRect();
+        const cs = getComputedStyle(sz);
+        const date = tr.querySelector('td:last-child');
+        const dr = date.getBoundingClientRect();
+        return {
+          name: tr.dataset.rowPath.split('\\\\').pop(),
+          text: sz.textContent,
+          date: date.textContent,
+          shown: cs.display !== 'none' && r.width > 0,
+          left: Math.round(r.left),
+          right: Math.round(r.right),
+          dateBox: Math.round(dr.left) + '-' + Math.round(dr.right),
+          overflow: sz.scrollWidth > sz.clientWidth + 1 || date.scrollWidth > date.clientWidth + 1,
+          color: cs.color,
+          px: parseFloat(cs.fontSize),
+          datePx: parseFloat(getComputedStyle(date).fontSize),
+          tips: { name: tip(tr.querySelector('td:nth-child(2)')), path: tip(tr.querySelector('td.col-path')), size: tip(sz), date: tip(date) },
+        };
+      });
+    })()`);
+    const tagged = cells.find((c) => /tagged/.test(c.name));
+    const texts = cells.map((c) => c.text);
+    check(cells.length === 4 && cells.every((c) => c.shown && c.text), `every row shows its size (${texts})`);
+    check(JSON.stringify(texts) === '["1.4MB","300KB","40KB","10B"]', `a size is at most three figures and its unit (${texts})`);
+    check(new Set(cells.map((c) => c.date.length)).size > 1, `the dates differ in width (${cells.map((c) => c.date)})`);
+    check(
+      cells.every((c) => c.left === cells[0].left && c.right === cells[0].right && c.dateBox === cells[0].dateBox && !c.overflow),
+      `the sizes and the dates each sit in one column, nothing cut off (${cells.map((c) => c.left + '-' + c.right + ' ' + c.dateBox + (c.overflow ? ' cut' : ''))})`
+    );
+    check(new Set(cells.map((c) => c.color)).size === 1 && cells.every((c) => c.px < c.datePx), `the sizes share one muted colour, smaller than the date (${cells[0] && cells[0].color}, ${cells[0] && cells[0].px}px)`);
+    check(cells.every((c) => !c.tips.path && !c.tips.size && c.tips.date), `no tooltip on the path or the size, one on the time (${JSON.stringify(cells.map((c) => c.tips))})`);
+    check(tagged && tagged.tips.name && cells.filter((c) => c !== tagged).every((c) => !c.tips.name), 'only the tagged name, whose name on disk differs, has a name tooltip');
+    await drv.T('setRunnerSort', 'size-asc');
+    await drv.settle('size asc');
+    s = await R();
+    check(JSON.stringify(sizeOrder()) === JSON.stringify(sizeFiles.map(norm).reverse()), `the other size command sorts smallest first (${sizeOrder().map((p) => path.basename(p))})`);
+    await drv.T('setRunnerSort', 'smart');
+    await drv.T('setQuery', 'zeta');
+    await drv.settle('smart after size');
 
     // Stars.
     await focusBox();
