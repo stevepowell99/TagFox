@@ -4255,9 +4255,9 @@
       void runSearchNow('identity');
     }
 
-    /** A tag command: Classic's include toggle, then the search. */
-    function runnerToggleTag(word) {
-      toggleTagFilterInclude(word.toLowerCase(), word);
+    /** A tag command: Classic's include (or exclude) toggle, then the search. */
+    function runnerToggleTag(word, exclude) {
+      (exclude ? toggleTagFilterExclude : toggleTagFilterInclude)(word.toLowerCase(), word);
       persistActiveTagFilter();
       saveSettings();
       void runSearchNow('identity');
@@ -4284,6 +4284,15 @@
         label: 'Tagged ' + word,
         isOn: () => activeTagKeys.has(word.toLowerCase()) && !excludedTagKeys.has(word.toLowerCase()),
         run: () => runnerToggleTag(word),
+      })),
+      /* And one exclude per word, for the / list (/not claude); in the panel it is a right-click on the word's button. */
+      ...Object.keys(T.TAG_VOCAB).map((word) => ({
+        id: 'not-' + word.toLowerCase(),
+        group: 'Tags',
+        notTag: word,
+        label: 'Not tagged ' + word,
+        isOn: () => excludedTagKeys.has(word.toLowerCase()),
+        run: () => runnerToggleTag(word, true),
       })),
       { id: 'system', group: 'Show', label: 'Show system files (. $ desktop.ini)', isOn: () => !isHideSpecialPaths(), run: () => runnerToggleSystemFiles() },
       { id: 'tilde', group: 'Show', label: 'Hide ~ paths (lock files, ~folders; listed lower when shown)', isOn: () => isHideTildePaths(), run: () => runnerToggleTilde() },
@@ -4371,11 +4380,16 @@
         id: 'tags',
         icon: 'fa-tags',
         on: () => activeTagKeys.size > 0 || excludedTagKeys.size > 0,
-        label: () =>
-          'Tagged ' +
-          [...activeTagKeys]
-            .map((k) => (excludedTagKeys.has(k) ? 'not ' : '') + (T.isDateTag(k) ? k : k.toUpperCase()))
-            .join(tagFilterCombineOr ? ' or ' : ' and '),
+        /* Wanted tags first, so it reads "Tagged TODO and not CLAUDE", or "Not tagged CLAUDE" alone. */
+        label: () => {
+          const word = (k) => (T.isDateTag(k) ? k : k.toUpperCase());
+          const keys = [...activeTagKeys];
+          const s = [
+            ...keys.filter((k) => !excludedTagKeys.has(k)).map(word),
+            ...keys.filter((k) => excludedTagKeys.has(k)).map((k) => 'not ' + word(k)),
+          ].join(tagFilterCombineOr ? ' or ' : ' and ');
+          return s.startsWith('not ') ? 'Not tagged ' + s.slice(4) : 'Tagged ' + s;
+        },
         reset: () => {
           activeTagKeys.clear();
           excludedTagKeys.clear();
@@ -4479,8 +4493,13 @@
       return b;
     }
 
+    /** The options panel's items: every command but the excludes, which there are a right-click on the tag's button. */
+    function runnerPanelCommands() {
+      return RUNNER_COMMANDS.filter((cmd) => !cmd.notTag);
+    }
+
     let runnerOptsPanelOpen = false;
-    /** The keyboard's place in the options panel (an index into RUNNER_COMMANDS); -1 when opened by mouse. */
+    /** The keyboard's place in the options panel (an index into runnerPanelCommands()); -1 when opened by mouse. */
     let runnerOptsActive = -1;
     function setRunnerOptsPanelOpen(open, active) {
       runnerOptsPanelOpen = !!open;
@@ -4497,7 +4516,7 @@
       panel.textContent = '';
       let group = '';
       let tagRow = null;
-      RUNNER_COMMANDS.forEach((cmd, i) => {
+      runnerPanelCommands().forEach((cmd, i) => {
         if (cmd.group !== group) {
           group = cmd.group;
           tagRow = null;
@@ -4516,9 +4535,11 @@
           tagRow.className = 'tagfox-runner-cmd-tags';
           panel.appendChild(tagRow);
         }
+        const not = excludedTagKeys.has(cmd.tag.toLowerCase());
         b.classList.add('tagfox-runner-cmd--tag');
-        b.lastChild.textContent = cmd.tag;
-        b.title = cmd.label;
+        b.classList.toggle('tagfox-runner-cmd--not', not);
+        b.lastChild.textContent = (not ? '¬' : '') + cmd.tag; // ¬ marks a not-tag filter, as in Classic's tag bar
+        b.title = cmd.label + '. Right-click: not tagged ' + cmd.tag + '. The same click again clears it.';
         tagRow.appendChild(b);
       });
       panel.removeAttribute('hidden');
@@ -4746,7 +4767,7 @@
       {
         group: 'Search',
         keys: ['/'],
-        does: 'Commands: sort, filters, tags, match options, Settings. Type to filter them (/todo finds the TODO tag filter), ↑ ↓ or Tab to choose, Enter runs one, Esc closes the list',
+        does: 'Commands: sort, filters, tags, match options, Settings. Type to filter them (/todo finds the TODO tag filter, /not todo leaves TODO out), ↑ ↓ or Tab to choose, Enter runs one, Esc closes the list',
         when: (c) => c.inBox && !c.mod && !c.alt && (c.key === '/' || c.code === 'NumpadDivide'),
         run: (c) => openRunnerCmdList(c.q.value),
       },
@@ -4754,7 +4775,7 @@
       {
         group: 'Search',
         keys: ['Alt+O'],
-        does: 'Options: sort, filters, tags, match options. ↑ ↓ or Tab to choose, Enter switches one, Esc or Alt+O closes',
+        does: 'Options: sort, filters, tags, match options. ↑ ↓ or Tab to choose, Enter switches one (right-click a tag: not tagged), Esc or Alt+O closes',
         when: (c) => c.alt && !c.mod && !c.shift && c.k === 'o',
         run: () => setRunnerOptsPanelOpen(!runnerOptsPanelOpen, 0),
       },
@@ -4991,14 +5012,15 @@
       /* The options panel, open: its items take ↑ ↓ Tab and Enter, as the / list's do. Enter runs an item
          only once one is chosen, so a panel opened by mouse leaves Enter opening the selected row. */
       if (runnerOptsPanelOpen) {
-        const n = RUNNER_COMMANDS.length;
+        const items = runnerPanelCommands();
+        const n = items.length;
         const step = e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey) ? 1 : e.key === 'ArrowUp' || e.key === 'Tab' ? -1 : 0;
         if (step && n && !c.mod && !c.alt) {
           setRunnerOptsPanelOpen(true, runnerOptsActive < 0 ? (step > 0 ? 0 : n - 1) : (runnerOptsActive + step + n) % n);
           return consume();
         }
         if (e.key === 'Enter' && c.plain && !c.shift && runnerOptsActive >= 0) {
-          runRunnerCommand(RUNNER_COMMANDS[runnerOptsActive]);
+          runRunnerCommand(items[runnerOptsActive]);
           return consume();
         }
         if (e.key === 'Escape') {
@@ -5115,6 +5137,14 @@
         e.preventDefault();
         e.stopPropagation();
         runRunnerCommand(RUNNER_COMMANDS.find((c) => c.id === b.dataset.cmdId));
+      });
+      /* Right-click on a tag's button: not tagged, as on Classic's tag bar. */
+      document.getElementById('runnerOptsPanel')?.addEventListener('contextmenu', (e) => {
+        const b = e.target.closest('.tagfox-runner-cmd--tag');
+        if (!b) return;
+        e.preventDefault();
+        e.stopPropagation();
+        runRunnerCommand(RUNNER_COMMANDS.find((c) => c.id === 'not-' + b.dataset.cmdId.slice('tag-'.length)));
       });
       /* mousedown, so the box keeps focus and the item runs before anything closes the list */
       document.getElementById('runnerCmdList')?.addEventListener('mousedown', (e) => {
@@ -17260,9 +17290,11 @@
       cancelPropsPreviewSchedule();
       if (isRunnerMode()) {
         runnerResetRenderWindowIfNewList();
-        /* Runner: a plain flat list. An empty box lists the current folder's own contents; typing searches below it. */
+        /* Runner: a plain flat list. An empty box lists the current folder's own contents; typing, or a tag to
+           look for, searches below it. A not-tag alone names nothing to look for, so it only thins that list. */
         const q = (document.getElementById('query')?.value || '').trim();
-        applyResultsViewRadiosToDom('flat', !!(q || activeTagKeys.size), resultsContentMode());
+        const wantsTag = [...activeTagKeys].some((k) => !excludedTagKeys.has(k));
+        applyResultsViewRadiosToDom('flat', !!(q || wantsTag), resultsContentMode());
         syncViewRadioActiveFromDom();
       } else {
         const smart = isSmartView();

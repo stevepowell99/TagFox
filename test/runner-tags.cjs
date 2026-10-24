@@ -1,7 +1,9 @@
 // Runner's tags, by real key and mouse events against files made for the test: the / list and the options
 // panel switch on Classic's tag filter, which drops an untagged file and keeps a tagged one (a file named
 // "todo list" must go, so the filter cannot pass by searching for the word) and shows as a chip whose x
-// removes it; Ctrl+T opens Classic's tag editor on the selected row, adding a tag renames the file on disk
+// removes it; /not claude and a right-click on a tag's button in the panel leave a tag out, which with an
+// empty box thins the folder's own list instead of listing everything below it, and the chip names wanted
+// tags first ("Tagged TODO and not CLAUDE"); Ctrl+T opens Classic's tag editor on the selected row, adding a tag renames the file on disk
 // and removing it renames it back; Ctrl+T on two checked rows tags both; Down from a selected box leaves
 // the caret at the end, so typing adds to the query; and inside a deep folder the box's hint ends with the
 // folder's last three names after an ellipsis, and still fits the box in a narrow window.
@@ -145,6 +147,60 @@ async function main() {
     await drv.T('runCommand', 'tag-claude');
     await drv.settle('claude off');
     check(claudeWasOn && !(await R()).chips.includes('tags'), 'running the command again switches it off');
+
+    // Leaving a tag out: /not claude from the box, and a right-click on a tag's button in the panel.
+    await focusBox();
+    await key('/', 'Slash', 191, 0, '/');
+    await type('not claude');
+    s = await R();
+    check(s.cmdListOpen && s.cmdMatches[0] === 'not-claude', `/not claude offers "Not tagged CLAUDE" first (${s.cmdMatches.slice(0, 3).join(', ')})`);
+    await key('Enter', 'Enter', 13, 0, '\r');
+    await drv.settle('not claude on');
+    rows = await shown();
+    check(rows.includes('beta.txt') && rows.includes('alpha xkTODO.md'), `not CLAUDE keeps the other files (positive control): ${rows.join(', ')}`);
+    check(!rows.includes('gamma xpCLAUDE.txt'), 'and drops the CLAUDE one');
+    check(rows.includes('one') && !rows.includes('two'), 'with the box empty it thins the folder\'s own list rather than listing everything below it');
+    const chipText = () => drv.ev(`document.querySelector('#runnerFilterChips [data-filter-id="tags"] > span')?.textContent.trim() || ''`);
+    let ct = await chipText();
+    check(/^Not tagged CLAUDE$/.test(ct), `the chip reads "Not tagged CLAUDE" ("${ct}")`);
+    await drv.T('runCommand', 'tag-todo');
+    await drv.settle('todo and not claude');
+    ct = await chipText();
+    rows = await shown();
+    check(/^Tagged TODO and not CLAUDE$/.test(ct) && rows.length === 1 && rows[0] === 'alpha xkTODO.md', `with TODO as well it reads "Tagged TODO and not CLAUDE" ("${ct}": ${rows.join(', ')})`);
+    await drv.T('runCommand', 'tag-todo');
+    await drv.settle('todo off');
+
+    const rightClick = async (selector) => {
+      const c = await drv.ev(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+      if (!c) return false;
+      await drv.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: c.x, y: c.y, button: 'right', clickCount: 1 });
+      await drv.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: c.x, y: c.y, button: 'right', clickCount: 1 });
+      await sleep(200);
+      return true;
+    };
+    const pill = (id) => drv.ev(`(() => { const b = document.querySelector('#runnerOptsPanel [data-cmd-id="${id}"]'); return b ? { text: b.textContent.trim(), not: b.classList.contains('tagfox-runner-cmd--not') } : null; })()`);
+    await focusBox();
+    await key('o', 'KeyO', 79, 1);
+    let p = await pill('tag-claude');
+    check(!!p && p.not && p.text === '¬CLAUDE', `the panel marks CLAUDE as left out (${JSON.stringify(p)})`);
+    const notInPanel = await drv.ev(`document.querySelectorAll('#runnerOptsPanel [data-cmd-id^="not-"]').length`);
+    check(notInPanel === 0, `the panel has no separate not-tag items (${notInPanel})`);
+    await rightClick('#runnerOptsPanel [data-cmd-id="tag-todo"]');
+    await drv.settle('not todo');
+    rows = await shown();
+    p = await pill('tag-todo');
+    check(!!p && p.not && !rows.includes('alpha xkTODO.md') && rows.includes('beta.txt'), `right-clicking TODO leaves it out too (${JSON.stringify(p)}: ${rows.join(', ')})`);
+    const todoWasOut = !!p && p.not;
+    await rightClick('#runnerOptsPanel [data-cmd-id="tag-todo"]');
+    await drv.settle('not todo off');
+    rows = await shown();
+    p = await pill('tag-todo');
+    check(todoWasOut && !!p && !p.not && rows.includes('alpha xkTODO.md'), 'right-clicking it again puts it back');
+    await key('Escape', 'Escape', 27);
+    const clearClicked = await click('#runnerFilterChips [data-filter-id="tags"] .tagfox-runner-filter-chip-x');
+    await drv.settle('tags cleared');
+    check(clearClicked && !(await R()).chips.includes('tags'), "the chip's x clears what is left");
 
     // Setting a tag: Ctrl+T on the selected row, from the box.
     await names('beta');
