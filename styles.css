@@ -260,7 +260,8 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   background-color: color-mix(in srgb, var(--bs-body-color) 9%, transparent);
   color: var(--bs-body-color);
 }
-#resultsTable tbody tr:hover .results-td-actions .tagfox-scope-bar-icon-btn:not(:disabled) {
+#resultsTable tbody tr:hover .results-td-actions .tagfox-scope-bar-icon-btn:not(:disabled),
+#resultsTable tbody tr.results-row-actions-kbd .results-td-actions .tagfox-scope-bar-icon-btn:not(:disabled) {
   opacity: 0.62;
 }
 #resultsTable tbody .results-td-actions .tagfox-scope-bar-icon-btn:hover:not(:disabled) {
@@ -287,8 +288,14 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 .scope-breadcrumb-row .tagfox-scope-bar-row-actions .tagfox-scope-bar-icon-btn:focus-visible {
   opacity: 1;
 }
+/* The button Tab has reached in the selected row's strip; !important because the row-level hover and
+   keyboard opacity rules above (and Runner's) are more specific. */
 #resultsTable tbody .results-td-actions .tagfox-scope-bar-icon-btn:focus-visible {
-  opacity: 1;
+  opacity: 1 !important;
+  color: var(--bs-body-color);
+  background-color: color-mix(in srgb, var(--bs-body-color) 9%, transparent);
+  outline: 2px solid var(--bs-primary);
+  outline-offset: 1px;
 }
 /* Flex lives on inner div — display:flex on <td> caused partial-width white hairlines between rows (Chrome). */
 #resultsTable tbody .results-td-actions-inner {
@@ -3322,10 +3329,12 @@ body.tagfox-runner #resultsTable tbody .results-td-actions-inner {
   background-color: var(--runner-surface);
   box-shadow: 0 0.35rem 1rem rgba(26, 27, 46, 0.14);
 }
-body.tagfox-runner #resultsTable tbody tr:hover .results-td-actions-inner {
+body.tagfox-runner #resultsTable tbody tr:hover .results-td-actions-inner,
+body.tagfox-runner #resultsTable tbody tr.results-row-actions-kbd .results-td-actions-inner {
   display: flex;
 }
-body.tagfox-runner #resultsTable tbody tr:hover .results-td-actions .tagfox-scope-bar-icon-btn:not(:disabled) {
+body.tagfox-runner #resultsTable tbody tr:hover .results-td-actions .tagfox-scope-bar-icon-btn:not(:disabled),
+body.tagfox-runner #resultsTable tbody tr.results-row-actions-kbd .results-td-actions .tagfox-scope-bar-icon-btn:not(:disabled) {
   opacity: 0.75;
 }
 .results-row-star {

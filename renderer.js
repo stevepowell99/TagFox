@@ -4821,7 +4821,7 @@
       {
         group: 'Move and select',
         keys: ['Tab', 'Shift+Tab'],
-        does: 'Between the box and the list',
+        does: "Between the box and the list. Tab in the list steps along the selected row's buttons: Enter or Space presses one, Esc goes back to the list",
         when: (c) => c.plain && c.key === 'Tab' && (c.inBox || c.inList),
         run: (c) => runnerSwitchBoxAndList(c.inBox),
       },
@@ -5186,6 +5186,8 @@
       if (document.body.classList.contains('tagfox-internal-path-drag')) return true;
       if (runnerCmdListIsOpen()) return true;
       if (document.querySelector('.tagfox-split-drag-shield')) return true;
+      /* Tab has walked into a row's buttons, and a repaint would drop the focus out of them. */
+      if (document.querySelector('#tbody tr.results-row-actions-kbd')) return true;
       /* A refresh re-runs the search, which comes back with the first page, so a tick after load-more
          would throw away the pages Steve asked for. Someone who has paged down is reading a long list,
          which is where a repaint costs most anyway. F5 still refreshes and still collapses the list,
@@ -17547,6 +17549,10 @@
     }
 
     bindResultsDomListeners();
+    document.getElementById('resultsWrap').addEventListener('focusout', (e) => {
+      const tr = e.target && e.target.closest ? e.target.closest('tr.results-row-actions-kbd') : null;
+      if (tr && !(e.relatedTarget && tr.contains(e.relatedTarget))) tr.classList.remove('results-row-actions-kbd');
+    });
 
     document.getElementById('query').addEventListener('input', () => {
       syncQueryGhostUi();
@@ -18722,6 +18728,61 @@
       return true;
     }
 
+    /** The selected row's action buttons by keyboard, in both layouts (October 2026). Tab in the list puts the focus
+     *  on the first of them and each further Tab steps along, wrapping; Shift+Tab steps back. Enter or Space presses
+     *  the focused button and Esc returns to the list. Any other key leaves the strip and acts on the list as before.
+     *  The row carries `results-row-actions-kbd` while its strip has the focus, because Runner shows the strip only
+     *  on hover and a display:none button cannot take the focus; the focusout listener on #resultsWrap drops it.
+     *  Runs ahead of both layouts' key handlers. True: the key was the strip's. */
+    function rowActionButtons(tr) {
+      return tr ? Array.from(tr.querySelectorAll('.results-td-actions-inner button')).filter((b) => !b.disabled) : [];
+    }
+    function focusRowActionButton(btn) {
+      const tr = btn.closest('tr');
+      document.querySelectorAll('#tbody tr.results-row-actions-kbd').forEach((x) => {
+        if (x !== tr) x.classList.remove('results-row-actions-kbd');
+      });
+      if (tr) tr.classList.add('results-row-actions-kbd');
+      btn.focus({ preventScroll: true });
+      setStatusMain((btn.getAttribute('aria-label') || btn.title || 'Row button') + ': Enter presses it, Tab moves on, Esc goes back to the list');
+    }
+    function rowActionStripHandleKeydown(e) {
+      if (e.ctrlKey || e.metaKey || e.altKey) return false;
+      if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta') return false;
+      if (document.querySelector('.modal.show')) return false;
+      if (isRunnerMode() && (runnerCmdListIsOpen() || runnerOptsPanelOpen)) return false;
+      const wrap = document.getElementById('resultsWrap');
+      const t = e.target;
+      const btn = t && t.closest ? t.closest('#tbody .results-td-actions-inner button') : null;
+      const consume = () => {
+        e.preventDefault();
+        e.stopPropagation();
+        return true;
+      };
+      if (!btn) {
+        if (e.key !== 'Tab' || e.shiftKey || !wrap) return false;
+        if (!(t === wrap || t === document.body || (t && t.closest && t.closest('#tbody')))) return false;
+        const btns = rowActionButtons(document.querySelector('#tbody tr.table-active'));
+        if (!btns.length) return false;
+        focusRowActionButton(btns[0]);
+        return consume();
+      }
+      if (e.key === 'Tab') {
+        const btns = rowActionButtons(btn.closest('tr'));
+        const n = btns.length;
+        const i = Math.max(0, btns.indexOf(btn));
+        if (n) focusRowActionButton(btns[(i + (e.shiftKey ? -1 : 1) + n) % n]);
+        return consume();
+      }
+      if ((e.key === 'Enter' || e.key === ' ') && !e.shiftKey) {
+        if (!e.repeat) btn.click();
+        return consume();
+      }
+      if (wrap) wrap.focus({ preventScroll: true });
+      if (e.key === 'Escape') return consume();
+      return false;
+    }
+
     /** Jump selection to first (false) or last (true) visible row. */
     function moveResultsSelectionToEdge(isEnd) {
       const rows = listRowsForUi();
@@ -19239,6 +19300,7 @@
       'keydown',
       (e) => {
       if (e.defaultPrevented) return;
+      if (rowActionStripHandleKeydown(e)) return;
       if (isRunnerMode() && runnerHandleKeydown(e)) return;
 
       if (e.key === 'Escape' && isPropsTheaterOn() && !document.querySelector('.modal.show')) {

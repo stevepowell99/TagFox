@@ -300,6 +300,7 @@ Things that might trip you up:
 <tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>First / last row</td></tr>
 <tr><td><kbd>Enter</kbd></td><td>Open / enter folder</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Set current folder to selected row’s parent</td></tr>
+<tr><td><kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd></td><td>From the list, step along the selected row’s buttons; <kbd>Enter</kbd> or <kbd>Space</kbd> presses one, <kbd>Esc</kbd> goes back to the list</td></tr>
 <tr><td><kbd>→</kbd></td><td>Scope into selected folder</td></tr>
 <tr><td><kbd>←</kbd></td><td>Scope toward parent</td></tr>
 <tr><td><kbd>+</kbd> / <kbd>-</kbd></td><td>Expand / collapse tree folder</td></tr>
