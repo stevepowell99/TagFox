@@ -3055,6 +3055,12 @@ body.tagfox-runner.tagfox-runner-status-on #tagfoxNavbarStatus {
   background: color-mix(in srgb, var(--tb-accent) 18%, transparent);
   font-weight: 600;
 }
+.tagfox-runner-cmd.tagfox-runner-cmd--tag.tagfox-runner-cmd--not {
+  border-color: var(--bs-danger);
+  color: var(--bs-danger);
+  text-decoration: line-through;
+  font-weight: 600;
+}
 .tagfox-runner-cmd.tagfox-runner-cmd--tag.tagfox-runner-cmd--active {
   outline: 2px solid var(--tb-accent);
   outline-offset: 1px;

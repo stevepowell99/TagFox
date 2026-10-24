@@ -157,6 +157,8 @@ Type to search. With the box empty you see the current folder's own contents; on
 - A row shows its tags in front of its name, as in Classic; the × on one takes that tag off the file.
 - **`Ctrl`+`T`** opens the tag editor on the selected row, or on every checked row (`Shift`+`↓` checks a run of them). Adding or removing a tag renames the file on disk straight away. The row's hover buttons and its menu open the same editor.
 - To list only the files carrying a tag, type `/` and the tag, for example `/todo`, and press `Enter`, or click the tag in the options panel (**Alt+O**). The filter shows as a chip under the box, such as **Tagged TODO**, and its × removes it. Two tags list the files that carry both.
+- To leave a tag out, type `/not` and the tag (`/not claude`), or right-click the tag in the options panel, where it then shows as `¬CLAUDE`. The chip reads **Not tagged CLAUDE**, or **Tagged TODO and not CLAUDE** beside a tag you asked for. The same command or right-click again puts it back.
+- With the box empty, a tag you ask for searches every folder below the current one, while a tag left out only thins the current folder's own list.
 - Typing the word itself (`todo`) is an ordinary search: it also finds `todo list.txt`. The tag filter lists only files tagged `xkTODO`.
 
 ### 📊 How the list is ordered
