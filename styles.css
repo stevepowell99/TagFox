@@ -2823,7 +2823,6 @@ body.tagfox-runner .tagfox-app-header,
 body.tagfox-runner #favFoldersColumn,
 body.tagfox-runner #splitFavFolders,
 body.tagfox-runner .tag-toolbar-row,
-body.tagfox-runner .scope-breadcrumb-row,
 body.tagfox-runner .tagfox-search-toolbar-row > .d-flex:has(#favSearchesBar),
 body.tagfox-runner .tagfox-status-view-opts,
 body.tagfox-runner #resultsTabStrip,
@@ -2849,13 +2848,129 @@ body.tagfox-runner #queryInputGroup .tagfox-query-ghost-hint {
   line-height: 1.4;
   padding: 0.55rem 0.85rem;
 }
-/* The folder in the hint is the tail of its path (fitRunnerGhostFolder); a last name too long for the box
-   ends in an ellipsis. */
+/* A folder name too long for the box ends in an ellipsis. */
 body.tagfox-runner #queryInputGroup .tagfox-query-ghost-folder {
   flex-shrink: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* The current folder's path as one line of tiny muted text above the box, each name clickable: Classic's
+   #breadcrumbBar without its tray, pill fills, icons, buttons and dropdowns. It never wraps; fitRunnerBreadcrumb
+   hides leading names behind "…" instead. */
+/* contain: the names never shrink, so without it their total width would widen the page instead of the row
+   overflowing for the fit to see. */
+body.tagfox-runner .scope-breadcrumb-row {
+  contain: inline-size;
+  margin-bottom: 0.2rem;
+  padding-bottom: 0;
+}
+body.tagfox-runner .scope-breadcrumb-row:has(#breadcrumbBar.d-none),
+body.tagfox-runner #btnClearScope,
+body.tagfox-runner .tagfox-breadcrumb-shell-actions,
+body.tagfox-runner .scope-breadcrumb-row #tagfoxScopeBarRowActions,
+body.tagfox-runner #scopePathEditWrap,
+body.tagfox-runner #breadcrumbBar > .dropdown,
+body.tagfox-runner #breadcrumbBar .folder-type-icon,
+body.tagfox-runner #breadcrumbBar .tagfox-runner-crumb-hidden {
+  display: none !important;
+}
+body.tagfox-runner #breadcrumbShell {
+  border: 0;
+  background: transparent;
+}
+body.tagfox-runner .scope-breadcrumb-row,
+body.tagfox-runner #breadcrumbShell,
+body.tagfox-runner #breadcrumbShell .breadcrumb-shell-inner,
+body.tagfox-runner #breadcrumbShellMain,
+body.tagfox-runner #breadcrumbBar {
+  flex-wrap: nowrap !important;
+  min-width: 0;
+}
+/* Not overflow: hidden, which would clip the folder menus; the fit keeps the row inside the bar instead. */
+body.tagfox-runner #breadcrumbBar {
+  flex: 1 1 0;
+  flex-wrap: nowrap !important;
+  padding: 0 !important;
+  gap: 0 !important;
+  font-size: 0.72rem;
+  line-height: 1.3;
+  color: var(--bs-secondary-color);
+}
+body.tagfox-runner #breadcrumbBar .flex-wrap {
+  flex-wrap: nowrap !important;
+}
+/* Names keep their width, so the row overflows and the fit hides leading ones; only once the current folder is
+   left alone (beside "…") may its name shrink to an ellipsis. */
+body.tagfox-runner #breadcrumbBar .tagfox-breadcrumb-folder-chip {
+  flex-shrink: 0;
+  max-width: 100%;
+  margin: 0 !important;
+}
+/* Each name's ▾ (the folders inside it, as in Classic) is the separator: a faint › that turns down when open. */
+body.tagfox-runner #breadcrumbBar .tagfox-breadcrumb-folder-chip .breadcrumb-scope-dd {
+  margin: 0;
+}
+body.tagfox-runner #breadcrumbBar .tagfox-breadcrumb-folder-chip .breadcrumb-dd-toggle.tagfox-scope-chevron {
+  width: auto;
+  min-height: 0;
+  padding: 0 0.3rem !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: inherit !important;
+  font-size: 0.55rem;
+  opacity: 0.6;
+}
+body.tagfox-runner #breadcrumbBar .tagfox-breadcrumb-folder-chip .breadcrumb-dd-toggle.tagfox-scope-chevron:hover,
+body.tagfox-runner #breadcrumbBar .tagfox-breadcrumb-folder-chip .breadcrumb-dd-toggle.tagfox-scope-chevron[aria-expanded="true"] {
+  opacity: 1;
+  color: var(--bs-body-color) !important;
+}
+body.tagfox-runner #breadcrumbBar .breadcrumb-dd-toggle.tagfox-scope-chevron i {
+  transform: rotate(-90deg);
+  transition: transform 0.12s ease;
+}
+body.tagfox-runner #breadcrumbBar .breadcrumb-dd-toggle.tagfox-scope-chevron[aria-expanded="true"] i {
+  transform: none;
+}
+body.tagfox-runner #breadcrumbBar .dropdown-menu {
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+body.tagfox-runner #breadcrumbBar.tagfox-runner-crumb-squeeze .tagfox-breadcrumb-folder-chip:last-child {
+  flex-shrink: 1;
+  min-width: 0;
+}
+body.tagfox-runner #breadcrumbBar .tagfox-breadcrumb-folder-chip > span,
+body.tagfox-runner #breadcrumbBar .breadcrumb-folder-seg-current > span {
+  min-width: 0;
+}
+body.tagfox-runner #breadcrumbBar .tagfox-breadcrumb-folder-chip .breadcrumb-folder-seg {
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: inherit !important;
+  white-space: nowrap;
+  min-width: 0;
+  max-width: 100%;
+}
+body.tagfox-runner #breadcrumbBar .tagfox-breadcrumb-folder-chip .breadcrumb-folder-seg:hover {
+  color: var(--bs-body-color) !important;
+  text-decoration: underline !important;
+}
+body.tagfox-runner #breadcrumbBar .breadcrumb-folder-seg-current > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body.tagfox-runner #breadcrumbBar .tagfox-runner-crumb-more {
+  flex-shrink: 0;
+  padding-right: 0.3rem;
+  cursor: default;
 }
 body.tagfox-runner #queryInputGroup .tagfox-query-clear.btn {
   width: 2.75rem !important;
@@ -2881,6 +2996,37 @@ body.tagfox-runner #queryInputGroup .tagfox-query-clear.btn {
 .tagfox-runner-scope-chip .tagfox-runner-scope-chip-x {
   opacity: 0.45;
   cursor: pointer;
+}
+/* The folder's buttons (Explorer, copy, tags, terminal, quoted path, more), shown while the chip is hovered. */
+.tagfox-runner-scope-chip .tagfox-scope-bar-row-actions {
+  display: none !important;
+}
+.tagfox-runner-scope-chip:hover .tagfox-scope-bar-row-actions,
+.tagfox-runner-scope-chip:focus-within .tagfox-scope-bar-row-actions {
+  display: inline-flex !important;
+}
+.tagfox-runner-scope-chip .tagfox-scope-bar-icon-btn {
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0.1rem 0.25rem;
+  min-width: 0;
+  line-height: 1;
+  font-size: 0.85rem;
+  color: var(--bs-secondary-color);
+  opacity: 0.62;
+}
+.tagfox-runner-scope-chip .tagfox-scope-bar-icon-btn.btn-outline-primary {
+  color: var(--bs-primary);
+}
+.tagfox-runner-scope-chip .tagfox-scope-bar-icon-btn:hover:not(:disabled),
+.tagfox-runner-scope-chip .tagfox-scope-bar-icon-btn:focus-visible {
+  opacity: 1;
+  background-color: color-mix(in srgb, var(--bs-body-color) 9%, transparent);
+  color: var(--bs-body-color);
+}
+.tagfox-runner-scope-chip .tagfox-scope-bar-icon-btn:disabled {
+  opacity: 0.18;
 }
 .tagfox-runner-scope-chip .tagfox-runner-scope-chip-x:hover {
   opacity: 1;

@@ -135,7 +135,8 @@ Three icon-pair switches next to the search box — combine them freely:
 
 - **Settings → Toggle key opens: Runner** turns TagFox into one large search box with a ranked list below it and the Viewer on the right third. **Classic** (the default) is the full layout. The `/` command **Switch to the Classic layout** goes back.
 - Runner keeps its own search settings, so switching back and forth leaves Classic's view, filters and folder as they were.
-- Inside a folder, the empty box says which one: the end of the folder's path, as many folders as fit, after `…`.
+- Inside a folder, its path runs along a thin line above the box. Click any folder in it to go there, or the › after a folder to pick one of the folders inside it. A long path shows its last few folders after `…`; point at the `…` for the whole path.
+- Point at the folder's chip at the start of the box for its buttons: show in Explorer, copy, tags, terminal, copy the quoted path, and the full menu.
 - Runner has no status bar. Settings that differ from the defaults show as chips under the box, and a message (an error, what an action did, the F5 report) appears along the bottom for a few seconds; point at it to keep it there.
 - **Settings → Hide the window's title bar** gives the list the space Windows' title bar and menu took, in either layout, from the next start. The minimise, maximise and close buttons stay at the top right; drag the window by the strip along the top.
 

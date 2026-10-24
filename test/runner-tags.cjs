@@ -5,8 +5,9 @@
 // empty box thins the folder's own list instead of listing everything below it, and the chip names wanted
 // tags first ("Tagged TODO and not CLAUDE"); Ctrl+T opens Classic's tag editor on the selected row, adding a tag renames the file on disk
 // and removing it renames it back; Ctrl+T on two checked rows tags both; Down from a selected box leaves
-// the caret at the end, so typing adds to the query; and inside a deep folder the box's hint ends with the
-// folder's last three names after an ellipsis, and still fits the box in a narrow window.
+// the caret at the end, so typing adds to the query; and inside a deep folder its path is one line of tiny
+// names above the box, whose leading names give way to "…" in a narrow window, and a click on a name goes
+// there the way Left does.
 //
 // Run: node test/runner-tags.cjs
 
@@ -21,7 +22,7 @@ async function main() {
     if (!ok) failures.push(label);
   };
   const root = path.join(APP_DIR, '_tmp', 'runner-tags-' + process.pid);
-  const deepNames = ['one', 'two', 'three', 'four', 'five'];
+  const deepNames = ['first folder level', 'second folder level', 'third folder level', 'fourth folder level', 'fifth folder level'];
   const deep = path.join(root, ...deepNames);
   fs.mkdirSync(deep, { recursive: true });
   const files = ['alpha xkTODO.md', 'beta.txt', 'gamma xpCLAUDE.txt', 'todo list.txt', 'delta.txt'];
@@ -159,7 +160,7 @@ async function main() {
     rows = await shown();
     check(rows.includes('beta.txt') && rows.includes('alpha xkTODO.md'), `not CLAUDE keeps the other files (positive control): ${rows.join(', ')}`);
     check(!rows.includes('gamma xpCLAUDE.txt'), 'and drops the CLAUDE one');
-    check(rows.includes('one') && !rows.includes('two'), 'with the box empty it thins the folder\'s own list rather than listing everything below it');
+    check(rows.includes(deepNames[0]) && !rows.includes(deepNames[1]),'with the box empty it thins the folder\'s own list rather than listing everything below it');
     const chipText = () => drv.ev(`document.querySelector('#runnerFilterChips [data-filter-id="tags"] > span')?.textContent.trim() || ''`);
     let ct = await chipText();
     check(/^Not tagged CLAUDE$/.test(ct), `the chip reads "Not tagged CLAUDE" ("${ct}")`);
@@ -255,24 +256,89 @@ async function main() {
     await key('m', 'KeyM', 77, 0, 'm');
     check((await R()).query === 'gamm', `typing then adds to the query ("${(await R()).query}")`);
 
-    // The box's hint inside a deep folder: the tail of its path after an ellipsis, fitted to the box.
-    const hint = () =>
-      drv.ev(`(() => { const g = document.getElementById('queryGhostHint'); const f = g.querySelector('.tagfox-query-ghost-folder'); const gr = g.getBoundingClientRect(); return { text: f ? f.textContent : '', fits: !!f && f.getBoundingClientRect().right <= gr.right - parseFloat(getComputedStyle(g).paddingRight) + 0.5 && f.scrollWidth <= f.clientWidth + 1, shown: !g.classList.contains('d-none'), aria: document.getElementById('query').getAttribute('aria-label'), width: Math.round(gr.width) }; })()`);
-    await drv.T('configure', { rootFolder: deep });
-    await names('');
-    await sleep(300);
-    let h = await hint();
-    const tail3 = deepNames.slice(-3).join('\\');
-    check(h.shown && h.text.startsWith('…\\') && h.text.endsWith(tail3) && h.fits, `the hint ends with the last three folders after an ellipsis and fits (${JSON.stringify(h)})`);
-    check(h.aria === 'Search inside ' + deep, 'the full path is in the box\'s accessible name');
-    await drv.send('Emulation.setDeviceMetricsOverride', { width: 900, height: 700, deviceScaleFactor: 1, mobile: false });
+    // Inside a deep folder: its path as one line of tiny clickable names above the box, leading names behind
+    // "…" when the window is narrow; the box's hint names only the folder.
+    const crumbs = () =>
+      drv.ev(`(() => {
+        const bar = document.getElementById('breadcrumbBar');
+        const row = document.querySelector('.scope-breadcrumb-row');
+        const vis = (el) => el && getComputedStyle(el).display !== 'none' && el.getBoundingClientRect().width > 0;
+        const names = [...bar.querySelectorAll(':scope > .tagfox-breadcrumb-folder-chip')].filter(vis);
+        const tops = new Set(names.map((c) => Math.round(c.getBoundingClientRect().top)));
+        const more = bar.querySelector('.tagfox-runner-crumb-more');
+        return {
+          shown: vis(row),
+          above: vis(row) && row.getBoundingClientRect().bottom <= document.getElementById('queryInputGroup').getBoundingClientRect().top + 0.5,
+          names: names.map((c) => c.textContent.replace('›', '').trim()),
+          oneLine: tops.size === 1,
+          fits: bar.scrollWidth <= bar.clientWidth + 1,
+          more: vis(more),
+          px: parseFloat(getComputedStyle(names[0] || bar).fontSize),
+          room: bar.clientWidth,
+          used: bar.scrollWidth,
+          window: innerWidth,
+          box: Math.round(document.getElementById('queryInputGroup').getBoundingClientRect().width),
+          hint: document.getElementById('queryGhostHint').textContent.trim(),
+        };
+      })()`);
     // The resize reaches the page's ResizeObserver in a rendered frame, which a hidden window runs only
     // after input; so send a key, then wait for a frame to have run.
-    await key('Shift', 'ShiftLeft', 16);
-    const frame = await drv.ev(`Promise.race([new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true)))), new Promise((r) => setTimeout(() => r(false), 2000))])`);
-    if (!frame) console.log('  (no frame ran within 2s of the resize)');
-    const narrow = await hint();
-    check(narrow.text.startsWith('…\\') && narrow.text.endsWith(deepNames[4]) && narrow.fits && narrow.text.length < h.text.length, `at a narrow window it shows fewer folders and still fits (${JSON.stringify(narrow)})`);
+    const widthTo = async (width) => {
+      await drv.send('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile: false });
+      await key('Shift', 'ShiftLeft', 16);
+      const frame = await drv.ev(`Promise.race([new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true)))), new Promise((r) => setTimeout(() => r(false), 2000))])`);
+      if (!frame) console.log(`  (no frame ran within 2s of the resize to ${width}px)`);
+    };
+    await drv.T('configure', { rootFolder: deep });
+    await names('');
+    await widthTo(1800);
+    let c = await crumbs();
+    const last = deepNames[deepNames.length - 1];
+    check(c.shown && c.above && c.oneLine && c.fits, `inside a folder its path shows above the box, on one line (${JSON.stringify(c)})`);
+    check(c.px <= 12, `in tiny text (${c.px}px)`);
+    check(!c.more && c.names.slice(-5).join('|') === deepNames.join('|'), 'with room, every name shows and no "…"');
+    check(c.hint === 'Search inside' + last || c.hint === 'Search inside ' + last, `the box's hint names only the folder ("${c.hint}")`);
+    await widthTo(700);
+    const narrow = await crumbs();
+    check(narrow.more && narrow.oneLine && narrow.fits && narrow.names.length < c.names.length && narrow.names[narrow.names.length - 1] === last, `in a narrow window the leading names give way to "…" and the folder's own name stays (${JSON.stringify(narrow)})`);
+    await widthTo(1800);
+
+    // A click on a name goes to that folder the way Left does: the box is cleared and the folder you came up
+    // through is selected.
+    const third = path.join(root, ...deepNames.slice(0, 3));
+    const fourth = path.join(third, deepNames[3]);
+    await names('gam');
+    const at = await drv.ev(`(() => { const w = [...document.querySelectorAll('#breadcrumbBar [data-drop-path]')].find((e) => e.dataset.dropPath.replace(/[\\\\/]+$/, '').toLowerCase() === ${JSON.stringify(third.toLowerCase())}); const b = w && w.querySelector('button'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    check(!!at, 'set up: the third folder has a name to click');
+    const norm = (p) => String(p || '').replace(/[\\/]+$/, '').toLowerCase();
+    if (at) {
+      await drv.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+      await drv.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+      await sleep(200);
+      await drv.settle('crumb click');
+      const s = await R();
+      check(norm(s.scope) === norm(third), `clicking it goes to that folder (${path.basename(s.scope)})`);
+      check(s.query === '' && s.focusInBox, `the box is cleared and keeps the focus ("${s.query}", in box: ${s.focusInBox})`);
+      check(norm(s.selected) === norm(fourth), `the folder you came up through is selected (${path.basename(s.selected)})`);
+    }
+
+    // The box's folder chip carries the folder's buttons (Classic's, on its last breadcrumb), shown on hover.
+    // The tags button is the one pressed, since its effect is visible and it leaves the clipboard alone.
+    await drv.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 400 });
+    const chipActs = () =>
+      drv.ev(`(() => { const chip = document.getElementById('runnerScopeChip'); const a = document.getElementById('tagfoxScopeBarRowActions'); const r = chip.getBoundingClientRect(); return { inChip: !!a && chip.contains(a), shown: !!a && getComputedStyle(a).display !== 'none' && a.getBoundingClientRect().width > 0, x: r.left + 12, y: r.top + r.height / 2 }; })()`);
+    let ca = await chipActs();
+    check(ca.inChip && !ca.shown, `the folder's buttons sit in the box's folder chip, out of sight (${JSON.stringify(ca)})`);
+    await drv.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: ca.x, y: ca.y });
+    await sleep(150);
+    check((await chipActs()).shown, 'hovering the chip shows them');
+    await click('#btnScopeBarTags');
+    m = (await waitModal(true)) && (await modal());
+    check(!!m && m.shown && norm(m.path) === norm(third), `its tags button opens the tag editor on the folder (${m && m.path})`);
+    if (m && m.shown) await closeModal();
+    await drv.T('configure', { rootFolder: '' });
+    await names('');
+    check(!(await crumbs()).shown, 'searching everywhere, the line is gone');
     await drv.send('Emulation.clearDeviceMetricsOverride');
     await sleep(300);
   } catch (e) {

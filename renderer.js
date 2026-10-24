@@ -5107,20 +5107,22 @@
       bootstrap.Modal.getOrCreateInstance(hm).show();
     }
 
-    /** Current folder as a chip at the start of the box; its x searches everywhere again. */
+    /** Current folder as a chip at the start of the box; its x searches everywhere again. Classic's folder
+        buttons (#tagfoxScopeBarRowActions) are placed in it by renderScopeBreadcrumb and survive this rebuild. */
     function renderRunnerScopeChip() {
       const chip = document.getElementById('runnerScopeChip');
       if (!chip) return;
       const scope = normalizeFolderPathForEverything(document.getElementById('rootFolder').value.trim());
-      chip.textContent = '';
+      const acts = chip.querySelector('#tagfoxScopeBarRowActions');
+      for (const n of [...chip.childNodes]) if (n !== acts) n.remove();
       chip.classList.toggle('d-none', !scope);
       if (!scope) return;
       chip.title = scope + '\nLeft arrow: parent folder';
-      chip.appendChild(folderIconEl());
+      chip.insertBefore(folderIconEl(), acts);
       const nm = document.createElement('span');
       nm.className = 'text-truncate';
       nm.textContent = segmentPretty(T.baseName(scope.replace(/[/\\]+$/, ''))) || scope;
-      chip.appendChild(nm);
+      chip.insertBefore(nm, acts);
       const x = document.createElement('i');
       x.className = 'fa-solid fa-xmark tagfox-runner-scope-chip-x';
       x.title = 'Search everywhere';
@@ -5173,9 +5175,9 @@
         if (e.key === 'Control') runnerShowCtrlHints(false);
       });
       window.addEventListener('blur', () => runnerShowCtrlHints(false));
-      /* The hint's width changes with the window, the folder chip, the rank note and being shown at all. */
-      const ghost = document.getElementById('queryGhostHint');
-      if (ghost && typeof ResizeObserver === 'function') new ResizeObserver(() => fitRunnerGhostFolder()).observe(ghost);
+      /* The breadcrumb's room changes with the window, the Viewer's width and the row being shown at all. */
+      const crumbs = document.getElementById('breadcrumbBar');
+      if (crumbs && typeof ResizeObserver === 'function') new ResizeObserver(() => fitRunnerBreadcrumb()).observe(crumbs);
       document.getElementById('selToggleOpens')?.addEventListener('change', (e) => {
         void setRunnerMode(e.target.value === 'runner');
       });
@@ -7674,39 +7676,15 @@
         let pretty = (segmentPretty(seg) || seg || 'folder').trim();
         const gdPretty = prettyGDriveShortcutIdFolderBasename(norm, updateQueryPlaceholder);
         if (gdPretty) pretty = gdPretty;
-        q.setAttribute('aria-label', 'Search inside ' + (isRunnerMode() ? norm : pretty));
+        q.setAttribute('aria-label', 'Search inside ' + pretty);
         if (ghost) {
           ghost.innerHTML =
             '<span class="text-muted">Search inside</span><span class="tagfox-query-ghost-folder">' +
             escapeHtmlForPreview(pretty) +
             '</span>';
         }
-        /* Runner has no breadcrumb, so its hint names the folder by the tail of its path. */
-        if (isRunnerMode()) {
-          const segs = collapseGDriveShortcutDisplay(norm).split(/[\\/]+/).filter(Boolean);
-          segs[segs.length - 1] = pretty;
-          runnerGhostTailSegs = segs;
-        }
       }
-      if (!isRunnerMode() || (!scopeRaw && !max)) runnerGhostTailSegs = null;
       syncQueryGhostUi();
-      fitRunnerGhostFolder();
-    }
-
-    /** The folder path in Runner's box hint, one string per segment; null when the hint names no folder. */
-    let runnerGhostTailSegs = null;
-    /** As many trailing folders as fit the box, after an ellipsis (all of them when the whole path fits).
-        Measured on the page, since the width depends on the window, the folder chip and the rank note. */
-    function fitRunnerGhostFolder() {
-      const ghost = document.getElementById('queryGhostHint');
-      const span = ghost && ghost.querySelector('.tagfox-query-ghost-folder');
-      const segs = runnerGhostTailSegs;
-      if (!span || !segs || !ghost.clientWidth) return;
-      /* The span shrinks to the room left (Runner CSS), so text that does not fit shows as overflow. */
-      for (let n = segs.length; n >= 1; n--) {
-        span.textContent = (n < segs.length ? '…\\' : '') + segs.slice(-n).join('\\');
-        if (n === 1 || span.scrollWidth <= span.clientWidth + 1) break;
-      }
     }
 
     /** Show layered hint only when #query is empty (placeholder text cannot mix styles). */
@@ -8250,7 +8228,7 @@
           hideBreadcrumbSubfolderFlyout();
           const inst = bootstrap.Dropdown.getInstance(toggleBtn);
           if (inst) inst.hide();
-          await applySearchScopeAndRefresh(normalizeFolderPathForEverything(f.fullPath));
+          await goToBreadcrumbFolder(normalizeFolderPathForEverything(f.fullPath));
         });
         const onEnterRow = () => {
           cancelBreadcrumbFlyoutHideTimer();
@@ -8618,7 +8596,7 @@
           wrap.dataset.dropPath = folderForSearch;
           btn.addEventListener('click', async (e) => {
             e.stopPropagation();
-            await applySearchScopeAndRefresh(folderForSearch);
+            await goToBreadcrumbFolder(folderForSearch);
           });
           wrap.appendChild(btn);
           for (const tag of parsed.tags) {
@@ -8662,7 +8640,7 @@
         }
         btnR.addEventListener('click', async (e) => {
           e.stopPropagation();
-          await applySearchScopeAndRefresh(maxNormFull);
+          await goToBreadcrumbFolder(maxNormFull);
         });
         wrapR.dataset.dropPath = maxNormFull;
         wrapR.appendChild(btnR);
@@ -8705,7 +8683,7 @@
           wrap.dataset.dropPath = folderForSearch;
           btn.addEventListener('click', async (e) => {
             e.stopPropagation();
-            await applySearchScopeAndRefresh(folderForSearch);
+            await goToBreadcrumbFolder(folderForSearch);
           });
           wrap.appendChild(btn);
           for (const tag of parsed.tags) {
@@ -8759,9 +8737,56 @@
         el.appendChild(subWrap);
         if (scopeRowActs) el.insertBefore(scopeRowActs, subWrap);
       }
+      /* Runner: the buttons go in the box's folder chip instead, before its x, shown while it is hovered. */
+      const runnerChip = document.getElementById('runnerScopeChip');
+      if (isRunnerMode() && scopeRowActs && runnerChip && !runnerChip.classList.contains('d-none')) {
+        runnerChip.insertBefore(scopeRowActs, runnerChip.querySelector('.tagfox-runner-scope-chip-x'));
+      }
       syncStatusBarParentScopeButton();
       renderedScopeBreadcrumbKey = currentScopeBreadcrumbKey();
       refreshTagFoxChromeTooltips(document.getElementById('breadcrumbBar'));
+      fitRunnerBreadcrumb();
+    }
+
+    /** A breadcrumb pill: go to that folder. Runner goes the way its arrow keys do: the box is cleared, and the
+        folder on the way back to where you were is selected. */
+    async function goToBreadcrumbFolder(folder) {
+      if (!isRunnerMode()) return applySearchScopeAndRefresh(folder);
+      const from = currentScopeFolderPath();
+      const k = pathNormKey(folder);
+      let back = null;
+      if (from && pathNormKey(from).startsWith(k + '\\')) {
+        const next = from.replace(/[/\\]+$/, '').slice(folder.replace(/[/\\]+$/, '').length + 1).split(/[/\\]/)[0];
+        if (next) back = folder.replace(/[/\\]+$/, '') + '\\' + next;
+      }
+      focusQueryBox(false);
+      await runnerNavigate(() => applySearchScopeAndRefresh(folder), back);
+    }
+
+    /** Runner shows the breadcrumb as one small row of pills above the box. While the row overflows, its leading
+        pills give way to "…" (the whole path in its tooltip); the current folder's pill always stays. Measured on
+        the page, since the room depends on the window and the Viewer's width. */
+    function fitRunnerBreadcrumb() {
+      const bar = document.getElementById('breadcrumbBar');
+      if (!bar || !isRunnerMode() || bar.classList.contains('d-none')) return;
+      const pills = Array.from(bar.querySelectorAll(':scope > .tagfox-breadcrumb-folder-chip'));
+      if (!pills.length) return;
+      let more = bar.querySelector(':scope > .tagfox-runner-crumb-more');
+      if (!more) {
+        more = document.createElement('span');
+        more.className = 'tagfox-runner-only tagfox-runner-crumb-more';
+        more.textContent = '…';
+        bar.insertBefore(more, pills[0]);
+      }
+      more.title = currentScopeFolderPath() || getSearchScopeMaxFolderNorm();
+      for (const p of pills) p.classList.remove('tagfox-runner-crumb-hidden');
+      bar.classList.remove('tagfox-runner-crumb-squeeze');
+      more.classList.add('d-none');
+      const over = () => bar.scrollWidth > bar.clientWidth + 1;
+      if (!bar.clientWidth || !over()) return;
+      more.classList.remove('d-none');
+      for (let i = 0; i < pills.length - 1 && over(); i++) pills[i].classList.add('tagfox-runner-crumb-hidden');
+      if (over()) bar.classList.add('tagfox-runner-crumb-squeeze');
     }
 
     /** Resolve relative `![](path)` targets against the .md file’s folder (preview loads as file:// index, not beside the .md). */
