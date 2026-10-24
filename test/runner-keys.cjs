@@ -276,6 +276,7 @@ async function main() {
 
     // ? in an empty box: Help at Runner's keys, drawn from the key table.
     await drv.T('setQuery', '');
+    await drv.settle('empty box');
     await focusBox();
     await key('?', 'Slash', 191, 8, '?');
     await sleep(500);

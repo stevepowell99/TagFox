@@ -95,7 +95,7 @@ async function main() {
     check(copiedOn && fs.existsSync(path.join(src, 'copied.txt')), 'a drop with Shift copies it, leaving the original');
 
     /* The drop's message brings the status line up over the bottom edge; it must sit above the chips it is
-       about. Only the position is checked: the search the drop starts soon replaces the message's text. */
+       about, and stay readable while the searches the drop starts run under it. */
     const statusEnd = Date.now() + 3000;
     const statusAbove = () => g.statusOn && g.status && g.shelf && g.status.top >= 0 && g.status.bottom <= g.shelf.top + 1;
     do {
@@ -105,6 +105,9 @@ async function main() {
     } while (Date.now() < statusEnd);
     check(g.statusOn, `the drop brings the status line up ("${g.statusText}")`);
     check(statusAbove(), `and it shows above the Shelf, not over it (status ${g.status && Math.round(g.status.top)}-${g.status && Math.round(g.status.bottom)}, shelf from ${g.shelf && Math.round(g.shelf.top)}, window ${g.winH})`);
+    await drv.T('runSearchNow', 'identity');
+    g = await geo();
+    check(g.statusOn && /Copied to Shelf/.test(g.statusText), `a search while it is up leaves the message readable ("${g.statusText}", shown ${g.statusOn})`);
     await drv.T('renderShelf');
     g = await geo();
     check(!g.hint && g.chips.includes('moved.txt') && g.chips.includes('copied.txt'), `the Shelf shows them as chips (${JSON.stringify(g.chips)})`);

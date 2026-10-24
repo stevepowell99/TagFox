@@ -5881,8 +5881,11 @@
     }
 
     /** Main status line; clears Smart chip so transient messages don’t stack. `progress`: routine progress
-        ("Searching…") that Runner does not bring its hidden bar up for. */
+        ("Searching…") that Runner does not bring its hidden bar up for, and that never replaces a message
+        the bar is still showing: an action's result starts a search, whose "Searching…" would otherwise
+        be all the bar said for the result's five seconds. */
     function setStatusMain(text, { progress = false } = {}) {
+      if (progress && isRunnerMode() && document.body.classList.contains('tagfox-runner-status-on')) return;
       const el = document.getElementById('statusMain');
       if (el) el.textContent = text == null ? '' : String(text);
       clearStatusSmartNote();
@@ -17438,7 +17441,7 @@
         /* The "Searching…" status below is set after the mutex, so a click that queues behind a slow
            search used to change nothing on screen at all, which reads as the filter being ignored.
            Delay the hint so an uncontended search (the normal case) does not flash it. */
-        const waitHintTimer = setTimeout(() => setStatusMain('Waiting for the current search…'), 150);
+        const waitHintTimer = setTimeout(() => setStatusMain('Waiting for the current search…', { progress: true }), 150);
         try {
           await prev;
         } finally {
