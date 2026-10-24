@@ -1,4 +1,4 @@
-TagFox lists task files that are copies, not tasks: about 1,600 xk files sit inside the 11 linked git worktrees of `C:\dev\causal-map-extension`, and others in `_tmp` and `archive` folders. The hub's session-start scanner already skips them (`C:\Users\Zoom\.claude\bin\surface-tasks.ps1`, `IsLinkedWorktree` and its `$skip` list); TagFox has no equivalent.
+TagFox lists task files that are only copies of tasks: about 1,600 xk files are inside the 11 linked git worktrees of `C:\dev\causal-map-extension`, and others are in `_tmp` and `archive` folders. The hub's session-start scanner already skips them (`C:\Users\Zoom\.claude\bin\surface-tasks.ps1`, `IsLinkedWorktree` and its `$skip` list); TagFox does not.
 
 The row filter lives in `applyAdvancedPathHides` (`renderer.js`, about 14760-14769). `optHideSpecial` already hides `.claude\worktrees\`, but four worktrees sit outside any dot-folder or `_tmp` (`C:\dev\cme-words`, `C:\rbx-src\afirst`, `C:\rbx-src\recall`, two under `C:\Users\Zoom\freestyle-vsjr\*\_src`), so path rules alone cannot do it. Detection has to read the `.git` file:
 
