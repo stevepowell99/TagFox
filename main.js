@@ -2717,6 +2717,8 @@ function registerShelfIpc() {
       return { ok: false, error: String(e.message || e), path: dir, entries: [] };
     }
   });
+  /* Clearing the Shelf, or one item off it, recycles rather than deletes: a drop onto the Shelf moves the
+     original there, so these are often the only copy of a file. */
   ipcMain.handle('clear-shelf', async (event) => {
     const dir = getShelfDirResolved();
     let names;
@@ -2725,45 +2727,29 @@ function registerShelfIpc() {
     } catch (e) {
       return { ok: false, error: String(e.message || e) };
     }
-    const errs = [];
-    let anyOk = false;
-    for (const n of names) {
-      try {
-        await rmShelfTreeOrThrow(path.join(dir, n));
-        anyOk = true;
-      } catch (e) {
-        errs.push(n + ': ' + String(e.message || e));
-      }
-    }
-    if (anyOk) event.sender.send('paths-mutated');
-    // Empty dir ⇒ success even if Node reported EPERM after PS/async cleanup removed the tree.
+    const { trashedPaths, errs } = await recycleListBatched(names.map((n) => path.join(dir, n)));
+    if (trashedPaths.length) event.sender.send('paths-mutated');
     try {
       names = await fs.readdir(dir);
     } catch (_) {
       return errs.length ? { ok: false, error: errs.join('; ') } : { ok: true };
     }
     if (!names.length) return { ok: true };
-    return errs.length ? { ok: false, error: errs.join('; ') } : { ok: true };
+    return { ok: false, error: errs.length ? errs.join('; ') : names.length + ' item(s) are still on the Shelf' };
   });
   ipcMain.handle('remove-shelf-paths', async (event, paths) => {
     const list = Array.isArray(paths) ? paths : [];
     const errs = [];
-    let anyOk = false;
+    const onShelf = [];
     for (const raw of list) {
       const fp = path.resolve(String(raw || '').trim());
       if (!fp) continue;
-      if (!isStrictChildOfShelfStagingDir(fp)) {
-        errs.push(fp + ': not on Shelf');
-        continue;
-      }
-      try {
-        await rmShelfTreeOrThrow(fp);
-        anyOk = true;
-      } catch (e) {
-        errs.push(fp + ': ' + String(e.message || e));
-      }
+      if (!isStrictChildOfShelfStagingDir(fp)) errs.push(fp + ': not on Shelf');
+      else onShelf.push(fp);
     }
-    if (anyOk) event.sender.send('paths-mutated');
+    const recycled = await recycleListBatched(onShelf);
+    errs.push(...recycled.errs);
+    if (recycled.trashedPaths.length) event.sender.send('paths-mutated');
     if (!list.length) return { ok: false, error: 'Nothing to remove' };
     const allGone = list.every((raw) => {
       const fp = path.resolve(String(raw || '').trim());
@@ -6028,50 +6014,6 @@ foreach ($p in $paths) {
 }
 exit 0`;
 
-/** JSON `{ "path": "C:\\\\full" }` — clear RO then Remove-Item (Node fs.rm often EPERM on Windows shelf trees). */
-const PS1_REMOVE_ITEM_RECURSE = `param([Parameter(Mandatory)][string]$JsonPath)
-try {
-  $raw = Get-Content -LiteralPath $JsonPath -Raw -Encoding UTF8
-  $j = $raw | ConvertFrom-Json
-  $p = [string]$j.path
-  if (-not $p) { throw 'Missing path' }
-  if (-not (Test-Path -LiteralPath $p)) { exit 0 }
-  $item = Get-Item -LiteralPath $p -Force
-  if ($item.Attributes -band [System.IO.FileAttributes]::ReadOnly) {
-    $item.Attributes = $item.Attributes -band (-bnot [System.IO.FileAttributes]::ReadOnly)
-  }
-  if ($item.PSIsContainer) {
-    Get-ChildItem -LiteralPath $p -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
-      if ($_.Attributes -band [System.IO.FileAttributes]::ReadOnly) {
-        $_.Attributes = $_.Attributes -band (-bnot [System.IO.FileAttributes]::ReadOnly)
-      }
-    }
-  }
-  Remove-Item -LiteralPath $p -Recurse -Force -ErrorAction Stop
-  exit 0
-} catch {
-  [Console]::Error.WriteLine($_.Exception.Message)
-  exit 1
-}`;
-
-/** Only for paths already vetted (Shelf delete). Returns null on success. */
-function removeItemRecurseViaPowershell(absPathRaw) {
-  if (process.platform !== 'win32') return 'Not Windows.';
-  const fp = path.resolve(String(absPathRaw || '').trim());
-  if (!fp) return 'Missing path.';
-  const tmpJson = path.join(os.tmpdir(), `tagbrowser-rmrecurse-${process.pid}-${Date.now()}.json`);
-  try {
-    fssync.writeFileSync(tmpJson, JSON.stringify({ path: fp }), 'utf8');
-    return runPowershellScriptFileWithArg(PS1_REMOVE_ITEM_RECURSE, tmpJson, 'Remove-Item');
-  } catch (e) {
-    return String(e.message || e);
-  } finally {
-    try {
-      fssync.unlinkSync(tmpJson);
-    } catch (_) {}
-  }
-}
-
 /**
  * Recycle many paths in ONE PowerShell spawn. Returns an array of { path, ok, err } aligned to the input
  * (normalized). A spawn-level failure (no JSON line for a path) is reported as a per-path error.
@@ -6579,19 +6521,6 @@ function isRenameRetryableError(e) {
   if (e.code === 'EBUSY') return true;
   if (process.platform === 'win32' && (e.code === 'EPERM' || e.code === 'EACCES')) return true;
   return /EBUSY|resource busy|locked|EPERM/i.test(String(e.message || e));
-}
-
-/** Recursive delete for Shelf entries — fs.rm then Windows PS on any failure (Node often omits err.code on EPERM). */
-async function rmShelfTreeOrThrow(absPath) {
-  const target = path.resolve(String(absPath || '').trim());
-  if (!target) throw new Error('Missing path');
-  try {
-    await fs.rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 120 });
-  } catch (e) {
-    if (process.platform !== 'win32') throw e;
-    const psErr = removeItemRecurseViaPowershell(target);
-    if (psErr) throw new Error(psErr);
-  }
 }
 
 async function delay(ms) {

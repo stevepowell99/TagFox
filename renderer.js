@@ -3668,6 +3668,7 @@
       renderRunnerScopeChip();
       renderRunnerFilterChips();
       applyRunnerViewerOff();
+      scheduleSyncShelfAsideWidth();
     }
 
     /** Classic's header holds the Restart button and Runner has no header, so in Runner the button sits in
@@ -12364,7 +12365,11 @@
           }
           const scopeDest = paneScopeFolderForDrop();
           if (!scopeDest) {
-            setStatusMain('Set the current folder (breadcrumb or path editor) to drop into the list.');
+            setStatusMain(
+              isRunnerMode()
+                ? 'Drop onto a folder row, or go into a folder first (→ on its row) to drop into the list.'
+                : 'Set the current folder (breadcrumb or path editor) to drop into the list.'
+            );
             return;
           }
           await applyInternalPathsDrop(scopeDest, paths, e.shiftKey ? 'copy' : 'move');
@@ -12527,6 +12532,15 @@
       if (!aside || !rot) return;
       // Pre-rot minWidth ≈ column height so ±90° strip spans the shelf; match results column height (no vertical inset — aligns with results card / table).
       rot.style.minWidth = '';
+      /* Runner's strip lies flat under the list and sizes itself; the status line sits just above it. */
+      if (isRunnerMode()) {
+        aside.style.width = '';
+        const box = aside.getBoundingClientRect();
+        const bottomGap = box.height > 0 ? Math.max(0, window.innerHeight - box.top) : 0;
+        document.body.style.setProperty('--tagfox-runner-shelf-h', Math.ceil(bottomGap) + 'px');
+        return;
+      }
+      document.body.style.removeProperty('--tagfox-runner-shelf-h');
       const parent = aside.closest('.results-with-shelf') || aside.parentElement;
       const h = parent ? parent.clientHeight : 0;
       if (h > 48) rot.style.minWidth = Math.max(48, h) + 'px';
@@ -12573,7 +12587,7 @@
       if (!zone || !chips || !hint || !window.tagBrowser.shelfState) return;
       const r = await window.tagBrowser.shelfState();
       const shelfDropHelp =
-        'The shelf is temporary storage, like a clipboard. Drag files or folders to and from it (to move not copy, press shift while dragging). To drag things ourside TagFox, press the hand button first or use Alt+drag.';
+        'The shelf is temporary storage, like a clipboard. Drag files or folders onto it and off it into any folder: a drag moves them, and holding Shift copies. To drag things outside TagFox, use Alt+drag, or press the hand button first.';
       zone.title = r.ok ? shelfDropHelp + ' Staging folder: ' + r.path : shelfDropHelp + ' ' + String(r.error || 'Shelf unavailable');
       chips.innerHTML = '';
       if (!r.ok || !r.entries.length) {
@@ -12607,7 +12621,13 @@
         row.className = 'd-inline-flex align-items-center gap-0 shelf-chip-with-remove';
         const chip = document.createElement('span');
         chip.className = 'badge bg-secondary shelf-chip align-middle';
-        chip.textContent = ent.name;
+        if (ent.isDirectory) {
+          const ic = document.createElement('i');
+          ic.className = 'fa-solid fa-folder tagfox-runner-only me-1';
+          ic.setAttribute('aria-hidden', 'true');
+          chip.appendChild(ic);
+        }
+        chip.appendChild(document.createTextNode(ent.name));
         chip.title =
           ent.fullPath +
           (ent.isDirectory ? ' (folder)' : '') +
@@ -12620,7 +12640,7 @@
           'btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0 shelf-chip-remove';
         rm.style.width = '1.25rem';
         rm.style.height = '1.25rem';
-        rm.title = 'Remove this item from Shelf';
+        rm.title = 'Send this item to the Recycle Bin';
         rm.innerHTML = '<i class="fa-solid fa-xmark" aria-hidden="true"></i>';
         rm.addEventListener(
           'mousedown',
@@ -12655,6 +12675,8 @@
       if (!aside || aside.dataset.shelfDropBound === '1') return;
       aside.dataset.shelfDropBound = '1';
       window.addEventListener('resize', syncShelfAsideWidth);
+      /* Runner's strip changes height when its chips rewrap (Alt+P widens the list), which no resize event reports. */
+      if (window.ResizeObserver) new ResizeObserver(() => isRunnerMode() && syncShelfAsideWidth()).observe(aside);
 
       function shelfAllowsDt(dt) {
         return dataTransferHasTagBrowserOrFiles(dt);
@@ -20496,9 +20518,9 @@
       );
     });
     document.getElementById('btnShelfClear').addEventListener('click', async () => {
-      if (!confirm('Remove everything from Shelf?')) return;
+      if (!confirm('Send everything on the Shelf to the Recycle Bin?')) return;
       const r = await window.tagBrowser.clearShelf();
-      setStatusMain(r.ok ? 'Shelf cleared.' : (r.error || 'Clear failed'));
+      setStatusMain(r.ok ? 'Shelf cleared: everything on it went to the Recycle Bin.' : (r.error || 'Clear failed'));
       // On success, main sends paths-mutated → refreshAfterDiskMutation (shelf strip + search retries).
     });
     loadPaneWidthsFromStorage();
@@ -20759,6 +20781,8 @@
         springHoverTab: (id) => activateTab(Number(id)),
         tabIds: () => tabs.map((t) => t.id),
         machineFeatures: () => machineFeaturesSeen,
+        /* Redraw the Shelf from its folder now, and size it, rather than wait for a disk-change event. */
+        renderShelf: () => renderShelf().then(() => (syncShelfAsideWidth(), true)),
         /* Drive the real disk-mutation handler (the IPC callback) so tests can assert refresh behaviour. */
         mutate: (payload) => onPathsMutated(payload),
         /* Simulate the renderer side of a delete: tombstone the paths + repaint the active pane. Used by

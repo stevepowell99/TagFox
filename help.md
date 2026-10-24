@@ -222,19 +222,20 @@ Type to search. With the box empty you see the current folder's own contents; on
 
 ### 📦 What is the Shelf?
 
-The Shelf is the narrow vertical strip to the right of the results table. It's a **staging area** for files you want to move or copy between folders.
+The Shelf is the strip under the results list, one line high while it is empty. It's a **staging area** for files and folders you want to move or copy to another folder. It keeps them while you search and move around.
 
 ### 🔄 How to use it
 
-1. Select files in the results and click **Add to Shelf** (or drag them onto the Shelf strip).
-2. Navigate to a different folder.
-3. Open the Shelf, select the items, and paste or drag them into the new location.
+- Drag rows from the list onto the Shelf. A drag moves them there; hold `Shift` to copy them instead.
+- Go to the folder they belong in, or search for it.
+- Drag a chip, or **All**, onto a folder row, or into the list when you are inside a folder. Again a drag moves and `Shift` copies.
 
 ### 💡 Tips
 
-- The **OS drag** button arms one drag from a row or Shelf chip with a native path for Explorer and other apps. Alternatively, hold `Alt` while starting a drag from a result row or Shelf chip. A normal drag without `Alt` stays inside TagFox only.
-- The Shelf remembers its contents until you clear it — you can collect files from multiple folders before pasting.
-- Think of it as a clipboard for files that doesn't disappear when you navigate away.
+- A chip's × (it shows when you point at the chip) and the bin button send items to the **Recycle Bin**. A drag onto the Shelf moved the original, so that is where to get one back.
+- To drag something to another app, such as File Explorer or an email, hold `Alt` as you start the drag from a row or a chip, or click the hand button first. A drag without `Alt` stays inside TagFox.
+- The Shelf keeps its contents until you take them off, so you can collect files from several folders before dropping them.
+- For one batch of files, `Ctrl`+`X` and then `Ctrl`+`V` in the folder they belong in do the same without the Shelf.
 
 <!-- help:tab {"id":"projects","label":"📋 Projects & TODOs"} -->
 
