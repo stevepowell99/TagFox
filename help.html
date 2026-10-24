@@ -182,6 +182,7 @@ Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when
               <ul>
               <li><strong>Settings → Toggle key opens: Runner</strong> turns TagFox into one large search box with a ranked list below it and the Viewer on the right third. <strong>Classic</strong> (the default) is the full layout. The <code>/</code> command <strong>Switch to the Classic layout</strong> goes back.</li>
               <li>Runner keeps its own search settings, so switching back and forth leaves Classic&#39;s view, filters and folder as they were.</li>
+              <li>Inside a folder, the empty box says which one: the end of the folder&#39;s path, as many folders as fit, after <code>…</code>.</li>
               <li>Runner has no status bar. Settings that differ from the defaults show as chips under the box, and a message (an error, what an action did, the F5 report) appears along the bottom for a few seconds; point at it to keep it there.</li>
               <li><strong>Settings → Hide the window&#39;s title bar</strong> gives the list the space Windows&#39; title bar and menu took, in either layout, from the next start. The minimise, maximise and close buttons stay at the top right; drag the window by the strip along the top.</li>
               </ul>
@@ -195,6 +196,13 @@ Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when
               <li>A file type lists only that type: <code>.pdf</code>, or just <code>pdf</code> for the common document, image, audio and video types. Several (<code>.docx .pdf</code>) list any of them, and <code>-pdf</code> leaves a type out. A file type on its own lists the newest first; with other words, as in <code>budget xlsx</code>, the words decide the order. Words such as <code>map</code>, <code>log</code> and <code>key</code> stay words, so &quot;causal map&quot; is not a search for .map files.</li>
               <li><code>^word</code> matches only where a word starts: <code>^map</code> finds <code>map.json</code> and <code>old map.md</code> but not <code>roadmap.txt</code>. The <code>/</code> command <strong>Word starts only</strong> does the same for every word.</li>
               <li>Everything&#39;s own syntax works as it does in Everything: <code>a|b</code>, <code>!word</code>, <code>&quot;exact phrase&quot;</code>, the <code>*</code> and <code>?</code> wildcards (which match the whole name), <code>ext:</code>, <code>dm:today</code>, <code>size:&gt;1mb</code>, <code>regex:</code>, <code>path:</code>, <code>parent:</code>, <code>nopath:</code>, <code>wfn:</code>, <code>case:</code>, <code>startwith:</code> and <code>&lt;grouping&gt;</code>. See <a href="https://www.voidtools.com/support/everything/searching/">Everything searching</a>.</li>
+              </ul>
+              <h3>🏷️ Tags</h3>
+              <ul>
+              <li>A row shows its tags in front of its name, as in Classic; the × on one takes that tag off the file.</li>
+              <li><strong><code>Ctrl</code>+<code>T</code></strong> opens the tag editor on the selected row, or on every checked row (<code>Shift</code>+<code>↓</code> checks a run of them). Adding or removing a tag renames the file on disk straight away. The row&#39;s hover buttons and its menu open the same editor.</li>
+              <li>To list only the files carrying a tag, type <code>/</code> and the tag, for example <code>/todo</code>, and press <code>Enter</code>, or click the tag in the options panel (<strong>Alt+O</strong>). The filter shows as a chip under the box, such as <strong>Tagged TODO</strong>, and its × removes it. Two tags list the files that carry both.</li>
+              <li>Typing the word itself (<code>todo</code>) is an ordinary search: it also finds <code>todo list.txt</code>. The tag filter lists only files tagged <code>xkTODO</code>.</li>
               </ul>
               <h3>📊 How the list is ordered</h3>
               <ul>

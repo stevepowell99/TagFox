@@ -135,6 +135,7 @@ Three icon-pair switches next to the search box — combine them freely:
 
 - **Settings → Toggle key opens: Runner** turns TagFox into one large search box with a ranked list below it and the Viewer on the right third. **Classic** (the default) is the full layout. The `/` command **Switch to the Classic layout** goes back.
 - Runner keeps its own search settings, so switching back and forth leaves Classic's view, filters and folder as they were.
+- Inside a folder, the empty box says which one: the end of the folder's path, as many folders as fit, after `…`.
 - Runner has no status bar. Settings that differ from the defaults show as chips under the box, and a message (an error, what an action did, the F5 report) appears along the bottom for a few seconds; point at it to keep it there.
 - **Settings → Hide the window's title bar** gives the list the space Windows' title bar and menu took, in either layout, from the next start. The minimise, maximise and close buttons stay at the top right; drag the window by the strip along the top.
 
@@ -150,6 +151,13 @@ Type to search. With the box empty you see the current folder's own contents; on
 - A file type lists only that type: `.pdf`, or just `pdf` for the common document, image, audio and video types. Several (`.docx .pdf`) list any of them, and `-pdf` leaves a type out. A file type on its own lists the newest first; with other words, as in `budget xlsx`, the words decide the order. Words such as `map`, `log` and `key` stay words, so "causal map" is not a search for .map files.
 - `^word` matches only where a word starts: `^map` finds `map.json` and `old map.md` but not `roadmap.txt`. The `/` command **Word starts only** does the same for every word.
 - Everything's own syntax works as it does in Everything: `a|b`, `!word`, `"exact phrase"`, the `*` and `?` wildcards (which match the whole name), `ext:`, `dm:today`, `size:>1mb`, `regex:`, `path:`, `parent:`, `nopath:`, `wfn:`, `case:`, `startwith:` and `<grouping>`. See [Everything searching](https://www.voidtools.com/support/everything/searching/).
+
+### 🏷️ Tags
+
+- A row shows its tags in front of its name, as in Classic; the × on one takes that tag off the file.
+- **`Ctrl`+`T`** opens the tag editor on the selected row, or on every checked row (`Shift`+`↓` checks a run of them). Adding or removing a tag renames the file on disk straight away. The row's hover buttons and its menu open the same editor.
+- To list only the files carrying a tag, type `/` and the tag, for example `/todo`, and press `Enter`, or click the tag in the options panel (**Alt+O**). The filter shows as a chip under the box, such as **Tagged TODO**, and its × removes it. Two tags list the files that carry both.
+- Typing the word itself (`todo`) is an ordinary search: it also finds `todo list.txt`. The tag filter lists only files tagged `xkTODO`.
 
 ### 📊 How the list is ordered
 
