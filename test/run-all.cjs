@@ -32,6 +32,7 @@ const runs = [
   { name: 'runner layout', args: ['runner-layout.cjs'] },
   { name: 'runner keys', args: ['runner-keys.cjs'] },
   { name: 'runner syntax', args: ['runner-syntax.cjs'] },
+  { name: 'runner tags', args: ['runner-tags.cjs'] },
   { name: 'hidden title bar', args: ['window-chrome.cjs'] },
   { name: 'hover preview', args: ['hover-preview.cjs'] },
   { name: 'gmist start guard', args: ['gmist-start-guard.cjs'] }, // skips loudly if a real gmist holds 5173/5199

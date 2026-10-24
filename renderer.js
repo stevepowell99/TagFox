@@ -4255,11 +4255,36 @@
       void runSearchNow('identity');
     }
 
+    /** A tag command: Classic's include toggle, then the search. */
+    function runnerToggleTag(word) {
+      toggleTagFilterInclude(word.toLowerCase(), word);
+      persistActiveTagFilter();
+      saveSettings();
+      void runSearchNow('identity');
+    }
+
+    /** Ctrl+T: Classic's tag editor, on the checked rows, else the selected one. */
+    function runnerEditTags() {
+      if (getCheckedPathsArr().length) keyboardOpenTagsModal();
+      else if (selectedFullPath) openTagModal(selectedFullPath);
+      else setStatusMain('Select a row first, then Ctrl+T edits its tags.');
+    }
+
     /** One table drives the options panel and the / list. */
     const RUNNER_COMMANDS = [
       { id: 'sort-smart', group: 'Sort', label: 'Sort: smart (name matches, recent, starred, used)', isOn: () => runnerSort === 'smart', run: () => setRunnerSort('smart') },
       { id: 'sort-date', group: 'Sort', label: 'Sort by date, newest first', isOn: () => runnerSort === 'date', run: () => setRunnerSort('date') },
       { id: 'sort-name', group: 'Sort', label: 'Sort by name', isOn: () => runnerSort === 'name', run: () => setRunnerSort('name') },
+      { id: 'edit-tags', group: 'Tags', label: 'Edit tags of the selected or checked rows (Ctrl+T)', run: () => runnerEditTags() },
+      /* One filter per vocabulary word; the options panel draws these as a row of small buttons. */
+      ...Object.keys(T.TAG_VOCAB).map((word) => ({
+        id: 'tag-' + word.toLowerCase(),
+        group: 'Tags',
+        tag: word,
+        label: 'Tagged ' + word,
+        isOn: () => activeTagKeys.has(word.toLowerCase()) && !excludedTagKeys.has(word.toLowerCase()),
+        run: () => runnerToggleTag(word),
+      })),
       { id: 'system', group: 'Show', label: 'Show system files (. $ desktop.ini)', isOn: () => !isHideSpecialPaths(), run: () => runnerToggleSystemFiles() },
       { id: 'tilde', group: 'Show', label: 'Hide ~ paths (lock files, ~folders; listed lower when shown)', isOn: () => isHideTildePaths(), run: () => runnerToggleTilde() },
       { id: 'temp', group: 'Show', label: 'Hide temp files (AppData\\Local\\Temp; listed lower when shown)', isOn: () => runnerHideTempOn(), run: () => runnerToggleTemp() },
@@ -4346,7 +4371,11 @@
         id: 'tags',
         icon: 'fa-tags',
         on: () => activeTagKeys.size > 0 || excludedTagKeys.size > 0,
-        label: () => 'Tags: ' + [...activeTagKeys, ...[...excludedTagKeys].map((k) => 'not ' + k)].join(', '),
+        label: () =>
+          'Tagged ' +
+          [...activeTagKeys]
+            .map((k) => (excludedTagKeys.has(k) ? 'not ' : '') + (T.isDateTag(k) ? k : k.toUpperCase()))
+            .join(tagFilterCombineOr ? ' or ' : ' and '),
         reset: () => {
           activeTagKeys.clear();
           excludedTagKeys.clear();
@@ -4438,10 +4467,10 @@
     function runnerCmdButton(cmd, active) {
       const b = document.createElement('button');
       b.type = 'button';
-      b.className = 'tagfox-runner-cmd' + (active ? ' tagfox-runner-cmd--active' : '');
+      const on = cmd.isOn ? cmd.isOn() : false;
+      b.className = 'tagfox-runner-cmd' + (active ? ' tagfox-runner-cmd--active' : '') + (on ? ' tagfox-runner-cmd--on' : '');
       b.dataset.cmdId = cmd.id;
       b.setAttribute('role', 'option');
-      const on = cmd.isOn ? cmd.isOn() : false;
       b.innerHTML =
         '<span class="tagfox-runner-cmd-state">' + (on ? '<i class="fa-solid fa-check" aria-hidden="true"></i>' : '') + '</span>';
       const lbl = document.createElement('span');
@@ -4467,15 +4496,30 @@
       }
       panel.textContent = '';
       let group = '';
+      let tagRow = null;
       RUNNER_COMMANDS.forEach((cmd, i) => {
         if (cmd.group !== group) {
           group = cmd.group;
+          tagRow = null;
           const h = document.createElement('div');
           h.className = 'tagfox-runner-cmd-group';
           h.textContent = group;
           panel.appendChild(h);
         }
-        panel.appendChild(runnerCmdButton(cmd, i === runnerOptsActive));
+        const b = runnerCmdButton(cmd, i === runnerOptsActive);
+        if (!cmd.tag) {
+          panel.appendChild(b);
+          return;
+        }
+        if (!tagRow) {
+          tagRow = document.createElement('div');
+          tagRow.className = 'tagfox-runner-cmd-tags';
+          panel.appendChild(tagRow);
+        }
+        b.classList.add('tagfox-runner-cmd--tag');
+        b.lastChild.textContent = cmd.tag;
+        b.title = cmd.label;
+        tagRow.appendChild(b);
       });
       panel.removeAttribute('hidden');
       panel.querySelector('.tagfox-runner-cmd--active')?.scrollIntoView({ block: 'nearest' });
@@ -4702,7 +4746,7 @@
       {
         group: 'Search',
         keys: ['/'],
-        does: 'Commands: sort, filters, match options, Settings. Type to filter them, ↑ ↓ or Tab to choose, Enter runs one, Esc closes the list',
+        does: 'Commands: sort, filters, tags, match options, Settings. Type to filter them (/todo finds the TODO tag filter), ↑ ↓ or Tab to choose, Enter runs one, Esc closes the list',
         when: (c) => c.inBox && !c.mod && !c.alt && (c.key === '/' || c.code === 'NumpadDivide'),
         run: (c) => openRunnerCmdList(c.q.value),
       },
@@ -4710,7 +4754,7 @@
       {
         group: 'Search',
         keys: ['Alt+O'],
-        does: 'Options: sort, filters, match options. ↑ ↓ or Tab to choose, Enter switches one, Esc or Alt+O closes',
+        does: 'Options: sort, filters, tags, match options. ↑ ↓ or Tab to choose, Enter switches one, Esc or Alt+O closes',
         when: (c) => c.alt && !c.mod && !c.shift && c.k === 'o',
         run: () => setRunnerOptsPanelOpen(!runnerOptsPanelOpen, 0),
       },
@@ -4735,9 +4779,12 @@
       {
         group: 'Move and select',
         keys: ['↑', '↓'],
-        does: 'Move the selection, from the box or the list',
+        does: 'Move the selection, from the box or the list. From the box they leave the caret at the end of the text, so typing adds to it',
         when: (c) => c.inBox && c.plain && !c.shift && (c.key === 'ArrowDown' || c.key === 'ArrowUp'),
-        run: (c) => moveResultsSelection(c.key === 'ArrowDown' ? 1 : -1),
+        run: (c) => {
+          if (c.textSel) c.q.setSelectionRange(c.q.value.length, c.q.value.length);
+          moveResultsSelection(c.key === 'ArrowDown' ? 1 : -1);
+        },
       },
       {
         group: 'Move and select',
@@ -4825,6 +4872,7 @@
       { group: 'Open and act', keys: ['Shift+Space'], does: 'The Viewer full screen', when: (c) => c.plain && c.shift && c.key === ' ', run: () => 'classic' },
       { group: 'Open and act', keys: ['Shift+F10', 'Menu'], does: "The selected row's menu", when: (c) => (c.plain && c.shift && c.key === 'F10') || c.key === 'ContextMenu', run: () => runnerOpenRowMenu() },
       { group: 'Open and act', keys: ['Ctrl+D'], does: 'Star or unstar the selected row', when: (c) => c.ctrl('d'), run: () => toggleStarForSelection() },
+      { group: 'Open and act', keys: ['Ctrl+T'], does: 'Tags: add or remove them on the checked rows, or on the selected row', when: (c) => c.ctrl('t'), run: () => runnerEditTags() },
       { group: 'Open and act', keys: ['F2'], does: 'Rename', when: (c) => c.plain && !c.shift && c.key === 'F2', run: () => 'classic' },
       {
         group: 'Open and act',
@@ -5086,6 +5134,9 @@
         if (e.key === 'Control') runnerShowCtrlHints(false);
       });
       window.addEventListener('blur', () => runnerShowCtrlHints(false));
+      /* The hint's width changes with the window, the folder chip, the rank note and being shown at all. */
+      const ghost = document.getElementById('queryGhostHint');
+      if (ghost && typeof ResizeObserver === 'function') new ResizeObserver(() => fitRunnerGhostFolder()).observe(ghost);
       document.getElementById('selToggleOpens')?.addEventListener('change', (e) => {
         void setRunnerMode(e.target.value === 'runner');
       });
@@ -7582,15 +7633,39 @@
         let pretty = (segmentPretty(seg) || seg || 'folder').trim();
         const gdPretty = prettyGDriveShortcutIdFolderBasename(norm, updateQueryPlaceholder);
         if (gdPretty) pretty = gdPretty;
-        q.setAttribute('aria-label', 'Search inside ' + pretty);
+        q.setAttribute('aria-label', 'Search inside ' + (isRunnerMode() ? norm : pretty));
         if (ghost) {
           ghost.innerHTML =
             '<span class="text-muted">Search inside</span><span class="tagfox-query-ghost-folder">' +
             escapeHtmlForPreview(pretty) +
             '</span>';
         }
+        /* Runner has no breadcrumb, so its hint names the folder by the tail of its path. */
+        if (isRunnerMode()) {
+          const segs = collapseGDriveShortcutDisplay(norm).split(/[\\/]+/).filter(Boolean);
+          segs[segs.length - 1] = pretty;
+          runnerGhostTailSegs = segs;
+        }
       }
+      if (!isRunnerMode() || (!scopeRaw && !max)) runnerGhostTailSegs = null;
       syncQueryGhostUi();
+      fitRunnerGhostFolder();
+    }
+
+    /** The folder path in Runner's box hint, one string per segment; null when the hint names no folder. */
+    let runnerGhostTailSegs = null;
+    /** As many trailing folders as fit the box, after an ellipsis (all of them when the whole path fits).
+        Measured on the page, since the width depends on the window, the folder chip and the rank note. */
+    function fitRunnerGhostFolder() {
+      const ghost = document.getElementById('queryGhostHint');
+      const span = ghost && ghost.querySelector('.tagfox-query-ghost-folder');
+      const segs = runnerGhostTailSegs;
+      if (!span || !segs || !ghost.clientWidth) return;
+      /* The span shrinks to the room left (Runner CSS), so text that does not fit shows as overflow. */
+      for (let n = segs.length; n >= 1; n--) {
+        span.textContent = (n < segs.length ? '…\\' : '') + segs.slice(-n).join('\\');
+        if (n === 1 || span.scrollWidth <= span.clientWidth + 1) break;
+      }
     }
 
     /** Show layered hint only when #query is empty (placeholder text cannot mix styles). */
@@ -14917,6 +14992,30 @@
       updateEmptyResultsPulseHints(n, { forceRestart: true });
     }
 
+    /** A tag filter's include state: off or excluded → include; include → off. Classic's pill click and
+        Runner's tag commands both change the filter through these two, then search. */
+    function toggleTagFilterInclude(key, display) {
+      if (activeTagKeys.has(key) && !excludedTagKeys.has(key)) {
+        activeTagKeys.delete(key);
+      } else {
+        rememberTag(key, display);
+        activeTagKeys.add(key);
+        excludedTagKeys.delete(key);
+      }
+    }
+
+    /** Exclude (not-tag): off or included → exclude; exclude → off. */
+    function toggleTagFilterExclude(key, display) {
+      if (excludedTagKeys.has(key)) {
+        activeTagKeys.delete(key);
+        excludedTagKeys.delete(key);
+      } else {
+        rememberTag(key, display);
+        activeTagKeys.add(key);
+        excludedTagKeys.add(key);
+      }
+    }
+
     function renderTagBar() {
       return perfTimeSync('render.tagBar', { rows: lastRows.length }, renderTagBarImpl);
     }
@@ -15070,31 +15169,11 @@
             commitSearchHistoryNow();
           })();
         };
-        // Left-click: include (off or excluded → include; include → off). One search per click.
-        b.addEventListener('click', () =>
-          applyTagFilterChange(() => {
-            if (activeTagKeys.has(key) && !excludedTagKeys.has(key)) {
-              activeTagKeys.delete(key);
-            } else {
-              rememberTag(key, info.display);
-              activeTagKeys.add(key);
-              excludedTagKeys.delete(key);
-            }
-          })
-        );
-        // Right-click: exclude / not-tag (off or included → exclude; exclude → off).
+        // Left-click: include. Right-click: exclude (not-tag). One search per click.
+        b.addEventListener('click', () => applyTagFilterChange(() => toggleTagFilterInclude(key, info.display)));
         b.addEventListener('contextmenu', (e) => {
           e.preventDefault();
-          applyTagFilterChange(() => {
-            if (excludedTagKeys.has(key)) {
-              activeTagKeys.delete(key);
-              excludedTagKeys.delete(key);
-            } else {
-              rememberTag(key, info.display);
-              activeTagKeys.add(key);
-              excludedTagKeys.add(key);
-            }
-          });
+          applyTagFilterChange(() => toggleTagFilterExclude(key, info.display));
         });
         el.appendChild(b);
       };
@@ -18024,6 +18103,7 @@
         syncFolderDocTagPillsDisplay();
         folderDocOnFilenameUiChanged();
       }
+      if (isRunnerMode()) focusQueryBox(false);
     });
     document.getElementById('bulkRenameModal').addEventListener('shown.bs.modal', () => {
       requestAnimationFrame(() => {
