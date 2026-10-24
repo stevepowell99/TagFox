@@ -133,7 +133,7 @@ Three icon-pair switches next to the search box — combine them freely:
 
 ### 🏃 What Runner is
 
-- **Settings → Toggle key opens: Runner** turns TagFox into one large search box with a ranked list below it and the Viewer on the right third. **Classic** (the default) is the full layout. The `/` command **Switch to the Classic layout** goes back.
+- Runner is TagFox's layout: one large search box with a ranked list below it and the Viewer on the right third. The Classic layout that the other tabs of this help describe is being retired and no longer shows.
 - Runner keeps its own search settings, so switching back and forth leaves Classic's view, filters and folder as they were.
 - Inside a folder, its path runs along a thin line above the box. Click any folder in it to go there, or the › after a folder to pick one of the folders inside it. A long path shows its last few folders after `…`; point at the `…` for the whole path.
 - Each row shows the name, the folder it is in, the size and when it last changed. Point at the time for the full date, or at a name with tags in front of it for the name on disk.

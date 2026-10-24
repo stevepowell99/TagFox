@@ -3049,6 +3049,15 @@ body.tagfox-runner #queryInputGroup .tagfox-query-clear.btn {
   color: var(--tb-accent);
 }
 /* Partial ranking: a muted note in the box, the full sentence in its tooltip. */
+/* Runner has no header, so the Restart button sits in the box (placeRestartButtonForLayout), as a small pill. */
+body.tagfox-runner #queryInputGroup #btnRestartTagFox {
+  align-self: center;
+  flex-shrink: 0;
+  margin: 0 0.35rem;
+  padding: 0.1rem 0.6rem;
+  border-radius: 999px !important;
+  font-size: 0.75rem;
+}
 .tagfox-runner-rank-note {
   align-self: center;
   flex-shrink: 0;

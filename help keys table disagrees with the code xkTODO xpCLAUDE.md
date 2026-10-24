@@ -1,6 +1,6 @@
 # Help's keys table disagrees with the code
 
-Found by the Classic-only inventory on 24 October 2026 (`_tmp/classic-only-inventory.md`), by reading the code; none of these was run.
+Found by the Classic-only inventory on 24 October 2026 (in the task file "Delete the Classic layout's code in stages"), by reading the code; none of these was run.
 
 - In Classic, Ctrl+T and bare `t`/`T` toggle Hide ~ first (renderer.js ~19602, ~19973), so the tag-editing branches below them (Ctrl+T ~19711, Shift+T, `t`) never run. help.md says those keys edit tags. Either the keys or the help is wrong.
 - help.md and some tooltips say `x` jumps to Smart and `l` cycles the layout. There are no such handlers; `i` cycles the layout.

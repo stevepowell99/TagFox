@@ -18,7 +18,10 @@
 //     hides it;
 //   - there is no standing status line: a search leaves the bar hidden, F5's report brings it up and it goes
 //     again, and a partly ranked list says so in the box;
-//   - switching back to Classic restores Classic's own view settings.
+//   - the Restart button, which lives in Classic's hidden header, sits in Runner's search box and takes a click;
+//   - Ctrl+Shift+Space resets Runner's one search in place (no folder, no text, the last hour), with no new tab;
+//   - switching back to Classic, which only the test hook can still do, restores Classic's own view settings
+//     and puts the Restart button back in the header.
 //
 // Run: node test/runner-layout.cjs
 
@@ -507,13 +510,43 @@ async function main() {
     const probs = structuralProblems(await drv.state());
     check(!probs.length, 'structural invariants hold in Runner' + (probs.length ? ': ' + probs.join('; ') : ''));
 
-    // Back to Classic.
+    // The Restart button lives in Classic's header, which Runner hides, so Runner puts it in the box.
+    const restartWhere = () =>
+      drv.ev(`(() => { const b = document.getElementById('btnRestartTagFox'); return !b ? 'missing' : b.closest('#queryInputGroup') ? 'box' : b.closest('.tagfox-app-header') ? 'header' : 'elsewhere'; })()`);
+    check((await restartWhere()) === 'box', `in Runner the Restart button is in the search box (${await restartWhere()})`);
+    const restartSeen = await drv.ev(`(() => {
+      const b = document.getElementById('btnRestartTagFox');
+      b.classList.remove('d-none');
+      const r = b.getBoundingClientRect();
+      const box = document.getElementById('queryInputGroup').getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      b.classList.add('d-none');
+      return { ok: r.width > 0 && r.left >= box.left && r.right <= box.right && !!hit && b.contains(hit), w: Math.round(r.width) };
+    })()`);
+    check(restartSeen.ok, `once code has changed it shows there and takes a click (${JSON.stringify(restartSeen)})`);
+
+    // Ctrl+Shift+Space (main sends tagfox-open-recent-tab): Runner resets its one search in place to its
+    // own defaults, with no folder, no text and the last hour, and opens no tab.
+    await drv.T('setQuery', 'zeta');
+    await drv.settle('before recent');
+    const tabsBefore = (await R()).tabs;
+    await drv.T('openRecentTab');
+    await drv.settle('recent');
+    s = await R();
+    check(s.scope === '' && s.query === '' && s.recency === '1h' && s.tabs === tabsBefore,
+      `Ctrl+Shift+Space empties the folder and the box and sets the last hour, with no new tab (scope "${s.scope}", box "${s.query}", ${s.recency}, ${s.tabs} tab(s))`);
+    check(s.chips.includes('recency') && !s.chips.includes('system'), `it shows the hour as a chip and keeps Runner's defaults (chips ${s.chips})`);
+    await drv.T('configure', { rootFolder: root });
+    await drv.T('setRecency', 'all');
+
+    // Back to Classic, which only the test hook can still reach.
     await drv.T('setRunnerMode', false);
     await drv.settle('classic');
     s = await R();
     const layout = await drv.ev(`document.querySelector('input[name="rvViewMode"]:checked')?.value`);
     check(!s.on && !s.bodyClass && layout === classicLayout, `Classic is back with its own view (${layout}, was ${classicLayout})`);
     check(/\bhits?\b/.test(s.status), `Classic keeps its standing status line ("${s.status.slice(0, 60)}")`);
+    check((await restartWhere()) === 'header', `in Classic the Restart button is back in the header (${await restartWhere()})`);
   } catch (e) {
     failures.push('threw: ' + (e && e.stack ? e.stack : e));
     console.error(e);

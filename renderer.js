@@ -3285,6 +3285,17 @@
      *  when that is the tab in view, activateTab returns at once and it is reset in place. Refusing
      *  would leave the window raised on the old scope and recency with nothing on screen to say why. */
     async function openRecentTab() {
+      if (isRunnerMode()) {
+        /* Runner keeps one search and shows no tabs, so it resets that search in place to Runner's own
+           defaults, with no folder, no text and the last hour. */
+        leaveScopePathEditChrome();
+        document.getElementById('rootFolder').value = '';
+        clearSearchQueryInputOnly();
+        renderRunnerScopeChip();
+        renderScopeBreadcrumb();
+        runnerResetAllFilters({ recency: '1h' });
+        return;
+      }
       saveActiveTabStateFromUi();
       const emptyScope = (t) => !!t.searchState && !String(t.searchState.rootFolder || '').trim();
       const reuse = tabs.find((t) => t.id === activeTabId && emptyScope(t)) || tabs.find(emptyScope);
@@ -3625,8 +3636,7 @@
       selectAfterSearchKey = null;
       localStorage.setItem(LS.toggleOpens, on ? 'runner' : 'classic');
       document.body.classList.toggle('tagfox-runner', on);
-      const sel = document.getElementById('selToggleOpens');
-      if (sel) sel.value = on ? 'runner' : 'classic';
+      placeRestartButtonForLayout(on);
       closeRunnerCmdList(false);
       setRunnerOptsPanelOpen(false);
       renderRunnerScopeChip();
@@ -3634,7 +3644,22 @@
       applyRunnerViewerOff();
     }
 
-    /** Switch layouts (Settings select, the / command) and re-run the search in the new one. */
+    /** Classic's header holds the Restart button and Runner has no header, so in Runner the button sits in
+        the box, before the rank note. It shows only when TagFox's own code has changed since it started. */
+    function placeRestartButtonForLayout(on) {
+      const btn = document.getElementById('btnRestartTagFox');
+      if (!btn) return;
+      if (!btn._classicHome) btn._classicHome = { parent: btn.parentElement, next: btn.nextElementSibling };
+      if (on) {
+        const note = document.getElementById('runnerRankNote');
+        if (note && note.parentElement) note.parentElement.insertBefore(btn, note);
+      } else {
+        const { parent, next } = btn._classicHome;
+        parent.insertBefore(btn, next && next.parentElement === parent ? next : null);
+      }
+    }
+
+    /** Switch layouts (the test hook only: Runner is the one layout on screen) and re-run the search. */
     async function setRunnerMode(on) {
       if (!!on === runnerModeOn) return;
       applyRunnerModeSync(on);
@@ -4300,7 +4325,6 @@
       { id: 'refresh', group: 'TagFox', label: 'Refresh (F5)', run: () => void refreshResultsFromUi() },
       { id: 'dark', group: 'TagFox', label: 'Dark or light mode', run: () => document.getElementById('btnToggleDarkMode')?.click() },
       { id: 'settings', group: 'TagFox', label: 'Settings', run: () => document.getElementById('btnToggleSettings')?.click() },
-      { id: 'classic', group: 'TagFox', label: 'Switch to the Classic layout', run: () => void setRunnerMode(false) },
     ];
 
     function runnerOptOn(id) {
@@ -4454,15 +4478,15 @@
       }
     }
 
-    /** Every chip's default at once, with one search. */
-    function runnerResetAllFilters() {
+    /** Every chip's default at once, with one search. `recency` is the window to leave set ('all' by default). */
+    function runnerResetAllFilters({ recency = 'all' } = {}) {
       runnerSort = 'smart';
       localStorage.setItem(LS.runnerSort, 'smart');
       const sc = runnerSortColumnFor('smart');
       sortColumn = sc.col;
       sortAsc = sc.asc;
       selectAfterSearchKey = null;
-      setRecencyFilterMode('all');
+      setRecencyFilterMode(recency);
       applyResultsViewRadiosToDom('flat', isShowSubfolders(), 'all');
       syncViewRadioActiveFromDom();
       const d = runnerDefaultSearchState();
@@ -5181,9 +5205,6 @@
       /* The breadcrumb's room changes with the window, the Viewer's width and the row being shown at all. */
       const crumbs = document.getElementById('breadcrumbBar');
       if (crumbs && typeof ResizeObserver === 'function') new ResizeObserver(() => fitRunnerBreadcrumb()).observe(crumbs);
-      document.getElementById('selToggleOpens')?.addEventListener('change', (e) => {
-        void setRunnerMode(e.target.value === 'runner');
-      });
     }
 
     function scheduleSearch(eventKind = 'identity') {
@@ -20578,7 +20599,12 @@
        searchState and re-run their own search when first activated. lastRows / resultsPagingCtx are not
        persisted (stale after restart); the active tab's scheduleSearch() below rebuilds its rows. */
     bindRunnerChromeOnce();
-    if (localStorage.getItem(LS.toggleOpens) === 'runner') {
+    /* Runner is the only layout on screen (Steve, 24 October 2026). Classic's code stays until it is deleted
+       in stages, and a test instance still opens a fresh profile in Classic, so the Classic tests keep
+       guarding that code while it is there. Test instances are told by the preload, not by the #tagfoxtest
+       hash: the harness first loads the page without the hash, and a Runner start then would save Runner
+       into the profile before the hook load reads it. */
+    if (!window.tagBrowser?.isTestInstance || localStorage.getItem(LS.toggleOpens) === 'runner') {
       applyRunnerModeSync(true, { startup: true });
       updateQueryPlaceholder();
       updateSortHeaders();
