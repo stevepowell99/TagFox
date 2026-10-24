@@ -3,7 +3,9 @@
 // its regex, the starred-paths query puts its `filelist:` first, and the Temp query puts the Temp folder first.
 // Each query is also sent to Everything by the test itself, so a reordering that broke a query cannot pass: the
 // tag filter must keep the tagged file and drop "todo list.txt", the starred-paths query must return the starred
-// file, and the Temp query the file made in Temp (the positive controls).
+// file, and the Temp query the file made in Temp (the positive controls). The main query goes to Everything first,
+// so a new list paints its rows before the extra queries are in: the Temp file joins them afterwards, and the merged
+// list selects its own top row.
 //
 // Run: node test/runner-query-order.cjs
 
@@ -110,6 +112,31 @@ async function main() {
       const tempQuery = (s.sentExtra || []).find((t) => norm(t).includes(norm(tempDir) + '\\"')) || '';
       check(tempQuery.toLowerCase().startsWith('"' + tempDir.toLowerCase() + '\\"'), `the Temp query starts with the Temp folder (${tempQuery.slice(0, 120)})`);
       check(tempQuery && has(await everything(tempQuery), tempFile), 'that query, sent to Everything, finds the file made in Temp');
+
+      // The main query is sent first, so a new list paints its rows while the extra queries finish: the Temp
+      // file, which only the Temp query finds, joins them afterwards, and the merged list selects its own top row.
+      await drv.T('setQuery', '');
+      await search('cleared');
+      await drv.ev(`(() => {
+        const T = window.__tagfoxTest;
+        window.__snaps = [];
+        window.__snapTick = () => {
+          window.__snaps.push({ inFlight: !!T.state().searchInFlight, rows: T.runnerState().rows });
+          if (window.__snaps.length < 600) setTimeout(window.__snapTick, 3);
+        };
+        return 1;
+      })()`);
+      await drv.T('setQuery', stem);
+      await drv.ev('window.__snapTick(), 1');
+      s = await search('early paint');
+      const snaps = await drv.ev('window.__snaps');
+      /* The new list's own rows (every one holds the word), not the list the search is replacing. */
+      const early = snaps.find(
+        (x) => x.inFlight && x.rows.every((r) => norm(r).includes(stem)) && has(x.rows, plain) && !has(x.rows, tempFile)
+      );
+      check(!!early, `the main rows are on screen before the Temp file arrives (${snaps.length} snapshots)`);
+      check(has(s.rows, plain) && has(s.rows, tempFile), 'and the merged list holds both (positive control)');
+      check(norm(s.selected) === norm(s.rows[0]), `the merged list selects its own top row (${path.basename(s.selected)})`);
     } else {
       console.log('  SKIP Temp query: the temp folder here is not AppData\\Local\\Temp (' + os.tmpdir() + ')');
     }

@@ -3545,6 +3545,8 @@
     let runnerSort = 'smart';
     /** Scope and query the selection was last reset for: a new list selects its top row. */
     let selectAfterSearchKey = null;
+    /** The list key and row Runner's early paint of that list selected, until its merged list arrives. */
+    let earlySelect = null;
     /** After Left, select the folder we came up from. */
     let runnerPendingSelectPath = null;
     /** Everything's match count for the last main query, to say when the re-rank saw only part of it. */
@@ -3955,12 +3957,13 @@
       return out;
     }
 
+    /** A list's identity for selection and the render window: its scope and query. */
+    function selectAfterSearchKeyFor(query, rootFolder) {
+      return pathNormKey(normalizeFolderPathForEverything(String(rootFolder || '').trim())) + '\n' + String(query || '').trim();
+    }
+
     function runnerListKey() {
-      return (
-        pathNormKey(normalizeFolderPathForEverything(document.getElementById('rootFolder').value.trim())) +
-        '\n' +
-        String(document.getElementById('query')?.value || '').trim()
-      );
+      return selectAfterSearchKeyFor(document.getElementById('query')?.value, document.getElementById('rootFolder').value);
     }
 
     /** A new list (scope or query changed) starts with one window of rows drawn. */
@@ -4012,15 +4015,18 @@
     /** After a search: a new list (scope or query changed) selects its top row, or the folder just left, so ↓, Tab
         and Enter start from it. Classic does so only for typed text, and never re-selects within the same list:
         a folder browsed with an empty box keeps its folder doc in the Viewer, and rows unchecked by hand stay
-        unchecked through F5 and auto-refresh. */
-    function selectRowAfterSearch(query, rootFolder) {
-      const key =
-        pathNormKey(normalizeFolderPathForEverything(String(rootFolder || '').trim())) + '\n' + String(query || '').trim();
+        unchecked through F5 and auto-refresh. `early` is Runner's paint of the main rows before the merged list
+        (runSearch): it selects the same way but leaves the list unrecorded, so the merged list selects its own top
+        row, unless the selection has been moved by hand in between. */
+    function selectRowAfterSearch(query, rootFolder, { early = false } = {}) {
+      const key = selectAfterSearchKeyFor(query, rootFolder);
       const rows = listRowsForUi();
       const classic = !isRunnerMode();
+      const earlyPick = earlySelect && earlySelect.key === key ? earlySelect.path : null;
+      earlySelect = null;
       /* Classic records no key for an empty list, so the same text finding rows on a later run still selects. */
       if (!rows.length) {
-        if (!classic) selectAfterSearchKey = key;
+        if (!classic && !early) selectAfterSearchKey = key;
         return;
       }
       if (classic && (key === selectAfterSearchKey || !String(query || '').trim())) {
@@ -4031,16 +4037,22 @@
         const k = pathNormKey(p);
         return rows.findIndex((r) => pathNormKey(fullPathForRow(r)) === k);
       };
+      if (earlyPick && selectedFullPath && pathNormKey(selectedFullPath) !== pathNormKey(earlyPick) && idxOf(selectedFullPath) >= 0) {
+        runnerPendingSelectPath = null;
+        selectAfterSearchKey = key;
+        return;
+      }
       let idx = -1;
       if (runnerPendingSelectPath) {
         idx = idxOf(runnerPendingSelectPath);
-        runnerPendingSelectPath = null;
+        if (!early) runnerPendingSelectPath = null;
       }
       if (idx < 0) {
         if (key === selectAfterSearchKey && selectedFullPath && idxOf(selectedFullPath) >= 0) return;
         idx = 0;
       }
-      selectAfterSearchKey = key;
+      if (early) earlySelect = { key, path: fullPathForRow(rows[idx]) };
+      else selectAfterSearchKey = key;
       resultsExclusiveSelectRow(rows[idx], fullPathForRow(rows[idx]));
       if (idx === 0) {
         const sc = document.getElementById('resultsScroll');
@@ -4644,7 +4656,12 @@
     /** Enter and its variants. A row on screen must belong to what is typed, or Enter straight after typing
         (inside the search's 300ms wait) opens a row from the previous search; so a stale list re-runs first. */
     async function runnerActivateSelection(how = 'open') {
-      if (searchDebounceTimer || runnerListKey() !== selectAfterSearchKey) await runSearchNow();
+      if (searchDebounceTimer) await runSearchNow();
+      else if (runnerListKey() !== selectAfterSearchKey) {
+        /* The list on screen may be a search's early paint: wait for that search's merged list, not another search. */
+        if (searchInFlight) await searchMutex;
+        if (runnerListKey() !== selectAfterSearchKey) await runSearchNow();
+      }
       if (!selectedFullPath) return;
       const k = pathNormKey(selectedFullPath);
       if (!listRowsForUi().some((r) => pathNormKey(fullPathForRow(r)) === k)) return;
@@ -17447,16 +17464,20 @@
         httpPassword,
       };
 
-      /* Runner's extra queries run alongside the main one, not after it. */
-      const runnerExtraPromise = isRunnerMode()
-        ? runnerExtraRows({ runId, ceilingNorms, rootFolder, queryForEs, recursive, options, cap })
-        : null;
-      const res = await everythingSearchWithDirectionFallback({
+      /* Runner's extra queries are sent straight after the main one. Everything answers one query at a time, in
+         the order they arrive, so the main rows come back first and a new list can paint them while it waits. */
+      const mainPromise = everythingSearchWithDirectionFallback({
         ...pageArgs,
         searchText,
         offset: 0,
         seedOptions: options,
       });
+      const runnerExtraPromise = isRunnerMode()
+        ? runnerExtraRows({ runId, ceilingNorms, rootFolder, queryForEs, recursive, options, cap })
+        : null;
+      let runnerExtrasIn = false;
+      if (runnerExtraPromise) runnerExtraPromise.then(() => (runnerExtrasIn = true), () => (runnerExtrasIn = true));
+      const res = await mainPromise;
       if (res == null) return;
       if (runId !== searchRunSeq) return;
 
@@ -17503,6 +17524,16 @@
       if (isRunnerMode()) {
         runnerTotalHits = typeof res.totalResults === 'number' ? res.totalResults : null;
         if (!usedLocalFolderFallback && runnerExtraPromise) {
+          /* A new list paints the main rows while the extra queries finish, 0.1-0.4s later; the merged list then
+             replaces them. Not for an auto-refresh tick, whose list would shrink and grow back every few seconds. */
+          if (!runnerExtrasIn && !quietAutoRefreshRender && selectAfterSearchKeyFor(query, rootFolder) !== selectAfterSearchKey) {
+            lastRows = got;
+            dedupeLastRowsByPathKey();
+            sortLastRowsForDisplay(!!res.usedFallbackSort);
+            applyTagRenamePendingToLastRows();
+            renderTable();
+            selectRowAfterSearch(query, rootFolder, { early: true });
+          }
           let extra = await runnerExtraPromise;
           if (runId !== searchRunSeq) return;
           if (fo) extra = extra.filter(rowIsFolder);
