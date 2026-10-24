@@ -3220,8 +3220,7 @@ body.tagfox-runner.tagfox-runner-status-on #tagfoxNavbarStatus {
 }
 /* Results: compact launcher rows. One line each: a small type tile, the name, the folder it lives in
    (muted, taking whatever width the name leaves), the size, the modified time and the star. The selected
-   row carries the window's indigo-to-coral strip as a rail and shows the key that acts on it. No checkbox
-   or header. */
+   row carries the window's indigo-to-coral strip as a rail. No checkbox or header. */
 body.tagfox-runner {
   --runner-canvas: #eceef5;
   --runner-surface: #ffffff;
@@ -3229,7 +3228,6 @@ body.tagfox-runner {
   --runner-muted: #6b6e86;
   --runner-hit: #4f46e5;
   --runner-sel: rgba(99, 102, 241, 0.1);
-  --runner-key-border: rgba(79, 70, 229, 0.28);
   background-color: var(--runner-canvas);
 }
 [data-bs-theme="dark"] body.tagfox-runner {
@@ -3239,7 +3237,6 @@ body.tagfox-runner {
   --runner-muted: #9497b0;
   --runner-hit: #a5b4fc;
   --runner-sel: rgba(129, 140, 248, 0.17);
-  --runner-key-border: rgba(165, 180, 252, 0.35);
 }
 body.tagfox-runner .center-panel {
   background-color: transparent;
@@ -3280,7 +3277,7 @@ body.tagfox-runner #resultsTable > tbody > tr {
   position: relative;
   display: grid;
   /* Each row is its own grid, so the size and the date have fixed widths or they would not line up. */
-  grid-template-columns: minmax(0, max-content) minmax(0, 1fr) 3rem 6.4rem 1.8rem;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr) 3rem 4.9rem 1.8rem;
   grid-template-areas: 'name path size date act';
   column-gap: 0.75rem;
   align-items: center;
@@ -3346,7 +3343,9 @@ body.tagfox-runner #resultsTable > tbody > tr > td.col-path { grid-area: path; }
 body.tagfox-runner #resultsTable > tbody > tr > td.results-td-actions { grid-area: act; }
 body.tagfox-runner #resultsTable > tbody > tr > td.results-td-size { grid-area: size; }
 body.tagfox-runner #resultsTable > tbody > tr > td:last-child { grid-area: date; }
-/* Size: smaller than the date and muted, with none of Classic's heat colours, and its unit fainter still. */
+/* Size: smaller than the date, with none of Classic's heat colours, and toned by its unit so a large file
+   reads heavier than a small one whatever its digits ("999 B" has more of them than "17 GB"): bytes
+   faintest, then KB, MB in the muted colour, and GB in the ink colour. The unit is fainter still. */
 body.tagfox-runner #resultsTable > tbody > tr > td.results-td-size {
   color: var(--runner-muted) !important;
   font-size: 0.72rem;
@@ -3354,6 +3353,16 @@ body.tagfox-runner #resultsTable > tbody > tr > td.results-td-size {
   font-variant-numeric: tabular-nums;
   text-align: right;
   white-space: nowrap;
+}
+body.tagfox-runner #resultsTable > tbody > tr > td.results-td-size.tagfox-runner-size--b {
+  opacity: 0.45;
+}
+body.tagfox-runner #resultsTable > tbody > tr > td.results-td-size.tagfox-runner-size--kb {
+  opacity: 0.7;
+}
+body.tagfox-runner #resultsTable > tbody > tr > td.results-td-size.tagfox-runner-size--gb {
+  color: var(--runner-ink) !important;
+  font-weight: 600 !important;
 }
 body.tagfox-runner #resultsTable .tagfox-runner-size-unit {
   margin-left: 0.2em;
@@ -3446,35 +3455,13 @@ body.tagfox-runner #resultsTable td.col-path mark.tagfox-query-hit {
   color: var(--runner-ink);
   font-weight: 600;
 }
-/* Modified time, then the key that acts on the selected row: Enter opens a file, Right enters a folder. */
+/* Modified time. */
 body.tagfox-runner #resultsTable > tbody > tr > td:last-child {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.5rem;
   color: var(--runner-muted);
   font-size: 0.78rem;
   font-variant-numeric: tabular-nums;
+  text-align: right;
   white-space: nowrap;
-}
-body.tagfox-runner #resultsTable > tbody > tr > td:last-child::after {
-  content: '\21B5';
-  display: inline-grid;
-  place-items: center;
-  min-width: 1.35rem;
-  height: 1.15rem;
-  border: 1px solid var(--runner-key-border);
-  border-bottom-width: 2px;
-  border-radius: 0.3rem;
-  color: var(--runner-hit);
-  font-size: 0.72rem;
-  visibility: hidden;
-}
-body.tagfox-runner #resultsTable > tbody > tr.results-folder-row > td:last-child::after {
-  content: '\2192';
-}
-body.tagfox-runner #resultsTable > tbody > tr.table-active > td:last-child::after {
-  visibility: visible;
 }
 /* Row actions fly out from the star, anchored to the row rather than the pointer. The strip is a
    child of the row, so moving onto it keeps the row hovered and it stays open. */

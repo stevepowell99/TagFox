@@ -4388,6 +4388,22 @@
           void runSearchNow('identity');
         },
       },
+      /* Set from Classic's deadline panel and kept across layouts, so without a chip a range chosen there
+         would narrow Runner's list with nothing on screen to say so. */
+      {
+        id: 'deadline',
+        icon: 'fa-calendar-day',
+        on: () => deadlineFilterActive(),
+        label: () => ({ overdue: 'Overdue', today: 'Due today', thisweek: 'Due this week', nextweek: 'Due next week' })[activeDeadlineRange],
+        reset: () => setDeadlineRange(''),
+      },
+      {
+        id: 'hidden-until',
+        icon: 'fa-eye',
+        on: () => showHiddenUntil,
+        label: () => 'Showing files hidden until a later date',
+        reset: () => setShowHiddenUntil(false),
+      },
     ];
 
     function runnerActiveFilterChips() {
@@ -4464,6 +4480,12 @@
       activeTagKeys.clear();
       excludedTagKeys.clear();
       persistActiveTagFilter();
+      activeDeadlineRange = '';
+      persistDeadlineFilter();
+      syncDeadlineFilterUi();
+      showHiddenUntil = false;
+      localStorage.removeItem(LS_SHOW_HIDDEN);
+      syncHideUntilUi();
       saveSettings();
       void runSearchNow('identity');
     }
@@ -15892,6 +15914,7 @@
           /* Blank where the size is unknown, rather than a column of dashes. */
           const sp = runnerSizeParts(rowSizeBytes(row));
           if (sp) {
+            tdSize.classList.add('tagfox-runner-size--' + (sp.unit === 'TB' ? 'gb' : sp.unit.toLowerCase()));
             tdSize.textContent = sp.num;
             const unit = document.createElement('span');
             unit.className = 'tagfox-runner-size-unit';
@@ -20678,6 +20701,8 @@
         /* Runner layout. */
         setRunnerMode: (on) => setRunnerMode(!!on),
         setRunnerSort: (sort) => setRunnerSort(String(sort)),
+        setDeadlineRange: (range) => setDeadlineRange(String(range || '')),
+        setShowHiddenUntil: (on) => setShowHiddenUntil(!!on),
         runCommand: (id) => runRunnerCommand(RUNNER_COMMANDS.find((c) => c.id === String(id))),
         commitHistory: () => commitSearchHistoryNow(),
         toggleStar: (p) => toggleStarPath(String(p)),

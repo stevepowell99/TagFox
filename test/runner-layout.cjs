@@ -9,7 +9,9 @@
 //   - a leading -word excludes;
 //   - / opens the command list, Enter runs the command, and the box gets its text back;
 //   - a row's size shows muted in a column of its own, /size sorts largest first and the other size
-//     command smallest first, and a cell has a tooltip only where it says more than the cell;
+//     command smallest first, a smaller unit is fainter, and a cell has a tooltip only where it says more
+//     than the cell;
+//   - a deadline range or shown hide-until files, which Classic sets, show as chips whose x clears them;
 //   - Ctrl+D stars and unstars the selected row in the favourites list, where a starred file is a file chip;
 //   - hovering a row shows its action buttons, anchored in the row;
 //   - AppData\Local\Temp is listed by default, below a file of the same name elsewhere, and the / command
@@ -38,19 +40,28 @@ async function main() {
   fs.writeFileSync(path.join(alpha, 'inner.txt'), 'inner\n');
   fs.writeFileSync(path.join(root, 'zeta.txt'), 'zeta\n');
   // Four sizes for the size sorts, the second tagged so its name cell keeps a tooltip, and one a year old
-  // so its date ("12 Sep 2025") is wider than today's time.
+  // so its date ("12 Sep 2025") is wider than today's time. These and the chip files sit a folder down, so
+  // the empty box's list of the folder itself (which the Down and Right checks walk) is unchanged.
+  const extra = path.join(root, 'extra');
+  fs.mkdirSync(extra, { recursive: true });
   const sizeFiles = [
     ['sizecheck large.bin', 1.44 * 1024 * 1024],
     ['sizecheck mid.bin', 300 * 1024],
     ['sizecheck tagged xkTODO.bin', 40 * 1024],
     ['sizecheck small.bin', 10],
   ].map(([n, bytes]) => {
-    const p = path.join(root, n);
+    const p = path.join(extra, n);
     fs.writeFileSync(p, Buffer.alloc(Math.round(bytes), 120));
     return p;
   });
   const sizeOld = new Date(Date.now() - 400 * 864e5);
   fs.utimesSync(sizeFiles[0], sizeOld, sizeOld);
+  // Classic's deadline and hide-until filters: one file due today, one hidden for a month, one plain.
+  const isoDay = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const dueFile = path.join(extra, 'chipcheck due xd-' + isoDay(new Date()) + '.txt');
+  const laterFile = path.join(extra, 'chipcheck later xh-' + isoDay(new Date(Date.now() + 30 * 864e5)) + '.txt');
+  const plainFile = path.join(extra, 'chipcheck plain.txt');
+  for (const p of [dueFile, laterFile, plainFile]) fs.writeFileSync(p, 'c\n');
   // Back-dated at the start, so Everything has indexed the old time by the time the type check reads it.
   // Where "map" falls in the name: a whole word, the start of the name, the end of a word, inside a word.
   const mapNames = ['old map.txt', 'mapping.txt', 'roadmap.txt', 'xmapx.txt'];
@@ -320,6 +331,7 @@ async function main() {
           dateBox: Math.round(dr.left) + '-' + Math.round(dr.right),
           overflow: sz.scrollWidth > sz.clientWidth + 1 || date.scrollWidth > date.clientWidth + 1,
           color: cs.color,
+          opacity: parseFloat(cs.opacity),
           px: parseFloat(cs.fontSize),
           datePx: parseFloat(getComputedStyle(date).fontSize),
           tips: { name: tip(tr.querySelector('td:nth-child(2)')), path: tip(tr.querySelector('td.col-path')), size: tip(sz), date: tip(date) },
@@ -336,6 +348,9 @@ async function main() {
       `the sizes and the dates each sit in one column, nothing cut off (${cells.map((c) => c.left + '-' + c.right + ' ' + c.dateBox + (c.overflow ? ' cut' : ''))})`
     );
     check(new Set(cells.map((c) => c.color)).size === 1 && cells.every((c) => c.px < c.datePx), `the sizes share one muted colour, smaller than the date (${cells[0] && cells[0].color}, ${cells[0] && cells[0].px}px)`);
+    // Largest first: MB, KB, KB, B. Each unit down is fainter, so 10 B, with as many digits as some larger sizes, reads lightest.
+    const op = cells.map((c) => c.opacity);
+    check(op.length === 4 && op[0] > op[1] && op[1] === op[2] && op[2] > op[3], `a smaller unit is fainter (opacity ${op})`);
     check(cells.every((c) => !c.tips.path && !c.tips.size && c.tips.date), `no tooltip on the path or the size, one on the time (${JSON.stringify(cells.map((c) => c.tips))})`);
     check(tagged && tagged.tips.name && cells.filter((c) => c !== tagged).every((c) => !c.tips.name), 'only the tagged name, whose name on disk differs, has a name tooltip');
     await drv.T('setRunnerSort', 'size-asc');
@@ -343,6 +358,36 @@ async function main() {
     s = await R();
     check(JSON.stringify(sizeOrder()) === JSON.stringify(sizeFiles.map(norm).reverse()), `the other size command sorts smallest first (${sizeOrder().map((p) => path.basename(p))})`);
     await drv.T('setRunnerSort', 'smart');
+
+    // A deadline range or a shown hide-until, set in Classic and kept across layouts, shows as a chip whose x clears it.
+    await drv.T('setQuery', 'chipcheck');
+    let chipRows = false;
+    for (let i = 0; i < 20 && !chipRows; i++) {
+      await drv.T('runSearchNow', 'identity');
+      await drv.settle('chipcheck');
+      const rowsNow = (await R()).rows;
+      chipRows = has(rowsNow, dueFile) && has(rowsNow, plainFile);
+      if (!chipRows) await sleep(400);
+    }
+    s = await R();
+    check(chipRows && !has(s.rows, laterFile), `the due and plain files are listed and the hidden one is not (positive control: ${s.rows.map((r) => path.basename(r))})`);
+    const chipX = (id) => drv.ev(`(() => { const b = document.querySelector('#runnerFilterChips [data-filter-id="${id}"] button'); if (b) b.click(); return !!b; })()`);
+    await drv.T('setDeadlineRange', 'today');
+    await drv.settle('deadline today');
+    s = await R();
+    check(s.chips.includes('deadline') && has(s.rows, dueFile) && !has(s.rows, plainFile), `a deadline range shows as a chip and narrows the list (chips ${s.chips})`);
+    check(await chipX('deadline'), 'the deadline chip has an x');
+    await drv.settle('deadline cleared');
+    s = await R();
+    check(!s.chips.includes('deadline') && has(s.rows, plainFile), `its x clears the range (chips ${s.chips})`);
+    await drv.T('setShowHiddenUntil', true);
+    await drv.settle('show hidden');
+    s = await R();
+    check(s.chips.includes('hidden-until') && has(s.rows, laterFile), `showing hidden-until files shows as a chip (chips ${s.chips})`);
+    check(await chipX('hidden-until'), 'the hidden-until chip has an x');
+    await drv.settle('hidden again');
+    s = await R();
+    check(!s.chips.includes('hidden-until') && !has(s.rows, laterFile), `its x hides them again (chips ${s.chips})`);
     await drv.T('setQuery', 'zeta');
     await drv.settle('smart after size');
 
