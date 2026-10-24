@@ -3545,7 +3545,7 @@
     /** 'smart' re-ranks; 'date' (newest first) and 'name' are plain sorts. */
     let runnerSort = 'smart';
     /** Scope and query the selection was last reset for: a new list selects its top row. */
-    let runnerSelectKey = null;
+    let selectAfterSearchKey = null;
     /** After Left, select the folder we came up from. */
     let runnerPendingSelectPath = null;
     /** Everything's match count for the last main query, to say when the re-rank saw only part of it. */
@@ -3621,7 +3621,7 @@
         if (stash) applySearchState(searchStateWithoutCeiling(stash));
       }
       runnerModeOn = on;
-      runnerSelectKey = null;
+      selectAfterSearchKey = null;
       localStorage.setItem(LS.toggleOpens, on ? 'runner' : 'classic');
       document.body.classList.toggle('tagfox-runner', on);
       const sel = document.getElementById('selToggleOpens');
@@ -4031,13 +4031,22 @@
         ' matches, plus name matches and every starred or used item that matches. Type more to narrow.';
     }
 
-    /** After a search: a new list (scope or query changed) selects its top row, or the folder just left. */
-    function runnerSelectAfterSearch(query, rootFolder) {
+    /** After a search: a new list (scope or query changed) selects its top row, or the folder just left, so ↓, Tab
+        and Enter start from it. Classic does so only for typed text, and never re-selects within the same list:
+        a folder browsed with an empty box keeps its folder doc in the Viewer, and rows unchecked by hand stay
+        unchecked through F5 and auto-refresh. */
+    function selectRowAfterSearch(query, rootFolder) {
       const key =
         pathNormKey(normalizeFolderPathForEverything(String(rootFolder || '').trim())) + '\n' + String(query || '').trim();
       const rows = listRowsForUi();
+      const classic = !isRunnerMode();
+      /* Classic records no key for an empty list, so the same text finding rows on a later run still selects. */
       if (!rows.length) {
-        runnerSelectKey = key;
+        if (!classic) selectAfterSearchKey = key;
+        return;
+      }
+      if (classic && (key === selectAfterSearchKey || !String(query || '').trim())) {
+        selectAfterSearchKey = key;
         return;
       }
       const idxOf = (p) => {
@@ -4050,10 +4059,10 @@
         runnerPendingSelectPath = null;
       }
       if (idx < 0) {
-        if (key === runnerSelectKey && selectedFullPath && idxOf(selectedFullPath) >= 0) return;
+        if (key === selectAfterSearchKey && selectedFullPath && idxOf(selectedFullPath) >= 0) return;
         idx = 0;
       }
-      runnerSelectKey = key;
+      selectAfterSearchKey = key;
       resultsExclusiveSelectRow(rows[idx], fullPathForRow(rows[idx]));
       if (idx === 0) {
         const sc = document.getElementById('resultsScroll');
@@ -4126,7 +4135,7 @@
       const sc = runnerSortColumnFor(sort);
       sortColumn = sc.col;
       sortAsc = sc.asc;
-      runnerSelectKey = null;
+      selectAfterSearchKey = null;
       saveSettings();
       void runSearchNow('identity');
     }
@@ -4455,7 +4464,7 @@
       const sc = runnerSortColumnFor('smart');
       sortColumn = sc.col;
       sortAsc = sc.asc;
-      runnerSelectKey = null;
+      selectAfterSearchKey = null;
       setRecencyFilterMode('all');
       applyResultsViewRadiosToDom('flat', isShowSubfolders(), 'all');
       syncViewRadioActiveFromDom();
@@ -4654,7 +4663,7 @@
     /** Enter and its variants. A row on screen must belong to what is typed, or Enter straight after typing
         (inside the search's 300ms wait) opens a row from the previous search; so a stale list re-runs first. */
     async function runnerActivateSelection(how = 'open') {
-      if (searchDebounceTimer || runnerListKey() !== runnerSelectKey) await runSearchNow();
+      if (searchDebounceTimer || runnerListKey() !== selectAfterSearchKey) await runSearchNow();
       if (!selectedFullPath) return;
       const k = pathNormKey(selectedFullPath);
       if (!listRowsForUi().some((r) => pathNormKey(fullPathForRow(r)) === k)) return;
@@ -17491,7 +17500,7 @@
       renderTagBar();
       renderTable();
       pulseEmptyResultHintsAfterSearchOk();
-      if (isRunnerMode() && runId === searchRunSeq) runnerSelectAfterSearch(query, rootFolder);
+      if (runId === searchRunSeq) selectRowAfterSearch(query, rootFolder);
       if (runId === searchRunSeq) await smartAfterPaint();
       if (runId === searchRunSeq) {
         const pending = pendingSmartStatusNote;

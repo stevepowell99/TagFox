@@ -1,4 +1,7 @@
 // The selected row's action buttons by keyboard, in Classic and in Runner, driven with real key events over CDP:
+//   - typing selects the top row in both layouts, so Tab has a row to work on; in Classic an empty box selects
+//     nothing (a folder's doc stays in the Viewer) and a refresh of the same list does not re-check a row
+//     unchecked by hand;
 //   - Tab in the list puts the focus on the selected row's first button and marks the row, and Runner, which
 //     shows the strip only on hover, shows it with the pointer elsewhere;
 //   - further Tabs step along the buttons and wrap; Shift+Tab steps back and wraps the other way;
@@ -84,9 +87,19 @@ async function main() {
       console.log(`\n${layout}:`);
       await drv.T('setRunnerMode', layout === 'runner');
       await drv.settle(layout);
+      let s;
+      if (layout === 'classic') {
+        await drv.T('configure', { rootFolder: root });
+        await drv.T('setQuery', '');
+        await drv.T('runSearchNow', 'identity');
+        await drv.settle('empty box');
+        s = await R();
+        check(!s.selected && s.checked === 0, `Classic: browsing a folder with an empty box selects no row, so its folder doc stays in the Viewer (${path.basename(s.selected)})`);
+      }
       await go();
-      let s = await R();
+      s = await R();
       check(s.rows.length >= 2, `set up: two rows (${s.rows.length})`);
+      check(norm(s.selected) === norm(s.rows[0]), `typing selects the top row (${path.basename(s.selected)})`);
 
       // Into the list: Classic by Down from the box, Runner by Tab from the box.
       await focusBox();
@@ -141,6 +154,20 @@ async function main() {
       await drv.settle('pressed');
       s = await R();
       check(norm(s.scope) === norm(sub), `${layout === 'classic' ? 'Enter' : 'Space'} presses it: the scope is now the row's folder (${path.basename(s.scope)})`);
+
+      if (layout === 'classic') {
+        // A refresh of the same list must not put back a check taken off by hand (auto-refresh runs every 5s).
+        s = await R();
+        check(norm(s.selected) === norm(s.rows[0]) && s.checked === 1, `the new folder's list selects its top row (${path.basename(s.selected)}, ${s.checked} checked)`);
+        await drv.ev(`document.getElementById('resultsWrap').focus(); 1`);
+        await key(' ', 'Space', 32, 0, ' ');
+        s = await R();
+        check(s.checked === 0, `set up: Space unchecks it (${s.checked} checked)`);
+        await drv.T('runSearchNow', 'identity');
+        await drv.settle('refresh');
+        s = await R();
+        check(s.checked === 0, `a refresh of the same list leaves it unchecked (${s.checked} checked)`);
+      }
     }
   } catch (e) {
     failures.push('threw: ' + (e && e.stack ? e.stack : e));
