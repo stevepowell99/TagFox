@@ -14283,7 +14283,8 @@
       const add = (list, kind, color, label) => {
         for (const e of list) m.set(e, { kind, color, label });
       };
-      add(['md', 'markdown', 'mdown'], 'text', '#0969da', 'Markdown');
+      /* Teal, not blue: a blue lines glyph on a blue tile read as Word's icon at row size. */
+      add(['md', 'markdown', 'mdown'], 'text', '#0f8b8d', 'Markdown');
       add(['txt', 'log'], 'text', '#6c757d', 'Text');
       add(['doc', 'docx', 'rtf', 'odt'], 'word', '#2b579a', 'Word');
       add(['msg'], 'text', '#0078d4', 'Outlook');
