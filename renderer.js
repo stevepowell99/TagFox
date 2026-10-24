@@ -375,6 +375,8 @@
     let searchRunSeq = 0;
     /** The main query's text as sent to Everything, for the test hook. */
     let lastMainSearchText = '';
+    /** Runner's extra queries as sent alongside it, for the test hook. */
+    let lastRunnerExtraSearchTexts = [];
     /** True while runSearch() awaits Everything (auto-refresh skips ticks to avoid overlap). */
     let searchInFlight = false;
     /** True while loadMoreResults() is fetching the next Everything page. */
@@ -3528,10 +3530,6 @@
          query contains a ~, or inside a ~folder. Measured on Steve's keys.kdbx (test/runner-layout.cjs):
          without the whole-name exception an xk note that only mentions keys.kdbx ranks above it. */
       tilde: 45,
-      /* Every starred and used path that could match is fetched by one extra query. Up to this many, as
-         name-plus-parent terms at about 3.5ms each; above it, as one `filelist:`, which costs 0.5-1s
-         whatever its length (both measured on 2.4 million items, October 2026). */
-      pinTermsMax: 150,
     });
 
     /** Runner draws this many ranked rows and more as you scroll or arrow down: the first layout of a
@@ -3886,22 +3884,16 @@
       return out;
     }
 
-    /** One Everything term for an exact path. `wfn:path:` compares every item's full path, about 50ms a
-        term on 2.4 million items; name plus parent is about 3.5ms and finds the same rows, with `root:`
-        covering index roots, whose name is their whole path (measured October 2026). `nopath:` keeps
-        `wfn:` on the name when Match path is on, which would otherwise make it compare the full path. */
-    function everythingExactPathTerm(fp) {
-      const full = String(fp || '').replace(/"/g, '').replace(/[/\\]+$/, '');
-      const name = T.baseName(full);
-      const dir = T.parentDir(full).replace(/[/\\]+$/, '');
-      return '<nopath:wfn:"' + name + '" parent:"' + dir + '">|<root: nopath:wfn:"' + full + '">';
-    }
-
     /** Rows the main query's page may have missed: names matching the words (with Match path on, a
         common word matches thousands of paths and the page holds only the newest), every starred or
         used path that matches, and the newest Temp hits. Merged into the main rows; never paged. */
     async function runnerExtraRows({ runId, ceilingNorms, rootFolder, queryForEs, recursive, options, cap }) {
       const jobs = [];
+      const sent = (lastRunnerExtraSearchTexts = []);
+      const ask = (searchText, count) => {
+        sent.push(searchText);
+        jobs.push(everythingSearchOnce({ searchText, count, options: { ...options, offset: 0 } }));
+      };
       const q = String(queryForEs || '').trim();
       const toks = q.split(/\s+/).filter(Boolean);
       /* File types stay outside the name-only group, so `budget ext:xlsx` asks for names with budget. */
@@ -3910,52 +3902,35 @@
       /* Name matches, so the main fetch's newest 300 (mostly path matches for a common word) cannot crowd
          them out. nopath:<...> also takes groups, | and regex: terms (checked against Everything 1.5a). */
       if (runnerSort === 'smart' && positive && options.pathSearch && !/^nopath:/i.test(q)) {
-        jobs.push(
-          everythingSearchOnce({
-            searchText: everythingSearchTextForUi(ceilingNorms, rootFolder, ('nopath:<' + positive + '> ' + negative).trim(), recursive),
-            count: cap,
-            options: { ...options, offset: 0 },
-          })
-        );
+        ask(everythingSearchTextForUi(ceilingNorms, rootFolder, ('nopath:<' + positive + '> ' + negative).trim(), recursive), cap);
       }
       /* Names that are exactly the typed words, so an old `map.json` is not lost among 50,000 newer names
          that merely contain "map" (353 exact against 49,966; 0.07-0.11s cold, about 0 warm). */
       const plainToks = toks.filter((t) => !t.startsWith('!') && !/^ext:/i.test(t));
       if (runnerSort === 'smart' && plainToks.length && plainToks.every((t) => RUNNER_PLAIN_WORD.test(t))) {
         const stem = plainToks.join(' ').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        jobs.push(
-          everythingSearchOnce({
-            searchText: everythingSearchTextForUi(
-              ceilingNorms,
-              rootFolder,
-              ('nopath:<' + plainToks.join(' ') + ' regex:"^' + stem + '(\\.[^.\\\\]+)?$"> ' + negative).trim(),
-              recursive
-            ),
-            count: cap,
-            options: { ...options, offset: 0 },
-          })
+        ask(
+          everythingSearchTextForUi(
+            ceilingNorms,
+            rootFolder,
+            ('nopath:<' + plainToks.join(' ') + ' regex:"^' + stem + '(\\.[^.\\\\]+)?$"> ' + negative).trim(),
+            recursive
+          ),
+          cap
         );
       }
       const pins = runnerPinnedCandidatePaths(queryForEs, rootFolder, recursive);
       const base = everythingSearchTextForUi(ceilingNorms, rootFolder, queryForEs, recursive);
       if (pins.length) {
-        const list =
-          pins.length <= RUNNER_RANK.pinTermsMax
-            ? '<' + pins.map(everythingExactPathTerm).join('|') + '>'
-            : 'filelist:"' + pins.map((p) => String(p).replace(/"/g, '').replace(/[/\\]+$/, '')).join('|') + '"';
-        jobs.push(everythingSearchOnce({ searchText: base + ' ' + list, count: pins.length, options: { ...options, offset: 0 } }));
+        /* The list goes first: Everything looks the paths up directly and tests the rest of the query on those
+           alone, 3-10ms for 150 or 443 paths, against 0.5-1s with the list last (2.4 million items, October 2026). */
+        const list = 'filelist:"' + pins.map((p) => String(p).replace(/"/g, '').replace(/[/\\]+$/, '')).join('|') + '"';
+        ask(list + ' ' + base, pins.length);
       }
       /* Temp hits, which every other query leaves out; smart order only, where they rank down. */
       if (runnerSort === 'smart' && q && !runnerHideTempOn() && runnerLeavesOutTemp(rootFolder)) {
         const tempDir = await runnerUserTempDir();
-        if (tempDir)
-          jobs.push(
-            everythingSearchOnce({
-              searchText: everythingSearchTextForUi(ceilingNorms, rootFolder, queryForEs, recursive, { tempDir }),
-              count: RUNNER_RANK.tempFetch,
-              options: { ...options, offset: 0 },
-            })
-          );
+        if (tempDir) ask(everythingSearchTextForUi(ceilingNorms, rootFolder, queryForEs, recursive, { tempDir }), RUNNER_RANK.tempFetch);
         else searchDebugLog('runner.extraRows.noTempDir', { runId });
       }
       if (!jobs.length) return [];
@@ -5253,7 +5228,8 @@
       if (document.hidden) return;
       if (document.querySelector('.modal.show')) return;
       if (tagRenameBusy || renameItemBusy) return;
-      if (searchInFlight) return;
+      /* A keystroke's search is about to run; a tick now would queue ahead of it in Everything for nothing. */
+      if (searchInFlight || searchDebounceTimer) return;
       if (autoRefreshTickWouldDisturb()) return;
       suppressViewerResyncForTimerSearch = true;
       quietAutoRefreshRender = true;
@@ -11000,8 +10976,7 @@
       const qRaw = (document.getElementById('query')?.value || '').trim();
       const q = qRaw ? filenameOnlyUserQueryForScopedSearch(qRaw) : '';
       let t = [ceil, slice, q].filter(Boolean).join(' ');
-      t = appendActiveTagToEverythingQuery(t);
-      if (deadlineFilterActive()) t = (String(t).trim() + ' regex:[\\s\\\\]xd-').trim();
+      t = appendTagFiltersToEverythingQuery(t);
       t = (String(t).trim() + ' ext:' + [...THUMBNAIL_EXT].join(';')).trim();
       t = appendRecencyToEverythingQuery(t);
       return t;
@@ -11584,47 +11559,60 @@
       return String(s || '').replace(/[\\^$.|?*+()[\]{}]/g, '\\$&');
     }
 
-    /** One (?i)regex:… clause matching the `xk<tag>` token (same as rowHasTag / pathHasTag). */
-    function tagKeyToEverythingBracketRegex(lowerKey) {
+    /** Everything checks an item's terms left to right and stops at the first that fails, so each tag regex
+        follows the tag as plain text, which every match contains and which keeps the regex off almost every
+        item: on 2.4 million items `xkTODO` took 5.6s as a regex alone and 17ms behind the text, with the same
+        rows (October 2026). `noww:noregex:` keeps the text literal whatever Match whole word and Regex say. */
+    function everythingTagTextTerm(literal) {
+      return 'noww:noregex:' + literal;
+    }
+
+    /** One tag's Everything terms, matching the `xk<tag>` token as rowHasTag / pathHasTag do: `text` is the
+        token as plain text and `regex` the token as a whole word in the leaf name. */
+    function tagKeyToEverythingTerms(lowerKey) {
       const t = String(lowerKey || '').trim().toLowerCase();
-      if (!t) return '';
+      if (!t) return null;
       let inner = t.replace(/[|*?()<>]/g, '');
       if (!inner) inner = t.replace(/[^a-z0-9_-]/gi, '');
-      if (!inner) return '';
+      if (!inner) return null;
       // Match the exact on-disk casing: lowercase family prefix + uppercase body. Tag bodies are
       // always uppercase, so this matches whether or not Match Case is on, without relying on an
       // inline (?i) flag (which Everything's regex does not always honour).
-      const esc = escapeEverythingRegexFragment(inner.toUpperCase());
+      const token = T.prefixForTag(inner) + inner.toUpperCase();
       // Use \s, never a literal space: a real space inside an inline `regex:` term makes Everything
       // split it into two terms, which silently breaks the filter. Boundary before the family prefix,
       // then the tag as a whole token anchored to the leaf segment (boundary then non-backslash to
       // end, or end) so a tagged parent folder does not match.
-      return '[\\s\\\\]' + T.prefixForTag(inner) + esc + '(?:[\\s.][^\\\\]*)?$';
+      const regex = '[\\s\\\\]' + escapeEverythingRegexFragment(token) + '(?:[\\s.][^\\\\]*)?$';
+      return { text: everythingTagTextTerm(token), regex };
     }
 
-    /** Narrow Everything: AND (space) or OR (|) of regex: clauses per active tag. Only positive (include) tags
-     *  narrow the server query; negation is applied by the client filter. In OR mode a negative term matches
-     *  rows that merely LACK a tag, so Everything cannot pre-narrow safely — send no tag clause and let the
-     *  client filter do it all. In AND mode, narrowing by the positives is always a correct superset. */
-    function appendActiveTagToEverythingQuery(searchText) {
-      if (!activeTagKeys.size) return searchText;
+    /** Narrow Everything by the tag filters: AND (space) or OR (|) of the active tags' terms, then the deadline
+     *  filter's. Only positive (include) tags narrow the server query; negation is applied by the client filter.
+     *  In OR mode a negative term matches rows that merely LACK a tag, so Everything cannot pre-narrow safely —
+     *  send no tag clause and let the client filter do it all. In AND mode, narrowing by the positives is always
+     *  a correct superset. The deadline filter narrows to files carrying any xd- deadline; the exact range is
+     *  applied client-side. */
+    function appendTagFiltersToEverythingQuery(searchText) {
       let out = String(searchText || '').trim();
       const anyNegative = [...activeTagKeys].some((k) => excludedTagKeys.has(k));
-      if (tagFilterCombineOr && anyNegative) return out;
-      const res = [...activeTagKeys]
-        .filter((k) => !excludedTagKeys.has(k))
-        .sort()
-        .map((k) => tagKeyToEverythingBracketRegex(k))
-        .filter(Boolean);
-      if (!res.length) return out;
-      if (tagFilterCombineOr && res.length > 1) {
-        // Everything: `|` is OR between terms; alternation inside one regex: does not replace that. Group so scope/query stays AND with (tag1 OR tag2).
-        const parts = res.map((re) => 'regex:' + re);
-        out = (out + ' < ' + parts.join(' | ') + ' >').trim();
+      const terms =
+        tagFilterCombineOr && anyNegative
+          ? []
+          : [...activeTagKeys]
+              .filter((k) => !excludedTagKeys.has(k))
+              .sort()
+              .map((k) => tagKeyToEverythingTerms(k))
+              .filter(Boolean);
+      if (tagFilterCombineOr && terms.length > 1) {
+        // Everything: `|` is OR between terms; alternation inside one regex: does not replace that. Group so
+        // scope/query stays AND with (tag1 OR tag2); the text group passes every row the regex group does.
+        out += ' <' + terms.map((x) => x.text).join('|') + '> < ' + terms.map((x) => 'regex:' + x.regex).join(' | ') + ' >';
       } else {
-        for (const re of res) out = (out + ' regex:' + re).trim();
+        for (const x of terms) out += ' ' + x.text + ' regex:' + x.regex;
       }
-      return out;
+      if (deadlineFilterActive()) out += ' ' + everythingTagTextTerm('xd-') + ' regex:[\\s\\\\]xd-';
+      return out.trim();
     }
 
     /** Google Drive for Desktop: real files live under this virtual segment — must not count as a “dot folder”. */
@@ -17276,11 +17264,10 @@
         `tempDir` asks for Runner's Temp hits in that folder instead of leaving Temp out. */
     function everythingSearchTextForUi(ceilingNorms, rootFolder, query, recursive, { tempDir = '' } = {}) {
       let searchText = composeScopedEverythingSearch(ceilingNorms, rootFolder, query, recursive);
-      searchText = appendActiveTagToEverythingQuery(searchText);
-      // Deadline range filter: narrow to files carrying any xd- deadline; the exact range is
-      // applied client-side (\s, never a literal space, so Everything keeps it as one regex term).
-      if (deadlineFilterActive()) searchText = (String(searchText).trim() + ' regex:[\\s\\\\]xd-').trim();
-      if (tempDir) searchText = (String(searchText).trim() + ' "' + tempDir + '\\"').trim();
+      searchText = appendTagFiltersToEverythingQuery(searchText);
+      /* The Temp folder goes first, so the words are tested on Temp's items alone: 75-115ms against
+         300-500ms with the folder after the words (2.4 million items, October 2026). */
+      if (tempDir) searchText = ('"' + tempDir + '\\" ' + String(searchText).trim()).trim();
       else if (runnerLeavesOutTemp(rootFolder)) searchText = (String(searchText).trim() + ' ' + RUNNER_TEMP_EXCLUDE).trim();
       if (isFoldersOnly()) searchText = (String(searchText).trim() + ' folder:').trim();
       else if (isFilesOnly()) searchText = (String(searchText).trim() + ' file: sort-mix:').trim();
@@ -20679,6 +20666,7 @@
           recency: recencyFilterMode(),
           tabs: tabs.length,
           sent: lastMainSearchText,
+          sentExtra: lastRunnerExtraSearchTexts,
           viewerOff: document.body.classList.contains('tagfox-runner-viewer-off'),
           focusInList: !!document.activeElement?.closest?.('#resultsWrap'),
         }),
