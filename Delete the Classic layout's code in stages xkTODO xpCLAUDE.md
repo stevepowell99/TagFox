@@ -3,7 +3,7 @@
 Steve decided on 24 October 2026 to keep only Runner: hide Classic first, then delete its code in stages. Classic is hidden (no layout switch, every real start in Runner; the test hook still opens a fresh profile in Classic so its tests guard the code until it goes). This file is the inventory to delete against.
 
 - **Each stage** deletes one area (for example tabs, or Tree and Smart views), its CSS and HTML, and the tests that cover only it, and keeps every piece Runner depends on (listed below). Run the full suite after each stage.
-- **Steve has not yet said** which Classic-only features Runner should gain before their code goes: a visible star list, setting a deadline filter, Windows Recent, or searching only the current folder while typing. Ask before deleting any of those. The Shelf is being added to Runner by the runner session; the Restart button already shows in Runner's box.
+- **Steve has not yet said** which Classic-only features Runner should gain before their code goes: a visible star list, setting a deadline filter, Windows Recent, or searching only the current folder while typing. Ask before deleting any of those. The Shelf now shows in Runner (`2d8c22b`), and the Restart button shows in Runner's box, so neither is Classic-only any more.
 
 Read-only survey by a subagent at main `74c8ac1`; line numbers are approximate. Since then Runner has gained chips for the deadline and hide-until filters (the hazard the survey found).
 
