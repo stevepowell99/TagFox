@@ -75,6 +75,7 @@
       runnerClassicStash: 'tagBrowserRunnerClassicStash',
       runnerSort: 'tagBrowserRunnerSort',
       runnerHideTemp: 'tagBrowserRunnerHideTemp',
+      runnerStarredOnly: 'tagBrowserRunnerStarredOnly',
       runnerViewerOff: 'tagBrowserRunnerViewerOff',
       runnerWordStarts: 'tagBrowserRunnerWordStarts',
       /* Set once Runner's old hide-~ default has been carried over to showing ~ paths ranked down. */
@@ -3551,6 +3552,9 @@
       useSaturates: 20,
       lastUse: 10,
       lastUseDays: 30,
+      /* In Windows' Recent list (opened lately in any app), decaying with windowsRecentDays from when. */
+      windowsRecent: 15,
+      windowsRecentDays: 7,
       /* Taken off anything under a folder of one of these names (AppData: caches, logs, app state;
          ProgramData: the same for every user, with 518 of Steve's 7,289 ProgramData items Windows crash
          reports named Report.wer, October 2026), unless the current folder is inside that folder or the
@@ -3669,6 +3673,7 @@
       renderRunnerFilterChips();
       applyRunnerViewerOff();
       scheduleSyncShelfAsideWidth();
+      refreshRunnerWindowsRecent();
     }
 
     /** Classic's header holds the Restart button and Runner has no header, so in Runner the button sits in
@@ -3889,6 +3894,8 @@
         if (mt) s += RUNNER_RANK.recency * Math.exp(-Math.max(0, now - mt) / (RUNNER_RANK.recencyDays * day));
         if (stars.has(k)) s += RUNNER_RANK.star;
         s += runnerUseBoost(use.get(k), now);
+        const win = runnerWindowsRecent.get(k);
+        if (win) s += RUNNER_RANK.windowsRecent * (win.at ? Math.exp(-Math.max(0, now - win.at) / (RUNNER_RANK.windowsRecentDays * day)) : 1);
         if (rankedDown.some((f) => f.re.test(fp))) s -= RUNNER_RANK.rankedDown;
         if (tildePenalty && m.quality < RUNNER_RANK.matchKind.exact && pathUnderTildeSegment(fp)) s -= tildePenalty;
         return { r, tier: m.inName, s };
@@ -3907,6 +3914,7 @@
       };
       for (const p of loadFavouriteFolders()) add(p);
       for (const st of [loadFileFocusStats(), loadFolderFocusStats()]) for (const v of Object.values(st)) add(v.path);
+      for (const w of runnerWindowsRecent.values()) add(w.path);
       const scope = normalizeFolderPathForEverything(String(rootFolder || '').trim()).replace(/[/\\]+$/, '');
       const scopeKey = scope ? pathNormKey(scope) : '';
       const types = runnerQueryTypes(query);
@@ -4211,6 +4219,46 @@
       return localStorage.getItem(LS.runnerHideTemp) === '1';
     }
 
+    /** Starred only: Runner lists the stars themselves (under the current folder, if any), which is its
+        star list, since it has no favourites column (Steve, October 2026). */
+    function runnerStarredOnlyOn() {
+      return isRunnerMode() && localStorage.getItem(LS.runnerStarredOnly) === '1';
+    }
+
+    function runnerToggleStarredOnly() {
+      if (runnerStarredOnlyOn()) localStorage.removeItem(LS.runnerStarredOnly);
+      else localStorage.setItem(LS.runnerStarredOnly, '1');
+      selectAfterSearchKey = null;
+      void runSearchNow('identity');
+    }
+
+    /** A deadline command: that range, or off when it is already the one set. */
+    function runnerToggleDeadline(range) {
+      setDeadlineRange(activeDeadlineRange === range ? '' : range);
+    }
+
+    /* Windows' own Recent list (what any app opened lately) boosts the ranking, as Steve asked, rather than
+       being listed. Main resolves the newest 28 shortcuts and caches them for a minute; this keeps the last
+       answer and asks again at most once a minute, on focus. */
+    let runnerWindowsRecent = new Map();
+    let runnerWindowsRecentAskedAt = 0;
+    function refreshRunnerWindowsRecent() {
+      const tb = window.tagBrowser;
+      if (!isRunnerMode() || !tb || typeof tb.windowsRecentFiles !== 'function') return;
+      if (Date.now() - runnerWindowsRecentAskedAt < 60e3) return;
+      runnerWindowsRecentAskedAt = Date.now();
+      void Promise.all([
+        tb.windowsRecentFiles().catch(() => null),
+        typeof tb.windowsRecentFolders === 'function' ? tb.windowsRecentFolders().catch(() => null) : null,
+      ]).then(([files, folders]) => {
+        const m = new Map();
+        for (const it of [...((files && files.files) || []), ...((folders && folders.folders) || [])]) {
+          if (it && it.path) m.set(pathNormKey(it.path), { path: String(it.path), at: Number(it.mtimeMs) || 0 });
+        }
+        runnerWindowsRecent = m;
+      });
+    }
+
     /* The Temp query names the user's own Temp folder: Everything answers a path prefix in about 0.06s,
        against 0.23s for path:\appdata\local\temp\ (cold, 2.4 million items, October 2026), and it waits
        behind the other queries, since Everything runs one at a time. Other accounts' Temp folders stay out. */
@@ -4345,6 +4393,13 @@
         isOn: () => excludedTagKeys.has(word.toLowerCase()),
         run: () => runnerToggleTag(word, true),
       })),
+      /* Classic's deadline panel, as commands; each shows as a chip. */
+      { id: 'due-overdue', group: 'Due', label: 'Overdue (deadline passed)', isOn: () => activeDeadlineRange === 'overdue', run: () => runnerToggleDeadline('overdue') },
+      { id: 'due-today', group: 'Due', label: 'Due today', isOn: () => activeDeadlineRange === 'today', run: () => runnerToggleDeadline('today') },
+      { id: 'due-thisweek', group: 'Due', label: 'Due this week', isOn: () => activeDeadlineRange === 'thisweek', run: () => runnerToggleDeadline('thisweek') },
+      { id: 'due-nextweek', group: 'Due', label: 'Due next week', isOn: () => activeDeadlineRange === 'nextweek', run: () => runnerToggleDeadline('nextweek') },
+      { id: 'hidden-until', group: 'Due', label: 'Show files hidden until a later date (xh-)', isOn: () => showHiddenUntil, run: () => setShowHiddenUntil(!showHiddenUntil) },
+      { id: 'starred', group: 'Show', label: 'Show only starred items', isOn: () => runnerStarredOnlyOn(), run: () => runnerToggleStarredOnly() },
       { id: 'system', group: 'Show', label: 'Show system files (. $ desktop.ini)', isOn: () => !isHideSpecialPaths(), run: () => runnerToggleSystemFiles() },
       { id: 'tilde', group: 'Show', label: 'Hide ~ paths (lock files, ~folders; listed lower when shown)', isOn: () => isHideTildePaths(), run: () => runnerToggleTilde() },
       { id: 'temp', group: 'Show', label: 'Hide temp files (AppData\\Local\\Temp; listed lower when shown)', isOn: () => runnerHideTempOn(), run: () => runnerToggleTemp() },
@@ -4449,8 +4504,14 @@
           void runSearchNow('identity');
         },
       },
-      /* Set from Classic's deadline panel and kept across layouts, so without a chip a range chosen there
-         would narrow Runner's list with nothing on screen to say so. */
+      {
+        id: 'starred',
+        icon: 'fa-star',
+        on: () => runnerStarredOnlyOn(),
+        label: () => 'Starred only',
+        reset: () => runnerToggleStarredOnly(),
+      },
+      /* Set by the / due commands, and kept across layouts with Classic's deadline panel. */
       {
         id: 'deadline',
         icon: 'fa-calendar-day',
@@ -4538,6 +4599,7 @@
         runnerSetOpt(id, d[key]);
       localStorage.removeItem(LS.runnerHideTemp);
       localStorage.removeItem(LS.runnerWordStarts);
+      localStorage.removeItem(LS.runnerStarredOnly);
       activeTagKeys.clear();
       excludedTagKeys.clear();
       persistActiveTagFilter();
@@ -5247,6 +5309,7 @@
       /* The breadcrumb's room changes with the window, the Viewer's width and the row being shown at all. */
       const crumbs = document.getElementById('breadcrumbBar');
       if (crumbs && typeof ResizeObserver === 'function') new ResizeObserver(() => fitRunnerBreadcrumb()).observe(crumbs);
+      window.addEventListener('focus', () => refreshRunnerWindowsRecent());
     }
 
     function scheduleSearch(eventKind = 'identity') {
@@ -17419,6 +17482,12 @@
     function everythingSearchTextForUi(ceilingNorms, rootFolder, query, recursive, { tempDir = '' } = {}) {
       let searchText = composeScopedEverythingSearch(ceilingNorms, rootFolder, query, recursive);
       searchText = appendTagFiltersToEverythingQuery(searchText);
+      /* Starred only: the stars as a filelist, first, so Everything tests the rest on those paths alone.
+         With no stars it is filelist:"", which matches nothing. */
+      if (runnerStarredOnlyOn()) {
+        const stars = loadFavouriteFolders().map((p) => String(p).replace(/"/g, '').replace(/[/\\]+$/, '')).filter(Boolean);
+        searchText = ('filelist:"' + stars.join('|') + '" ' + String(searchText).trim()).trim();
+      }
       /* The Temp folder goes first, so the words are tested on Temp's items alone: 75-115ms against
          300-500ms with the folder after the words (2.4 million items, October 2026). */
       if (tempDir) searchText = ('"' + tempDir + '\\" ' + String(searchText).trim()).trim();
@@ -17465,11 +17534,12 @@
       cancelPropsPreviewSchedule();
       if (isRunnerMode()) {
         runnerResetRenderWindowIfNewList();
-        /* Runner: a plain flat list. An empty box lists the current folder's own contents; typing, or a tag to
-           look for, searches below it. A not-tag alone names nothing to look for, so it only thins that list. */
+        /* Runner: a plain flat list. An empty box lists the current folder's own contents; typing, a tag to
+           look for, a deadline range or Starred only searches below it. A not-tag alone names nothing to look
+           for, so it only thins that list. */
         const q = (document.getElementById('query')?.value || '').trim();
         const wantsTag = [...activeTagKeys].some((k) => !excludedTagKeys.has(k));
-        applyResultsViewRadiosToDom('flat', !!(q || wantsTag), resultsContentMode());
+        applyResultsViewRadiosToDom('flat', !!(q || wantsTag || deadlineFilterActive() || runnerStarredOnlyOn()), resultsContentMode());
         syncViewRadioActiveFromDom();
       } else {
         const smart = isSmartView();
@@ -20820,6 +20890,11 @@
         setDeadlineRange: (range) => setDeadlineRange(String(range || '')),
         setShowHiddenUntil: (on) => setShowHiddenUntil(!!on),
         runCommand: (id) => runRunnerCommand(RUNNER_COMMANDS.find((c) => c.id === String(id))),
+        /* Stand-in for Windows' Recent list, opened just now, so a test can see the boost without the real one. */
+        setWindowsRecent: (paths) => {
+          runnerWindowsRecent = new Map((paths || []).map((p) => [pathNormKey(p), { path: String(p), at: Date.now() }]));
+          runnerWindowsRecentAskedAt = Date.now();
+        },
         commitHistory: () => commitSearchHistoryNow(),
         toggleStar: (p) => toggleStarPath(String(p)),
         runnerState: () => ({

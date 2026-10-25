@@ -11,7 +11,10 @@
 //   - a row's size shows muted in a column of its own, /size sorts largest first and the other size
 //     command smallest first, a smaller unit is fainter, and a cell has a tooltip only where it says more
 //     than the cell;
-//   - a deadline range or shown hide-until files, which Classic sets, show as chips whose x clears them;
+//   - a deadline range or shown hide-until files show as chips whose x clears them, the / due and hidden-until
+//     commands set them, and from an empty box a deadline range looks below the folder;
+//   - "Show only starred items" lists just the stars under the folder, wherever they are below it;
+//   - Windows' Recent list boosts the ranking (with a positive control that the order differs without it);
 //   - Ctrl+D stars and unstars the selected row in the favourites list, where a starred file is a file chip;
 //   - hovering a row shows its action buttons, anchored in the row;
 //   - AppData\Local\Temp is listed by default, below a file of the same name elsewhere, and the / command
@@ -65,6 +68,13 @@ async function main() {
   const laterFile = path.join(extra, 'chipcheck later xh-' + isoDay(new Date(Date.now() + 30 * 864e5)) + '.txt');
   const plainFile = path.join(extra, 'chipcheck plain.txt');
   for (const p of [dueFile, laterFile, plainFile]) fs.writeFileSync(p, 'c\n');
+  // Two names that tie on the match, the second a minute newer, so it leads unless the first is in Windows' Recent list.
+  const wrOne = path.join(extra, 'wrcheck one.txt');
+  const wrTwo = path.join(extra, 'wrcheck two.txt');
+  fs.writeFileSync(wrOne, 'w\n');
+  fs.writeFileSync(wrTwo, 'w\n');
+  const minuteAgo = new Date(Date.now() - 60e3);
+  fs.utimesSync(wrOne, minuteAgo, minuteAgo);
   // Back-dated at the start, so Everything has indexed the old time by the time the type check reads it.
   // Where "map" falls in the name: a whole word, the start of the name, the end of a word, inside a word.
   const mapNames = ['old map.txt', 'mapping.txt', 'roadmap.txt', 'xmapx.txt'];
@@ -391,6 +401,48 @@ async function main() {
     await drv.settle('hidden again');
     s = await R();
     check(!s.chips.includes('hidden-until') && !has(s.rows, laterFile), `its x hides them again (chips ${s.chips})`);
+
+    // The same filters as / commands, from an empty box: the files sit a folder down, so the list must look below.
+    await drv.T('setQuery', '');
+    await drv.settle('empty box for due');
+    await drv.T('runCommand', 'due-today');
+    await drv.settle('/due today');
+    s = await R();
+    check(s.chips.includes('deadline') && has(s.rows, dueFile) && !has(s.rows, plainFile), `/due today, with the box empty, lists the file due today a folder down (chips ${s.chips}: ${s.rows.map((r) => path.basename(r))})`);
+    await drv.T('runCommand', 'due-today');
+    await drv.settle('/due today off');
+    s = await R();
+    check(!s.chips.includes('deadline'), `the same command again turns it off (chips ${s.chips})`);
+    await drv.T('runCommand', 'hidden-until');
+    await drv.settle('/hidden-until');
+    s = await R();
+    check(s.chips.includes('hidden-until'), `the hidden-until command shows its chip (chips ${s.chips})`);
+    await drv.T('runCommand', 'hidden-until');
+    await drv.settle('/hidden-until off');
+    // Starred only, from an empty box: exactly the stars under the folder, wherever they are below it.
+    await drv.T('toggleStar', plainFile);
+    await drv.T('runCommand', 'starred');
+    await drv.settle('/starred');
+    s = await R();
+    check(s.chips.includes('starred') && s.rows.length === 1 && has(s.rows, plainFile), `"Show only starred items" lists just the star a folder down (chips ${s.chips}: ${s.rows.map((r) => path.basename(r))})`);
+    await drv.T('runCommand', 'starred');
+    await drv.settle('/starred off');
+    await drv.T('toggleStar', plainFile);
+    s = await R();
+    check(!s.chips.includes('starred') && s.rows.length > 1, `the same command again lists the whole folder (${s.rows.length} rows)`);
+
+    // Windows' Recent list boosts the ranking: of two names that tie, the older leads once it is in the list.
+    await drv.T('setQuery', 'wrcheck');
+    await drv.settle('wrcheck');
+    const wrOrder = () => s.rows.filter((r) => norm(r) === norm(wrOne) || norm(r) === norm(wrTwo)).map((r) => path.basename(r));
+    s = await R();
+    check(JSON.stringify(wrOrder()) === JSON.stringify(['wrcheck two.txt', 'wrcheck one.txt']), `without it the newer name leads (positive control: ${wrOrder()})`);
+    await drv.T('setWindowsRecent', [wrOne]);
+    await drv.T('runSearchNow', 'identity');
+    await drv.settle('wrcheck boosted');
+    s = await R();
+    check(JSON.stringify(wrOrder()) === JSON.stringify(['wrcheck one.txt', 'wrcheck two.txt']), `in Windows' Recent list the older name leads (${wrOrder()})`);
+    await drv.T('setWindowsRecent', []);
     await drv.T('setQuery', 'zeta');
     await drv.settle('smart after size');
 
