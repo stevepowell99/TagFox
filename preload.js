@@ -103,7 +103,6 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   pathKinds: (paths) => ipcRenderer.invoke('path-kinds', paths),
   listFolderEntries: (payload) => ipcRenderer.invoke('list-folder-entries', payload),
   debugFolderSnapshot: (payload) => ipcRenderer.invoke('debug-folder-snapshot', payload),
-  listDriveRoots: () => ipcRenderer.invoke('list-drive-roots'),
   focusWebContents: () => ipcRenderer.send('tagbrowser-focus-web-contents'),
   forceFocusWebContents: () => ipcRenderer.send('tagbrowser-force-web-contents-focus'),
   /* Must be synchronous with dragstart or OS drag never starts (send is async). */

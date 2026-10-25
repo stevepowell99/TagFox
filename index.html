@@ -468,54 +468,18 @@
         </div>
       </div>
 
-      <!-- Clear current folder (X) + breadcrumb — X is first cell of shell (same pattern as query clear + field). -->
+      <!-- Breadcrumb: the current folder's path, each name a button, then recent folders. -->
       <div class="d-flex flex-wrap align-items-center gap-1 scope-breadcrumb-row">
         <!-- no overflow-hidden here — clips scope-folder history .dropdown-menu -->
         <div id="breadcrumbShell" class="breadcrumb-center flex-grow-1 min-w-0 d-none">
           <div class="breadcrumb-shell-inner d-flex align-items-stretch w-100 min-w-0">
-            <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0 tagfox-toolbar-clear align-self-stretch" style="width: 2rem; min-width: 2rem" id="btnClearScope" disabled title="Clear current folder (search whole index)" aria-label="Clear current folder">
-              <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-            </button>
             <div id="breadcrumbShellMain" class="breadcrumb-shell-main flex-grow-1 min-w-0 d-flex align-items-center">
               <div
                 id="breadcrumbBar"
                 class="flex-grow-1 min-w-0 d-none px-2 py-1 flex-wrap align-items-center gap-0"
               ></div>
-              <div id="scopePathEditWrap" class="flex-grow-1 min-w-0 d-none px-2 py-1 align-self-center">
-                <label class="visually-hidden" for="scopePathEdit">Current folder path</label>
-                <input
-                  type="text"
-                  id="scopePathEdit"
-                  class="form-control form-control-sm font-monospace"
-                  placeholder="Current folder path (empty = whole index)"
-                  autocomplete="off"
-                  spellcheck="false"
-                />
-              </div>
             </div>
             <div class="d-flex align-items-center flex-shrink-0 gap-1 px-1 py-1 border-start tagfox-breadcrumb-shell-actions">
-              <button
-                type="button"
-                class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
-                style="width: 2rem; height: 2rem"
-                id="btnStatusScopeParent"
-                disabled
-                title="Parent folder (Ctrl+↑)"
-                aria-label="Open parent folder"
-              >
-                <i class="fa-solid fa-arrow-up" aria-hidden="true"></i>
-              </button>
-              <button
-                type="button"
-                class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
-                style="width: 2rem; height: 2rem"
-                id="btnEditScopePath"
-                title="Edit current folder as path (toggle)"
-                aria-label="Edit current folder path"
-                aria-pressed="false"
-              >
-                <i class="fa-solid fa-pen" aria-hidden="true"></i>
-              </button>
               <div class="dropdown flex-shrink-0">
                 <button
                   type="button"

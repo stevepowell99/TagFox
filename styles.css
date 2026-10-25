@@ -661,12 +661,6 @@ body > .offcanvas-backdrop.show {
 #query.form-control:not(.tagfox-query-empty) {
   background-color: var(--bs-body-bg);
 }
-/* Breadcrumb: same LHS cap; tray border is the outer curve — × only draws the internal divider on the right. */
-#breadcrumbShell .breadcrumb-shell-inner > .tagfox-toolbar-clear.btn {
-  border: 0;
-  border-right: 1px solid var(--bs-border-color);
-  box-shadow: none;
-}
 .props-panel { flex-shrink: 0; min-height: 0; min-width: 200px; max-width: 90vw; }
 /* Results + Viewer wrapper: row on desktop, stacks to column on narrow screens (see @media below). */
 .results-viewer-wrap {
@@ -1653,10 +1647,6 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
 #imageBlock img#propImagePreview { max-width: 100%; height: auto; display: block; border-radius: 0.25rem; }
 #videoBlock video#propVideoPreview { max-width: 100%; max-height: 60vh; display: block; border-radius: 0.25rem; }
 #audioBlock audio#propAudioPreview { display: block; }
-/* Breadcrumb text path: illegal syntax or failed save — border (Bootstrap is-invalid) + red text */
-#scopePathEdit.is-invalid {
-  color: var(--bs-form-invalid-color, #dc3545);
-}
 /* Breadcrumb + favourites: same inline SVG ▾ (no Bootstrap caret). */
 .tagfox-scope-chevron.dropdown-toggle::after {
   display: none !important;
@@ -2127,11 +2117,8 @@ body.tagfox-runner .scope-breadcrumb-row {
   padding-bottom: 0;
 }
 body.tagfox-runner .scope-breadcrumb-row:has(#breadcrumbBar.d-none),
-body.tagfox-runner #btnClearScope,
 body.tagfox-runner .tagfox-breadcrumb-shell-actions,
 body.tagfox-runner .scope-breadcrumb-row #tagfoxScopeBarRowActions,
-body.tagfox-runner #scopePathEditWrap,
-body.tagfox-runner #breadcrumbBar > .dropdown,
 body.tagfox-runner #breadcrumbBar .folder-type-icon,
 body.tagfox-runner #breadcrumbBar .tagfox-runner-crumb-hidden {
   display: none !important;

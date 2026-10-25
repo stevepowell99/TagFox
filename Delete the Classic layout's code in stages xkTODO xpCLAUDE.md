@@ -2,7 +2,7 @@
 
 Steve decided on 24 October 2026 to keep only Runner: hide Classic first, then delete its code in stages. Classic is hidden (no layout switch, every real start in Runner; the test hook still opens a fresh profile in Classic so its tests guard the code until it goes). This file is the inventory to delete against.
 
-- **Each stage** deletes one area (for example the breadcrumb's typed path), its CSS and HTML, and the tests that cover only it, and keeps every piece Runner depends on (listed below). Run the full suite after each stage.
+- **Each stage** deletes one area (for example the recent-folders menu), its CSS and HTML, and the tests that cover only it, and keeps every piece Runner depends on (listed below). Run the full suite after each stage.
 - **Steve decided on 25 October 2026** what Runner gains before Classic's code goes: the deadline filters as `/` Due commands; a "Show only starred items" command instead of a visible star list; and Windows Recent as a ranking boost rather than a list. A "Search this folder only" command keeps typing to the current folder's own contents. All four are in Runner now. The Shelf shows in Runner (`2d8c22b`), and so does the Restart button, in the search box. Saved searches are back in Runner too (Steve, 25 October 2026): `/` commands ("Save this search", then one per saved search) and `Alt`+`1`…`9`, reading the same `LS.favSearches` list Classic saved, so stage two took only Classic's bar.
 
 Read-only survey by a subagent at main `74c8ac1`; line numbers are approximate. Since then Runner has gained chips for the deadline and hide-until filters (the hazard the survey found).
@@ -32,7 +32,7 @@ Staging folder `%APPDATA%\...\TagBrowserShelf`. Drop files on `#appShelf` (move;
 
 ### Breadcrumb and folder actions
 
-Classic only: clear-folder ×, parent ▲, typed-path editor, recent-folders dropdown (Ctrl+L), drive picker. Runner keeps the names and ▾ menus, and Left, Backspace, Esc and the chip's × replace clear and parent, but has no typed path, no drive picker and no Ctrl+L. The folder buttons are shared (they move into the chip).
+Classic only: the recent-folders dropdown (Ctrl+L). Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go up or clear the folder, and a path typed or pasted into the box goes there. The folder buttons are shared (they move into the chip).
 
 ### Viewer, Settings, global shortcuts
 

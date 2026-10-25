@@ -2307,104 +2307,7 @@
       document.getElementById('rootFolder').value = folder;
     }
 
-    function leaveScopePathEditChrome() {
-      scopePathEditMode = false;
-      scopePathEditCommitError = false;
-      const inp = document.getElementById('scopePathEdit');
-      if (inp) {
-        inp.classList.remove('is-invalid');
-        inp.removeAttribute('aria-invalid');
-      }
-      const btn = document.getElementById('btnEditScopePath');
-      if (btn) {
-        btn.classList.remove('active');
-        btn.setAttribute('aria-pressed', 'false');
-        btn.title = 'Edit current folder as path';
-        btn.setAttribute('aria-label', 'Edit current folder path');
-        btn.innerHTML = '<i class="fa-solid fa-pen" aria-hidden="true"></i>';
-      }
-      refreshTagFoxChromeTooltips(document.getElementById('breadcrumbShell') || document.body);
-      document.getElementById('scopePathEditWrap')?.classList.add('d-none');
-    }
-
-    function enterScopePathEditMode() {
-      scopePathEditMode = true;
-      hideBreadcrumbSubfolderFlyout();
-      const shell = document.getElementById('breadcrumbShell');
-      const bar = document.getElementById('breadcrumbBar');
-      const wrap = document.getElementById('scopePathEditWrap');
-      const btn = document.getElementById('btnEditScopePath');
-      if (shell) {
-        shell.classList.remove('d-none');
-        shell.classList.add('d-flex');
-      }
-      if (bar) bar.classList.add('d-none');
-      if (wrap) wrap.classList.remove('d-none');
-      if (btn) {
-        btn.classList.add('active');
-        btn.setAttribute('aria-pressed', 'true');
-        btn.title = 'Save current folder path';
-        btn.setAttribute('aria-label', 'Save current folder path');
-        btn.innerHTML = '<i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>';
-      }
-      refreshTagFoxChromeTooltips(document.getElementById('breadcrumbShell') || document.body);
-      /* Scope strip is hidden in pen mode; park folder actions after shell like static HTML. */
-      const scopeRowActs = document.getElementById('tagfoxScopeBarRowActions');
-      const scopeBreadcrumbRow = document.querySelector('.scope-breadcrumb-row');
-      if (scopeRowActs && scopeBreadcrumbRow && shell) {
-        scopeBreadcrumbRow.insertBefore(scopeRowActs, shell.nextSibling);
-      }
-      const inp = document.getElementById('scopePathEdit');
-      if (inp) {
-        inp.value = document.getElementById('rootFolder').value;
-        scopePathEditCommitError = false;
-        syncScopePathEditValidationVisual();
-        inp.focus();
-        inp.select();
-      }
-    }
-
-    function cancelScopePathEditMode() {
-      leaveScopePathEditChrome();
-      renderScopeBreadcrumb();
-    }
-
-    async function commitScopePathEditMode() {
-      const raw = document.getElementById('scopePathEdit').value.trim();
-      const status = document.getElementById('statusMain');
-      if (!raw) {
-        leaveScopePathEditChrome();
-        clearSearchScope();
-        return;
-      }
-      const synErr = scopePathClientSyntaxError(raw);
-      if (synErr) {
-        if (status) setStatusMain(synErr);
-        scopePathEditCommitError = false;
-        syncScopePathEditValidationVisual();
-        return;
-      }
-      const norm = normalizeFolderPathForEverything(raw);
-      if (window.tagBrowser && typeof window.tagBrowser.listChildFolders === 'function') {
-        const r = await window.tagBrowser.listChildFolders({ parentPath: norm });
-        if (!r || !r.ok) {
-          if (status) {
-            setStatusMain(
-              'Invalid folder path: ' + (r && r.error ? String(r.error) : 'Not a folder or not reachable.')
-            );
-          }
-          scopePathEditCommitError = true;
-          syncScopePathEditValidationVisual();
-          return;
-        }
-      }
-      scopePathEditCommitError = false;
-      leaveScopePathEditChrome();
-      await applySearchScopeAndRefresh(norm);
-    }
-
     function clearSearchScope() {
-      leaveScopePathEditChrome();
       document.getElementById('rootFolder').value = '';
       saveSettings();
       renderScopeBreadcrumb();
@@ -2414,7 +2317,6 @@
 
     /** Clear current folder plus active tag/recency filters; keep query and view mode unchanged. */
     function clearSearchScopeAndTagRecencyFilters() {
-      leaveScopePathEditChrome();
       document.getElementById('rootFolder').value = '';
       activeTagKeys.clear();
       excludedTagKeys.clear();
@@ -2677,7 +2579,6 @@
      * Use for breadcrumb, favourites, folder row, row parent-scope (chevron), sibling-folder dropdown, etc.
      */
     async function applySearchScopeAndRefresh(folderAbsPath) {
-      leaveScopePathEditChrome();
       setSearchScopeFolder(clampFolderPathToSearchMax(folderAbsPath));
       const scopeNorm = normalizeFolderPathForEverything(document.getElementById('rootFolder').value.trim());
       if (scopeNorm) {
@@ -2697,7 +2598,6 @@
     async function openRecentTab() {
       if (isRunnerMode()) {
         /* Runner resets to its own defaults, with no folder, no text and the last hour. */
-        leaveScopePathEditChrome();
         document.getElementById('rootFolder').value = '';
         clearSearchQueryInputOnly();
         renderRunnerScopeChip();
@@ -2705,7 +2605,6 @@
         runnerResetAllFilters({ recency: '1h' });
         return;
       }
-      leaveScopePathEditChrome();
       document.getElementById('rootFolder').value = '';
       clearSearchQueryInputOnly();
       activeTagKeys.clear();
@@ -4420,7 +4319,6 @@
     /** Alt+Home: no text, no folder, every filter at its default. */
     function runnerStartAgain() {
       clearSearchQueryInputOnly();
-      leaveScopePathEditChrome();
       document.getElementById('rootFolder').value = '';
       renderScopeBreadcrumb();
       renderRunnerScopeChip();
@@ -6132,44 +6030,6 @@
 
     /** Breadcrumb bar only depends on scope folder — not on which result row is selected. */
     let renderedScopeBreadcrumbKey = null;
-    /** Set by refreshDriveRootsPickerGate(): Windows = any ready drive letter; macOS/Linux = more than one volume root. */
-    let driveRootsPickerShow = false;
-    /** Pen toggle: text path field instead of segment breadcrumb. */
-    let scopePathEditMode = false;
-    /** Last save failed (e.g. folder missing); cleared on input — drives red styling with syntax errors. */
-    let scopePathEditCommitError = false;
-
-    /** Red border/text when path text is illegal or save failed (see scopePathClientSyntaxError). */
-    function syncScopePathEditValidationVisual() {
-      const inp = document.getElementById('scopePathEdit');
-      if (!inp || !scopePathEditMode) return;
-      const trimmed = inp.value.trim();
-      if (!trimmed) {
-        inp.classList.remove('is-invalid');
-        inp.removeAttribute('aria-invalid');
-        scopePathEditCommitError = false;
-        return;
-      }
-      const bad = !!(scopePathClientSyntaxError(trimmed) || scopePathEditCommitError);
-      inp.classList.toggle('is-invalid', bad);
-      inp.setAttribute('aria-invalid', bad ? 'true' : 'false');
-    }
-
-    async function refreshDriveRootsPickerGate() {
-      if (!window.tagBrowser || typeof window.tagBrowser.listDriveRoots !== 'function') {
-        driveRootsPickerShow = false;
-        return;
-      }
-      try {
-        const r = await window.tagBrowser.listDriveRoots();
-        const plat = (r && r.platform) || '';
-        const roots = Array.isArray(r.roots) ? r.roots : [];
-        driveRootsPickerShow = plat === 'win32' ? roots.length > 0 : roots.length > 1;
-      } catch {
-        driveRootsPickerShow = false;
-      }
-      if (document.getElementById('rootFolder').value.trim()) renderScopeBreadcrumb();
-    }
 
     function currentScopeBreadcrumbKey() {
       return getSearchScopeMaxFolderNorm() + '\n' + document.getElementById('rootFolder').value.trim();
@@ -6674,88 +6534,6 @@
       populateBreadcrumbSubfolderFlyoutAtDepth(fly, folders, subBtnToggle, depth, parentPath);
     }
 
-    /** Highlight drive/volume row when current scope path is under that root. */
-    function scopeIsUnderDriveRoot(scopeNorm, pathSep, rootFullPath) {
-      const r = normalizeFolderPathForEverything(rootFullPath).replace(/[/\\]+$/, '').toLowerCase();
-      const s = normalizeFolderPathForEverything(scopeNorm).replace(/[/\\]+$/, '').toLowerCase();
-      if (!r || !s) return false;
-      if (s === r) return true;
-      const slash = pathSep === '/' ? '/' : '\\';
-      return s.startsWith(r + slash);
-    }
-
-    /** Leading breadcrumb control: OS-mounted roots from main (Windows A:–Z:, macOS / + /Volumes, etc.). */
-    function prependDriveRootPicker(barEl, scopeNorm, pathSep) {
-      if (!driveRootsPickerShow || !window.tagBrowser || typeof window.tagBrowser.listDriveRoots !== 'function') return;
-      const ddWrap = document.createElement('div');
-      ddWrap.className = 'dropdown d-inline-block me-1';
-      const ddBtn = document.createElement('button');
-      ddBtn.type = 'button';
-      ddBtn.className =
-        'btn btn-link btn-sm text-secondary py-0 px-1 align-baseline breadcrumb-dd-toggle d-inline-flex align-items-center gap-0';
-      ddBtn.innerHTML =
-        '<i class="fa-solid fa-folder fa-fw" aria-hidden="true"></i>' + breadcrumbDropdownChevronHtml();
-      ddBtn.title = 'Drives and volumes';
-      ddBtn.setAttribute('aria-label', 'Drives and volumes');
-      ddBtn.setAttribute('data-bs-toggle', 'dropdown');
-      ddBtn.setAttribute('aria-expanded', 'false');
-      const menu = document.createElement('ul');
-      menu.className = 'dropdown-menu dropdown-menu-start py-1 small shadow';
-      menu.style.maxHeight = 'min(50vh, 280px)';
-      menu.style.overflow = 'auto';
-      menu.addEventListener('scroll', () => repositionBreadcrumbFlyoutChain());
-      menu.addEventListener('mouseenter', cancelBreadcrumbFlyoutHideTimer);
-      ddBtn.addEventListener('click', (e) => e.stopPropagation());
-      ddBtn.addEventListener('hide.bs.dropdown', (ev) => {
-        if (focusInsideBreadcrumbFlyout()) ev.preventDefault();
-      });
-      ddBtn.addEventListener('hidden.bs.dropdown', () => hideBreadcrumbSubfolderFlyout());
-      ddBtn.addEventListener('show.bs.dropdown', () => {
-        menu.innerHTML =
-          '<li><span class="dropdown-item-text text-muted">' +
-          (window.tagBrowser.listDriveRoots ? 'Loading…' : 'Not available') +
-          '</span></li>';
-        if (!window.tagBrowser.listDriveRoots) return;
-        void (async () => {
-          const r = await window.tagBrowser.listDriveRoots();
-          menu.innerHTML = '';
-          if (!r || !r.ok || !Array.isArray(r.roots) || !r.roots.length) {
-            const li0 = document.createElement('li');
-            li0.innerHTML =
-              '<span class="dropdown-item-text text-danger small">' +
-              (r && r.error ? String(r.error) : 'Could not list drives') +
-              '</span>';
-            menu.appendChild(li0);
-            return;
-          }
-          for (const item of r.roots) {
-            const fp = item && item.fullPath ? String(item.fullPath) : '';
-            const lbl = item && item.label ? String(item.label) : fp;
-            if (!fp) continue;
-            const li = document.createElement('li');
-            const b = document.createElement('button');
-            b.type = 'button';
-            b.className = 'dropdown-item small py-1';
-            b.textContent = lbl;
-            if (scopeIsUnderDriveRoot(scopeNorm, pathSep, fp)) b.classList.add('active');
-            b.addEventListener('click', async (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              const inst = bootstrap.Dropdown.getInstance(ddBtn);
-              if (inst) inst.hide();
-              await applySearchScopeAndRefresh(normalizeFolderPathForEverything(fp));
-            });
-            li.appendChild(b);
-            menu.appendChild(li);
-          }
-        })();
-      });
-      ddWrap.appendChild(ddBtn);
-      ddWrap.appendChild(menu);
-      bindBreadcrumbDropdownHover(ddWrap, ddBtn);
-      barEl.appendChild(ddWrap);
-    }
-
     /** Split normalized folder path into segments (C:, UNC, etc.). */
     function splitFolderPathSegments(normPath) {
       return normalizeFolderPathForEverything(String(normPath || '').trim())
@@ -6764,15 +6542,13 @@
         .filter((p) => p !== '');
     }
 
-    /** Folder trail: segments set scope; with Settings scope max, that folder is the first crumb (no drive picker). */
+    /** Folder trail: segments set scope; with Settings scope max, that folder is the first crumb. */
     function renderScopeBreadcrumb() {
       renderRunnerScopeChip();
       hideBreadcrumbSubfolderFlyout();
       updateQueryPlaceholder();
-      if (scopePathEditMode) return;
       const el = document.getElementById('breadcrumbBar');
       const shell = document.getElementById('breadcrumbShell');
-      const editWrap = document.getElementById('scopePathEditWrap');
       const scopeBreadcrumbRow = document.querySelector('.scope-breadcrumb-row');
       const scopeRowActs = document.getElementById('tagfoxScopeBarRowActions');
       /* Detach before innerHTML — buttons live here after first render; clearing would destroy them. */
@@ -6780,29 +6556,24 @@
       el.innerHTML = '';
       const maxNorm = getSearchScopeMaxFolderNorm();
       const scopeRaw = document.getElementById('rootFolder').value.trim();
-      const btnClear = document.getElementById('btnClearScope');
       if (!maxNorm && !scopeRaw) {
         el.classList.add('d-none');
         el.classList.remove('d-flex', 'align-items-center', 'flex-wrap', 'gap-0');
-        /* Keep shell visible so path-edit + history (inside .tagfox-breadcrumb-shell-actions) stay usable. */
+        /* Keep shell visible so recent folders (inside .tagfox-breadcrumb-shell-actions) stay usable. */
         if (shell) {
           shell.classList.remove('d-none');
           shell.classList.add('d-flex');
         }
-        if (editWrap) editWrap.classList.add('d-none');
-        if (btnClear) btnClear.disabled = true;
         /* Empty scope: park row actions after shell (same as static HTML; breadcrumb strip stays hidden). */
         if (scopeBreadcrumbRow && scopeRowActs) scopeBreadcrumbRow.appendChild(scopeRowActs);
-        syncStatusBarParentScopeButton();
+        syncScopeBarButtons();
         renderedScopeBreadcrumbKey = currentScopeBreadcrumbKey();
         return;
       }
-      if (btnClear) btnClear.disabled = !scopeRaw;
       if (shell) {
         shell.classList.remove('d-none');
         shell.classList.add('d-flex');
       }
-      if (editWrap) editWrap.classList.add('d-none');
       el.classList.remove('d-none');
       el.classList.add('d-flex', 'align-items-center', 'flex-wrap', 'gap-0');
 
@@ -6917,7 +6688,6 @@
       }
 
       if (!maxNorm) {
-        prependDriveRootPicker(el, norm, sep);
         let acc = '';
         parts.forEach((part, i) => {
           acc = i === 0 ? part : acc + sep + part;
@@ -7093,7 +6863,7 @@
       if (isRunnerMode() && scopeRowActs && runnerChip && !runnerChip.classList.contains('d-none')) {
         runnerChip.insertBefore(scopeRowActs, runnerChip.querySelector('.tagfox-runner-scope-chip-x'));
       }
-      syncStatusBarParentScopeButton();
+      syncScopeBarButtons();
       renderedScopeBreadcrumbKey = currentScopeBreadcrumbKey();
       refreshTagFoxChromeTooltips(document.getElementById('breadcrumbBar'));
       fitRunnerBreadcrumb();
@@ -15120,25 +14890,6 @@
     ['baseUrl', 'maxResults'].forEach((id) => {
       document.getElementById(id).addEventListener('input', scheduleSearch);
     });
-    document.getElementById('btnEditScopePath')?.addEventListener('click', () => {
-      if (scopePathEditMode) void commitScopePathEditMode();
-      else enterScopePathEditMode();
-    });
-    document.getElementById('scopePathEdit')?.addEventListener('input', () => {
-      scopePathEditCommitError = false;
-      syncScopePathEditValidationVisual();
-    });
-    document.getElementById('scopePathEdit')?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        void commitScopePathEditMode();
-      }
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        cancelScopePathEditMode();
-      }
-    });
-    document.getElementById('btnStatusScopeParent')?.addEventListener('click', () => void goToParentScopeFolder());
     document.getElementById('btnScopeBarOpen')?.addEventListener('click', async (e) => {
       e.preventDefault();
       const raw = document.getElementById('rootFolder').value.trim();
@@ -15252,7 +15003,6 @@
     }
     syncViewRadioActiveFromDom();
     document.getElementById('btnClearQuery').addEventListener('click', () => clearSearchQuery());
-    document.getElementById('btnClearScope').addEventListener('click', () => clearSearchScope());
     document.getElementById('httpUser').addEventListener('input', scheduleSearch);
     document.getElementById('httpPassword').addEventListener('input', scheduleSearch);
 
@@ -16285,27 +16035,10 @@
       toggleSearchOptCheckbox('optWholeWord');
     }
 
-    /** True when scope has a parent path we can navigate to. */
-    function canGoToParentScopeFolder() {
-      const raw = document.getElementById('rootFolder').value.trim();
-      if (!raw) return false;
-      const norm = normalizeFolderPathForEverything(raw);
-      if (isWindowsDriveRootNorm(norm)) return true;
-      const parRaw = T.parentDir(norm);
-      const par = normalizeFolderPathForEverything(parRaw);
-      if (!par) return false;
-      if (par.replace(/[/\\]+$/, '').toLowerCase() === norm.replace(/[/\\]+$/, '').toLowerCase()) return false;
-      const maxN = getSearchScopeMaxFolderNorm();
-      if (maxN && !pathIsUnderOrEqualFolder(par, maxN)) return false;
-      return true;
-    }
-
-    function syncStatusBarParentScopeButton() {
+    /** The folder buttons (Explorer, copy, tags, terminal, quoted path, more) need a current folder. */
+    function syncScopeBarButtons() {
       const raw = document.getElementById('rootFolder').value.trim();
       const hasScope = !!normalizeFolderPathForEverything(raw);
-      const canUp = canGoToParentScopeFolder();
-      const b = document.getElementById('btnStatusScopeParent');
-      if (b) b.disabled = !canUp;
       for (const id of ['btnScopeBarOpen', 'btnScopeBarClip', 'btnScopeBarTags', 'btnScopeBarTerminal', 'btnScopeBarCopyQuoted', 'btnScopeBarMore']) {
         const el = document.getElementById(id);
         if (el) el.disabled = !hasScope;
@@ -16381,7 +16114,6 @@
       const norm = normalizeFolderPathForEverything(raw);
       // Alt+↑ on C:\: clear current folder so the query is not limited to that drive (Settings scope ceiling unchanged).
       if (isWindowsDriveRootNorm(norm)) {
-        leaveScopePathEditChrome();
         document.getElementById('rootFolder').value = '';
         saveSettings();
         renderScopeBreadcrumb();
@@ -17342,7 +17074,6 @@
     wireTagfoxSettingsSectionCollapsesOnce();
     loadSettings();
     setEverythingConnectionBadgeUnknown();
-    void refreshDriveRootsPickerGate();
     wireSearchScopeSettingsUiOnce();
     wireQuickTodoSettingsUiOnce();
     document.getElementById('settingsPanel')?.addEventListener('shown.bs.offcanvas', () => {
