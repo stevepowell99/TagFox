@@ -134,19 +134,41 @@ async function connect({ profile, maxResults = 60, scope = SCOPES.repo, disableA
   // The hook is up in about 1s, but a machine busy with other Electron starts has taken over 12s, which
   // failed whole test files before any check ran. So wait long, say when a start was slow, and on a real
   // timeout report what the page was doing, so a loaded machine and a broken renderer read differently.
-  await ev("location.hash = '#tagfoxtest'; location.reload(); 1");
+  // The target is listed under index.html while its first load may still be committing, so a hash set then can
+  // land on the outgoing document and its reload be swallowed by the pending load: index.html finishes without
+  // #tagfoxtest and the hook never appears, which is how every hung start looked (complete, no hash in the href).
+  // So set it as soon as the document evaluated in is index.html itself (still loading is fine), never the blank
+  // page before it. Letting a hook-less load finish is no cure: on a fresh profile, CDP key events then stop
+  // reaching the page, so key tests fail instead (_tmp probe, 25 October 2026). If a loaded index.html still
+  // turns out to lack the hash, set it again, and say so.
+  const ARM_EARLY = "location.href.includes('index.html') ? (location.hash = '#tagfoxtest', location.reload(), 'armed') : location.href";
+  const ARM = `(() => {
+    if (location.hash.includes('tagfoxtest')) return 'has-hash';
+    if (!location.href.includes('index.html') || document.readyState !== 'complete') return 'loading';
+    location.hash = '#tagfoxtest'; location.reload(); return 'armed';
+  })()`;
+  let arms = 0;
+  for (let t0 = Date.now(); Date.now() - t0 < 15000; ) {
+    try { if ((await ev(ARM_EARLY)) === 'armed') { arms = 1; break; } } catch (_) {}
+    await sleep(50);
+  }
   const hookT0 = Date.now();
   let ok = false;
+  let lastArm = hookT0;
   while (Date.now() - hookT0 < HOOK_WAIT_MS) {
-    try { if (await ev("typeof window.__tagfoxTest === 'object' && !!window.__tagfoxTest")) { ok = true; break; } } catch (_) {}
+    try {
+      if (await ev("typeof window.__tagfoxTest === 'object' && !!window.__tagfoxTest")) { ok = true; break; }
+      if (Date.now() - lastArm > 3000 && (await ev(ARM)) === 'armed') { arms++; lastArm = Date.now(); }
+    } catch (_) {}
     await sleep(150);
   }
   const hookMs = Date.now() - hookT0;
   if (!ok) {
     let page = 'page unreachable';
     try { page = JSON.stringify(await ev("({ href: location.href, readyState: document.readyState })")); } catch (_) {}
-    throw new Error(`#tagfoxtest hook never appeared after ${hookMs}ms (${page}); Electron stderr tail: ${stderr.slice(-600) || '(empty)'}`);
+    throw new Error(`#tagfoxtest hook never appeared after ${hookMs}ms, hash set ${arms} time(s) (${page}); Electron stderr tail: ${stderr.slice(-600) || '(empty)'}`);
   }
+  if (arms > 1) console.log(`(the test hash had to be set ${arms} times: the first load swallowed it)`);
   if (hookMs > HOOK_SLOW_MS) console.log(`(slow start: the test hook took ${hookMs}ms to appear)`);
 
   if (disableAutofill) await T('disableAutofill'); // headless viewport makes autofill page count nondeterministic

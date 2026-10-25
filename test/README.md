@@ -58,6 +58,13 @@ taken over 12s, so `connect()` waits up to 45s and prints `(slow start: …)` fo
 that never produces the hook fails with the page's URL and load state and the tail of Electron's stderr, so
 a loaded machine and a renderer that failed to load read differently.
 
+`connect()` sets the `#tagfoxtest` hash only once the document it evaluates in is `index.html` itself. The
+page target is listed under `index.html` while the window is still on the blank page before it, and a hash
+set there was dropped by the load that replaced it, so the page loaded without the hook and the wait ran out;
+under load that happened in about two starts out of three. Letting that hook-less load finish and then
+setting the hash is not a cure: on a fresh profile, CDP key events then stop reaching the page. If a loaded
+`index.html` still lacks the hash, `connect()` sets it again and prints `(the test hash had to be set …)`.
+
 `run-all.cjs` gives each run five minutes. A run that overstays is killed along with the Electron it
 launched and counted as failed, so one hung test cannot stall the suite. Each run's time is printed after
 it. After every run it also looks for an Electron still running on a test profile (a folder in the temp
