@@ -4,18 +4,20 @@
 // control comes first: on the first page a tick does run a search.
 // Run: node test/loadmore-regression.cjs
 
-const { connect, SCOPES } = require('./harness.cjs');
+const { connect, structuralProblems, SCOPES } = require('./harness.cjs');
 
 async function main() {
   const failures = [];
   const log = (...a) => console.log(...a);
   let drv;
   try {
-    // small page cap + a file-heavy scope so a second page exists (hasMore)
-    drv = await connect({ profile: 'tagfox-test-loadmore', scope: SCOPES.vendor, maxResults: 20, autoRefresh: true });
+    // Runner asks for at least RUNNER_RANK.fetchCap (300) rows a page, so the query is a file type found
+    // thousands of times under the repo (node_modules included), which leaves a second page (hasMore). Typing
+    // is what makes Runner search below the folder: an empty box lists only the folder's own contents.
+    drv = await connect({ runner: true, profile: 'tagfox-test-loadmore', scope: SCOPES.repo, autoRefresh: true });
     const { T, settle } = drv;
 
-    await T('setView', true, 'files');
+    await T('setQuery', '.js');
     let s = await settle('search');
     const page1 = s.lastRows;
     log('page 1:', page1, 'rows');
@@ -27,11 +29,14 @@ async function main() {
     const grown = s.lastRows;
     log('after 2x load-more:', grown, 'rows');
     if (!(grown > page1)) failures.push(`load-more did not add rows (page1=${page1}, grown=${grown})`);
-    if (s.tbodyBase < grown) failures.push(`render mismatch: tbody=${s.tbodyBase} lastRows=${grown}`);
+    const p1 = structuralProblems(s);
+    if (p1.length) failures.push(`[after load-more] ${p1.join(' | ')}`);
     await T('autoTick'); t = await settle('tick after load-more');
     log('after a tick:', t.lastRows, 'rows, tbody', t.tbodyBase);
     if (t.searchRunSeq !== s.searchRunSeq) failures.push(`a tick after load-more ran a search (seq ${s.searchRunSeq} -> ${t.searchRunSeq})`);
-    if (t.lastRows !== grown || t.tbodyBase < grown) failures.push(`the grown rows did not survive the tick: lastRows ${grown} -> ${t.lastRows}, tbody ${t.tbodyBase}`);
+    if (t.lastRows !== grown) failures.push(`the grown rows did not survive the tick: lastRows ${grown} -> ${t.lastRows}`);
+    const p2 = structuralProblems(t);
+    if (p2.length) failures.push(`[after the tick] ${p2.join(' | ')}`);
   } catch (e) {
     failures.push('ERROR: ' + (e.stack || e.message || String(e)));
   } finally {

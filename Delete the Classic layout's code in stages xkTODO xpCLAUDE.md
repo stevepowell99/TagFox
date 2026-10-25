@@ -21,7 +21,7 @@ Read-only survey by a subagent at main `74c8ac1`; line numbers are approximate. 
 | Files and folders / folders only / files only | `optRvAll`, `optRvDirsOnly`, `optRvFilesOnly` radios | Partial: `/folders`, `/files` | `resultsContentMode` |
 | Match options | toolbar | Partial: `/` commands and Ctrl keys | `searchOptionsFromUI`, `toggleSearchOptCheckbox` |
 | Recency 1h / 1d / 1w / 1m / 1y / All | toolbar radios | Partial: `/` has all, 1h, 1d, 1w; 1m and 1y only by Ctrl+R cycling | `setRecencyFilterMode` |
-| Sort by path, oldest first, or Z-A | nothing on screen sets one, only a saved Classic value; folder rows take a tint while Path is the sort | No: smart, date, name, largest or smallest first | `sortColumn`/`sortAsc` through `applySearchState`, `syncSortPathClass` |
+| Sort by path, oldest first, or Z-A | nothing on screen sets one. A fresh profile starts on Path, A-Z (`freshProfileSortsByPath`), so every test that opens in Classic runs on a path sort; otherwise only a saved Classic value sets one. Folder rows take a tint while Path is the sort | No: smart, date, name, largest or smallest first; Runner replaces a fresh profile's Path sort with its own at startup | `sortColumn`/`sortAsc` through `applySearchState`, `syncSortPathClass`, `freshProfileSortsByPath` |
 
 ### Shelf
 
@@ -34,7 +34,7 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 ### Viewer, Settings, global shortcuts
 
 - Viewer modes and the splitter `#splitProps` are shared. The divider sets one width (`runnerViewerPx`, `LS.runnerViewerWidthPx`), and Runner holds the Viewer at a third until the divider is dragged.
-- Settings: only "Open the shelf folder" is Classic's. **Folder groups** (Search results) frames a selected folder with the rows under it that follow it, in both layouts.
+- Settings: nothing in it is Classic's ("Open the shelf folder" went with the Shelf to both layouts). **Folder groups** (Search results) frames a selected folder with the rows under it that follow it, in both layouts.
 - Ctrl+Alt+Space and Quick TODO are shared. **Ctrl+Shift+Space** (`openRecentChanges`) resets the search in place in both layouts; Runner's branch is guarded in `runner-layout.cjs`, and Classic's reset (every option off but Match path, subfolders and everything shown) in `recent-changes.cjs`.
 
 ## Classic code Runner depends on
@@ -52,14 +52,15 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 ## Tests
 
 - **Classic only:** `smoke`, `fuzz`, `recent-changes`.
-- **Runner only:** the `runner-*` tests, `viewer-runner` and `splitter-drag`, several with Classic round-trip checks that would need rewriting.
+- **Runner only:** the `runner-*` tests, `viewer-runner` and `splitter-drag`, several with Classic round-trip checks that would need rewriting. Through the harness's `runner` option, also `delete-hides-row`, `gmist-start-guard`, `loadmore-regression`, `machine-features`, `md-preview-no-write`, `menu-enter`, `page-health`, `quiet-refresh` and `zoom-restore`.
 - **Both:** `hotkey-raise-select`, `hover-preview`, `row-actions-keys`, `window-chrome`.
-- **Layout-neutral but run in Classic:** `menu-enter` (the ▾ subfolder menu), `md-preview-no-write`, `quiet-refresh`, `loadmore-regression`, `delete-hides-row`, `restart-in-terminal`, `gmist-start-guard`, `help-build`, `tags-dates`.
+- **No layout:** `restart-in-terminal`, `help-build` and `tags-dates` do not go through the harness's `connect`.
 - `test/README.md` omits tags-dates, repro-crash, gmist-start-guard and hover-preview.
 
 ## Stages named so far
 
-- **Move the rest of Classic's key handler into `RUNNER_KEYS`:** the keys in the Keys bullet above. `hotkey-raise-select`, `row-actions-keys` and `menu-enter` press keys in Classic, so they move to Runner in the same stage.
+- **Test instances open in Runner:** `smoke` and `recent-changes` move to Runner, then `fuzz`, with counters that prove it still exercises typing, refresh ticks, load-more and the file operations; then the Classic halves of the Both tests and the round trips in the `runner-*` tests go; then a test instance opens in Runner from its first load and the harness's `runner` option goes.
+- **Move the rest of Classic's key handler into `RUNNER_KEYS`:** the keys in the Keys bullet above. `hotkey-raise-select` and `row-actions-keys` press keys in Classic, so they move to Runner in the same stage.
 - **`runSearch`'s `eventKind`** reaches only the search debug log (`runSearch.start`), through `scheduleSearch` and `runSearchNow`, so the argument can go from every call site.
 
 ## Decisions before any deletion

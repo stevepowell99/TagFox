@@ -43,7 +43,7 @@ async function main() {
 
   let drv;
   try {
-    drv = await connect({ profile: 'tagfox-test-machine-features', scope: root });
+    drv = await connect({ runner: true, profile: 'tagfox-test-machine-features', scope: root });
     console.log('Hook ready (this machine as it is).');
     await drv.settle('startup');
     let r = await rowButtons(drv);
@@ -57,7 +57,7 @@ async function main() {
       console.log('  SKIP no-gmist case: this checkout carries a bundled gmist (_gmist), so TAGFOX_GMIST_FORCE_BUNDLED still finds one');
     } else {
       process.env.TAGFOX_GMIST_FORCE_BUNDLED = '1';
-      drv = await connect({ profile: 'tagfox-test-machine-features-none', scope: root });
+      drv = await connect({ runner: true, profile: 'tagfox-test-machine-features-none', scope: root });
       console.log('Hook ready (no gmist: checkout skipped, no bundle).');
       await drv.settle('startup');
       r = await rowButtons(drv);

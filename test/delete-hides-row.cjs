@@ -12,7 +12,7 @@ async function main() {
   const log = (...a) => console.log(...a);
   let drv;
   try {
-    drv = await connect({ profile: 'tagfox-test-delete-hides-row', scope: SCOPES.repo });
+    drv = await connect({ runner: true, profile: 'tagfox-test-delete-hides-row', scope: SCOPES.repo });
     const { T, diag, settle } = drv;
     log('Hook ready.');
 

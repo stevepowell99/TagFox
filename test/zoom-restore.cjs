@@ -23,7 +23,7 @@ async function main() {
   };
   let drv;
   try {
-    drv = await connect({ profile: 'tagfox-test-zoom', scope: SCOPES.repo });
+    drv = await connect({ runner: true, profile: 'tagfox-test-zoom', scope: SCOPES.repo });
     console.log('Hook ready.');
     await drv.settle('startup');
 

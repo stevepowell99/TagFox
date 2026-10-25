@@ -17,7 +17,7 @@ async function main() {
   const failures = [];
   let drv;
   try {
-    drv = await connect({ profile: 'tagfox-test-menu-enter', scope: SCOPES.repo });
+    drv = await connect({ runner: true, profile: 'tagfox-test-menu-enter', scope: SCOPES.repo });
     console.log('Hook ready.');
     await drv.settle('startup');
 
