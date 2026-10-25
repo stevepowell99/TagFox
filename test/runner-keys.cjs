@@ -160,7 +160,7 @@ async function main() {
     await letter('z');
     s = await R();
     const modal = await drv.ev(`!!document.querySelector('.modal.show')`);
-    check(s.query === 'tz' && s.focusInBox && !modal, `letters typed off the box go into it, not to Classic's shortcuts (box "${s.query}", dialog ${modal})`);
+    check(s.query === 'tz' && s.focusInBox && !modal, `letters typed off the box go into it and open nothing (box "${s.query}", dialog ${modal})`);
 
     // A held Backspace keeps the folder; a fresh press drops it.
     await go(alpha, 'ab');
@@ -174,13 +174,6 @@ async function main() {
     await drv.settle('backspace fresh');
     check(!(await R()).scope, 'a fresh Backspace in the empty box drops the folder');
 
-    // Ctrl+L is Classic's recent-folders menu; Runner leaves it unbound, so nothing opens, seen or unseen.
-    await go(root);
-    await focusBox();
-    await letter('l', 2);
-    s = await R();
-    const menuOpen = await drv.ev(`!!document.querySelector('.dropdown-menu.show')`);
-    check(!s.cmdListOpen && !menuOpen && s.focusInBox, `Ctrl+L opens nothing in Runner (list ${s.cmdListOpen}, menu ${menuOpen})`);
     await drv.T('configure', { rootFolder: many });
     await drv.T('runSearchNow', 'identity');
     await drv.settle('many');
@@ -220,6 +213,16 @@ async function main() {
     await key('Tab', 'Tab', 9);
     s = await R();
     check(s.focusInList && norm(s.selected) === norm(first), 'Tab moves the focus to the list, keeping the selection');
+    // Home and End alone, in the list.
+    await key('ArrowDown', 'ArrowDown', 40);
+    await key('ArrowDown', 'ArrowDown', 40);
+    await key('Home', 'Home', 36);
+    s = await R();
+    check(s.focusInList && norm(s.selected) === norm(first), 'Home in the list selects the first row');
+    await key('End', 'End', 35);
+    s = await R();
+    check(s.focusInList && norm(s.selected) === norm(s.rows[s.rows.length - 1]), 'End in the list selects the last row');
+    await key('Home', 'Home', 36);
     await key('ArrowDown', 'ArrowDown', 40);
     const before = (await R()).checked;
     await key(' ', 'Space', 32, 0, ' ');
@@ -239,6 +242,15 @@ async function main() {
     await drv.settle('left');
     s = await R();
     check(norm(into) !== norm(many) && norm(s.scope) === norm(many), `Right goes into the folder and Left back up (${path.basename(into)})`);
+    // Left with the focus on neither the box nor the list (a button pressed last, say) goes up too.
+    await key('ArrowRight', 'ArrowRight', 39);
+    await drv.settle('right again');
+    const intoAgain = (await R()).scope;
+    await drv.ev(`document.activeElement && document.activeElement.blur(); 1`);
+    await key('ArrowLeft', 'ArrowLeft', 37);
+    await drv.settle('left off the box');
+    s = await R();
+    check(norm(intoAgain) !== norm(many) && norm(s.scope) === norm(many), `Left with the focus off the box and the list goes up (${path.basename(intoAgain)})`);
 
     // Alt+P hides and shows the Viewer.
     const viewerShown = () => drv.ev(`getComputedStyle(document.getElementById('propsAside')).display !== 'none'`);

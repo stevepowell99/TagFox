@@ -4409,9 +4409,9 @@
       },
       {
         group: 'Move and select',
-        keys: ['Ctrl+Home', 'Ctrl+End'],
-        does: 'First or last row',
-        when: (c) => c.mod && !c.alt && !c.shift && (c.key === 'Home' || c.key === 'End'),
+        keys: ['Ctrl+Home', 'Ctrl+End', 'Home', 'End'],
+        does: 'First or last row (Home and End alone: outside the search box)',
+        when: (c) => (c.key === 'Home' || c.key === 'End') && ((c.mod && !c.alt && !c.shift) || (c.plain && !c.inBox)),
         run: (c) => moveResultsSelectionToEdge(c.key === 'End'),
       },
       {
@@ -4452,7 +4452,7 @@
         group: 'Folders',
         keys: ['←'],
         does: 'Up to the parent folder, with the one you left selected (from the search box: with the caret at the start)',
-        when: (c) => c.plain && !c.shift && c.key === 'ArrowLeft' && (c.inBox ? c.caretStart : c.inList),
+        when: (c) => c.plain && !c.shift && c.key === 'ArrowLeft' && (!c.inBox || c.caretStart),
         run: (c) => {
           if (!c.held) runnerGoUp();
         },
@@ -4622,8 +4622,7 @@
         return consume();
       }
       if (c.inBox || !c.plain) return false;
-      /* Typing with the focus anywhere but a text field goes into the box, so Classic's one-letter
-         shortcuts (t opens tags, s, f, r...) never fire unseen in Runner. */
+      /* Typing with the focus anywhere but a text field goes into the box. */
       if (e.key === '/') {
         focusQueryBox(false);
         openRunnerCmdList(c.q.value);
@@ -5184,35 +5183,6 @@
     function syncSortPathClass() {
       const rt = document.getElementById('resultsTable');
       if (rt) rt.classList.toggle('results-sort-path', sortColumn === 'path');
-    }
-
-    /** Switching column sets the default direction (size/modified = largest/newest first); the same column again toggles it. */
-    function applySortColumnKey(key, statusNoteAfterSearch) {
-      if (!['name', 'path', 'date_modified', 'size'].includes(key)) return;
-      if (sortColumn === key) sortAsc = !sortAsc;
-      else {
-        sortColumn = key;
-        // Size / Modified: first activation = largest / newest first; Name & Path = A→Z.
-        sortAsc = key !== 'size' && key !== 'date_modified';
-      }
-      saveSettings();
-      syncSortPathClass();
-      commitSearchHistoryNow();
-      void (async () => {
-        try {
-          await runSearchNow();
-        } finally {
-          if (statusNoteAfterSearch) {
-            const st = document.getElementById('statusMain');
-            if (st) {
-              const cur = String(st.textContent || '').trim();
-              st.textContent = cur ? cur + ' — ' + statusNoteAfterSearch : statusNoteAfterSearch;
-            }
-            pulseStatusBarBrief();
-            flashRunnerStatus();
-          }
-        }
-      })();
     }
 
     /** Status strip: brief primary glow (matches pulse-hint accent; one-shot). */
@@ -15838,16 +15808,6 @@
       }
     }
 
-    /** Toggle between two radios in a pair + trigger the save/search cycle. */
-    function toggleViewRadioPair(idA, idB) {
-      const a = document.getElementById(idA);
-      const b = document.getElementById(idB);
-      if (!a || !b) return;
-      const target = a.checked ? b : a;
-      target.checked = true;
-      target.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-
     /** Advanced → Whole word: flip + schedule search (same as clicking the checkbox). */
     /** Flip a search-option checkbox and fire its change handler (whole word, match path, hide special, hide ~). */
     function toggleSearchOptCheckbox(id) {
@@ -15990,114 +15950,11 @@
       await applySearchScopeAndRefresh(parentForScope);
     }
 
-    /**
-     * ← on a results row: always moves the current folder.
-     * - Item is a direct child of the current folder → parent of current folder.
-     * - Item lies deeper → scope to the first subfolder under the current folder on the path to the item.
-     * - No current folder set → same as Ctrl+Enter (scope to parent of the row). No selection → parent of current folder only.
-     */
-    async function keyboardArrowLeftChangeScopeFromResults() {
-      if (!selectedFullPath) {
-        await goToParentScopeFolder();
-        return;
-      }
-      const scopeNorm = normalizeFolderPathForEverything(document.getElementById('rootFolder').value.trim()).replace(/[/\\]+$/, '');
-      if (!scopeNorm) {
-        await keyboardScopeParentOfSelection();
-        return;
-      }
-      const row = selectedRow || findRowByFullPath(selectedFullPath);
-      const fp = row ? fullPathForRow(row) : selectedFullPath;
-      const par = normalizeFolderPathForEverything(T.parentDir(String(fp || '').trim()));
-      const sk = pathNormKey(scopeNorm);
-      const pk = pathNormKey(par);
-      if (pk === sk) {
-        await goToParentScopeFolder();
-        return;
-      }
-      if (!pk.startsWith(sk + '\\')) {
-        await keyboardScopeParentOfSelection();
-        return;
-      }
-      const rel = pathRelativeToScopeDir(par);
-      const firstSeg = String(rel || '')
-        .split(/[/\\]/)
-        .filter(Boolean)[0];
-      if (!firstSeg) {
-        await goToParentScopeFolder();
-        return;
-      }
-      const sep = par.includes('/') && !par.includes('\\') ? '/' : '\\';
-      const sub = normalizeFolderPathForEverything(scopeNorm + sep + firstSeg);
-      await applySearchScopeAndRefresh(sub);
-    }
-
-    /** t / Ctrl+T: tags for checked rows only. */
+    /** Tags for the checked rows only. */
     function keyboardOpenTagsModal() {
       const bulk = getCheckedPathsArr();
       if (bulk.length > 1) openTagModalBulk(bulk);
       else if (bulk.length === 1) openTagModal(bulk[0]);
-    }
-
-    /** Replace tags on checked rows exactly (file renames). */
-    async function keyboardReplaceCheckedTagsExact(nextTags, busyHint, doneHint) {
-      if (tagRenameBusy) return false;
-      const paths = getCheckedPathsArr();
-      if (!paths.length) return false;
-      const dedupedTags = [];
-      const seenTags = new Set();
-      for (const raw of nextTags || []) {
-        const display = String(raw || '').trim();
-        if (!display) continue;
-        const key = display.toLowerCase();
-        if (seenTags.has(key)) continue;
-        seenTags.add(key);
-        dedupedTags.push(display);
-      }
-      tagRenameBusy = true;
-      setStatusMain(busyHint || 'Updating tags...');
-      try {
-        const rootPrefix = rootPrefixValue();
-        const pathPairs = [];
-        let any = false;
-        for (const fp of paths) {
-          const base = T.baseName(fp);
-          const parent = T.parentDir(fp);
-          const sep = fp.includes('/') ? '/' : '\\';
-          const toPath = parent ? parent + sep + T.buildTaggedComponent(base, dedupedTags) : T.buildTaggedComponent(base, dedupedTags);
-          const fromN = fp.replace(/[/\\]+$/, '').toLowerCase();
-          const toN = toPath.replace(/[/\\]+$/, '').toLowerCase();
-          if (fromN === toN) continue;
-          any = true;
-          const res = await window.tagBrowser.renamePath({ fromPath: fp, toPath, rootPrefix });
-          if (!res || !res.ok) {
-            setStatusMain((res && res.error) || 'Rename failed on ' + fp);
-            return false;
-          }
-          pathPairs.push({ from: fp, to: toPath });
-          if (selectedFullPath && selectedFullPath.replace(/[/\\]+$/, '').toLowerCase() === fromN) {
-            selectedFullPath = toPath;
-            renderScopeBreadcrumb();
-          }
-        }
-        if (!any) {
-          setStatusMain('No change.');
-          return true;
-        }
-        recordRenameUndo(pathPairs, 'edit tags on ' + pathPairs.length + ' item(s)');
-        await refreshAfterTagsSaved(pathPairs);
-        setStatusMain(doneHint || 'Tags updated.');
-        return true;
-      } catch (e) {
-        setStatusMain(String(e.message || e));
-        return false;
-      } finally {
-        tagRenameBusy = false;
-      }
-    }
-
-    async function keyboardRemoveCheckedTags() {
-      return keyboardReplaceCheckedTagsExact([], 'Removing tags...', 'Tags removed.');
     }
 
     function toggleKeyboardRowCheckbox() {
@@ -16279,25 +16136,12 @@
       }
 
       const modC = (e.ctrlKey || e.metaKey) && !e.altKey;
-      const isPlainSearchFocusToggleKey =
-        e.key === '/' ||
-        e.code === 'NumpadDivide' ||
-        (e.code === 'Slash' && !e.shiftKey);
       if (modC && !e.shiftKey && (e.key === '/' || e.code === 'Slash')) {
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
         e.preventDefault();
         const hm = document.getElementById('helpModal');
         if (hm) bootstrap.Modal.getOrCreateInstance(hm).show();
-        return;
-      }
-      if (modC && !e.shiftKey && (e.key === 'u' || e.key === 'U')) {
-        if (document.querySelector('.modal.show')) return;
-        const q = document.getElementById('query');
-        if (e.target === q) { e.preventDefault(); q.blur(); return; }
-        if (isTypingTarget(e.target)) return;
-        e.preventDefault();
-        focusQueryBox(true);
         return;
       }
       if (modC && !e.shiftKey && (e.key === ',' || e.code === 'Comma')) {
@@ -16374,28 +16218,6 @@
         clearSearchScopeAndTagRecencyFilters();
         return;
       }
-      if (modC && e.key === 'Home') {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        clearSearchScope();
-        return;
-      }
-      if (modC && !e.shiftKey && (e.key === 'f' || e.key === 'F')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        const cl = ['optRvAll', 'optRvDirsOnly', 'optRvFilesOnly'];
-        const ci = cl.findIndex((id) => document.getElementById(id)?.checked);
-        const nextId = cl[(ci >= 0 ? ci : 0) + 1 >= cl.length ? 0 : ci + 1];
-        const t = document.getElementById(nextId);
-        if (t) {
-          t.checked = true;
-          syncViewRadioActiveFromDom();
-          t.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-        return;
-      }
       if (modC && !e.shiftKey && (e.key === 'w' || e.key === 'W')) {
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
@@ -16403,25 +16225,11 @@
         toggleWholeWordMatch();
         return;
       }
-      if (modC && !e.shiftKey && (e.key === 'p' || e.key === 'P')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        toggleSearchOptCheckbox('optPath');
-        return;
-      }
       if (modC && !e.shiftKey && (e.key === '.' || e.code === 'Period')) {
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
         e.preventDefault();
         toggleSearchOptCheckbox('optHideSpecial');
-        return;
-      }
-      if (modC && !e.shiftKey && (e.key === 't' || e.key === 'T')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        toggleSearchOptCheckbox('optHideTilde');
         return;
       }
       if (modC && !e.shiftKey && (e.key === 'j' || e.key === 'J')) {
@@ -16436,20 +16244,6 @@
         if (blockAppShortcutInTextField(e.target)) return;
         e.preventDefault();
         moveResultsSiblingFolder(-1);
-        return;
-      }
-      if (modC && !e.shiftKey && (e.key === 'm' || e.key === 'M')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        applySortColumnKey('date_modified');
-        return;
-      }
-      if (modC && !e.shiftKey && (e.key === 'n' || e.key === 'N')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        applySortColumnKey('name');
         return;
       }
       if (modC && !e.shiftKey && (e.key === 'r' || e.key === 'R')) {
@@ -16471,13 +16265,6 @@
         toggleRecencyAllVsHour();
         return;
       }
-      if (modC && !e.shiftKey && (e.key === 's' || e.key === 'S')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        toggleViewRadioPair('optRvSubsOn', 'optRvSubsOff');
-        return;
-      }
       if (modC && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
         if (document.querySelector('.modal.show')) return;
         // Stricter than blockAppShortcutInTextField: also yield in #query, so Ctrl+Z is native text undo in every input.
@@ -16486,25 +16273,11 @@
         void runUndo();
         return;
       }
-      if (modC && !e.shiftKey && (e.key === 't' || e.key === 'T')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        keyboardOpenTagsModal();
-        return;
-      }
       if (modC && (e.key === 'h' || e.key === 'H')) {
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
         e.preventDefault();
         openBulkRenameModal();
-        return;
-      }
-      if (modC && e.key === 'Enter' && !e.shiftKey) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        void keyboardScopeParentOfSelection();
         return;
       }
       if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowUp' || e.code === 'ArrowUp')) {
@@ -16548,17 +16321,6 @@
         if (blockAppShortcutInTextField(e.target)) return;
         e.preventDefault();
         togglePropsTheaterMode();
-        return;
-      }
-
-      /* Plain / must run before the Ctrl/Meta/Alt bail-out: AltGr (many layouts) sets ctrl+alt and would block /. */
-      if (isPlainSearchFocusToggleKey) {
-        if (document.querySelector('.modal.show')) return;
-        const q = document.getElementById('query');
-        if (e.target === q) { e.preventDefault(); q.blur(); return; }
-        if (isTypingTarget(e.target)) return;
-        e.preventDefault();
-        focusQueryBox(true);
         return;
       }
 
@@ -16616,17 +16378,6 @@
         return;
       }
 
-      if (e.key === 'Home') {
-        e.preventDefault();
-        moveResultsSelectionToEdge(false);
-        return;
-      }
-      if (e.key === 'End') {
-        e.preventDefault();
-        moveResultsSelectionToEdge(true);
-        return;
-      }
-
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         if (e.shiftKey) moveResultsSelectionWithShift(1);
@@ -16639,18 +16390,8 @@
         else moveResultsSelection(-1);
         return;
       }
-      if (e.key === 'j') {
-        e.preventDefault();
-        moveResultsSiblingFolder(1);
-        return;
-      }
-      if (e.key === 'k') {
-        e.preventDefault();
-        moveResultsSiblingFolder(-1);
-        return;
-      }
 
-      /* → on a folder row: scope into that folder; ← : current folder up or into first subfolder on path (see keyboardArrowLeftChangeScopeFromResults) */
+      /* → on a folder row: scope into that folder. */
       if (e.key === 'ArrowRight') {
         if (!selectedFullPath) return;
         const row = selectedRowForActions();
@@ -16660,63 +16401,7 @@
         }
         return;
       }
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        void keyboardArrowLeftChangeScopeFromResults();
-        return;
-      }
 
-      /* f / s: toggle content / subfolders radio pairs */
-      if (e.key === 'f') {
-        e.preventDefault();
-        const cl = ['optRvAll', 'optRvDirsOnly', 'optRvFilesOnly'];
-        const ci = cl.findIndex((id) => document.getElementById(id)?.checked);
-        const nextId = cl[(ci >= 0 ? ci : 0) + 1 >= cl.length ? 0 : ci + 1];
-        const t = document.getElementById(nextId);
-        if (t) {
-          t.checked = true;
-          syncViewRadioActiveFromDom();
-          t.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-        return;
-      }
-      if (e.key === 's') { e.preventDefault(); toggleViewRadioPair('optRvSubsOn', 'optRvSubsOff'); return; }
-      if (e.key === 'w' || e.key === 'W') {
-        e.preventDefault();
-        toggleWholeWordMatch();
-        return;
-      }
-      if (e.key === 'p' || e.key === 'P') { e.preventDefault(); toggleSearchOptCheckbox('optPath'); return; }
-      if (e.key === '.' || e.code === 'Period') { e.preventDefault(); toggleSearchOptCheckbox('optHideSpecial'); return; }
-      if (e.key === 't' || e.key === 'T') { e.preventDefault(); toggleSearchOptCheckbox('optHideTilde'); return; }
-      if (e.key === 'r') {
-        e.preventDefault();
-        const order = ['1h', '1d', '1w', '1m', '1y', 'all'];
-        const cur = recencyFilterMode();
-        const next = order[(order.indexOf(cur) + 1) % order.length];
-        setRecencyFilterMode(next);
-        const nextEl = document.querySelector(`input[name="tagFoxRecencyFilter"][value="${next}"]`);
-        nextEl?.dispatchEvent(new Event('change', { bubbles: true }));
-        return;
-      }
-      /* z / m / n: sort by size / modified / name. */
-      if (e.key === 'z') {
-        e.preventDefault();
-        applySortColumnKey('size');
-        return;
-      }
-      if (e.key === 'm') {
-        e.preventDefault();
-        applySortColumnKey('date_modified');
-        return;
-      }
-      if (e.key === 'n') {
-        e.preventDefault();
-        applySortColumnKey('name');
-        return;
-      }
-      if (e.key === 'T') { e.preventDefault(); void keyboardRemoveCheckedTags(); return; }
-      if (e.key === 't') { e.preventDefault(); keyboardOpenTagsModal(); return; }
       if (e.key === 'Delete') {
         e.preventDefault();
         void keyboardRecycleConfirm();
