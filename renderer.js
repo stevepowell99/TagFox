@@ -3668,6 +3668,7 @@
       localStorage.setItem(LS.toggleOpens, on ? 'runner' : 'classic');
       document.body.classList.toggle('tagfox-runner', on);
       placeRestartButtonForLayout(on);
+      placeStatusLineForLayout(on);
       closeRunnerCmdList(false);
       setRunnerOptsPanelOpen(false);
       renderRunnerScopeChip();
@@ -3677,19 +3678,33 @@
       refreshRunnerWindowsRecent();
     }
 
+    /** Moves an element into Runner's layout (into runnerParent, before runnerBefore or at the end), or back
+        to where Classic's markup put it. */
+    function placeForLayout(el, on, runnerParent, runnerBefore) {
+      if (!el) return;
+      if (!el._classicHome) el._classicHome = { parent: el.parentElement, next: el.nextElementSibling };
+      if (on) {
+        if (runnerParent) runnerParent.insertBefore(el, runnerBefore && runnerBefore.parentElement === runnerParent ? runnerBefore : null);
+      } else {
+        const { parent, next } = el._classicHome;
+        parent.insertBefore(el, next && next.parentElement === parent ? next : null);
+      }
+    }
+
     /** Classic's header holds the Restart button and Runner has no header, so in Runner the button sits in
         the box, before the rank note. It shows only when TagFox's own code has changed since it started. */
     function placeRestartButtonForLayout(on) {
-      const btn = document.getElementById('btnRestartTagFox');
-      if (!btn) return;
-      if (!btn._classicHome) btn._classicHome = { parent: btn.parentElement, next: btn.nextElementSibling };
-      if (on) {
-        const note = document.getElementById('runnerRankNote');
-        if (note && note.parentElement) note.parentElement.insertBefore(btn, note);
-      } else {
-        const { parent, next } = btn._classicHome;
-        parent.insertBefore(btn, next && next.parentElement === parent ? next : null);
-      }
+      const note = document.getElementById('runnerRankNote');
+      placeForLayout(document.getElementById('btnRestartTagFox'), on, note && note.parentElement, note);
+    }
+
+    /** Runner has no header and no status bar along the window's foot: its status line sits between the list
+        and the Shelf, lined up with both, and holds the header's rotating tip until a message comes. */
+    function placeStatusLineForLayout(on) {
+      const bar = document.getElementById('tagfoxNavbarStatus');
+      const shelf = document.getElementById('appShelf');
+      placeForLayout(bar, on, shelf && shelf.parentElement, shelf);
+      placeForLayout(document.getElementById('navbarDidYouKnow'), on, bar, null);
     }
 
     /** Switch layouts (the test hook only: Runner is the one layout on screen) and re-run the search. */
@@ -5821,17 +5836,18 @@
     function escStatusAttrForStatus(s) {
       return escStatusHtmlForStatus(s).replace(/"/g, '&quot;');
     }
+    /** A tip segment: a string, { kbd } for a key, or { code } for text typed into the box. */
     function didYouKnowSegmentsPlain(segments) {
-      return segments.map((seg) => (typeof seg === 'string' ? seg : seg.kbd)).join('');
+      return segments.map((seg) => (typeof seg === 'string' ? seg : seg.kbd || seg.code)).join('');
     }
     function didYouKnowSegmentsHtml(segments) {
       return segments
         .map((seg) =>
           typeof seg === 'string'
             ? escStatusHtmlForStatus(seg)
-            : '<kbd class="tagfox-navbar-tip-kbd">' +
-              escStatusHtmlForStatus(seg.kbd) +
-              '</kbd>'
+            : seg.kbd
+              ? '<kbd class="tagfox-navbar-tip-kbd">' + escStatusHtmlForStatus(seg.kbd) + '</kbd>'
+              : '<code class="tagfox-navbar-tip-code">' + escStatusHtmlForStatus(seg.code) + '</code>'
         )
         .join('');
     }
@@ -12615,15 +12631,11 @@
       if (!aside || !rot) return;
       // Pre-rot minWidth ≈ column height so ±90° strip spans the shelf; match results column height (no vertical inset — aligns with results card / table).
       rot.style.minWidth = '';
-      /* Runner's strip lies flat under the list and sizes itself; the status line sits just above it. */
+      /* Runner's strip lies flat under the list and sizes itself. */
       if (isRunnerMode()) {
         aside.style.width = '';
-        const box = aside.getBoundingClientRect();
-        const bottomGap = box.height > 0 ? Math.max(0, window.innerHeight - box.top) : 0;
-        document.body.style.setProperty('--tagfox-runner-shelf-h', Math.ceil(bottomGap) + 'px');
         return;
       }
-      document.body.style.removeProperty('--tagfox-runner-shelf-h');
       const parent = aside.closest('.results-with-shelf') || aside.parentElement;
       const h = parent ? parent.clientHeight : 0;
       if (h > 48) rot.style.minWidth = Math.max(48, h) + 'px';
@@ -12758,8 +12770,6 @@
       if (!aside || aside.dataset.shelfDropBound === '1') return;
       aside.dataset.shelfDropBound = '1';
       window.addEventListener('resize', syncShelfAsideWidth);
-      /* Runner's strip changes height when its chips rewrap (Alt+P widens the list), which no resize event reports. */
-      if (window.ResizeObserver) new ResizeObserver(() => isRunnerMode() && syncShelfAsideWidth()).observe(aside);
 
       function shelfAllowsDt(dt) {
         return dataTransferHasTagBrowserOrFiles(dt);
@@ -20874,6 +20884,9 @@
         machineFeatures: () => machineFeaturesSeen,
         /* Redraw the Shelf from its folder now, and size it, rather than wait for a disk-change event. */
         renderShelf: () => renderShelf().then(() => (syncShelfAsideWidth(), true)),
+        /* Every key Runner's key table names, as it spells them, and the next tip shown now. */
+        runnerKeyNames: () => RUNNER_KEYS.flatMap((k) => k.keys),
+        showNextTip: () => (showNextDidYouKnowTip(), true),
         /* Drive the real disk-mutation handler (the IPC callback) so tests can assert refresh behaviour. */
         mutate: (payload) => onPathsMutated(payload),
         /* Simulate the renderer side of a delete: tombstone the paths + repaint the active pane. Used by

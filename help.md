@@ -138,7 +138,7 @@ Three icon-pair switches next to the search box — combine them freely:
 - Inside a folder, its path runs along a thin line above the box. Click any folder in it to go there, or the › after a folder to pick one of the folders inside it. A long path shows its last few folders after `…`; point at the `…` for the whole path.
 - Each row shows the name, the folder it is in, the size and when it last changed. Point at the time for the full date, or at a name with tags in front of it for the name on disk.
 - Point at the folder's chip at the start of the box for its buttons: show in Explorer, copy, tags, terminal, copy the quoted path, and the full menu.
-- Runner has no status bar. Settings that differ from the defaults show as chips under the box, and a message (an error, what an action did, the F5 report) appears along the bottom for a few seconds; point at it to keep it there.
+- Settings that differ from the defaults show as chips under the box. The line between the list and the Shelf shows a tip, which changes every few minutes. A message (an error, what an action did, the F5 report) takes its place for a few seconds; point at it to keep it there.
 - **Settings → Hide the window's title bar** gives the list the space Windows' title bar and menu took, in either layout, from the next start. The minimise, maximise and close buttons stay at the top right; drag the window by the strip along the top.
 
 ### ⌨️ Keys
