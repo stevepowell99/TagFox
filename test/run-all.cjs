@@ -17,7 +17,6 @@ const runs = [
   { name: 'smoke', args: ['smoke.cjs'] },
   { name: 'delete hides its row', args: ['delete-hides-row.cjs'] },
   { name: 'load-more regression', args: ['loadmore-regression.cjs'] },
-  { name: 'column resize', args: ['column-resize.cjs'] },
   { name: 'splitter drag', args: ['splitter-drag.cjs'] },
   { name: 'refresh visibility', args: ['refresh-visible.cjs'] },
   { name: 'quiet auto-refresh', args: ['quiet-refresh.cjs'] },

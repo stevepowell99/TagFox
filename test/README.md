@@ -9,7 +9,6 @@ The results area is one pane (see [Search concurrency](../README.md#search-concu
 - The single canonical results DOM (`tbody`, `resultsTable`, and so on) stays present and unique.
 - Rows grown by load-more stay on screen through an auto-refresh tick.
 - A deleted row stays hidden through a refresh.
-- Every visible results column divider can actually be grabbed with the mouse.
 - The Viewer splitter follows the pointer across the previews, stops where the layout stops it, and lets go.
 - Raising TagFox with the global toggle shortcut selects the whole query in the search box (Classic and Runner), while a plain window focus keeps the caret; typing then replaces it and an arrow key steps out of it.
 - The global Ctrl+Shift+Space resets the search in place, with every filter reset and a 1 hour recency window.
@@ -88,7 +87,6 @@ instances alone.
 | `smoke.cjs` | Startup, a 10x F5 refresh loop, type+refresh races, and searching two other scope folders, one of them while a search is running. Checks the structural invariants after each step. |
 | `delete-hides-row.cjs` | The renderer side of a delete (`removeGonePathsFromUiNow`, through the `tombstone` driver; nothing on disk is touched): the row drops out of the list at once and a refresh does not bring it back, checked by count and by path. The positive control is that the search had rows to start with. |
 | `loadmore-regression.cjs` | Loads two extra pages and checks that an auto-refresh tick leaves the grown rows on screen. The positive control comes first: on the first page a tick runs a search. |
-| `column-resize.cjs` | Walks `elementFromPoint` across every visible header boundary and requires the resize handle to be on top for most of a 15px window. Catches handles buried under the neighbouring sticky `th`, which leaves a divider half-dead and sends boundary clicks to that column's sort. |
 | `refresh-visible.cjs` | The header Refresh button exists and is wired. Every explicit refresh route (button, F5) writes a `Refreshed hh:mm:ss — N row(s), …` status. Guards the answer to "F5 sometimes does not refresh": a refresh that finds nothing new must still prove it ran. |
 | `quiet-refresh.cjs` | Auto-refresh is silent until something really changes: four ticks over an unchanged folder leave the row nodes, the scroll position and the status line alone (a tick used to leave "Searching…" there for good), and a file appearing on disk still gets through and repaints. The positive control matters more than the negative one here, because a tick that never ran looks exactly like a tick that found nothing. |
 | `md-preview-no-write.cjs` | Previewing a `.md`/`.txt` file must never write it back, opening the editor re-reads the file, and a write whose file has moved on disk is refused. The positive control is the half that matters: an edit made in the open editor, and one saved by closing it, must still reach disk, or a fix that simply stopped saving would pass. |

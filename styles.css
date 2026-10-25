@@ -1691,25 +1691,6 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
 /* sticky comes from #resultsTable thead th — don’t use position:relative here (kills sticky) */
 #resultsTable thead th.sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
 #resultsTable thead th.sortable-th:hover { background-color: var(--bs-secondary-bg); }
-/*
- * Every handle straddles the LEFT edge of its own th, so it overlaps the th before it.
- * Sticky th's all sit at z-index 4, so equal-z siblings paint in DOM order: a handle on a
- * th's RIGHT edge is painted over by the next th and half of it stops responding to the
- * mouse, which is what made resizing feel unpredictable (see index.html thead comment).
- */
-#resultsTable thead th .th-resize {
-  position: absolute; top: 0; left: 0; bottom: 0; width: 12px; margin-left: -6px; z-index: 2;
-  cursor: col-resize; touch-action: none;
-  /* Visible strip (hover darkens) — was fully transparent so divisions looked missing. */
-  background: rgba(0, 0, 0, 0.06);
-}
-#resultsTable thead th .th-resize:hover { background: rgba(13, 110, 253, 0.22); }
-#resultsTable thead th .th-resize.th-resize-active { background: rgba(13, 110, 253, 0.28); }
-body.tagfox-table-col-resize-active,
-body.tagfox-table-col-resize-active * {
-  cursor: col-resize !important;
-  user-select: none !important;
-}
 /* Bootstrap tooltips on result cells: wide, wrap long paths */
 .tooltip.results-cell-tooltip .tooltip-inner {
   max-width: min(90vw, 42rem);
@@ -2088,12 +2069,6 @@ body > .tooltip {
 }
 [data-bs-theme="dark"] #resultsTable thead th:not(:first-child) {
   border-left-color: #3f3f46;
-}
-[data-bs-theme="dark"] #resultsTable thead th .th-resize {
-  background: rgba(255, 255, 255, 0.08);
-}
-[data-bs-theme="dark"] #resultsTable thead th .th-resize:hover {
-  background: rgba(99, 102, 241, 0.28);
 }
 [data-bs-theme="dark"] #resultsTable tbody tr { border-bottom-color: #3f3f46; }
 [data-bs-theme="dark"] #resultsTable.results-sort-path tbody tr.results-folder-row {

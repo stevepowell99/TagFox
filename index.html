@@ -695,8 +695,8 @@
         <div id="resultsScroll" class="results-table-scroll flex-grow-1 min-h-0">
           <table class="table table-sm mb-0" id="resultsTable">
           <colgroup>
-            <col style="width:3%" />
-            <col style="width:43%" />
+            <col style="width:4%" />
+            <col style="width:42%" />
             <col style="width:24%" />
             <col style="width:14%" />
             <col style="width:6%" />
@@ -704,34 +704,21 @@
           </colgroup>
           <thead class="table-light">
             <tr>
-              <!-- no position-relative: it overrides sticky (Bootstrap !important); sticky th still contains .th-resize -->
-              <!--
-                Resize handles: data-resize-left/right = colPercent indices 0–5 (chk,name,path,actions,size,modified).
-                Every handle straddles its column's LEFT edge and belongs to the th on the RIGHT of that
-                boundary. This is not cosmetic: each sticky th has z-index 4, so equal-z siblings paint in
-                DOM order and a handle hanging off a th's right edge is buried under the next th, leaving
-                half of it unclickable and its clicks landing on that th's sort instead.
-              -->
+              <!-- no position-relative: it overrides sticky (Bootstrap !important) -->
               <th class="align-middle text-start results-th-cb" title="Select rows — Space toggles row, Ctrl+A all. Drag = in-app. Shelf OS drag or Alt+drag = Explorer files.">
                 <input type="checkbox" class="form-check-input m-0 results-cb" id="chkSelectAllResults" autocomplete="off" aria-label="Select all in list" />
               </th>
               <th class="sortable-th" data-sort="name" title="Sort by name — n">
-                <span class="th-resize" data-resize-left="0" data-resize-right="1" title="Drag to resize"></span>
                 <span class="sort-label">Name</span>
               </th>
               <th class="sortable-th" data-sort="path" title="Sort by path">
-                <span class="th-resize" data-resize-left="1" data-resize-right="2" title="Drag to resize"></span>
                 <span class="sort-label">Path</span>
               </th>
-              <th class="align-middle" aria-label="Row actions">
-                <span class="th-resize" data-resize-left="2" data-resize-right="3" title="Drag to resize"></span>
-              </th>
+              <th class="align-middle" aria-label="Row actions"></th>
               <th class="sortable-th text-end" data-sort="size" title="Sort by size — z">
-                <span class="th-resize" data-resize-left="3" data-resize-right="4" title="Drag to resize"></span>
                 <span class="sort-label">Size</span>
               </th>
               <th class="sortable-th" data-sort="date_modified" title="Sort by modified — m">
-                <span class="th-resize" data-resize-left="4" data-resize-right="5" title="Drag to resize"></span>
                 <span class="sort-label">Modified</span>
               </th>
             </tr>

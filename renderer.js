@@ -28,7 +28,6 @@
       showSubfolders: 'tagBrowserShowSubfolders',
       hideFiles: 'tagBrowserHideFiles',
       propsWidthPx: 'tagBrowserPropsW',
-      tableCols: 'tagBrowserTableColsV2',
       favFolders: 'tagBrowserFavFolders',
       folderFocusStats: 'tagBrowserFolderFocusStats',
       fileFocusStats: 'tagBrowserFileFocusStats',
@@ -230,13 +229,6 @@
     const RESULTS_PANE_MIN_PX = 320;
     let viewerDocSplitPct = 50;
     let viewerDocSplitPctTheater = 50;
-    /** Percent weights: chk, name, path, actions, size, modified (sum 100). Type column removed — 6 cols. */
-    const COL_PERCENT_DEFAULT = [4, 42, 24, 14, 6, 10];
-    /** Drag resize: don’t shrink Actions below this (% of table) at Path|Actions or Actions|Size. */
-    const COL_RESIZE_MIN_ACTIONS_PCT = 6;
-    /** Table column index for Path. */
-    const RESULTS_PATH_COL_IDX = 2;
-    let colPercent = COL_PERCENT_DEFAULT.slice();
 
     let lastRows = [];
     /** HTML5 drag payload for moving rows onto folder rows in the results table. */
@@ -2708,140 +2700,6 @@
           document.addEventListener('mouseup', up);
         });
       });
-    }
-
-    function loadColWidthsFromStorage() {
-      try {
-        const parsed = JSON.parse(localStorage.getItem(LS.tableCols) || 'null');
-        if (!Array.isArray(parsed)) return;
-        const raw0 = parsed.map((x) => Number(x));
-        if (!raw0.every((n) => Number.isFinite(n) && n >= 2)) return;
-        let raw = raw0;
-        if (raw.length === 7) {
-          raw = [raw[0], raw[1], raw[2] + raw[3], raw[4], raw[5], raw[6]];
-        }
-        if (raw.length !== 6) {
-          colPercent = COL_PERCENT_DEFAULT.slice();
-          localStorage.setItem(LS.tableCols, JSON.stringify(colPercent));
-          return;
-        }
-        const sum = raw.reduce((a, b) => a + b, 0);
-        if (sum > 99 && sum < 101) {
-          colPercent = raw;
-          if (raw0.length === 7) localStorage.setItem(LS.tableCols, JSON.stringify(colPercent));
-        } else {
-          colPercent = COL_PERCENT_DEFAULT.slice();
-          localStorage.setItem(LS.tableCols, JSON.stringify(colPercent));
-        }
-      } catch (_) {}
-    }
-
-    function applyTableColWidths() {
-      const w = colPercent;
-      let sumV = 0;
-      for (let i = 0; i < w.length; i++) {
-        if (w[i] > 0) sumV += w[i];
-      }
-      if (!(sumV > 0)) return;
-      document.querySelectorAll('#resultsTable col').forEach((c, i) => {
-        if (w[i] <= 0) {
-          c.style.width = '';
-          return;
-        }
-        c.style.width = (w[i] / sumV) * 100 + '%';
-      });
-    }
-
-    /** Clamp the dragged pair so a divider cannot collapse either column. */
-    function clampTableResizePair(leftIdx, rightIdx, leftPct, rightPct) {
-      let left = leftPct;
-      let right = rightPct;
-      const minLeft =
-        leftIdx === 0 ? 4 : leftIdx === 3 ? COL_RESIZE_MIN_ACTIONS_PCT : 3;
-      const minRight = rightIdx === 3 ? COL_RESIZE_MIN_ACTIONS_PCT : 3;
-      if (left < minLeft) {
-        right -= minLeft - left;
-        left = minLeft;
-      }
-      if (right < minRight) {
-        left -= minRight - right;
-        right = minRight;
-      }
-      return [left, right];
-    }
-
-    /** Pointer-driven column resize: keeps dragging working outside the tiny handle hit area. */
-    function startTableColResize(e, handleEl, leftIdx, rightIdx) {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      const table = document.getElementById('resultsTable');
-      if (!table || !handleEl) return;
-      const startX = e.clientX;
-      const pointerId = e.pointerId;
-      const startP = colPercent.slice();
-      const pairTotal = (startP[leftIdx] || 0) + (startP[rightIdx] || 0);
-      let nextP = startP.slice();
-      let raf = 0;
-
-      document.body.classList.add('tagfox-table-col-resize-active');
-      handleEl.classList.add('th-resize-active');
-      if (handleEl.setPointerCapture && pointerId != null) {
-        try {
-          handleEl.setPointerCapture(pointerId);
-        } catch (_) {}
-      }
-
-      function flush() {
-        raf = 0;
-        colPercent = nextP.slice();
-        applyTableColWidths();
-      }
-
-      function finish(commit) {
-        document.removeEventListener('pointermove', move, true);
-        document.removeEventListener('pointerup', up, true);
-        document.removeEventListener('pointercancel', cancel, true);
-        document.body.classList.remove('tagfox-table-col-resize-active');
-        handleEl.classList.remove('th-resize-active');
-        if (handleEl.releasePointerCapture && pointerId != null) {
-          try {
-            handleEl.releasePointerCapture(pointerId);
-          } catch (_) {}
-        }
-        if (raf) cancelAnimationFrame(raf);
-        colPercent = nextP.slice();
-        applyTableColWidths();
-        if (commit) localStorage.setItem(LS.tableCols, JSON.stringify(colPercent));
-      }
-
-      function move(ev) {
-        if (pointerId != null && ev.pointerId !== pointerId) return;
-        const tw = table.getBoundingClientRect().width;
-        if (tw < 80) return;
-        const deltaPct = ((ev.clientX - startX) / tw) * 100;
-        let left = (startP[leftIdx] || 0) + deltaPct;
-        let right = pairTotal - left;
-        [left, right] = clampTableResizePair(leftIdx, rightIdx, left, right);
-        nextP = startP.slice();
-        nextP[leftIdx] = left;
-        nextP[rightIdx] = right;
-        if (!raf) raf = requestAnimationFrame(flush);
-        ev.preventDefault();
-      }
-
-      function up(ev) {
-        if (pointerId != null && ev.pointerId !== pointerId) return;
-        finish(true);
-      }
-
-      function cancel(ev) {
-        if (pointerId != null && ev.pointerId !== pointerId) return;
-        finish(false);
-      }
-
-      document.addEventListener('pointermove', move, true);
-      document.addEventListener('pointerup', up, true);
-      document.addEventListener('pointercancel', cancel, true);
     }
 
     /**
@@ -15697,19 +15555,7 @@
       const resultsThead = document.getElementById('resultsTable')?.querySelector('thead');
       if (resultsThead && resultsThead.dataset.resultsHeadBound !== '1') {
         resultsThead.dataset.resultsHeadBound = '1';
-        resultsThead.addEventListener('pointerdown', (e) => {
-          const h = e.target.closest('.th-resize');
-          if (!h) return;
-          if (h.style.display === 'none') return;
-          const left = +h.dataset.resizeLeft;
-          const right = +h.dataset.resizeRight;
-          if (!Number.isFinite(left) || !Number.isFinite(right)) return;
-          e.preventDefault();
-          e.stopPropagation();
-          startTableColResize(e, h, left, right);
-        });
         resultsThead.addEventListener('click', (e) => {
-          if (e.target.closest('.th-resize')) return;
           if (e.target.closest('#chkSelectAllResults')) return;
           const th = e.target.closest('th[data-sort]');
           if (!th) return;
@@ -18338,8 +18184,6 @@
     });
     loadPaneWidthsFromStorage();
     loadViewerDocSplitFromStorage();
-    loadColWidthsFromStorage();
-    applyTableColWidths();
     if (freshProfileSortsByPath) {
       sortColumn = 'path';
       sortAsc = true;

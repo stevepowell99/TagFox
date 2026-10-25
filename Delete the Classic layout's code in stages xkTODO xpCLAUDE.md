@@ -2,7 +2,7 @@
 
 Steve decided on 24 October 2026 to keep only Runner: hide Classic first, then delete its code in stages. Classic is hidden (no layout switch, every real start in Runner; the test hook still opens a fresh profile in Classic so its tests guard the code until it goes). This file is the inventory to delete against.
 
-- **Each stage** deletes one area (for example column resizing), its CSS and HTML, and the tests that cover only it, and keeps every piece Runner depends on (listed below). Run the full suite after each stage.
+- **Each stage** deletes one area (for example the header), its CSS and HTML, and the tests that cover only it, and keeps every piece Runner depends on (listed below). Run the full suite after each stage.
 - **Steve decided on 25 October 2026** what Runner gains before Classic's code goes: the deadline filters as `/` Due commands; a "Show only starred items" command instead of a visible star list; and Windows Recent as a ranking boost rather than a list. A "Search this folder only" command keeps typing to the current folder's own contents. All four are in Runner now. The Shelf shows in Runner (`2d8c22b`), and so does the Restart button, in the search box. Saved searches are back in Runner too (Steve, 25 October 2026): `/` commands ("Save this search", then one per saved search) and `Alt`+`1`…`9`, reading the same `LS.favSearches` list Classic saved, so stage two took only Classic's bar.
 
 Read-only survey by a subagent at main `74c8ac1`; line numbers are approximate. Since then Runner has gained chips for the deadline and hide-until filters (the hazard the survey found).
@@ -24,7 +24,6 @@ Read-only survey by a subagent at main `74c8ac1`; line numbers are approximate. 
 | Deadline filter (Overdue, Today, This week, Next week) and "Show hidden" for `xh-` files | `btnToggleDeadline`, `deadlineFilterPanel`, `optShowHiddenUntil` | Yes: the `/` Due commands and their chips | `setDeadlineRange`, `setShowHiddenUntil` |
 | Tag bar: pills with counts, include/exclude, More, AND/OR, ↻ full-index rescan | `#tagBar` | Partial: per-tag commands, the tags chip, Ctrl+T; no counts, no OR, no rescan | `renderTagBarImpl`, `runTagDiscoverySearch` |
 | Column sort by name, path, size, modified, either direction | header click; `z`, `m`, `n` | Partial: smart, date, name, size, size smallest first; no path sort, no oldest first, no Z-A | `applySortColumnKey`, `updateSortHeaders` |
-| Column resizing | `.th-resize` | None | `startTableColResize`, `applyTableColWidths` |
 | Status line with hit count and filter hints | standing line | None: Runner shows no count except "N of M ranked" | `formatResultsStatusMainHtml`, `hiddenDueToStatusHtml` |
 | Empty-result pulse hints | toolbar pulses | Partial: only the box pulses | `updateEmptyResultsPulseHints` |
 
@@ -66,7 +65,7 @@ History back/forward (Runner: Alt+←/→), Undo (Ctrl+Z), Restart (Runner: the 
 
 ## Tests
 
-- **Classic only:** `smoke`, `fuzz`, `column-resize`, `splitter-drag`, `menu-enter`, `recent-folders-filter`, `recent-tab`, `zoom-buttons`, `refresh-visible` (header button half).
+- **Classic only:** `smoke`, `fuzz`, `splitter-drag`, `menu-enter`, `recent-folders-filter`, `recent-tab`, `zoom-buttons`, `refresh-visible` (header button half).
 - **Runner only:** the `runner-*` tests and `viewer-runner`, several with Classic round-trip checks that would need rewriting.
 - **Both:** `hotkey-raise-select`, `hover-preview`, `row-actions-keys`, `window-chrome`.
 - **Layout-neutral but run in Classic:** `md-preview-no-write`, `quiet-refresh`, `loadmore-regression`, `delete-hides-row`, `restart-in-terminal`, `gmist-start-guard`, `help-build`, `tags-dates`.
