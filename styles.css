@@ -3069,22 +3069,24 @@ body.tagfox-runner #queryInputGroup #btnRestartTagFox {
   white-space: nowrap;
   cursor: help;
 }
-/* Status line: between the list and the Shelf (placeStatusLineForLayout), lined up with the Shelf's left edge.
-   It holds the rotating tip, muted, until a message comes; the message shows as a box for a few seconds
-   (flashRunnerStatus) and the tip comes back. Its height does not change between the two, so the list
-   never moves. */
+/* Status line: a bar docked along the bottom of the list's card, full width, with the card's lower corners
+   (placeStatusLineForLayout puts it in the column, the grid rules below pin it over the list's foot). The
+   canvas tone and a top rule set it apart from the rows, which scroll under it. It holds the rotating tip,
+   muted, and lets clicks through to the rows, until a message comes; the message tints the bar for a few
+   seconds (flashRunnerStatus) and takes the pointer, and the tip comes back. */
 body.tagfox-runner #tagfoxNavbarStatus {
-  align-self: flex-start;
-  max-width: 100%;
-  min-height: 2rem;
-  margin: 0;
-  padding: 0 0.15rem;
-  border: 1px solid transparent;
-  border-radius: 0.6rem;
-  background: transparent;
+  min-height: 1.9rem;
+  padding: 0.2rem 0.9rem;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--runner-muted) 35%, transparent);
+  border-radius: 0 0 0.9rem 0.9rem;
+  background: var(--runner-canvas);
   flex-wrap: nowrap;
-  z-index: auto;
   font-size: 0.8rem;
+  pointer-events: none;
+}
+body.tagfox-runner.tagfox-runner-status-on #tagfoxNavbarStatus {
+  pointer-events: auto;
 }
 body.tagfox-runner #statusMain,
 body.tagfox-runner #statusSmartNote,
@@ -3092,11 +3094,8 @@ body.tagfox-runner .tagfox-runner-status-icon {
   display: none !important;
 }
 body.tagfox-runner.tagfox-runner-status-on #tagfoxNavbarStatus {
-  padding: 0.25rem 0.8rem 0.25rem 0.65rem;
-  border-color: color-mix(in srgb, var(--tb-accent) 30%, transparent);
-  border-left: 3px solid var(--tb-accent);
-  background: var(--runner-surface);
-  box-shadow: 0 1px 2px rgba(26, 27, 46, 0.06), 0 6px 18px -12px rgba(79, 70, 229, 0.5);
+  border-top: 2px solid var(--tb-accent);
+  background: color-mix(in srgb, var(--tb-accent) 12%, var(--runner-canvas));
   font-size: 0.85rem;
 }
 body.tagfox-runner.tagfox-runner-status-on #statusMain {
@@ -3326,8 +3325,9 @@ body.tagfox-runner .results-wrap.card {
   border-radius: 0.9rem;
   box-shadow: 0 1px 2px rgba(26, 27, 46, 0.05);
 }
+/* The foot leaves room under the last row, so it can scroll clear of the docked status line. */
 body.tagfox-runner #resultsScroll {
-  padding: 0.35rem;
+  padding: 0.35rem 0.35rem 2.6rem;
 }
 body.tagfox-runner #resultsTable,
 body.tagfox-runner #resultsTable > tbody {
@@ -4054,11 +4054,33 @@ body.tagfox-runner.tagfox-runner-viewer-off #propsAside {
   background-color: #312e81;
 }
 /* Shelf: a strip under the list, one line high while empty, growing to a few lines of chips. Classic's
-   strip is rotated beside the list; here it lies flat, so syncShelfAsideWidth leaves its size to CSS. */
+   strip is rotated beside the list; here it lies flat, so syncShelfAsideWidth leaves its size to CSS.
+   The list runs down to the Shelf, and the status line is docked over the list's foot: it shares the list's
+   grid cell, pinned to the cell's bottom, so it takes no height of its own and nothing moves when a message
+   comes or goes. */
 body.tagfox-runner .results-with-shelf {
-  flex-direction: column;
-  gap: 0.5rem;
-}body.tagfox-runner #appShelf {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  row-gap: 0.5rem;
+}
+body.tagfox-runner .results-with-shelf > :not(#tagfoxNavbarStatus):not(#appShelf) {
+  grid-row: 1;
+  grid-column: 1;
+}
+body.tagfox-runner .results-with-shelf > #tagfoxNavbarStatus {
+  grid-row: 1;
+  grid-column: 1;
+  align-self: end;
+  justify-self: stretch;
+  z-index: 5;
+  margin: 0;
+}
+body.tagfox-runner .results-with-shelf > #appShelf {
+  grid-row: 2;
+  grid-column: 1;
+}
+body.tagfox-runner #appShelf {
   width: auto;
   min-width: 0;
   border: 0 !important;

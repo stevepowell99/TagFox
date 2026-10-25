@@ -135,15 +135,15 @@ Three icon-pair switches next to the search box — combine them freely:
 
 - Runner is TagFox's layout: one large search box with a ranked list below it and the Viewer on the right third. The Classic layout that the other tabs of this help describe is being retired and no longer shows.
 - Runner keeps its own search settings, so switching back and forth leaves Classic's view, filters and folder as they were.
-- Inside a folder, its path runs along a thin line above the box. Click any folder in it to go there, or the › after a folder to pick one of the folders inside it. A long path shows its last few folders after `…`; point at the `…` for the whole path.
+- Inside a folder, its path runs along a thin line above the search box. Click any folder in it to go there, or the › after a folder to pick one of the folders inside it. A long path shows its last few folders after `…`; point at the `…` for the whole path.
 - Each row shows the name, the folder it is in, the size and when it last changed. Point at the time for the full date, or at a name with tags in front of it for the name on disk.
-- Point at the folder's chip at the start of the box for its buttons: show in Explorer, copy, tags, terminal, copy the quoted path, and the full menu.
-- Settings that differ from the defaults show as chips under the box. The line between the list and the Shelf shows a tip, which changes every few minutes. A message (an error, what an action did, the F5 report) takes its place for a few seconds; point at it to keep it there.
+- Point at the folder's chip at the start of the search box for its buttons: show in Explorer, copy, tags, terminal, copy the quoted path, and the full menu.
+- Settings that differ from the defaults show as chips under the search box. The bar along the bottom of the list shows a tip, which changes every few minutes. A message (an error, what an action did, the F5 report) takes its place for a few seconds; point at it to keep it there.
 - **Settings → Hide the window's title bar** gives the list the space Windows' title bar and menu took, in either layout, from the next start. The minimise, maximise and close buttons stay at the top right; drag the window by the strip along the top.
 
 ### ⌨️ Keys
 
-Type to search. With the box empty you see the current folder's own contents; once you type, the search covers everything below it, or only the folder's own contents while the `/` command **Search this folder only** is on (it shows as a chip). This list is drawn from the same table Runner's keys are read from, so it always matches them; `?` in an empty box opens it.
+Type to search. With the search box empty you see the current folder's own contents; once you type, the search covers everything below it, or only the folder's own contents while the `/` command **Search this folder only** is on (it shows as a chip). This list is drawn from the same table Runner's keys are read from, so it always matches them; `?` in an empty search box opens it.
 
 <div id="runnerKeysTable"></div>
 
@@ -160,9 +160,9 @@ Type to search. With the box empty you see the current folder's own contents; on
 
 - A row shows its tags in front of its name, as in Classic; the × on one takes that tag off the file.
 - **`Ctrl`+`T`** opens the tag editor on the selected row, or on every checked row (`Shift`+`↓` checks a run of them). Adding or removing a tag renames the file on disk straight away. The row's hover buttons and its menu open the same editor.
-- To list only the files carrying a tag, type `/` and the tag, for example `/todo`, and press `Enter`, or click the tag in the options panel (**Alt+O**). The filter shows as a chip under the box, such as **Tagged TODO**, and its × removes it. Two tags list the files that carry both.
+- To list only the files carrying a tag, type `/` and the tag, for example `/todo`, and press `Enter`, or click the tag in the options panel (**Alt+O**). The filter shows as a chip under the search box, such as **Tagged TODO**, and its × removes it. Two tags list the files that carry both.
 - To leave a tag out, type `/not` and the tag (`/not claude`), or right-click the tag in the options panel, where it then shows as `¬CLAUDE`. The chip reads **Not tagged CLAUDE**, or **Tagged TODO and not CLAUDE** beside a tag you asked for. The same command or right-click again puts it back.
-- With the box empty, a tag you ask for searches every folder below the current one, while a tag left out only thins the current folder's own list.
+- With the search box empty, a tag you ask for searches every folder below the current one, while a tag left out only thins the current folder's own list.
 - Typing the word itself (`todo`) is an ordinary search: it also finds `todo list.txt`. The tag filter lists only files tagged `xkTODO`.
 
 ### 📅 Deadlines and stars
@@ -174,8 +174,8 @@ Type to search. With the box empty you see the current folder's own contents; on
 ### 📊 How the list is ordered
 
 - The smart order puts rows whose **name** matches above rows that match only in the **path**. Within the name, a whole word ranks highest, then a match at the start of a word, then one at the end of a word, then one inside a word (`map` finds `old map`, `mapping`, `roadmap`, then `xmapx`). After that it favours recent changes, though never enough to lift a file that only contains the word above an older one named for it, starred items, things you open often, and files and folders in Windows' own Recent list (opened lately in any app), the more so the more recently. It puts anything under an `AppData` or `ProgramData` folder lower down, unless you are in that folder or typed its name, and anything with a `~` in its path (Word's `~$` lock files, `~folders`) lower down too, unless you typed its whole name or a `~`. The `/` sort commands switch to date or name order, or to size with the largest or the smallest first (`/size`).
-- The defaults: **Match path** on, system files (`.` and `$` names, `desktop.ini`) left out, `~` paths listed but lower down, and the newest 25 matches in your own `AppData\Local\Temp` listed lower down too (the date, name and size orders leave Temp out). **Hide ~ paths** and **Hide temp files** leave them out altogether. The faint options button at the right of the box (or **Alt+O**) and the `/` commands change each of them. Anything that differs from the defaults shows as a chip under the box, and its × puts the default back.
-- Runner ranks the 300 newest matches of each search, plus the 300 newest whose name matches, the names that are exactly what you typed, and every starred item it can find. When a search finds more, a note at the right of the box says how many it ranked out of how many it found (hover it for the whole sentence); type more to narrow it, or sort by date and scroll to page through them all.
+- The defaults: **Match path** on, system files (`.` and `$` names, `desktop.ini`) left out, `~` paths listed but lower down, and the newest 25 matches in your own `AppData\Local\Temp` listed lower down too (the date, name and size orders leave Temp out). **Hide ~ paths** and **Hide temp files** leave them out altogether. The faint options button at the right of the search box (or **Alt+O**) and the `/` commands change each of them. Anything that differs from the defaults shows as a chip under the search box, and its × puts the default back.
+- Runner ranks the 300 newest matches of each search, plus the 300 newest whose name matches, the names that are exactly what you typed, and every starred item it can find. When a search finds more, a note at the right of the search box says how many it ranked out of how many it found (hover it for the whole sentence); type more to narrow it, or sort by date and scroll to page through them all.
 
 <!-- help:tab {"id":"files-folders","label":"📁 Files & folders"} -->
 

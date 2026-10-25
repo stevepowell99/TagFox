@@ -1,5 +1,5 @@
-// Runner's status line: a line between the list and the Shelf, lined up with the Shelf's left edge, that holds
-// the rotating tip until a message comes. A message shows as a box, hides the tip, keeps the list where it was,
+// Runner's status line: a bar docked along the bottom of the list's card, full width, over the list's foot, with
+// the list running down to the Shelf. It holds the rotating tip until a message comes. A message shows as a box, hides the tip, keeps the list where it was,
 // and gives the line back to the tip once it has gone. Then the tips themselves: every key a tip names is a
 // key Runner's key table lists (or a global shortcut), and every `/` command a tip names finds that command,
 // so a tip cannot describe a key or a command that does not exist. Last, Classic gets its footer and header
@@ -57,16 +57,18 @@ async function main() {
           tipText: tip ? tip.textContent.trim() : '',
           msgShown: main.offsetHeight > 0,
           msgText: main.textContent.trim(),
-          boxed: cs.backgroundColor !== 'rgba(0, 0, 0, 0)' && parseFloat(cs.borderLeftWidth) >= 2,
+          bg: cs.backgroundColor,
+          boxed: cs.backgroundColor !== 'rgba(0, 0, 0, 0)' && parseFloat(cs.borderTopWidth) >= 2,
         };
       })()`);
 
-    // The line between the list and the Shelf, holding a tip.
+    // The bar docked along the bottom of the list, holding a tip; the list runs down to the Shelf.
     await drv.T('showNextTip');
     await sleep(300);
     let g = await geo();
-    check(g.bar && g.list && g.shelf && g.bar.top >= g.list.bottom - 1 && g.bar.bottom <= g.shelf.top + 1, `the status line sits between the list and the Shelf (list to ${g.list && Math.round(g.list.bottom)}, line ${g.bar && Math.round(g.bar.top)}-${g.bar && Math.round(g.bar.bottom)}, Shelf from ${g.shelf && Math.round(g.shelf.top)})`);
-    check(g.bar && g.shelf && Math.abs(g.bar.left - g.shelf.left) <= 1, `with the Shelf's left edge (${g.bar && Math.round(g.bar.left)} and ${g.shelf && Math.round(g.shelf.left)})`);
+    const docked = (x) => x.bar && x.list && Math.abs(x.bar.bottom - x.list.bottom) <= 1 && Math.abs(x.bar.left - x.list.left) <= 1 && Math.abs(x.bar.w - x.list.w) <= 1 && x.bar.top > x.list.top;
+    check(docked(g), `the status line is docked along the bottom of the list, full width (list ${g.list && Math.round(g.list.left)}-${g.list && Math.round(g.list.bottom)} w${g.list && Math.round(g.list.w)}, line ${g.bar && Math.round(g.bar.left)}-${g.bar && Math.round(g.bar.bottom)} w${g.bar && Math.round(g.bar.w)})`);
+    check(g.list && g.shelf && g.shelf.top - g.list.bottom >= 0 && g.shelf.top - g.list.bottom <= 12, `and the list runs down to the Shelf (list to ${g.list && Math.round(g.list.bottom)}, Shelf from ${g.shelf && Math.round(g.shelf.top)})`);
     check(!g.on && g.tipShown && g.tipText.length > 20 && !g.msgShown, `with no message it shows a tip ("${g.tipText.slice(0, 70)}")`);
     const idle = g;
 
@@ -75,8 +77,8 @@ async function main() {
     await drv.settle('refresh');
     g = await geo();
     check(g.on && g.msgShown && /Refreshed/.test(g.msgText) && !g.tipShown, `a message replaces the tip ("${g.msgText.slice(0, 60)}", tip shown ${g.tipShown})`);
-    check(g.boxed, 'and shows as a box with an accent edge, not a bare line');
-    check(g.bar && Math.abs(g.bar.left - idle.shelf.left) <= 1 && g.bar.bottom <= g.shelf.top + 1, `lined up with the Shelf and above it (${g.bar && Math.round(g.bar.left)}, ${g.bar && Math.round(g.bar.bottom)} against ${Math.round(idle.shelf.left)}, ${g.shelf && Math.round(g.shelf.top)})`);
+    check(g.boxed && g.bg !== idle.bg, `and tints the bar with an accent edge, so it does not read as a tip (${g.bg} against ${idle.bg})`);
+    check(docked(g), `still docked along the bottom of the list (line ${g.bar && Math.round(g.bar.left)}-${g.bar && Math.round(g.bar.bottom)})`);
     check(g.list && Math.abs(g.list.bottom - idle.list.bottom) <= 1, `the list does not move (${g.list && Math.round(g.list.bottom)} against ${Math.round(idle.list.bottom)})`);
 
     // Once the message has had its few seconds, the tip comes back.

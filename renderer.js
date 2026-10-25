@@ -3711,8 +3711,9 @@
       placeForLayout(document.getElementById('btnRestartTagFox'), on, note && note.parentElement, note);
     }
 
-    /** Runner has no header and no status bar along the window's foot: its status line sits between the list
-        and the Shelf, lined up with both, and holds the header's rotating tip until a message comes. */
+    /** Runner has no header and no status bar along the window's foot: its status line goes in the list's
+        column, where CSS floats it over the list's foot just above the Shelf, and holds the header's rotating
+        tip until a message comes. */
     function placeStatusLineForLayout(on) {
       const bar = document.getElementById('tagfoxNavbarStatus');
       const shelf = document.getElementById('appShelf');
@@ -5083,7 +5084,7 @@
         when: (c) => c.inBox && !c.mod && !c.alt && (c.key === '/' || c.code === 'NumpadDivide'),
         run: (c) => openRunnerCmdList(c.q.value),
       },
-      { group: 'Search', keys: ['?'], does: 'This list of keys, with the box empty', when: (c) => c.inBox && c.empty && c.key === '?', run: () => openRunnerKeysHelp() },
+      { group: 'Search', keys: ['?'], does: 'This list of keys, with the search box empty', when: (c) => c.inBox && c.empty && c.key === '?', run: () => openRunnerKeysHelp() },
       {
         group: 'Search',
         keys: ['Alt+O'],
@@ -5094,7 +5095,7 @@
       {
         group: 'Search',
         keys: ['F3', 'Ctrl+F', 'Alt+D'],
-        does: 'Back to the box, with its text selected',
+        does: 'Back to the search box, with its text selected',
         when: (c) => (c.plain && c.key === 'F3') || c.ctrl('f') || (c.alt && !c.mod && !c.shift && c.k === 'd'),
         run: () => focusQueryBox(true),
       },
@@ -5112,7 +5113,7 @@
       {
         group: 'Move and select',
         keys: ['↑', '↓'],
-        does: 'Move the selection, from the box or the list. From the box they leave the caret at the end of the text, so typing adds to it',
+        does: 'Move the selection, from the search box or the list. From the search box they leave the caret at the end of the text, so typing adds to it',
         when: (c) => c.inBox && c.plain && !c.shift && (c.key === 'ArrowDown' || c.key === 'ArrowUp'),
         run: (c) => {
           if (c.textSel) c.q.setSelectionRange(c.q.value.length, c.q.value.length);
@@ -5154,12 +5155,12 @@
       {
         group: 'Move and select',
         keys: ['Tab', 'Shift+Tab'],
-        does: "Between the box and the list. Tab in the list steps along the selected row's buttons: Enter or Space presses one, Esc goes back to the list",
+        does: "Between the search box and the list. Tab in the list steps along the selected row's buttons: Enter or Space presses one, Esc goes back to the list",
         when: (c) => c.plain && c.key === 'Tab' && (c.inBox || c.inList),
         run: (c) => runnerSwitchBoxAndList(c.inBox),
       },
       { group: 'Move and select', keys: ['Space'], does: 'In the list: check or uncheck the selected row', when: (c) => c.inList && c.plain && !c.shift && c.key === ' ', run: () => 'classic' },
-      { group: 'Move and select', keys: ['Ctrl+A'], does: 'In the box, select its text; in the list, check every row', when: (c) => c.ctrl('a'), run: (c) => (c.inBox ? 'native' : 'classic') },
+      { group: 'Move and select', keys: ['Ctrl+A'], does: 'In the search box, select its text; in the list, check every row', when: (c) => c.ctrl('a'), run: (c) => (c.inBox ? 'native' : 'classic') },
       {
         group: 'Move and select',
         keys: ['Esc'],
@@ -5172,7 +5173,7 @@
       {
         group: 'Folders',
         keys: ['→'],
-        does: 'Into the selected folder (from the box: with the caret at the end)',
+        does: 'Into the selected folder (from the search box: with the caret at the end)',
         when: (c) => c.plain && !c.shift && c.key === 'ArrowRight' && (c.inBox ? c.caretEnd : c.inList),
         run: (c) => {
           if (!c.held) runnerEnterSelectedFolder();
@@ -5181,7 +5182,7 @@
       {
         group: 'Folders',
         keys: ['←'],
-        does: 'Up to the parent folder, with the one you left selected (from the box: with the caret at the start)',
+        does: 'Up to the parent folder, with the one you left selected (from the search box: with the caret at the start)',
         when: (c) => c.plain && !c.shift && c.key === 'ArrowLeft' && (c.inBox ? c.caretStart : c.inList),
         run: (c) => {
           if (!c.held) runnerGoUp();
@@ -5190,7 +5191,7 @@
       {
         group: 'Folders',
         keys: ['Backspace'],
-        does: 'With the box empty: leave the folder and search everywhere',
+        does: 'With the search box empty: leave the folder and search everywhere',
         when: (c) => c.inBox && c.plain && c.key === 'Backspace' && c.empty && !c.e.repeat && !!currentScopeFolderPath(),
         run: () => clearSearchScope(),
       },
@@ -5198,7 +5199,7 @@
       { group: 'Folders', keys: ['Ctrl+Shift+1…9'], does: 'Starred item 1 to 9', when: (c) => c.mod && c.shift && !c.alt && /^Digit[1-9]$/.test(c.code), run: () => 'classic' },
 
       /* Open and act */
-      { group: 'Open and act', keys: ['Enter'], does: 'Open the selected row; a folder opens here. With a path typed in the box, go there; with nothing listed inside a folder, search everywhere', when: (c) => c.plain && !c.shift && c.key === 'Enter' && (c.inBox || c.inList), run: (c) => void runnerEnter(c) },
+      { group: 'Open and act', keys: ['Enter'], does: 'Open the selected row; a folder opens here. With a path typed in the search box, go there; with nothing listed inside a folder, search everywhere', when: (c) => c.plain && !c.shift && c.key === 'Enter' && (c.inBox || c.inList), run: (c) => void runnerEnter(c) },
       { group: 'Open and act', keys: ['Ctrl+Enter'], does: 'Open its folder in File Explorer, with it selected', when: (c) => c.mod && !c.alt && !c.shift && c.key === 'Enter', run: () => void runnerActivateSelection('reveal') },
       { group: 'Open and act', keys: ['Alt+Enter'], does: 'Properties', when: (c) => c.alt && !c.mod && !c.shift && c.key === 'Enter', run: () => void runnerActivateSelection('properties') },
       { group: 'Open and act', keys: ['Alt+P'], does: 'Show or hide the Viewer', when: (c) => c.alt && !c.mod && !c.shift && c.k === 'p', run: () => runnerToggleViewer() },
@@ -5210,7 +5211,7 @@
       {
         group: 'Open and act',
         keys: ['Del', 'Shift+Del'],
-        does: 'Move the checked rows to the Recycle Bin (from the box: with it empty). TagFox never deletes for good, so Shift+Del recycles too',
+        does: 'Move the checked rows to the Recycle Bin (from the search box: with it empty). TagFox never deletes for good, so Shift+Del recycles too',
         when: (c) => c.plain && c.key === 'Delete' && (c.inList || (c.inBox && c.empty)),
         run: (c) => {
           if (!c.e.repeat) void keyboardRecycleConfirm();
@@ -5219,7 +5220,7 @@
       {
         group: 'Open and act',
         keys: ['Ctrl+C', 'Ctrl+X'],
-        does: 'Copy or cut the selected files, to paste in Explorer (in the box: with no text selected)',
+        does: 'Copy or cut the selected files, to paste in Explorer (in the search box: with no text selected)',
         when: (c) => c.ctrl('c') || c.ctrl('x'),
         run: (c) => {
           if (c.textSel) return 'native';
@@ -5237,7 +5238,7 @@
       {
         group: 'Open and act',
         keys: ['Ctrl+V'],
-        does: 'Paste copied files or a screenshot into the folder; copied text goes into the box',
+        does: 'Paste copied files or a screenshot into the folder; copied text goes into the search box',
         when: (c) => c.ctrl('v'),
         run: () => void runnerPaste(),
       },
@@ -5255,7 +5256,7 @@
       { when: (c) => c.mod && c.shift && !c.alt && (c.k === 't' || c.k === 'w'), run: () => setStatusMain('Result tabs are only in the Classic layout.') },
       {
         when: (c) => c.ctrl('s'),
-        run: () => setStatusMain('In Runner an empty box shows the folder itself and typing searches everything below it.'),
+        run: () => setStatusMain('In Runner an empty search box shows the folder itself and typing searches everything below it.'),
       },
     ];
 
