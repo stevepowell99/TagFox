@@ -413,16 +413,6 @@
       syncViewRadioActiveFromDom();
     }
 
-    /** Subfolders + files & folders; re-search. */
-    function reimposeResultsViewDefaults() {
-      applyResultsViewRadiosToDom(true, 'all');
-      syncViewRadioActiveFromDom();
-      saveSettings();
-      syncSortPathClass();
-      void runSearchNow('identity');
-      commitSearchHistoryNow();
-    }
-
     /** Advanced: drop dot/$/desktop.ini paths from the table only (~ has its own toggle). */
     function isHideSpecialPaths() {
       return !!document.getElementById('optHideSpecial')?.checked;
@@ -2578,33 +2568,15 @@
       pulseSearchBoxAfterScopeFolderChange();
     }
 
-    /** The last hour's changes anywhere, reset in place: no query, no scope folder, no tags, every option
-     *  off but Match path, subfolders and everything shown, 1 hour recency. Reached only by the global Ctrl+Shift+Space (main.js
-     *  RECENT_CHANGES_ACCEL), so it works while TagFox is hidden. */
+    /** The last hour's changes anywhere, reset in place to Runner's own defaults: no query, no scope folder,
+     *  no tags, 1 hour recency. Reached only by the global Ctrl+Shift+Space (main.js RECENT_CHANGES_ACCEL),
+     *  so it works while TagFox is hidden. */
     async function openRecentChanges() {
-      if (isRunnerMode()) {
-        /* Runner resets to its own defaults, with no folder, no text and the last hour. */
-        document.getElementById('rootFolder').value = '';
-        clearSearchQueryInputOnly();
-        renderRunnerScopeChip();
-        renderScopeBreadcrumb();
-        runnerResetAllFilters({ recency: '1h' });
-        return;
-      }
       document.getElementById('rootFolder').value = '';
       clearSearchQueryInputOnly();
-      activeTagKeys.clear();
-      excludedTagKeys.clear();
-      tagFilterCombineOr = false;
-      persistActiveTagFilter();
-      setRecencyFilterMode('1h');
-      for (const id of ['optCase', 'optWholeWord', 'optPath', 'optDiacritics', 'optHideSpecial', 'optHideTilde']) {
-        const el = document.getElementById(id);
-        if (el) el.checked = id === 'optPath';
-      }
-      syncAdvancedSearchIconFilledState();
+      renderRunnerScopeChip();
       renderScopeBreadcrumb();
-      reimposeResultsViewDefaults();
+      runnerResetAllFilters({ recency: '1h' });
     }
 
     // -------------------------------------------------------------------------

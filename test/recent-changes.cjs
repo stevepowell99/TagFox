@@ -1,6 +1,6 @@
-// The global Ctrl+Shift+Space shows the last hour's changes anywhere. In Classic it resets the search in
-// place: empty query, no scope folder, every option off but Match path, 1 hour recency. Runner's half is
-// checked in runner-layout.cjs.
+// The global Ctrl+Shift+Space shows the last hour's changes anywhere: it resets Runner's one search in place
+// to Runner's own defaults, with no text, no scope folder and the last hour, and leaves every other filter
+// off.
 //
 // main.js registers the OS-wide accelerator and sends 'tagfox-open-recent-changes'; the renderer half is
 // openRecentChanges(), driven here through the test hook. A real global keypress cannot be sent from a
@@ -10,6 +10,9 @@
 
 const { connect, SCOPES } = require('./harness.cjs');
 
+// Every filter Runner shows as a chip, so a reset that missed one leaves its chip up.
+const ALL_CHIPS = ['sort', 'recency', 'content', 'path', 'system', 'tilde', 'temp', 'word', 'case', 'word-starts', 'this-folder', 'accents', 'tags', 'starred', 'deadline', 'hidden-until'];
+
 async function main() {
   const failures = [];
   const check = (label, cond, extra) => {
@@ -18,33 +21,34 @@ async function main() {
   };
   let drv;
   try {
-    drv = await connect({ profile: 'tagfox-test-recent-changes', scope: SCOPES.repo });
+    drv = await connect({ runner: true, profile: 'tagfox-test-recent-changes', scope: SCOPES.repo });
     const { ev, T, settle } = drv;
-    await settle('startup');
-    const read = async () => JSON.parse(await ev(`JSON.stringify({
-      q: document.getElementById('query').value,
-      root: document.getElementById('rootFolder').value,
-      rec: document.querySelector('input[name="tagFoxRecencyFilter"]:checked').value,
-      cs: document.getElementById('optCase').checked,
-      ww: document.getElementById('optWholeWord').checked,
-      dia: document.getElementById('optDiacritics').checked,
-      path: document.getElementById('optPath').checked,
-    })`));
+    const read = async () => {
+      const s = await T('runnerState');
+      return { q: s.query, root: s.scope, chips: s.chips, rec: (await drv.diag()).recencyMode };
+    };
 
-    // A busy search: a query, the repo as scope folder, a 1 day window, three options on and Match path off.
+    // A busy search: text, the repo as scope folder, and every filter that has a chip turned on.
     await T('setQuery', 'readme');
     await ev(`(() => {
-      document.getElementById('optRecency1d').checked = true;
-      for (const id of ['optCase', 'optWholeWord', 'optDiacritics']) document.getElementById(id).checked = true;
-      document.getElementById('optPath').checked = false;
+      runnerSort = 'name';
+      setRecencyFilterMode('1d');
+      applyResultsViewRadiosToDom(isShowSubfolders(), 'files');
+      for (const id of ['optCase', 'optWholeWord', 'optDiacritics', 'optHideTilde']) document.getElementById(id).checked = true;
+      for (const id of ['optPath', 'optHideSpecial']) document.getElementById(id).checked = false;
+      for (const k of [LS.runnerHideTemp, LS.runnerWordStarts, LS.runnerThisFolderOnly, LS.runnerStarredOnly]) localStorage.setItem(k, '1');
+      activeTagKeys.add('TODO');
+      setDeadlineRange('overdue');
+      setShowHiddenUntil(true);
       return 1;
     })()`);
     await T('runSearchNow', 'identity');
     await settle('busy');
     const before = await read();
-    check('the search starts busy (positive control)',
-      before.q === 'readme' && before.root !== '' && before.rec === '1d' && before.cs && before.ww && before.dia && !before.path,
-      JSON.stringify(before));
+    const missing = ALL_CHIPS.filter((c) => !before.chips.includes(c));
+    check('the search starts busy, with every chip up (positive control)',
+      before.q === 'readme' && before.root !== '' && before.rec === '1d' && !missing.length,
+      missing.length ? 'missing ' + missing.join(', ') : JSON.stringify(before));
 
     await T('openRecentChanges');
     await settle('recent');
@@ -52,7 +56,7 @@ async function main() {
     check('query is empty', after.q === '', JSON.stringify(after.q));
     check('scope folder is empty', after.root === '', JSON.stringify(after.root));
     check('recency is 1 hour', after.rec === '1h', after.rec);
-    check('every option is off but Match path', !after.cs && !after.ww && !after.dia && after.path, JSON.stringify(after));
+    check('every other filter is back at Runner\'s default: only the hour has a chip', after.chips.join() === 'recency', after.chips.join(', '));
 
     // The recency window really reaches the search, not just the radio button.
     const q = await ev(`appendRecencyToEverythingQuery('x')`);

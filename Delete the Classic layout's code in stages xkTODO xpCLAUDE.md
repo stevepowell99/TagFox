@@ -35,7 +35,7 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 
 - Viewer modes and the splitter `#splitProps` are shared. The divider sets one width (`runnerViewerPx`, `LS.runnerViewerWidthPx`), and Runner holds the Viewer at a third until the divider is dragged.
 - Settings: nothing in it is Classic's ("Open the shelf folder" went with the Shelf to both layouts). **Folder groups** (Search results) frames a selected folder with the rows under it that follow it, in both layouts.
-- Ctrl+Alt+Space and Quick TODO are shared. **Ctrl+Shift+Space** (`openRecentChanges`) resets the search in place in both layouts; Runner's branch is guarded in `runner-layout.cjs`, and Classic's reset (every option off but Match path, subfolders and everything shown) in `recent-changes.cjs`.
+- The global shortcuts are shared: Ctrl+Alt+Space, Quick TODO, and **Ctrl+Shift+Space** (`openRecentChanges`), which resets the search in place to Runner's own defaults.
 
 ## Classic code Runner depends on
 
@@ -51,15 +51,15 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 
 ## Tests
 
-- **Classic only:** `smoke`, `fuzz`, `recent-changes`.
-- **Runner only:** the `runner-*` tests, `viewer-runner` and `splitter-drag`, several with Classic round-trip checks that would need rewriting. Through the harness's `runner` option, also `delete-hides-row`, `gmist-start-guard`, `loadmore-regression`, `machine-features`, `md-preview-no-write`, `menu-enter`, `page-health`, `quiet-refresh` and `zoom-restore`.
+- **Classic only:** `fuzz`.
+- **Runner only:** the `runner-*` tests, `viewer-runner` and `splitter-drag`, several with Classic round-trip checks that would need rewriting. Through the harness's `runner` option, also `delete-hides-row`, `gmist-start-guard`, `loadmore-regression`, `machine-features`, `md-preview-no-write`, `menu-enter`, `page-health`, `quiet-refresh`, `recent-changes`, `smoke` and `zoom-restore`.
 - **Both:** `hotkey-raise-select`, `hover-preview`, `row-actions-keys`, `window-chrome`.
 - **No layout:** `restart-in-terminal`, `help-build` and `tags-dates` do not go through the harness's `connect`.
 - `test/README.md` omits tags-dates, repro-crash, gmist-start-guard and hover-preview.
 
 ## Stages named so far
 
-- **Test instances open in Runner:** `smoke` and `recent-changes` move to Runner, then `fuzz`, with counters that prove it still exercises typing, refresh ticks, load-more and the file operations; then the Classic halves of the Both tests and the round trips in the `runner-*` tests go; then a test instance opens in Runner from its first load and the harness's `runner` option goes.
+- **Test instances open in Runner:** `fuzz` moves to Runner, with counters that prove it still exercises typing, refresh ticks, load-more and the file operations; then the Classic halves of the Both tests and the round trips in the `runner-*` tests go; then a test instance opens in Runner from its first load and the harness's `runner` option goes.
 - **Move the rest of Classic's key handler into `RUNNER_KEYS`:** the keys in the Keys bullet above. `hotkey-raise-select` and `row-actions-keys` press keys in Classic, so they move to Runner in the same stage.
 - **`runSearch`'s `eventKind`** reaches only the search debug log (`runSearch.start`), through `scheduleSearch` and `runSearchNow`, so the argument can go from every call site.
 

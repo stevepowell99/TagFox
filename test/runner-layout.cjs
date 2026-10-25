@@ -24,7 +24,6 @@
 //   - there is no standing status line: a search leaves the bar hidden, F5's report brings it up and it goes
 //     again, and a partly ranked list says so in the box;
 //   - the Restart button sits in the search box and takes a click;
-//   - Ctrl+Shift+Space resets Runner's one search in place (no folder, no text, the last hour), with no new tab;
 //   - switching back to Classic, which only the test hook can still do, restores Classic's own view settings.
 //
 // Run: node test/runner-layout.cjs
@@ -592,19 +591,6 @@ async function main() {
       return { ok: r.width > 0 && r.left >= box.left && r.right <= box.right && !!hit && b.contains(hit), w: Math.round(r.width) };
     })()`);
     check(restartSeen.ok, `once code has changed it shows there and takes a click (${JSON.stringify(restartSeen)})`);
-
-    // Ctrl+Shift+Space (main sends tagfox-open-recent-changes): Runner resets its one search in place to its
-    // own defaults, with no folder, no text and the last hour.
-    await drv.T('setQuery', 'zeta');
-    await drv.settle('before recent');
-    await drv.T('openRecentChanges');
-    await drv.settle('recent');
-    s = await R();
-    check(s.scope === '' && s.query === '' && s.recency === '1h',
-      `Ctrl+Shift+Space empties the folder and the box and sets the last hour (scope "${s.scope}", box "${s.query}", ${s.recency})`);
-    check(s.chips.includes('recency') && !s.chips.includes('system'), `it shows the hour as a chip and keeps Runner's defaults (chips ${s.chips})`);
-    await drv.T('configure', { rootFolder: root });
-    await drv.T('setRecency', 'all');
 
     // Back to Classic, which only the test hook can still reach.
     await drv.T('setRunnerMode', false);
