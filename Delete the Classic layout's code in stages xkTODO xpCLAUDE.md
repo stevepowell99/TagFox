@@ -47,7 +47,7 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 - **Favourites store (the stars):** `loadFavouriteFolders`, `saveFavouriteFolders`, `toggleStarPath`, `openFavouritePath` (Ctrl+Shift+1..9, which asks IPC `path-kinds` whether a star is a file or a folder); `fuzzyPathScore` (used by Runner's `/` list) lives in the favourites code. IPC `windows-recent-folders`/`-files` and `scanWindowsRecentLnkTargets` in `main.js` feed Runner's ranking boost and are not Classic's.
 - **History and undo:** `searchHist`, `goSearchHistory`, `runUndo`.
 - **Clicked hidden controls:** `#helpModal`, `#settingsPanel`; `#statusMain` and `setStatusMain`.
-- **Keys:** Runner's key table hands several keys to Classic's handler (Ctrl+R, Alt+←/→, F5, Space, Ctrl+A, Ctrl+Shift+1..9, Shift+Space, F2, Ctrl+Shift+N, Ctrl+H, F1, Ctrl+,, and Esc once Runner's own steps are done: the full-screen Viewer, Quick TODO, the breadcrumb flyouts), and some work in Runner only by falling through to it: Ctrl+/ (Help), Ctrl+W, Ctrl+., Ctrl+J/K, Ctrl+Shift+R, Ctrl+Z, Ctrl+↑ / Alt+↑, Ctrl+Shift+Home, ↑ and ↓ (Shift too) outside the search box, and →, Enter and Del with the focus on neither the box nor the list. Ctrl+C, Ctrl+X, Ctrl+V and Ctrl+Shift+C have Runner entries, but from an open menu they reach Classic's copies.
+- **Keys:** every key is a `RUNNER_KEYS` entry, but several entries still call Classic's functions: `goToParentScopeFolder` (Ctrl+↑, Alt+↑), `moveResultsSiblingFolder` (Ctrl+J/K), `clearSearchScopeAndTagRecencyFilters` (Ctrl+Shift+Home), `toggleRecencyAllVsHour` (Ctrl+Shift+R) and `runUndo` (Ctrl+Z). The search box's own keydown listener still sends Ctrl+↓ and Alt+↓ into the list (`enterResultsListKeepingSelection`).
 
 ## Tests
 
@@ -58,10 +58,10 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 
 ## Stages named so far
 
-- **Move the rest of Classic's key handler into `RUNNER_KEYS`:** the keys in the Keys bullet above.
 - **Path sort:** everything in the Code column of the "Sort by path" row above.
 - **`runSearch`'s `eventKind`** reaches only the search debug log (`runSearch.start`), through `scheduleSearch` and `runSearchNow`, so the argument can go from every call site.
 
 ## Decisions before any deletion
 
 - None left: deadlines, the star list, Restart, Windows Recent, Ctrl+Shift+Space and Subfolders are all settled above.
+- **For Steve, before the keys' Classic functions go:** Ctrl+↑ and Alt+↑ go up a folder keeping the box's text, where ← goes up the Runner way (box cleared, the folder left selected), so should the two become ←? And should the unlisted keys (Ctrl+W, Ctrl+., Ctrl+J/K, Ctrl+Shift+R, Ctrl+Shift+Home, Ctrl+Z, Ctrl+↑, Alt+↑) be listed in Help or dropped?

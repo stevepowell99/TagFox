@@ -128,7 +128,8 @@ async function main() {
     await click('btnQuickTodoPopSave');
     const todo = path.join(proj, 'viewer probe xkTODO.md');
     check(await waitFor(() => fs.existsSync(todo)), 'saving puts "viewer probe xkTODO.md" in that folder');
-    check(!(await shown('quickTodoPop')), 'and closes the box');
+    // Main writes the file before its reply reaches the page, so the box can still be open for a moment.
+    check(await waitFor(async () => !(await shown('quickTodoPop'))), 'and closes the box');
     await T('runCommand', 'new-todo');
     check(await waitFor(() => shown('quickTodoPop')), '/New TODO in this folder opens the box');
     check((await text('quickTodoPopLabel')) === 'New TODO in ' + path.basename(root), `aimed at the current folder (${await text('quickTodoPopLabel')})`);

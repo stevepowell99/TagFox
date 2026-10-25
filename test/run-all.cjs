@@ -44,6 +44,7 @@ const runs = [
   { name: 'runner saved searches', args: ['runner-saved-searches.cjs'] },
   { name: 'machine features', args: ['machine-features.cjs'] },
   { name: 'row buttons by keyboard', args: ['row-actions-keys.cjs'] },
+  { name: 'option, dialog and folder keys', args: ['runner-key-actions.cjs'] },
   { name: 'hidden title bar', args: ['window-chrome.cjs'] },
   { name: 'hover preview', args: ['hover-preview.cjs'] },
   { name: 'open and save dialog hand-off', args: ['file-dialog-handoff.cjs'] }, // the real-dialog half is manual-file-dialog.cjs, by hand

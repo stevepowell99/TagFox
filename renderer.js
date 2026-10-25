@@ -3508,7 +3508,7 @@
       { id: 'refresh', group: 'TagFox', label: 'Refresh (F5)', run: () => void refreshResultsFromUi() },
       { id: 'dark', group: 'TagFox', label: 'Dark or light mode', run: () => toggleDarkMode() },
       { id: 'settings', group: 'TagFox', label: 'Settings', run: () => toggleSettingsPanel() },
-      { id: 'help', group: 'TagFox', label: 'Help (F1)', run: () => bootstrap.Modal.getOrCreateInstance(document.getElementById('helpModal')).show() },
+      { id: 'help', group: 'TagFox', label: 'Help (F1)', run: () => showHelp() },
       { id: 'quit', group: 'TagFox', label: 'Quit TagFox (its shortcut stops working until TagFox starts again)', run: () => void window.tagBrowser?.quitTagFox?.() },
     ];
 
@@ -4160,13 +4160,25 @@
       void keyboardActivateSelection();
     }
 
-    /** Esc, one step a press: the multi-selection, the text, the folder, then TagFox hides. Menus, dialogs,
-        Settings and the full-screen Viewer close themselves first, so those are left to Classic's handler. */
+    /** Esc, one step a press: the full-screen Viewer, Quick TODO and the breadcrumb flyouts close first, from
+        anywhere; then, outside a text field or a menu, the multi-selection, the text, the folder, and last
+        TagFox hides. An open dropdown or Settings closes itself. */
     let runnerEscapeLastStep = '';
-    function runnerEscape() {
-      if (document.querySelector('.dropdown-menu.show, .offcanvas.show') || isPropsTheaterOn() || breadcrumbSubfolderFlyoutsAreOpen()) return false;
+    function runnerEscape(c) {
+      if (isPropsTheaterOn()) {
+        setPropsTheaterMode(false);
+        return true;
+      }
       const pop = document.getElementById('quickTodoPop');
-      if (pop && !pop.classList.contains('d-none')) return false;
+      if (pop && !pop.classList.contains('d-none')) {
+        hideQuickTodoPop();
+        return true;
+      }
+      if (breadcrumbSubfolderFlyoutsAreOpen()) {
+        hideBreadcrumbSubfolderFlyout();
+        return true;
+      }
+      if (c.inField || c.inMenu || document.querySelector('.dropdown-menu.show, .offcanvas.show')) return false;
       if (checkedPathsMap.size > 1) {
         const row = selectedFullPath ? selectedRowForActions() : null;
         clearResultsCheckedSelection();
@@ -4238,10 +4250,11 @@
       void openResultsRowItemActionsMenu(selectedFullPath, r.left + 40, r.bottom, row);
     }
 
-    /** Runner's keys, in the order the handler tries them. Help's key list is drawn from this table, so the
-        two cannot drift apart. `when(c)` decides; `run(c)` acts, returning nothing to consume the key,
-        'native' to leave it to the browser (and keep Classic out), or 'classic' to hand it to Classic's
-        handler. An entry without `does` works but is not listed. */
+    /** Every key the window handles, in the order the handler tries them. Help's key list is drawn from this
+        table, so the two cannot drift apart. `when(c)` decides; `run(c)` acts, returning nothing to consume the
+        key or 'native' to leave it to the browser. While the focus is in another text field (the Viewer's
+        editor, Settings) an entry runs only with `fields`, and from an open menu only with `menus`. An entry
+        without `does` works but is not listed. */
     const RUNNER_KEYS = [
       /* Search */
       {
@@ -4269,20 +4282,26 @@
       { group: 'Search', keys: ['Ctrl+B'], does: 'Whole words only, on or off', when: (c) => c.ctrl('b'), run: () => toggleSearchOptCheckbox('optWholeWord') },
       { group: 'Search', keys: ['Ctrl+I'], does: 'Match case, on or off', when: (c) => c.ctrl('i'), run: () => toggleSearchOptCheckbox('optCase') },
       { group: 'Search', keys: ['Ctrl+U', 'Ctrl+P'], does: 'Match path, on or off (off: names only)', when: (c) => c.ctrl('u') || c.ctrl('p'), run: () => runnerToggleMatchPath() },
-      { group: 'Search', keys: ['Ctrl+R'], does: 'Modified within the last hour, day, week, month, year or any time, in turn', when: (c) => c.ctrl('r'), run: () => 'classic' },
+      { group: 'Search', keys: ['Ctrl+R'], does: 'Modified within the last hour, day, week, month, year or any time, in turn', when: (c) => c.ctrl('r'), menus: true, run: () => cycleRecencyFilter() },
       { group: 'Search', keys: ['Ctrl+M'], does: 'Sort by date; again for the smart order', when: (c) => c.ctrl('m'), run: () => setRunnerSort(runnerSort === 'date' ? 'smart' : 'date') },
       { group: 'Search', keys: ['Ctrl+N'], does: 'Sort by name; again for the smart order', when: (c) => c.ctrl('n'), run: () => setRunnerSort(runnerSort === 'name' ? 'smart' : 'name') },
       { group: 'Search', keys: ['Alt+Home'], does: 'Start again: no text, no folder, every filter at its default', when: (c) => c.alt && !c.mod && c.key === 'Home', run: () => runnerStartAgain() },
-      { group: 'Search', keys: ['Alt+←', 'Alt+→'], does: 'Back and forward through earlier searches', when: (c) => c.alt && !c.mod && (c.key === 'ArrowLeft' || c.key === 'ArrowRight'), run: () => 'classic' },
+      { group: 'Search', keys: ['Alt+←', 'Alt+→'], does: 'Back and forward through earlier searches', when: (c) => c.alt && !c.mod && (c.key === 'ArrowLeft' || c.key === 'ArrowRight'), menus: true, run: (c) => void goSearchHistory(c.key === 'ArrowLeft' ? -1 : 1) },
       { group: 'Search', keys: ['Alt+1…9'], does: 'Saved search 1 to 9: its folder, text and filters. / then “Save this search” saves the one on screen', when: (c) => c.alt && !c.mod && !c.shift && /^Digit[1-9]$/.test(c.code), run: (c) => void runSavedSearch(Number(c.code.slice(5))) },
-      { group: 'Search', keys: ['F5'], does: 'Search again', when: (c) => c.plain && c.key === 'F5', run: () => 'classic' },
+      { group: 'Search', keys: ['F5'], does: 'Search again', when: (c) => c.plain && c.key === 'F5', menus: true, run: () => void refreshResultsFromUi() },
+      /* Unlisted: a second Ctrl+B, system files, the last hour or any time, leaving the folder with the tag and recency filters, and undo. */
+      { keys: ['Ctrl+W'], when: (c) => c.ctrl('w'), menus: true, run: () => toggleSearchOptCheckbox('optWholeWord') },
+      { keys: ['Ctrl+.'], when: (c) => c.mod && !c.alt && !c.shift && (c.key === '.' || c.code === 'Period'), menus: true, run: () => toggleSearchOptCheckbox('optHideSpecial') },
+      { keys: ['Ctrl+Shift+R'], when: (c) => c.mod && !c.alt && c.shift && c.k === 'r', menus: true, run: () => toggleRecencyAllVsHour() },
+      { keys: ['Ctrl+Shift+Home'], when: (c) => c.mod && !c.alt && c.shift && c.key === 'Home', menus: true, run: () => clearSearchScopeAndTagRecencyFilters() },
+      { keys: ['Ctrl+Z'], when: (c) => c.ctrl('z') && !c.inBox, menus: true, run: () => void runUndo() },
 
       /* Move */
       {
         group: 'Move and select',
         keys: ['↑', '↓'],
         does: 'Move the selection, from the search box or the list. From the search box they leave the caret at the end of the text, so typing adds to it',
-        when: (c) => c.inBox && c.plain && !c.shift && (c.key === 'ArrowDown' || c.key === 'ArrowUp'),
+        when: (c) => c.plain && !c.shift && (c.key === 'ArrowDown' || c.key === 'ArrowUp'),
         run: (c) => {
           if (c.textSel) c.q.setSelectionRange(c.q.value.length, c.q.value.length);
           moveResultsSelection(c.key === 'ArrowDown' ? 1 : -1);
@@ -4292,7 +4311,7 @@
         group: 'Move and select',
         keys: ['Shift+↑', 'Shift+↓'],
         does: 'Check a run of rows; their checkboxes appear',
-        when: (c) => c.inBox && c.plain && c.shift && (c.key === 'ArrowDown' || c.key === 'ArrowUp'),
+        when: (c) => c.plain && c.shift && (c.key === 'ArrowDown' || c.key === 'ArrowUp'),
         run: (c) => moveResultsSelectionWithShift(c.key === 'ArrowDown' ? 1 : -1),
       },
       {
@@ -4327,14 +4346,17 @@
         when: (c) => c.plain && c.key === 'Tab' && (c.inBox || c.inList),
         run: (c) => runnerSwitchBoxAndList(c.inBox),
       },
-      { group: 'Move and select', keys: ['Space'], does: 'In the list: check or uncheck the selected row', when: (c) => c.inList && c.plain && !c.shift && c.key === ' ', run: () => 'classic' },
-      { group: 'Move and select', keys: ['Ctrl+A'], does: 'In the search box, select its text; in the list, check every row', when: (c) => c.ctrl('a'), run: (c) => (c.inBox ? 'native' : 'classic') },
+      { group: 'Move and select', keys: ['Space'], does: 'In the list: check or uncheck the selected row', when: (c) => c.plain && !c.shift && c.key === ' ' && !c.inBox && !c.onControl, run: () => toggleKeyboardRowCheckbox() },
+      { group: 'Move and select', keys: ['Ctrl+A'], does: 'In the search box, select its text; in the list, check every row', when: (c) => c.ctrl('a'), menus: true, run: (c) => (c.inBox ? 'native' : selectAllVisibleResultRows()) },
+      { keys: ['Ctrl+J', 'Ctrl+K'], when: (c) => c.ctrl('j') || c.ctrl('k'), menus: true, run: (c) => moveResultsSiblingFolder(c.k === 'j' ? 1 : -1) },
       {
         group: 'Move and select',
         keys: ['Esc'],
         does: 'One step back a press: a list or menu, the checked rows, the text, the folder, then TagFox hides',
-        when: (c) => c.plain && !c.shift && c.key === 'Escape',
-        run: () => (runnerEscape() ? undefined : 'classic'),
+        when: (c) => c.plain && c.key === 'Escape',
+        fields: true,
+        menus: true,
+        run: (c) => (runnerEscape(c) ? undefined : 'native'),
       },
 
       /* Folders */
@@ -4342,7 +4364,7 @@
         group: 'Folders',
         keys: ['→'],
         does: 'Into the selected folder (from the search box: with the caret at the end)',
-        when: (c) => c.plain && !c.shift && c.key === 'ArrowRight' && (c.inBox ? c.caretEnd : c.inList),
+        when: (c) => c.plain && !c.shift && c.key === 'ArrowRight' && (!c.inBox || c.caretEnd),
         run: (c) => {
           if (!c.held) runnerEnterSelectedFolder();
         },
@@ -4364,28 +4386,41 @@
         run: () => clearSearchScope(),
       },
       { group: 'Folders', keys: ['Shift+Enter'], does: 'Go to the folder holding the selected row, here in TagFox', when: (c) => c.plain && c.shift && c.key === 'Enter', run: () => void runnerActivateSelection('folder') },
-      { group: 'Folders', keys: ['Ctrl+Shift+1…9'], does: 'Starred item 1 to 9', when: (c) => c.mod && c.shift && !c.alt && /^Digit[1-9]$/.test(c.code), run: () => 'classic' },
+      {
+        group: 'Folders',
+        keys: ['Ctrl+Shift+1…9'],
+        does: 'Starred item 1 to 9',
+        when: (c) => c.mod && c.shift && !c.alt && /^Digit[1-9]$/.test(c.code),
+        menus: true,
+        run: (c) => {
+          const star = loadFavouriteFolders()[Number(c.code.slice(5)) - 1];
+          if (!star) return 'native';
+          void openFavouritePath(star);
+        },
+      },
+      { keys: ['Ctrl+↑', 'Alt+↑'], when: (c) => c.key === 'ArrowUp' && c.mod !== c.alt, menus: true, run: () => void goToParentScopeFolder() },
 
       /* Open and act */
-      { group: 'Open and act', keys: ['Enter'], does: 'Open the selected row; a folder opens here. With a path typed in the search box, go there; with nothing listed inside a folder, search everywhere', when: (c) => c.plain && !c.shift && c.key === 'Enter' && (c.inBox || c.inList), run: (c) => void runnerEnter(c) },
+      { group: 'Open and act', keys: ['Enter'], does: 'Open the selected row; a folder opens here. With a path typed in the search box, go there; with nothing listed inside a folder, search everywhere', when: (c) => c.plain && !c.shift && c.key === 'Enter' && !c.onControl, run: (c) => void runnerEnter(c) },
       { group: 'Open and act', keys: ['Ctrl+Enter'], does: 'Open its folder in File Explorer, with it selected', when: (c) => c.mod && !c.alt && !c.shift && c.key === 'Enter', run: () => void runnerActivateSelection('reveal') },
       { group: 'Open and act', keys: ['Alt+Enter'], does: 'Properties', when: (c) => c.alt && !c.mod && !c.shift && c.key === 'Enter', run: () => void runnerActivateSelection('properties') },
       /* Another app's Open or Save dialog, while the toggle shortcut has raised TagFox from one. `first`: these
          are tried before every other entry, so they win over the plain Enter, Ctrl+Enter and Esc above and below. */
-      { group: "Another app's Open or Save dialog", first: true, keys: ['Enter'], does: 'With a dialog waiting (the toggle shortcut was pressed from it): send it the selected row. In an Open dialog a file opens and a folder is shown; a Save dialog gets the folder and keeps its file name, and you press Save', when: (c) => !!fileDialogTarget && c.plain && !c.shift && c.key === 'Enter' && (c.inBox || c.inList), run: (c) => void runnerEnter(c) },
+      { group: "Another app's Open or Save dialog", first: true, keys: ['Enter'], does: 'With a dialog waiting (the toggle shortcut was pressed from it): send it the selected row. In an Open dialog a file opens and a folder is shown; a Save dialog gets the folder and keeps its file name, and you press Save', when: (c) => !!fileDialogTarget && c.plain && !c.shift && c.key === 'Enter' && !c.onControl, run: (c) => void runnerEnter(c) },
       { group: "Another app's Open or Save dialog", first: true, keys: ['Ctrl+Enter'], does: 'With a dialog waiting: send it the folder TagFox is showing', when: (c) => !!fileDialogTarget && c.mod && !c.alt && !c.shift && c.key === 'Enter', run: () => sendScopeFolderToFileDialog() },
       { group: "Another app's Open or Save dialog", first: true, keys: ['Esc'], does: 'With a dialog waiting: stop sending to it, so Enter opens rows again', when: (c) => !!fileDialogTarget && c.plain && !c.shift && c.key === 'Escape', run: () => cancelFileDialogTarget() },
       { group: 'Open and act', keys: ['Alt+P'], does: 'Show or hide the Viewer', when: (c) => c.alt && !c.mod && !c.shift && c.k === 'p', run: () => runnerToggleViewer() },
-      { group: 'Open and act', keys: ['Shift+Space'], does: 'The Viewer full screen', when: (c) => c.plain && c.shift && c.key === ' ', run: () => 'classic' },
+      { group: 'Open and act', keys: ['Shift+Space'], does: 'The Viewer full screen', when: (c) => c.plain && c.shift && c.key === ' ', menus: true, run: () => togglePropsTheaterMode() },
       { group: 'Open and act', keys: ['Shift+F10', 'Menu'], does: "The selected row's menu", when: (c) => (c.plain && c.shift && c.key === 'F10') || c.key === 'ContextMenu', run: () => runnerOpenRowMenu() },
       { group: 'Open and act', keys: ['Ctrl+D'], does: 'Star or unstar the selected row', when: (c) => c.ctrl('d'), run: () => toggleStarForSelection() },
       { group: 'Open and act', keys: ['Ctrl+T'], does: 'Tags: add or remove them on the checked rows, or on the selected row', when: (c) => c.ctrl('t'), run: () => runnerEditTags() },
-      { group: 'Open and act', keys: ['F2'], does: 'Rename', when: (c) => c.plain && !c.shift && c.key === 'F2', run: () => 'classic' },
+      { group: 'Open and act', keys: ['F2'], does: 'Rename', when: (c) => c.plain && c.key === 'F2', menus: true, run: () => void renameItemInteractive() },
       {
         group: 'Open and act',
         keys: ['Del', 'Shift+Del'],
         does: 'Move the checked rows to the Recycle Bin (from the search box: with it empty). TagFox never deletes for good, so Shift+Del recycles too',
-        when: (c) => c.plain && c.key === 'Delete' && (c.inList || (c.inBox && c.empty)),
+        when: (c) => c.plain && c.key === 'Delete' && (!c.inBox || c.empty),
+        menus: true,
         run: (c) => {
           if (!c.e.repeat) void keyboardRecycleConfirm();
         },
@@ -4395,6 +4430,7 @@
         keys: ['Ctrl+C', 'Ctrl+X'],
         does: 'Copy or cut the selected files, to paste in Explorer (in the search box: with no text selected)',
         when: (c) => c.ctrl('c') || c.ctrl('x'),
+        menus: true,
         run: (c) => {
           if (c.textSel) return 'native';
           if (c.k === 'c') void copyShortcutExplorerFiles();
@@ -4406,6 +4442,7 @@
         keys: ['Ctrl+Shift+C'],
         does: 'Copy their full paths as text',
         when: (c) => c.mod && c.shift && !c.alt && c.k === 'c',
+        menus: true,
         run: (c) => (c.textSel ? 'native' : void keyboardCopyFullPathsText()),
       },
       {
@@ -4413,14 +4450,15 @@
         keys: ['Ctrl+V'],
         does: 'Paste copied files or a screenshot into the folder; copied text goes into the search box',
         when: (c) => c.ctrl('v'),
+        menus: true,
         run: () => void runnerPaste(),
       },
-      { group: 'Open and act', keys: ['Ctrl+Shift+N'], does: 'New folder here', when: (c) => c.mod && c.shift && !c.alt && c.k === 'n', run: () => 'classic' },
-      { group: 'Open and act', keys: ['Ctrl+H'], does: 'Rename the checked rows with wildcards', when: (c) => c.ctrl('h'), run: () => 'classic' },
+      { group: 'Open and act', keys: ['Ctrl+Shift+N'], does: 'New folder here', when: (c) => c.mod && c.shift && !c.alt && c.k === 'n', menus: true, run: () => void createNewFolderInScopeInteractive() },
+      { group: 'Open and act', keys: ['Ctrl+H'], does: 'Rename the checked rows with wildcards', when: (c) => c.mod && !c.alt && c.k === 'h', menus: true, run: () => openBulkRenameModal() },
 
       /* TagFox */
-      { group: 'TagFox', keys: ['F1'], does: 'Help', when: (c) => c.plain && c.key === 'F1', run: () => 'classic' },
-      { group: 'TagFox', keys: ['Ctrl+,'], does: 'Settings', when: (c) => c.ctrl(','), run: () => 'classic' },
+      { group: 'TagFox', keys: ['F1', 'Ctrl+/'], does: 'Help', when: (c) => c.key === 'F1' || (c.mod && !c.alt && !c.shift && (c.key === '/' || c.code === 'Slash')), menus: true, run: () => showHelp() },
+      { group: 'TagFox', keys: ['Ctrl+,'], does: 'Settings', when: (c) => c.mod && !c.alt && !c.shift && (c.key === ',' || c.code === 'Comma'), menus: true, run: () => toggleSettingsPanel() },
 
       /* A Classic key for a part Runner does not show, answered. */
       {
@@ -4437,11 +4475,18 @@
       const mod = e.ctrlKey || e.metaKey;
       const k = String(e.key || '').toLowerCase();
       const wrap = document.getElementById('resultsWrap');
+      const t = e.target;
+      const inList = !!wrap && !inBox && (t === wrap || wrap.contains(t));
       return {
         e,
         q,
         inBox,
-        inList: !!wrap && !inBox && (e.target === wrap || wrap.contains(e.target)),
+        inList,
+        /* Another text field, or the Viewer's markdown editor. */
+        inField: !inBox && (isTypingTarget(t) || isInMarkdownEditSurface(t)),
+        inMenu: isMenuKeyboardNavTarget(t),
+        /* A control outside the box and the list (a button, a Viewer thumbnail) takes Enter and Space itself. */
+        onControl: !inBox && !inList && !!(t && t.closest && t.closest('button, a[href], input, select, textarea, summary, [tabindex], [role="button"]')),
         key: e.key,
         code: e.code,
         k,
@@ -4459,7 +4504,8 @@
       };
     }
 
-    /** Runner's keys, ahead of Classic's in the window keydown handler. True: handled, Classic must not act. */
+    /** The window's keys: the / list and the options panel while one is open, then RUNNER_KEYS, then typing
+        into the box from anywhere else. True: handled. */
     function runnerHandleKeydown(e) {
       if (e.key === 'Control') {
         if (!e.repeat && !runnerCtrlHintTimer) runnerCtrlHintTimer = setTimeout(() => runnerShowCtrlHints(true), 450);
@@ -4510,17 +4556,15 @@
           return consume();
         }
       }
-      /* Another text field (the Viewer's editor, Settings) or an open menu keeps its own keys. */
-      if (!c.inBox && (isTypingTarget(e.target) || isInMarkdownEditSurface(e.target))) return false;
-      if (isMenuKeyboardNavTarget(e.target)) return false;
-      const entry = RUNNER_KEYS.find((x) => x.first && x.when(c)) || RUNNER_KEYS.find((x) => x.when(c));
+      /* Another text field (the Viewer's editor, Settings) or an open menu keeps its own keys, bar the entries
+         marked to run there. */
+      const fits = (x) => (!c.inField || x.fields) && (!c.inMenu || x.menus) && x.when(c);
+      const entry = RUNNER_KEYS.find((x) => x.first && fits(x)) || RUNNER_KEYS.find(fits);
       if (entry) {
-        const r = entry.run(c);
-        if (r === 'classic') return false;
-        if (r === 'native') return true;
+        if (entry.run(c) === 'native') return true;
         return consume();
       }
-      if (c.inBox || !c.plain) return false;
+      if (c.inBox || c.inField || c.inMenu || !c.plain) return false;
       /* Typing with the focus anywhere but a text field goes into the box. */
       if (e.key === '/') {
         focusQueryBox(false);
@@ -4572,6 +4616,10 @@
     }
 
     /** `?` in an empty box: Help on its Keys tab (`runner`), at the keys. */
+    function showHelp() {
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('helpModal')).show();
+    }
+
     function openRunnerKeysHelp() {
       const hm = document.getElementById('helpModal');
       if (!hm) return;
@@ -10909,6 +10957,14 @@
       syncRecencyFilterActiveHighlight();
     }
 
+    /** Ctrl+R: the next recency window, from the last hour round to any time. */
+    function cycleRecencyFilter() {
+      const order = ['1h', '1d', '1w', '1m', '1y', 'all'];
+      const next = order[(order.indexOf(recencyFilterMode()) + 1) % order.length];
+      setRecencyFilterMode(next);
+      document.querySelector('input[name="tagFoxRecencyFilter"][value="' + next + '"]')?.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
     /** Keyboard quick toggle: recent hour window vs no recency filter. */
     function toggleRecencyAllVsHour() {
       const next = recencyFilterMode() === '1h' ? 'all' : '1h';
@@ -14103,28 +14159,14 @@
       pullWebContentsKeyboardFocus();
     });
     document.getElementById('query').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) void runSearchNow();
-      // Leave the field and step into the active pane, keeping the current row so ↑/↓/Enter
-      // continue from it (not the first row). Tab keeps its normal tab order.
+      // Ctrl+↓ or Alt+↓ (a plain ↓ is a table entry): into the list, keeping the current row so ↑/↓/Enter
+      // continue from it (not the first row).
       if (e.key === 'ArrowDown' && listRowsForUi().length) {
         e.preventDefault();
         enterResultsListKeepingSelection();
         e.target.blur();
       }
     });
-    /* capture: Alt+↑ = scope parent — before input defaults; window keydown defers #query to this so it always fires in the search box. */
-    document.getElementById('query').addEventListener(
-      'keydown',
-      (e) => {
-        if (!e.altKey || e.ctrlKey || e.metaKey) return;
-        if (e.key !== 'ArrowUp' && e.code !== 'ArrowUp') return;
-        if (document.querySelector('.modal.show')) return;
-        e.preventDefault();
-        void goToParentScopeFolder();
-      },
-      true
-    );
-
     document.getElementById('btnReadmeFolderDocTags').addEventListener('click', () => openTagModalFolderDocDraft());
     document.getElementById('readmeFolderDocStemInput').addEventListener('input', () => folderDocOnFilenameUiChanged());
 
@@ -14380,7 +14422,8 @@
     document.addEventListener('mouseover', onResultRowHoverOver);
     document.addEventListener('mouseout', onResultRowHoverOut);
     document.addEventListener('scroll', hideHoverPreview, true);
-    document.addEventListener('keydown', hideHoverPreview, true);
+    /* On the window and ahead of the key handler, which stops the keys it takes. */
+    window.addEventListener('keydown', hideHoverPreview, true);
     document.addEventListener('visibilitychange', hideHoverPreview);
     window.addEventListener('blur', hideHoverPreview);
     document.getElementById('optSearchDebug').addEventListener('change', () => {
@@ -15031,21 +15074,6 @@
       return !!(mw && !mw.classList.contains('d-none') && mw.contains(el));
     }
 
-    /** User highlighted text — let the browser handle Ctrl+C / Ctrl+X / Ctrl+Shift+C (don’t steal for Explorer paths). */
-    function hasNonEmptyDomTextSelection() {
-      try {
-        const s = window.getSelection && window.getSelection();
-        return !!(s && String(s.toString() || '').trim());
-      } catch (_) {
-        return false;
-      }
-    }
-
-    /** App shortcuts run in #query too; still block in Settings / modals / multiline fields. (Ctrl+C/X/V keep isTypingTarget for native copy/paste in the box.) */
-    function blockAppShortcutInTextField(el) {
-      return (isTypingTarget(el) || isInMarkdownEditSurface(el)) && !(el && el.id === 'query');
-    }
-
     /** Any dropdown menu, the toggle of an open one, or a breadcrumb flyout owns ↑/↓/←/→ + Enter: skip global table/scope nav, or Enter opens the selected result row instead of the focused item, the first ↓ from the toggle also moves the results selection, and ←/→ would drill the flyout chain. */
     function isMenuKeyboardNavTarget(el) {
       if (!el || !el.closest) return false;
@@ -15306,9 +15334,6 @@
       el.checked = !el.checked;
       el.dispatchEvent(new Event('change', { bubbles: true }));
     }
-    function toggleWholeWordMatch() {
-      toggleSearchOptCheckbox('optWholeWord');
-    }
 
     /** The folder buttons (Explorer, copy, tags, terminal, quoted path, more) need a current folder. */
     function syncScopeBarButtons() {
@@ -15557,346 +15582,9 @@
     window.addEventListener(
       'keydown',
       (e) => {
-      if (e.defaultPrevented) return;
-      if (rowActionStripHandleKeydown(e)) return;
-      if (runnerHandleKeydown(e)) return;
-
-      if (e.key === 'Escape' && isPropsTheaterOn() && !document.querySelector('.modal.show')) {
-        e.preventDefault();
-        setPropsTheaterMode(false);
-        return;
-      }
-
-      {
-        const pop = document.getElementById('quickTodoPop');
-        if (
-          e.key === 'Escape' &&
-          pop &&
-          !pop.classList.contains('d-none') &&
-          !document.querySelector('.modal.show')
-        ) {
-          e.preventDefault();
-          hideQuickTodoPop();
-          return;
-        }
-      }
-
-      if (e.key === 'Escape' && !document.querySelector('.modal.show') && breadcrumbSubfolderFlyoutsAreOpen()) {
-        e.preventDefault();
-        hideBreadcrumbSubfolderFlyout();
-        return;
-      }
-
-      /* Esc: checked result rows → clear checks (before query/scope Esc). No modal / open dropdown. */
-      if (
-        e.key === 'Escape' &&
-        !document.querySelector('.modal.show') &&
-        !document.querySelector('.dropdown-menu.show') &&
-        checkedPathsMap.size
-      ) {
-        e.preventDefault();
-        clearResultsCheckedSelection();
-        return;
-      }
-
-      /* Esc: non-empty query → clear query (from #query or non-text focus). Empty query + focus in #query → clear current folder (whole index). No modal / open dropdown. */
-      if (
-        e.key === 'Escape' &&
-        !document.querySelector('.modal.show') &&
-        !document.querySelector('.dropdown-menu.show')
-      ) {
-        const q = document.getElementById('query');
-        if (q && String(q.value || '').trim()) {
-          const t = e.target;
-          if (!isTypingTarget(t) || t === q) {
-            e.preventDefault();
-            clearSearchQuery();
-            return;
-          }
-        } else if (
-          q &&
-          e.target === q &&
-          !String(q.value || '').trim() &&
-          String(document.getElementById('rootFolder').value || '').trim()
-        ) {
-          e.preventDefault();
-          clearSearchScope();
-          return;
-        }
-      }
-
-      const modC = (e.ctrlKey || e.metaKey) && !e.altKey;
-      if (modC && !e.shiftKey && (e.key === '/' || e.code === 'Slash')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        const hm = document.getElementById('helpModal');
-        if (hm) bootstrap.Modal.getOrCreateInstance(hm).show();
-        return;
-      }
-      if (modC && !e.shiftKey && (e.key === ',' || e.code === 'Comma')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        toggleSettingsPanel();
-        return;
-      }
-      if (e.key === 'F1') {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        const hm = document.getElementById('helpModal');
-        if (hm) bootstrap.Modal.getOrCreateInstance(hm).show();
-        return;
-      }
-      if (modC && !e.shiftKey && (e.key === 'a' || e.key === 'A')) {
-        if (document.querySelector('.modal.show')) return;
-        if (isTypingTarget(e.target)) return;
-        e.preventDefault();
-        selectAllVisibleResultRows();
-        return;
-      }
-      if (modC && e.shiftKey && (e.key === 'c' || e.key === 'C')) {
-        if (document.querySelector('.modal.show')) return;
-        if (isTypingTarget(e.target)) return;
-        if (hasNonEmptyDomTextSelection()) return;
-        e.preventDefault();
-        void keyboardCopyFullPathsText();
-        return;
-      }
-      if (modC && (e.key === 'c' || e.key === 'C')) {
-        if (document.querySelector('.modal.show')) return;
-        if (isTypingTarget(e.target)) return;
-        if (hasNonEmptyDomTextSelection()) return;
-        e.preventDefault();
-        void copyShortcutExplorerFiles();
-        return;
-      }
-      if (modC && (e.key === 'x' || e.key === 'X')) {
-        if (document.querySelector('.modal.show')) return;
-        if (isTypingTarget(e.target)) return;
-        if (hasNonEmptyDomTextSelection()) return;
-        e.preventDefault();
-        void cutShortcutExplorerFiles();
-        return;
-      }
-      if (modC && (e.key === 'v' || e.key === 'V')) {
-        if (document.querySelector('.modal.show')) return;
-        if (isTypingTarget(e.target)) return;
-        e.preventDefault();
-        void pasteShortcutClipboardIntoScope();
-        return;
-      }
-      if (modC && e.shiftKey && (e.key === 'n' || e.key === 'N')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        void createNewFolderInScopeInteractive();
-        return;
-      }
-      if (modC && e.key === 'ArrowUp') {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        void goToParentScopeFolder();
-        return;
-      }
-      if (modC && e.shiftKey && e.key === 'Home') {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        clearSearchScopeAndTagRecencyFilters();
-        return;
-      }
-      if (modC && !e.shiftKey && (e.key === 'w' || e.key === 'W')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        toggleWholeWordMatch();
-        return;
-      }
-      if (modC && !e.shiftKey && (e.key === '.' || e.code === 'Period')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        toggleSearchOptCheckbox('optHideSpecial');
-        return;
-      }
-      if (modC && !e.shiftKey && (e.key === 'j' || e.key === 'J')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        moveResultsSiblingFolder(1);
-        return;
-      }
-      if (modC && !e.shiftKey && (e.key === 'k' || e.key === 'K')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        moveResultsSiblingFolder(-1);
-        return;
-      }
-      if (modC && !e.shiftKey && (e.key === 'r' || e.key === 'R')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        const order = ['1h', '1d', '1w', '1m', '1y', 'all'];
-        const cur = recencyFilterMode();
-        const next = order[(order.indexOf(cur) + 1) % order.length];
-        setRecencyFilterMode(next);
-        const nextEl = document.querySelector(`input[name="tagFoxRecencyFilter"][value="${next}"]`);
-        nextEl?.dispatchEvent(new Event('change', { bubbles: true }));
-        return;
-      }
-      if (modC && e.shiftKey && (e.key === 'r' || e.key === 'R')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        toggleRecencyAllVsHour();
-        return;
-      }
-      if (modC && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
-        if (document.querySelector('.modal.show')) return;
-        // Stricter than blockAppShortcutInTextField: also yield in #query, so Ctrl+Z is native text undo in every input.
-        if (isTypingTarget(e.target) || isInMarkdownEditSurface(e.target)) return;
-        e.preventDefault();
-        void runUndo();
-        return;
-      }
-      if (modC && (e.key === 'h' || e.key === 'H')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        openBulkRenameModal();
-        return;
-      }
-      if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowUp' || e.code === 'ArrowUp')) {
-        if (document.querySelector('.modal.show')) return;
-        /* #query: dedicated capture listener handles (reliable while caret is in the search box). */
-        if (e.target && e.target.id === 'query') return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        void goToParentScopeFolder();
-        return;
-      }
-      if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === 'ArrowLeft') {
-        if (document.querySelector('.modal.show')) return;
-        if (isInMarkdownEditSurface(e.target) || isInMarkdownEditSurface(document.activeElement)) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        void goSearchHistory(-1);
-        return;
-      }
-      if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === 'ArrowRight') {
-        if (document.querySelector('.modal.show')) return;
-        if (isInMarkdownEditSurface(e.target) || isInMarkdownEditSurface(document.activeElement)) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        void goSearchHistory(1);
-        return;
-      }
-      /* Ctrl+Shift+1…9 / ⌘+Shift+1…9: the Nth star (1-based); Ctrl+Shift+N stays “new folder”. */
-      if (modC && e.shiftKey && /^Digit[1-9]$/.test(e.code)) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        const list = loadFavouriteFolders();
-        const idx = Number(e.code.charAt(5)) - 1;
-        if (!list[idx]) return;
-        e.preventDefault();
-        void openFavouritePath(list[idx]);
-        return;
-      }
-      if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === ' ' || e.code === 'Space')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        togglePropsTheaterMode();
-        return;
-      }
-
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      if (document.querySelector('.modal.show')) return;
-
-      if (e.key === 'F5') {
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        /* Same reporting as the main-process F5 route and the button: a silent refresh here was one of the
-           ways "F5 did nothing" could be true on screen while the search had in fact run. */
-        void refreshResultsFromUi();
-        return;
-      }
-      if (e.key === 'F2') {
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        void renameItemInteractive();
-        return;
-      }
-
-      if (isTypingTarget(e.target)) return;
-      if (isMenuKeyboardNavTarget(e.target)) {
-        const kk = e.key;
-        if (
-          kk === 'ArrowDown' ||
-          kk === 'ArrowUp' ||
-          kk === 'ArrowLeft' ||
-          kk === 'ArrowRight' ||
-          kk === 'Enter' ||
-          kk === 'Home' ||
-          kk === 'End' ||
-          kk === 'Backspace' ||
-          kk === ' ' ||
-          e.code === 'Space'
-        ) {
-          return;
-        }
-      }
-
-      if (isInMarkdownEditSurface(e.target) || isInMarkdownEditSurface(document.activeElement)) return;
-
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        void keyboardActivateSelection();
-        return;
-      }
-
-      if ((e.key === ' ' || e.code === 'Space') && !e.shiftKey) {
-        /* Let Bootstrap btn-check toggles use native Space. */
-        const sp = e.target;
-        if (sp && sp.matches && sp.matches('input.btn-check')) return;
-        e.preventDefault();
-        toggleKeyboardRowCheckbox();
-        return;
-      }
-
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        if (e.shiftKey) moveResultsSelectionWithShift(1);
-        else moveResultsSelection(1);
-        return;
-      }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        if (e.shiftKey) moveResultsSelectionWithShift(-1);
-        else moveResultsSelection(-1);
-        return;
-      }
-
-      /* → on a folder row: scope into that folder. */
-      if (e.key === 'ArrowRight') {
-        if (!selectedFullPath) return;
-        const row = selectedRowForActions();
-        if (row && rowIsFolder(row)) {
-          e.preventDefault();
-          void applySearchScopeAndRefresh(normalizeFolderPathForEverything(fullPathForRow(row)));
-        }
-        return;
-      }
-
-      if (e.key === 'Delete') {
-        e.preventDefault();
-        void keyboardRecycleConfirm();
-      }
-    },
+        if (rowActionStripHandleKeydown(e)) return;
+        runnerHandleKeydown(e);
+      },
       true
     );
 
