@@ -2431,13 +2431,36 @@ function toggleMainWindowFromGlobalShortcut() {
     const shown = Date.now() - t0;
     /* Two probes, so a slow raise says which half is slow: a bare executeJavaScript measures the
        IPC round trip plus renderer main-thread availability; the rAF pair adds compositor paint. */
+    let jsAnsweredAt = 0;
+    let painted = false;
+    /* A raise that never paints is a blank window. Steve saw one three times on 25 October 2026, each after
+       the page had been reloaded while TagFox was hidden, with no crash, failed load or page error logged and
+       no raise line, which is written only once the page paints. So a raise not painted after 2s says so and
+       asks for a new frame; if the page answers and still has not painted 4s after that, it is reloaded. A
+       raise slowed by paging answers late as well, so it is not mistaken for this. */
+    setTimeout(() => {
+      if (painted || w.isDestroyed() || !w.isVisible()) return;
+      mainPerfLog(`raise no-paint after 2000ms js=${jsAnsweredAt ? 1 : 0}, invalidating`);
+      w.webContents.invalidate();
+      setTimeout(() => {
+        if (painted || w.isDestroyed() || !w.isVisible()) return;
+        if (!jsAnsweredAt || Date.now() - jsAnsweredAt < 3000) {
+          mainPerfLog(`raise still no paint 6000ms after the raise, js=${jsAnsweredAt ? 1 : 0}; leaving it`);
+          return;
+        }
+        mainPerfLog('raise still no paint 6000ms after the raise though the page answers; reloading');
+        w.webContents.reload();
+      }, 4000);
+    }, 2000);
     w.webContents
       .executeJavaScript('1')
       .then(() => {
+        jsAnsweredAt = Date.now();
         const rt = Date.now() - t0;
         return w.webContents
           .executeJavaScript('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(1))))')
           .then(() => {
+            painted = true;
             const m1 = metricsNow();
             const deltas = Object.keys(m1.ws)
               .map((k) => {
