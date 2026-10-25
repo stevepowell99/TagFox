@@ -387,6 +387,12 @@
     let resultsPagingCtx = null;
     /** One top-level search flow at a time: serializes runSearchNow. Nested calls (smart-narrow / smart-probe re-search fired synchronously inside an outer runSearch) pass opts.nested and skip the mutex to avoid self-deadlock. */
     let searchMutex = Promise.resolve();
+    /* Runner: every top-level search request takes a number, and the search holding the mutex keeps its own,
+       so one that a newer request has overtaken stops sending queries (runSearchNow, runnerSearchSuperseded). */
+    let searchRequestSeq = 0;
+    let activeSearchRequest = 0;
+    /* Counted so a test can prove that an overtaken search sent nothing, rather than infer it from timings. */
+    const runnerSearchCounters = { run: 0, stepAside: 0, extraSent: 0 };
     let topLevelSearchDepth = 0;
     /** Scratch result tabs. One tab is visible in the single results pane; the rest are passive state snapshots that re-run their own search when activated. Each tab: { id, searchState, lastRows, resultsPagingCtx }. Capped at MAX_TABS. */
     const MAX_TABS = 10;
@@ -3966,12 +3972,17 @@
     /** Rows the main query's page may have missed: names matching the words (with Match path on, a
         common word matches thousands of paths and the page holds only the newest), every starred or
         used path that matches, and the newest Temp hits. Merged into the main rows; never paged. */
-    async function runnerExtraRows({ runId, ceilingNorms, rootFolder, queryForEs, recursive, options, cap }) {
+    /** Runner: a newer search has been asked for since the running one took the mutex. */
+    function runnerSearchSuperseded() {
+      return isRunnerMode() && activeSearchRequest !== searchRequestSeq;
+    }
+
+    async function runnerExtraRows({ runId, ceilingNorms, rootFolder, queryForEs, recursive, options, cap, after }) {
       const jobs = [];
       const sent = (lastRunnerExtraSearchTexts = []);
       const ask = (searchText, count) => {
         sent.push(searchText);
-        jobs.push(everythingSearchOnce({ searchText, count, options: { ...options, offset: 0 } }));
+        jobs.push({ searchText, count });
       };
       const q = String(queryForEs || '').trim();
       const toks = q.split(/\s+/).filter(Boolean);
@@ -4013,14 +4024,22 @@
         else searchDebugLog('runner.extraRows.noTempDir', { runId });
       }
       if (!jobs.length) return [];
-      let results;
+      /* Sent after the main query and one at a time, each only while this search is still the newest: costs
+         nothing, since Everything runs them one at a time anyway, and an overtaken search then leaves at most
+         one query in Everything's queue ahead of the newest keystroke's, instead of all of them. */
+      const results = [];
       try {
-        results = await Promise.all(jobs);
+        await Promise.resolve(after).catch(() => null);
+        for (const j of jobs) {
+          if (runId !== searchRunSeq || runnerSearchSuperseded()) return [];
+          runnerSearchCounters.extraSent++;
+          results.push(await everythingSearchOnce({ searchText: j.searchText, count: j.count, options: { ...options, offset: 0 } }));
+        }
       } catch (err) {
         searchDebugLog('runner.extraRows.error', { runId, err: String((err && err.message) || err) });
         return [];
       }
-      if (runId !== searchRunSeq) return [];
+      if (runId !== searchRunSeq || runnerSearchSuperseded()) return [];
       let out = [];
       let failed = 0;
       for (const r of results) {
@@ -5458,6 +5477,7 @@
          id-swapped (hidden) pane's tbody. The active pane then looked empty until a pane switch repainted
          it. Explicit flag → such a task waits on the mutex instead. */
       const isNested = !!(opts && opts.nested);
+      const myRequest = isNested ? 0 : ++searchRequestSeq;
       let releaseMutex = null;
       if (!isNested) {
         const prev = searchMutex;
@@ -5465,6 +5485,24 @@
           releaseMutex = r;
         });
         await prev;
+        /* Runner: a newer search was asked for while this one waited its turn, so this one has nothing left
+           to show. Everything answers one query at a time, so running it anyway put its four or five queries
+           ahead of the newest keystroke's, and on a slow day typing four letters ran three stale searches in
+           full first. It waits for the newest instead, so a caller that awaits it still resumes once the list
+           for the current box is on screen. An auto-refresh tick starts only when nothing is in flight, so it
+           never overtakes a typed search. */
+        if (isRunnerMode() && myRequest !== searchRequestSeq) {
+          runnerSearchCounters.stepAside++;
+          releaseMutex();
+          let tail;
+          do {
+            tail = searchMutex;
+            await tail;
+          } while (tail !== searchMutex);
+          return;
+        }
+        activeSearchRequest = myRequest;
+        if (isRunnerMode()) runnerSearchCounters.run++;
       }
       topLevelSearchDepth++;
       try {
@@ -17659,8 +17697,8 @@
         httpPassword,
       };
 
-      /* Runner's extra queries are sent straight after the main one. Everything answers one query at a time, in
-         the order they arrive, so the main rows come back first and a new list can paint them while it waits. */
+      /* Runner's extra queries follow the main one, one at a time (runnerExtraRows). Everything answers one query
+         at a time, so the main rows come back first and a new list can paint them while the extras run. */
       const mainPromise = everythingSearchWithDirectionFallback({
         ...pageArgs,
         searchText,
@@ -17668,13 +17706,13 @@
         seedOptions: options,
       });
       const runnerExtraPromise = isRunnerMode()
-        ? runnerExtraRows({ runId, ceilingNorms, rootFolder, queryForEs, recursive, options, cap })
+        ? runnerExtraRows({ runId, ceilingNorms, rootFolder, queryForEs, recursive, options, cap, after: mainPromise })
         : null;
       let runnerExtrasIn = false;
       if (runnerExtraPromise) runnerExtraPromise.then(() => (runnerExtrasIn = true), () => (runnerExtrasIn = true));
       const res = await mainPromise;
       if (res == null) return;
-      if (runId !== searchRunSeq) return;
+      if (runId !== searchRunSeq || runnerSearchSuperseded()) return;
 
       if (!res.ok) {
         lastRows = [];
@@ -17721,7 +17759,7 @@
         if (!usedLocalFolderFallback && runnerExtraPromise) {
           /* A new list paints the main rows while the extra queries finish, 0.1-0.4s later; the merged list then
              replaces them. Not for an auto-refresh tick, whose list would shrink and grow back every few seconds. */
-          if (!runnerExtrasIn && !quietAutoRefreshRender && selectAfterSearchKeyFor(query, rootFolder) !== selectAfterSearchKey) {
+          if (!runnerExtrasIn && !quietAutoRefreshRender && !runnerSearchSuperseded() && selectAfterSearchKeyFor(query, rootFolder) !== selectAfterSearchKey) {
             lastRows = got;
             dedupeLastRowsByPathKey();
             sortLastRowsForDisplay(!!res.usedFallbackSort);
@@ -17730,7 +17768,7 @@
             selectRowAfterSearch(query, rootFolder, { early: true });
           }
           let extra = await runnerExtraPromise;
-          if (runId !== searchRunSeq) return;
+          if (runId !== searchRunSeq || runnerSearchSuperseded()) return;
           if (fo) extra = extra.filter(rowIsFolder);
           else if (fileOnly) extra = extra.filter((r) => !rowIsFolder(r));
           got = mergeSearchRowsDedupe(got, extra);
@@ -20859,6 +20897,20 @@
       };
       window.__tagfoxTest = {
         runSearchNow: (kind, opts) => runSearchNow(kind, opts),
+        /* Asks for one search per text in a single task, as fast typing does on a slow day, and returns at once. */
+        startSearches: (texts) => {
+          for (const t of texts || []) {
+            document.getElementById('query').value = String(t);
+            void runSearchNow('identity');
+          }
+          return true;
+        },
+        searchCounters: () => ({ ...runnerSearchCounters }),
+        resetSearchCounters: () => {
+          runnerSearchCounters.run = 0;
+          runnerSearchCounters.stepAside = 0;
+          runnerSearchCounters.extraSent = 0;
+        },
         refreshNow: () => refreshResultsFromUi(),
         scheduleSearch: (kind) => scheduleSearch(kind),
         setQuery: (q) => {

@@ -173,6 +173,13 @@ disk-mutation retry) that fires while another flow is mid-await waits for the mu
 concurrently. Activating a tab re-runs its search through the same mutex, so it serialises behind any
 in-flight search.
 
+In Runner, a search that a newer one overtakes sends nothing more. Every top-level request takes a number
+(`searchRequestSeq`); one that is still waiting for the mutex when a newer request arrives steps aside and
+waits for the newest to finish, and the running search checks `runnerSearchSuperseded()` before painting and
+before each of its extra queries, which go out one at a time after the main query. Everything answers one query
+at a time, so otherwise each stale keystroke's four or five queries would hold up the newest one's.
+`runner-query-order.cjs` counts the queries sent to prove it.
+
 `loadMoreResults()` grows `lastRows` and must persist it to the active tab in its `finally`; otherwise a
 later tab switch (which restores from stored state) reverts to the pre-load-more page. Guarded by
 `loadmore-regression.cjs`; cross-tab CRUD isolation by `crud-pane-isolation.cjs`; the tab lifecycle by

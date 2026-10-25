@@ -5,7 +5,8 @@
 // tag filter must keep the tagged file and drop "todo list.txt", the starred-paths query must return the starred
 // file, and the Temp query the file made in Temp (the positive controls). The main query goes to Everything first,
 // so a new list paints its rows before the extra queries are in: the Temp file joins them afterwards, and the merged
-// list selects its own top row.
+// list selects its own top row. A search that a newer one overtakes while it waits its turn sends nothing, so
+// fast typing on a slow day runs only the newest keystroke's queries (with one search's counts as the control).
 //
 // Run: node test/runner-query-order.cjs
 
@@ -140,6 +141,26 @@ async function main() {
     } else {
       console.log('  SKIP Temp query: the temp folder here is not AppData\\Local\\Temp (' + os.tmpdir() + ')');
     }
+
+    // An overtaken search sends nothing. Three searches asked for in one task, as fast typing does while a slow
+    // search holds the mutex, run only the last: the first two step aside without a query of their own, so the
+    // newest keystroke's queries no longer wait behind theirs at Everything.
+    const askSearches = async (texts, label) => {
+      await drv.T('setQuery', '');
+      await search(label + ' (cleared)');
+      await drv.T('resetSearchCounters');
+      await drv.T('startSearches', texts);
+      await drv.settle(label);
+      return { s: await R(), n: await drv.T('searchCounters') };
+    };
+    const one = await askSearches([stem + ' beta'], 'one search');
+    check(one.n.run === 1 && one.n.stepAside === 0 && one.n.extraSent > 0 && has(one.s.rows, plain), `one search runs and sends its extra queries (positive control: ${JSON.stringify(one.n)})`);
+    const three = await askSearches([stem.slice(0, -1), stem, stem + ' beta'], 'overtaken');
+    check(
+      three.n.run === 1 && three.n.stepAside === 2 && three.n.extraSent === one.n.extraSent,
+      `of three searches asked for at once only the last runs, and the other two send nothing (${JSON.stringify(three.n)})`
+    );
+    check(three.s.query === stem + ' beta' && has(three.s.rows, plain) && !has(three.s.rows, tagged), `and the list is the last one's (box "${three.s.query}": ${three.s.rows.map((r) => path.basename(r))})`);
   } catch (e) {
     failures.push('threw: ' + (e && e.stack ? e.stack : e));
     console.error(e);
