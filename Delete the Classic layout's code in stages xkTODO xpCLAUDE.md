@@ -3,7 +3,7 @@
 Steve decided on 24 October 2026 to keep only Runner: hide Classic first, then delete its code in stages. Classic is hidden (no layout switch, every real start in Runner; the test hook still opens a fresh profile in Classic so its tests guard the code until it goes). This file is the inventory to delete against.
 
 - **Each stage** deletes one area (for example tabs, or Tree and Smart views), its CSS and HTML, and the tests that cover only it, and keeps every piece Runner depends on (listed below). Run the full suite after each stage.
-- **Steve decided on 25 October 2026** what Runner gains before Classic's code goes: the deadline filters as `/` Due commands; a "Show only starred items" command instead of a visible star list; and Windows Recent as a ranking boost rather than a list. All three are in Runner now. **Still open:** searching only the current folder while typing; ask before deleting Subfolders. The Shelf shows in Runner (`2d8c22b`), and so does the Restart button, in the search box.
+- **Steve decided on 25 October 2026** what Runner gains before Classic's code goes: the deadline filters as `/` Due commands; a "Show only starred items" command instead of a visible star list; and Windows Recent as a ranking boost rather than a list. All three are in Runner now. Searching only the current folder while typing goes with Classic: Runner's typing searches below the folder, and Steve is content with that. The Shelf shows in Runner (`2d8c22b`), and so does the Restart button, in the search box.
 
 Read-only survey by a subagent at main `74c8ac1`; line numbers are approximate. Since then Runner has gained chips for the deadline and hide-until filters (the hazard the survey found).
 
@@ -90,4 +90,4 @@ History back/forward (Runner: Alt+←/→), Undo (Ctrl+Z), Restart (Runner: the 
 
 ## Decisions before any deletion
 
-- Subfolders: whether losing "search only this folder while typing" matters. The others (deadlines, the star list, Restart, Windows Recent, Ctrl+Shift+Space) are settled above.
+- None left: deadlines, the star list, Restart, Windows Recent, Ctrl+Shift+Space and Subfolders are all settled above.
