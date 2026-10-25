@@ -11,7 +11,7 @@
 //   - PageDown, Ctrl+End and Ctrl+Home move by a page, to the end and back;
 //   - Tab and Shift+Tab move between the box and the list, as in Everything, and Space in the list toggles
 //     the row's check; Right and Left still go into a folder and back;
-//   - Alt+P hides and shows the Viewer; ? in an empty box opens Help at Runner's keys, drawn from the table;
+//   - Alt+P, the Viewer button and the options panel's The Viewer hide and show the Viewer; ? in an empty box opens Help at Runner's keys, drawn from the table;
 //   - Alt+Home clears the text, the folder and every filter;
 //   - Ctrl+M sorts by date and again back to smart;
 //   - F1 opens Help on Runner's own tab;
@@ -249,6 +249,19 @@ async function main() {
     await letter('p', 1);
     s = await R();
     check(!s.viewerOff && (await viewerShown()), 'Alt+P again shows it');
+    // The same toggle by mouse: the button at the right of the search box, and the / command in the options panel.
+    const viewerBtn = () => drv.ev(`(() => { const b = document.getElementById('btnRunnerViewer'); return b && { pressed: b.getAttribute('aria-pressed'), loud: b.classList.contains('tagfox-runner-opts-btn--changed'), visible: b.getBoundingClientRect().width > 0 }; })()`);
+    let vb = await viewerBtn();
+    check(vb && vb.visible && vb.pressed === 'true' && !vb.loud, `the Viewer button shows, pressed and faint (${JSON.stringify(vb)})`);
+    await drv.ev(`document.getElementById('btnRunnerViewer').click()`);
+    vb = await viewerBtn();
+    check(!(await viewerShown()) && vb.pressed === 'false' && vb.loud, `clicking it hides the Viewer and it stops being faint (${JSON.stringify(vb)})`);
+    await drv.ev(`document.getElementById('btnRunnerOpts').click()`);
+    const viewerCmdOn = await drv.ev(`(() => { const b = document.querySelector('#runnerOptsPanel [data-cmd-id="viewer"]'); return b ? !!b.querySelector('.fa-check') : null; })()`);
+    check(viewerCmdOn === false, `the options panel lists The Viewer, unticked while it is hidden (${viewerCmdOn})`);
+    await drv.ev(`document.querySelector('#runnerOptsPanel [data-cmd-id="viewer"]').click()`);
+    check(await viewerShown(), 'clicking The Viewer in the options panel shows it again');
+    await drv.ev(`document.getElementById('btnRunnerOpts').click()`);
 
     // Alt+O: the options panel, worked from the keyboard.
     const opts = () => drv.ev(`(() => { const p = document.getElementById('runnerOptsPanel'); const a = p && p.querySelector('.tagfox-runner-cmd--active'); return { open: !!p && !p.hidden, active: a ? a.dataset.cmdId : null, activeOn: !!(a && a.querySelector('.fa-check')) }; })()`);

@@ -649,8 +649,12 @@
           </div>
           <!-- Runner only: shown when the smart order ranked only part of the matches (renderRunnerRankNote). -->
           <span id="runnerRankNote" class="tagfox-runner-only tagfox-runner-rank-note d-none"></span>
-          <!-- Runner only: the toggles, one low-contrast control that opens on click. -->
+          <!-- Runner only: the Viewer toggle, and the options, one low-contrast control that opens on click. -->
           <div class="tagfox-runner-only position-relative d-flex align-self-stretch">
+            <!-- The Viewer on or off (Alt+P); not faint while the Viewer is hidden, so the way back shows. -->
+            <button type="button" id="btnRunnerViewer" class="btn tagfox-runner-opts-btn" aria-pressed="true" aria-controls="propsAside" title="Hide the Viewer (Alt+P)" aria-label="Viewer">
+              <i class="fa-solid fa-table-columns" aria-hidden="true"></i>
+            </button>
             <button type="button" id="btnRunnerOpts" class="btn tagfox-runner-opts-btn" aria-expanded="false" aria-controls="runnerOptsPanel" title="Options: sort, system files, folders only, match path, tags (or type / in the box)" aria-label="Options">
               <i class="fa-solid fa-sliders" aria-hidden="true"></i>
             </button>

@@ -4044,6 +4044,7 @@
       { id: 'temp', group: 'Show', label: 'Hide temp files (AppData\\Local\\Temp; listed lower when shown)', isOn: () => runnerHideTempOn(), run: () => runnerToggleTemp() },
       { id: 'folders', group: 'Show', label: 'Folders only', isOn: () => isFoldersOnly(), run: () => runnerSetContent(isFoldersOnly() ? 'all' : 'folders') },
       { id: 'files', group: 'Show', label: 'Files only', isOn: () => isFilesOnly(), run: () => runnerSetContent(isFilesOnly() ? 'all' : 'files') },
+      { id: 'viewer', group: 'Show', label: 'The Viewer (Alt+P)', isOn: () => !runnerViewerOff(), run: () => runnerToggleViewer() },
       { id: 'this-folder', group: 'Match', label: 'Search this folder only (not its subfolders)', isOn: () => runnerThisFolderOnlyOn(), run: () => runnerToggleThisFolderOnly() },
       { id: 'path', group: 'Match', label: 'Match path (off: names only)', isOn: () => !!document.getElementById('optPath')?.checked, run: () => runnerToggleMatchPath() },
       { id: 'word', group: 'Match', label: 'Whole words only', isOn: () => runnerOptOn('optWholeWord'), run: () => toggleSearchOptCheckbox('optWholeWord') },
@@ -4058,6 +4059,7 @@
       { id: 'refresh', group: 'TagFox', label: 'Refresh (F5)', run: () => void refreshResultsFromUi() },
       { id: 'dark', group: 'TagFox', label: 'Dark or light mode', run: () => document.getElementById('btnToggleDarkMode')?.click() },
       { id: 'settings', group: 'TagFox', label: 'Settings', run: () => document.getElementById('btnToggleSettings')?.click() },
+      { id: 'help', group: 'TagFox', label: 'Help (F1)', run: () => bootstrap.Modal.getOrCreateInstance(document.getElementById('helpModal')).show() },
     ];
 
     function runnerOptOn(id) {
@@ -4556,7 +4558,13 @@
       return localStorage.getItem(LS.runnerViewerOff) === '1';
     }
     function applyRunnerViewerOff() {
-      document.body.classList.toggle('tagfox-runner-viewer-off', isRunnerMode() && runnerViewerOff());
+      const off = runnerViewerOff();
+      document.body.classList.toggle('tagfox-runner-viewer-off', isRunnerMode() && off);
+      const btn = document.getElementById('btnRunnerViewer');
+      if (!btn) return;
+      btn.setAttribute('aria-pressed', off ? 'false' : 'true');
+      btn.title = off ? 'Show the Viewer (Alt+P)' : 'Hide the Viewer (Alt+P)';
+      btn.classList.toggle('tagfox-runner-opts-btn--changed', off);
     }
     function runnerToggleViewer() {
       if (runnerViewerOff()) localStorage.removeItem(LS.runnerViewerOff);
@@ -4973,6 +4981,7 @@
         e.stopPropagation();
         setRunnerOptsPanelOpen(!runnerOptsPanelOpen);
       });
+      document.getElementById('btnRunnerViewer')?.addEventListener('click', () => runnerToggleViewer());
       document.getElementById('runnerOptsPanel')?.addEventListener('click', (e) => {
         const b = e.target.closest('.tagfox-runner-cmd');
         if (!b) return;

@@ -2594,12 +2594,13 @@ ipcMain.handle('window-chrome-colors', (event, colors) => {
 });
 
 function createWindow() {
-  // `maximized` is not a BrowserWindow option — use maximize() so we get OS chrome, not fullscreen.
   const chrome = loadWindowChrome();
   const hideTitleBar = !!chrome.hideTitleBar && process.platform === 'win32';
+  // Opens at 90% of the screen's width and 80% of its height, centred (Steve, 25 October 2026). A test
+  // instance keeps a fixed size, so layout checks read the same on every machine.
+  const startBounds = process.env.TAGFOX_TEST_HIDDEN === '1' ? { width: 1480, height: 820 } : centredWorkAreaBounds(0.9, 0.8);
   const win = new BrowserWindow({
-    width: 1480,
-    height: 820,
+    ...startBounds,
     show: false,
     ...(hideTitleBar ? { titleBarStyle: 'hidden', titleBarOverlay: titleBarOverlayFor(chrome) } : {}),
     // false: File / View stay visible (Alt-only bar hid the menu — looked like “no File menu”).
@@ -2649,9 +2650,8 @@ function createWindow() {
   });
   win.once('ready-to-show', () => {
     // Test runs (CDP) set TAGFOX_TEST_HIDDEN so the window never flashes onscreen; a hidden window still
-    // renders and drives through the #tagfoxtest hook. Normal runs maximize and show as usual.
+    // renders and drives through the #tagfoxtest hook.
     if (process.env.TAGFOX_TEST_HIDDEN === '1') return;
-    win.maximize();
     win.show();
   });
 }
@@ -3133,13 +3133,18 @@ function isWebEditorBoundsUsable(rect) {
   return false;
 }
 
-function defaultWebEditorWindowBounds() {
+/** A window centred on the primary display, taking these shares of its work area. */
+function centredWorkAreaBounds(widthShare, heightShare) {
   const wa = screen.getPrimaryDisplay().workArea;
-  const width = Math.round(wa.width * 0.9);
-  const height = Math.round(wa.height * 0.9);
+  const width = Math.round(wa.width * widthShare);
+  const height = Math.round(wa.height * heightShare);
   const x = Math.round(wa.x + (wa.width - width) / 2);
   const y = Math.round(wa.y + (wa.height - height) / 2);
-  return { x, y, width, height, maximized: false };
+  return { x, y, width, height };
+}
+
+function defaultWebEditorWindowBounds() {
+  return { ...centredWorkAreaBounds(0.9, 0.9), maximized: false };
 }
 
 function loadWebEditorBoundsFromDisk(kind) {
