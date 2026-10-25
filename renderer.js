@@ -388,8 +388,6 @@
     /** Key: folderChildCountCacheKey; value: { kind: 'exact', n } | { kind: 'over', cap }. */
     const folderChildCountCache = new Map();
 
-    const SORT_LABELS = { name: 'Name', path: 'Path', size: 'Size', date_modified: 'Modified' };
-
     /* View: Subfolders (on first); Content: all | folders | files. */
     function isShowSubfolders() { return !!document.getElementById('optRvSubsOn')?.checked; }
     /** @returns {'all'|'folders'|'files'} */
@@ -423,7 +421,7 @@
       applyResultsViewRadiosToDom(true, 'all');
       syncViewRadioActiveFromDom();
       saveSettings();
-      updateSortHeaders();
+      syncSortPathClass();
       void runSearchNow('identity');
       commitSearchHistoryNow();
     }
@@ -2804,7 +2802,7 @@
       updateQueryPlaceholder();
       persistActiveTagFilter();
       saveSettings();
-      updateSortHeaders();
+      syncSortPathClass();
       renderScopeBreadcrumb();
       applyPaneWidths();
       await runSearchNow('identity');
@@ -3771,7 +3769,7 @@
       updateQueryPlaceholder();
       persistActiveTagFilter();
       saveSettings();
-      updateSortHeaders();
+      syncSortPathClass();
       renderScopeBreadcrumb();
       renderRunnerScopeChip();
       await runSearchNow();
@@ -5182,19 +5180,13 @@
       refreshTagModalDatalist();
     }
 
-    function updateSortHeaders() {
-      document.querySelectorAll('#resultsTable thead th[data-sort]').forEach((th) => {
-        const dk = th.dataset.sort;
-        const label = SORT_LABELS[dk] || dk;
-        const arrow = sortColumn === dk ? (sortAsc ? ' ▲' : ' ▼') : '';
-        const span = th.querySelector('.sort-label');
-        if (span) span.textContent = label + arrow;
-      });
+    /** Folder rows take a tint while Path is the sort. */
+    function syncSortPathClass() {
       const rt = document.getElementById('resultsTable');
       if (rt) rt.classList.toggle('results-sort-path', sortColumn === 'path');
     }
 
-    /** Same rules as clicking a sort column: switching column sets default direction (size/modified = largest/newest first); same column again toggles. */
+    /** Switching column sets the default direction (size/modified = largest/newest first); the same column again toggles it. */
     function applySortColumnKey(key, statusNoteAfterSearch) {
       if (!['name', 'path', 'date_modified', 'size'].includes(key)) return;
       if (sortColumn === key) sortAsc = !sortAsc;
@@ -5204,7 +5196,7 @@
         sortAsc = key !== 'size' && key !== 'date_modified';
       }
       saveSettings();
-      updateSortHeaders();
+      syncSortPathClass();
       commitSearchHistoryNow();
       void (async () => {
         try {
@@ -10591,7 +10583,6 @@
       resultsShiftRangeAnchorIdx = null;
       checkedPathsMap.clear();
       toggleCheckPath(fp, true);
-      updateSelectAllCheckboxState();
       setSelection(row, fp);
       syncResultsRowCheckboxStates();
     }
@@ -10611,7 +10602,6 @@
     function resultsPlainClickUncheckRow(fp) {
       toggleCheckPath(fp, false);
       resultsShiftRangeAnchorIdx = null;
-      updateSelectAllCheckboxState();
       syncResultsRowCheckboxStates();
       for (const r of listRowsForUi()) {
         const p = fullPathForRow(r);
@@ -10623,20 +10613,7 @@
       clearResultsRowSelection();
     }
 
-    function updateSelectAllCheckboxState() {
-      const h = document.getElementById('chkSelectAllResults');
-      if (!h) return;
-      const vis = listRowsForUi();
-      const n = vis.length;
-      let c = 0;
-      for (const row of vis) {
-        if (isCheckedPath(fullPathForRow(row))) c++;
-      }
-      h.checked = n > 0 && c === n;
-      h.indeterminate = c > 0 && c < n;
-    }
-
-    /** Check every row in the current visible list (same as header “select all”; respects tag / hide-.folder filters). */
+    /** Check every row in the current visible list (respects tag / hide-.folder filters). */
     function selectAllVisibleResultRows() {
       resultsShiftRangeAnchorIdx = null;
       const vis = listRowsForUi();
@@ -10644,7 +10621,6 @@
       for (const row of vis) {
         toggleCheckPath(fullPathForRow(row), true);
       }
-      updateSelectAllCheckboxState();
       syncResultsRowCheckboxStates();
       setSelection(vis[vis.length - 1], fullPathForRow(vis[vis.length - 1]));
     }
@@ -11921,7 +11897,7 @@
         applySearchState(!!entry.runner === isRunnerMode() ? entry : { ...serializeSearchState(), query: entry.query, rootFolder: entry.rootFolder });
         persistActiveTagFilter();
         saveSettings();
-        updateSortHeaders();
+        syncSortPathClass();
         renderScopeBreadcrumb();
         await runSearchNow();
       } finally {
@@ -13089,7 +13065,6 @@
         chk.addEventListener('change', () => {
           resultsShiftRangeAnchorIdx = null;
           toggleCheckPath(fp, chk.checked);
-          updateSelectAllCheckboxState();
           if (chk.checked) setSelection(row, fp);
           else renderTable();
         });
@@ -13442,7 +13417,6 @@
               toggleCheckPath(fullPathForRow(rows[i]), i >= lo && i <= hi);
             }
             resultsShiftRangeAnchorIdx = anchorIdx;
-            updateSelectAllCheckboxState();
             syncResultsRowCheckboxStates();
             setSelection(row, fp);
             return;
@@ -13452,7 +13426,6 @@
             e.preventDefault();
             toggleCheckPath(fp, !isCheckedPath(fp));
             resultsShiftRangeAnchorIdx = null;
-            updateSelectAllCheckboxState();
             syncResultsRowCheckboxStates();
             setSelection(row, fp);
             return;
@@ -13474,7 +13447,6 @@
         tbody.appendChild(tr);
       }
       syncResultsSelectionHighlight();
-      updateSelectAllCheckboxState();
       updateEmptyResultsPulseHints(rowsForDisplay.length);
       renderRunnerEmptyNote();
       updateResultsLoadMoreUi();
@@ -14608,34 +14580,6 @@
         loadMoreBtn.dataset.resultsLoadMoreBound = '1';
         loadMoreBtn.addEventListener('click', () => void loadMoreResults());
       }
-      const resultsThead = document.getElementById('resultsTable')?.querySelector('thead');
-      if (resultsThead && resultsThead.dataset.resultsHeadBound !== '1') {
-        resultsThead.dataset.resultsHeadBound = '1';
-        resultsThead.addEventListener('click', (e) => {
-          if (e.target.closest('#chkSelectAllResults')) return;
-          const th = e.target.closest('th[data-sort]');
-          if (!th) return;
-          const sk = th.dataset.sort;
-          applySortColumnKey(sk);
-        });
-      }
-      const selectAll = document.getElementById('chkSelectAllResults');
-      if (selectAll && selectAll.dataset.resultsSelectAllBound !== '1') {
-        selectAll.dataset.resultsSelectAllBound = '1';
-        selectAll.addEventListener('change', (e) => {
-          resultsShiftRangeAnchorIdx = null;
-          const on = e.target.checked;
-          const vis = listRowsForUi();
-          for (const row of vis) {
-            toggleCheckPath(fullPathForRow(row), on);
-          }
-          updateSelectAllCheckboxState();
-          if (on && vis.length) {
-            syncResultsRowCheckboxStates();
-            setSelection(vis[vis.length - 1], fullPathForRow(vis[vis.length - 1]));
-          } else renderTable();
-        });
-      }
     }
 
     bindResultsDomListeners();
@@ -14721,7 +14665,6 @@
         if (id === 'optHideSpecial' || id === 'optHideTilde') {
           renderTable();
           updateEmptyResultsPulseHints(listRowsForUi().length, { forceRestart: true });
-          updateSelectAllCheckboxState();
           syncResultsSelectionHighlight();
           updateResultsLoadMoreUi();
         } else {
@@ -14836,7 +14779,7 @@
     }
     function bindResultsViewRadiosChanged() {
       saveSettings();
-      updateSortHeaders();
+      syncSortPathClass();
       void runSearchNow('identity');
       commitSearchHistoryNow();
     }
@@ -15705,7 +15648,6 @@
       for (let i = 0; i < rows.length; i++) {
         toggleCheckPath(fullPathForRow(rows[i]), i >= lo && i <= hi);
       }
-      updateSelectAllCheckboxState();
       syncResultsRowCheckboxStates();
       const row = rows[newIdx];
       setSelection(row, fullPathForRow(row));
@@ -15788,15 +15730,13 @@
       scrollActiveResultsRowIntoViewNearest();
     }
 
-    /** Scroll a result row to the top of #resultsScroll (below sticky thead if present). */
+    /** Scroll a result row to the top of #resultsScroll. */
     function scrollResultsRowToTopOfList(tr) {
       const wrap = document.getElementById('resultsScroll');
       if (!wrap || !tr) return;
-      const thead = document.querySelector('#resultsTable thead');
-      const headH = thead ? thead.getBoundingClientRect().height : 0;
       const w = wrap.getBoundingClientRect();
       const r = tr.getBoundingClientRect();
-      wrap.scrollTop += r.top - w.top - headH;
+      wrap.scrollTop += r.top - w.top;
     }
 
     /** One step of j/k scroll-to-top; cancel if token !== siblingNavScrollToken. */
@@ -16167,7 +16107,6 @@
       if (!row) return;
       const fp = fullPathForRow(row);
       toggleCheckPath(fp, !isCheckedPath(fp));
-      updateSelectAllCheckboxState();
       renderTable();
     }
 
@@ -16669,10 +16608,9 @@
       }
 
       if ((e.key === ' ' || e.code === 'Space') && !e.shiftKey) {
-        /* Let Bootstrap btn-check toggles + header “select all” use native Space. */
+        /* Let Bootstrap btn-check toggles use native Space. */
         const sp = e.target;
         if (sp && sp.matches && sp.matches('input.btn-check')) return;
-        if (sp && sp.id === 'chkSelectAllResults') return;
         e.preventDefault();
         toggleKeyboardRowCheckbox();
         return;
@@ -17227,7 +17165,7 @@
     document.getElementById('propsTheaterBackdrop').addEventListener('click', () => setPropsTheaterMode(false));
     document.getElementById('btnPropsTheaterToggle').addEventListener('click', () => togglePropsTheaterMode());
     syncViewerDocDividerOrientation();
-    updateSortHeaders();
+    syncSortPathClass();
     bindFolderPathDropTargetBarsOnce();
     bindScopeFolderDropdownDragCaptureOnce();
     installLongTaskMonitor();
@@ -17242,7 +17180,7 @@
     if (!window.tagBrowser?.isTestInstance || localStorage.getItem(LS.toggleOpens) === 'runner') {
       applyRunnerModeSync(true, { startup: true });
       updateQueryPlaceholder();
-      updateSortHeaders();
+      syncSortPathClass();
       renderScopeBreadcrumb();
     }
     scheduleSearch();
@@ -17281,7 +17219,7 @@
        harness in _tmp/ sets it). Exposes the closure-private search/pane orchestration + a state snapshot
        so an external CDP driver can exercise the loop/refresh/dual-pane flows and assert invariants. */
     if (location.hash.includes('tagfoxtest')) {
-      const BASE_RESULT_IDS = ['resultsWrap', 'resultsScroll', 'resultsTable', 'tbody', 'resultsLoadMoreWrap', 'btnLoadMoreResults', 'resultsLoadMoreHint', 'chkSelectAllResults'];
+      const BASE_RESULT_IDS = ['resultsWrap', 'resultsScroll', 'resultsTable', 'tbody', 'resultsLoadMoreWrap', 'btnLoadMoreResults', 'resultsLoadMoreHint'];
       const rowCount = (id) => {
         const el = document.getElementById(id);
         return el ? el.querySelectorAll('tr').length : -1;

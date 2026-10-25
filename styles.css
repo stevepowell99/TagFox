@@ -401,24 +401,7 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 }
 .form-check-input:checked { background-color: var(--tb-accent); border-color: var(--tb-accent); }
 /* Widths from <colgroup> only — auto layout re-measures every cell on each pane resize (splitter jank). */
-/* separate + 0 spacing: sticky th works; collapse breaks sticky in Chromium */
 #resultsTable { table-layout: fixed; border-collapse: separate; border-spacing: 0; }
-/* Sticky per th (thead sticky is flaky); scroll is #resultsScroll so top:0 clears “toolbar” clipping */
-#resultsTable thead th {
-  position: sticky;
-  top: 0;
-  /* Above tbody rows / buttons so header labels aren’t covered when sticky */
-  z-index: 4;
-  font-weight: 600; font-size: 0.72rem; text-transform: uppercase;
-  letter-spacing: 0.04em; color: #71717a; background: #fff; border-bottom-width: 2px;
-  padding-top: 0.15rem;
-  padding-bottom: 0.15rem;
-  box-shadow: 0 1px 0 var(--bs-border-color);
-}
-/* Vertical column lines in header (table border-collapse: separate — row borders don’t divide cols). */
-#resultsTable thead th:not(:first-child) {
-  border-left: 1px solid var(--bs-border-color);
-}
 #resultsTable tbody tr { border-bottom-color: #f0f0f3; }
 /* Folder rows: light orange tint only while Path is the active sort (path/tree cues). */
 #resultsTable.results-sort-path tbody tr.results-folder-row td {
@@ -1491,13 +1474,11 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
   text-overflow: ellipsis;
 }
 #resultsTable col:nth-child(5),
-#resultsTable thead th:nth-child(5),
 #resultsTable tbody td.results-td-size {
   min-width: 6.75rem;
 }
 /* Row icon strip (col 4): min = six compact btns; max = don’t waste horizontal space on wide windows */
 #resultsTable col:nth-child(4),
-#resultsTable thead th:nth-child(4),
 #resultsTable tbody td.results-td-actions {
   min-width: 13rem;
   max-width: 17rem;
@@ -1512,13 +1493,11 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
   padding-bottom: 0.02rem;
 }
 /* First col: checkbox flush left; vertical-align middle + tight line box so it lines up with name/icons */
-#resultsTable thead th:first-child,
 #resultsTable tbody td:first-child {
   padding-left: 0.2rem;
   padding-right: 0.45rem;
   vertical-align: middle;
 }
-#resultsTable thead th.results-th-cb,
 #resultsTable tbody td.results-td-cb {
   line-height: 1;
 }
@@ -1620,9 +1599,6 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
 }
 .name-badges .badge { flex-shrink: 0; font-weight: normal; }
 .tag-pill-x { line-height: 1; padding: 0 !important; min-width: 1em; }
-/* sticky comes from #resultsTable thead th — don’t use position:relative here (kills sticky) */
-#resultsTable thead th.sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
-#resultsTable thead th.sortable-th:hover { background-color: var(--bs-secondary-bg); }
 /* Bootstrap tooltips on result cells: wide, wrap long paths */
 .tooltip.results-cell-tooltip .tooltip-inner {
   max-width: min(90vw, 42rem);
@@ -1990,13 +1966,6 @@ body > .tooltip {
   color: #e4e4e7;
 }
 [data-bs-theme="dark"] .props-panel { background: #1e1e22 !important; }
-[data-bs-theme="dark"] #resultsTable thead th {
-  background: #27272a;
-  color: #a1a1aa;
-}
-[data-bs-theme="dark"] #resultsTable thead th:not(:first-child) {
-  border-left-color: #3f3f46;
-}
 [data-bs-theme="dark"] #resultsTable tbody tr { border-bottom-color: #3f3f46; }
 [data-bs-theme="dark"] #resultsTable.results-sort-path tbody tr.results-folder-row {
   border-bottom-color: rgba(251, 146, 60, 0.3);
@@ -2072,8 +2041,7 @@ body:not(.tagfox-runner) .tagfox-runner-only {
 }
 body.tagfox-runner .tag-toolbar-row,
 body.tagfox-runner .tagfox-status-view-opts,
-body.tagfox-runner.tagfox-runner-viewer-off #splitProps,
-body.tagfox-runner #resultsTable thead {
+body.tagfox-runner.tagfox-runner-viewer-off #splitProps {
   display: none !important;
 }
 body.tagfox-runner .center-panel {

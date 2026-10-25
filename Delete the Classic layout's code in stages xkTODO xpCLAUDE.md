@@ -22,7 +22,7 @@ Read-only survey by a subagent at main `74c8ac1`; line numbers are approximate. 
 | Match options | toolbar, bare letters | Partial: `/` commands and Ctrl keys | `searchOptionsFromUI`, `toggleSearchOptCheckbox` |
 | Recency 1h / 1d / 1w / 1m / 1y / All | toolbar radios | Partial: `/` has all, 1h, 1d, 1w; 1m and 1y only by Ctrl+R cycling | `setRecencyFilterMode` |
 | Deadline filter (Overdue, Today, This week, Next week) and "Show hidden" for `xh-` files | `btnToggleDeadline`, `deadlineFilterPanel`, `optShowHiddenUntil` | Yes: the `/` Due commands and their chips | `setDeadlineRange`, `setShowHiddenUntil` |
-| Column sort by name, path, size, modified, either direction | header click; `z`, `m`, `n` | Partial: smart, date, name, size, size smallest first; no path sort, no oldest first, no Z-A | `applySortColumnKey`, `updateSortHeaders` |
+| Sort by name, size, modified, either direction | `z`, `m`, `n` (the same key again reverses it); path sort and its folder-row tint only from a saved value | Partial: smart, date, name, size, size smallest first; no path sort, no oldest first, no Z-A | `applySortColumnKey`, `syncSortPathClass` |
 | Status line with hit count and filter hints | standing line | None: Runner shows no count except "N of M ranked" | `formatResultsStatusMainHtml`, `hiddenDueToStatusHtml` |
 | Empty-result pulse hints | toolbar pulses | Partial: only the box pulses | `updateEmptyResultsPulseHints` |
 
