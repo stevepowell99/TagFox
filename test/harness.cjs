@@ -106,8 +106,8 @@ async function connect({ profile, maxResults = 60, scope = SCOPES.repo, disableA
   const baseUrl = await resolveEverythingUrl();
   const port = await freePort();
   const userData = testProfileDir(profile);
-  // Wipe the profile so every run starts fresh (deterministic startup: no tabsState/settings carried
-  // over from a prior run).
+  // Wipe the profile so every run starts fresh (deterministic startup: no settings carried over from a
+  // prior run).
   try { fs.rmSync(userData, { recursive: true, force: true }); } catch (_) {}
   for (const [name, text] of Object.entries(profileFiles)) {
     fs.mkdirSync(userData, { recursive: true });

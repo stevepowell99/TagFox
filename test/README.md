@@ -7,7 +7,7 @@ actual renderer rather than a reimplementation.
 The results area is one pane (see [Search concurrency](../README.md#search-concurrency)). The tests guard:
 
 - The single canonical results DOM (`tbody`, `resultsTable`, and so on) stays present and unique.
-- Load-more rows are stored on the active tab and rendered (the load-more desync bug).
+- Rows grown by load-more stay on screen through an auto-refresh tick.
 - A deleted row stays hidden through a refresh.
 - Every visible results column divider can actually be grabbed with the mouse.
 - The Viewer splitter follows the pointer across the previews, stops where the layout stops it, and lets go.
@@ -145,7 +145,7 @@ exposes `window.__tagfoxTest` with:
   `tombstone`.
 - Viewer markdown editor: `selectViewerFile(path)` (previews a file through the real props-panel path),
   `mdOpenEditor`, `mdCloseEditor`, `mdSetBuffer(text)`, `mdFlush`, and the `mdState()` inspector.
-- inspectors: `state()` (active tab, its row count, depth, in-flight, id integrity, status)
+- inspectors: `state()` (row counts, the rows on screen against the rows to draw, whether a search is running or in flight, id integrity, status)
   and `diag()` (filter-stage counts and the current rows).
 
 The hook is the only test-specific code in the shipped app and adds no behaviour to normal runs.
