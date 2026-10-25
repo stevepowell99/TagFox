@@ -3748,10 +3748,8 @@
       flag(LS.runnerHideTemp, f.hideTemp);
       activeDeadlineRange = f.deadline;
       persistDeadlineFilter();
-      syncDeadlineFilterUi();
       showHiddenUntil = f.showHiddenUntil;
       flag(LS_SHOW_HIDDEN, showHiddenUntil);
-      syncHideUntilUi();
       const st = searchStateWithoutCeiling({ ...runnerDefaultSearchState(), ...savedSearchCore(s) });
       const sc = runnerSortColumnFor(runnerSort);
       st.sortColumn = sc.col;
@@ -4033,10 +4031,8 @@
       persistActiveTagFilter();
       activeDeadlineRange = '';
       persistDeadlineFilter();
-      syncDeadlineFilterUi();
       showHiddenUntil = false;
       localStorage.removeItem(LS_SHOW_HIDDEN);
-      syncHideUntilUi();
       saveSettings();
       void runSearchNow('identity');
     }
@@ -12126,12 +12122,6 @@
     let activeDeadlineRange = '';
     const LS_DEADLINE_FILTER = 'tagfox-deadline-filter';
     const DEADLINE_RANGE_IDS = ['overdue', 'today', 'thisweek', 'nextweek'];
-    const DEADLINE_ELEM_ID = {
-      overdue: 'optDeadlineOverdue',
-      today: 'optDeadlineToday',
-      thisweek: 'optDeadlineThisWeek',
-      nextweek: 'optDeadlineNextWeek',
-    };
 
     function isoLocalDate(d) {
       const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -12212,37 +12202,14 @@
       const today = isoLocalDate(new Date());
       return rows.filter((r) => !rowIsHiddenUntilFuture(r, today));
     }
-    function syncHideUntilUi() {
-      const el = document.getElementById('optShowHiddenUntil');
-      if (el) el.checked = showHiddenUntil;
-      const btn = document.getElementById('btnToggleDeadline');
-      if (btn) btn.classList.toggle('tagfox-hidden-revealed', showHiddenUntil);
-    }
     function restoreHideUntilFilter() {
       showHiddenUntil = localStorage.getItem(LS_SHOW_HIDDEN) === '1';
-      syncHideUntilUi();
     }
     function setShowHiddenUntil(on) {
       showHiddenUntil = !!on;
       if (showHiddenUntil) localStorage.setItem(LS_SHOW_HIDDEN, '1');
       else localStorage.removeItem(LS_SHOW_HIDDEN);
-      syncHideUntilUi();
       void runSearchNow();
-    }
-    function syncDeadlineFilterUi() {
-      for (const id of DEADLINE_RANGE_IDS) {
-        const el = document.getElementById(DEADLINE_ELEM_ID[id]);
-        if (el) el.checked = activeDeadlineRange === id;
-      }
-      const dBtn = document.getElementById('btnToggleDeadline');
-      if (dBtn) {
-        const active = deadlineFilterActive();
-        dBtn.classList.toggle('tagfox-advanced-filled', active);
-        const labels = { overdue: 'Overdue', today: 'Today', thisweek: 'This wk', nextweek: 'Next wk' };
-        const lbl = active ? labels[activeDeadlineRange] || '' : '';
-        dBtn.innerHTML = '<i class="fa-solid fa-calendar-day fa-fw" aria-hidden="true"></i>' + (lbl ? '<span class="ms-1">' + lbl + '</span>' : '');
-        dBtn.classList.toggle('tagfox-deadline-toggle--labeled', !!lbl);
-      }
     }
     function persistDeadlineFilter() {
       localStorage.setItem(LS_DEADLINE_FILTER, activeDeadlineRange);
@@ -12250,13 +12217,11 @@
     function restoreDeadlineFilter() {
       const v = localStorage.getItem(LS_DEADLINE_FILTER) || '';
       activeDeadlineRange = DEADLINE_RANGE_IDS.includes(v) ? v : '';
-      syncDeadlineFilterUi();
     }
     /** Set the active deadline range ('' clears) and re-run the search. */
     function setDeadlineRange(range) {
       activeDeadlineRange = DEADLINE_RANGE_IDS.includes(range) ? range : '';
       persistDeadlineFilter();
-      syncDeadlineFilterUi();
       commitSearchHistoryNow();
       void runSearchNow();
     }
@@ -14356,19 +14321,6 @@
         void runSearchNow();
       });
     });
-    document.querySelectorAll('input[name="tagFoxDeadlineFilter"]').forEach((el) => {
-      el.addEventListener('change', () => {
-        if (el.checked) setDeadlineRange(el.value);
-      });
-    });
-    document.getElementById('btnDeadlineClear')?.addEventListener('click', () => {
-      const cur = document.querySelector('input[name="tagFoxDeadlineFilter"]:checked');
-      if (cur) cur.checked = false;
-      setDeadlineRange('');
-    });
-    document.getElementById('optShowHiddenUntil')?.addEventListener('change', (e) => {
-      setShowHiddenUntil(!!(e.target && e.target.checked));
-    });
     ['optCase', 'optWholeWord', 'optPath', 'optDiacritics', 'optHideSpecial', 'optHideTilde'].forEach((id) => {
       document.getElementById(id).addEventListener('change', () => {
         saveSettings();
@@ -14408,25 +14360,6 @@
         syncAdvancedSearchIconFilledState();
       }
     });
-
-    /* Deadline filter popover: opens on hover or click (mirrors the "A" more-options popover). The radios
-       and clear button inside keep their IDs, so their existing handlers still fire. */
-    (function wireDeadlinePopover() {
-      const wrap = document.querySelector('.tagfox-deadline-wrap');
-      const panel = document.getElementById('deadlineFilterPanel');
-      const btn = document.getElementById('btnToggleDeadline');
-      if (!wrap || !panel || !btn) return;
-      let hoverTimer = null;
-      const clearHoverTimer = () => { if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; } };
-      const open = () => { clearHoverTimer(); if (!panel.hasAttribute('hidden')) return; panel.removeAttribute('hidden'); btn.setAttribute('aria-expanded', 'true'); };
-      const close = () => { clearHoverTimer(); if (panel.hasAttribute('hidden')) return; panel.setAttribute('hidden', ''); btn.setAttribute('aria-expanded', 'false'); };
-      btn.addEventListener('click', () => { panel.hasAttribute('hidden') ? open() : close(); });
-      wrap.addEventListener('mouseenter', () => { clearHoverTimer(); hoverTimer = setTimeout(open, 120); });
-      wrap.addEventListener('mouseleave', () => { clearHoverTimer(); hoverTimer = setTimeout(close, 260); });
-      /* Picking a range (or clear) closes the popover; setTimeout lets the change/click logic run first. */
-      panel.addEventListener('click', (e) => { if (e.target.closest('.btn')) setTimeout(close, 0); });
-      document.addEventListener('pointerdown', (e) => { if (!panel.hasAttribute('hidden') && !wrap.contains(e.target)) close(); });
-    })();
 
     ['baseUrl', 'maxResults'].forEach((id) => {
       document.getElementById(id).addEventListener('input', scheduleSearch);

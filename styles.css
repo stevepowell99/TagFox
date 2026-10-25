@@ -309,18 +309,6 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 .tagfox-search-opt-icon {
   background-color: var(--bs-secondary-bg);
 }
-/* Deadline toggle: a 2rem icon button that grows to show the active range label (e.g. "Overdue"). */
-.tagfox-deadline-toggle {
-  width: 2rem;
-  min-width: 2rem;
-  height: 2rem;
-  padding: 0;
-  white-space: nowrap;
-}
-.tagfox-deadline-toggle.tagfox-deadline-toggle--labeled {
-  width: auto;
-  padding: 0 0.5rem;
-}
 /* Literal ~ glyph styled to sit like a Font Awesome icon in its 2rem button. */
 .tagfox-search-opt-glyph {
   font-weight: 700;
@@ -1724,12 +1712,6 @@ ul.breadcrumb-folder-flyout .dropdown-item {
 }
 .search-opts-advanced-popover:not([hidden]) {
   display: flex;
-}
-/* Deadline popover holds one non-wrapping row of range buttons; size it to fit them, not the 13rem default. */
-#deadlineFilterPanel {
-  flex-wrap: nowrap;
-  min-width: max-content;
-  max-width: none;
 }
 /* Keyboard focus lands here after list selection / chrome clicks (see focusQueryBox / focusMainWorkingArea). */
 #resultsWrap:focus {
