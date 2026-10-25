@@ -51,13 +51,13 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 ## Tests
 
 - **Runner:** a test instance opens in Runner from its first load, as every start does, so every test that opens a window runs in Runner without switching.
-- **Classic CSS that nothing reaches:** the Shelf's rotated strip and narrow column (`.app-shelf`, `.app-shelf-rot` and `.app-shelf--rhs .app-shelf-rot`, which Runner's block overrides). No test covers them; compare the Shelf's computed styles before and after deleting them.
 - **No layout:** `restart-in-terminal`, `help-build` and `tags-dates` do not go through the harness's `connect`.
 - `test/README.md` omits tags-dates and repro-crash.
 
 ## Stages named so far
 
 - **`runSearch`'s `eventKind`** reaches only the search debug log (`runSearch.start`), through `scheduleSearch` and `runSearchNow`, so the argument can go from every call site.
+- **The layout switch in CSS:** every page carries `body.tagfox-runner`, so its 171 uses in `styles.css` add nothing, and `body:not(.tagfox-runner) .tagfox-runner-only` (with the `tagfox-runner-only` class, nine uses in `index.html` and three in `renderer.js`) matches nothing. Dropping the prefix lowers each rule's specificity, and Classic's base rules still sit under the Runner rules that override them, so check each area by comparing every element's box and computed style before and after, in each state it can be in (empty, full, light, dark, hover, drag-over).
 
 ## Decisions before any deletion
 

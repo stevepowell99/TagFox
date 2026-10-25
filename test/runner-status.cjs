@@ -60,13 +60,16 @@ async function main() {
       })()`);
 
     // The bar docked along the bottom of the list, holding a tip; the list runs down to the Shelf.
+    // The first search ran before the harness gave the page Everything's address, and its error stays up
+    // for a few seconds, so wait for it to go before reading the bar at rest.
+    for (let i = 0; i < 60 && (await geo()).on; i++) await sleep(250);
     await drv.T('showNextTip');
     await sleep(300);
     let g = await geo();
     const docked = (x) => x.bar && x.list && Math.abs(x.bar.bottom - x.list.bottom) <= 1 && Math.abs(x.bar.left - x.list.left) <= 1 && Math.abs(x.bar.w - x.list.w) <= 1 && x.bar.top > x.list.top;
     check(docked(g), `the status line is docked along the bottom of the list, full width (list ${g.list && Math.round(g.list.left)}-${g.list && Math.round(g.list.bottom)} w${g.list && Math.round(g.list.w)}, line ${g.bar && Math.round(g.bar.left)}-${g.bar && Math.round(g.bar.bottom)} w${g.bar && Math.round(g.bar.w)})`);
     check(g.list && g.shelf && g.shelf.top - g.list.bottom >= 0 && g.shelf.top - g.list.bottom <= 12, `and the list runs down to the Shelf (list to ${g.list && Math.round(g.list.bottom)}, Shelf from ${g.shelf && Math.round(g.shelf.top)})`);
-    check(!g.on && g.tipShown && g.tipText.length > 20 && !g.msgShown, `with no message it shows a tip ("${g.tipText.slice(0, 70)}")`);
+    check(!g.on && g.tipShown && g.tipText.length > 20 && !g.msgShown, `with no message it shows a tip ("${g.tipText.slice(0, 70)}"; message ${g.on ? 'on' : 'off'} "${g.msgText.slice(0, 60)}")`);
     const idle = g;
 
     // A message: a box in the same place, the tip hidden, the list where it was.

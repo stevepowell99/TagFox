@@ -625,31 +625,26 @@
         </div>
         </div>
         </div>
-        <aside id="appShelf" class="app-shelf app-shelf--rhs border-start bg-body-secondary small" aria-label="Shelf staging area">
-          <div class="app-shelf-rot">
-            <div
-              id="shelfDropZone"
-              class="d-flex flex-wrap gap-1 align-items-center rounded border border-dashed px-2 py-1 bg-body"
+        <aside id="appShelf" aria-label="Shelf staging area">
+          <div id="shelfDropZone" class="d-flex flex-wrap gap-1 align-items-center">
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary flex-shrink-0"
+              id="btnShelfOsDrag"
+              title="Makes your next drag work like dragging a real file — you can drop it into File Explorer or any other app outside TagFox"
             >
-              <button
-                type="button"
-                class="btn btn-sm btn-outline-secondary flex-shrink-0"
-                id="btnShelfOsDrag"
-                title="Makes your next drag work like dragging a real file — you can drop it into File Explorer or any other app outside TagFox"
+              <i class="fa-solid fa-hand-pointer" aria-hidden="true"></i>
+            </button>
+            <div class="shelf-drop-main d-flex flex-wrap gap-1 align-items-center min-w-0 flex-grow-1">
+              <span id="shelfEmptyHint" class="text-muted fw-semibold"
+                ><i class="fa-solid fa-box-open tagfox-runner-only me-2" aria-hidden="true"></i>Shelf<span class="tagfox-runner-only fw-normal"
+                  >: drop files or folders here, then drag them into another folder. Shift copies.</span
+                ></span
               >
-                <i class="fa-solid fa-hand-pointer" aria-hidden="true"></i>
+              <div id="shelfChips"></div>
+              <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0" style="width: 1.5rem; height: 1.5rem" id="btnShelfClear" title="Send everything on the Shelf to the Recycle Bin">
+                <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
               </button>
-              <div class="shelf-drop-main d-flex flex-wrap gap-1 align-items-center min-w-0 flex-grow-1">
-                <span id="shelfEmptyHint" class="text-muted fw-semibold"
-                  ><i class="fa-solid fa-box-open tagfox-runner-only me-2" aria-hidden="true"></i>Shelf<span class="tagfox-runner-only fw-normal"
-                    >: drop files or folders here, then drag them into another folder. Shift copies.</span
-                  ></span
-                >
-                <div id="shelfChips"></div>
-                <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0" style="width: 1.5rem; height: 1.5rem" id="btnShelfClear" title="Send everything on the Shelf to the Recycle Bin">
-                  <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
-                </button>
-              </div>
             </div>
           </div>
         </aside>
