@@ -16,7 +16,7 @@
 
 const { connect, SCOPES, sleep } = require('./harness.cjs');
 
-const MIN_HITTABLE_PX = 12; // of a 21px window centred on the bar (6px bar inside a 22px grab band)
+const MIN_HITTABLE_PX = 12; // of a 21px window centred on the lit bar (Runner's grab band is the 20px gap between the cards)
 
 // Drag with real PointerEvents through the element the app binds, so the wiring under test is the
 // wiring that ships (pointerdown -> capture -> pointermove on the splitter -> pointerup).
@@ -25,9 +25,13 @@ const DRAG = `(() => {
   const aside = document.getElementById('propsAside');
   if (!split || !aside) return { error: 'splitter or viewer missing' };
   const width = () => Math.round(aside.getBoundingClientRect().width);
+  /* The bar that lights up on hover. Runner's divider has no width of its own and draws it as ::after,
+     in the gap to its left. */
   const barX = () => {
     const r = split.getBoundingClientRect();
-    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    const lit = getComputedStyle(split, '::after');
+    const cx = lit.content && lit.content !== 'none' ? r.left + parseFloat(lit.left) + parseFloat(lit.width) / 2 : r.left + r.width / 2;
+    return { x: Math.round(cx), y: Math.round(r.top + r.height / 2) };
   };
   const fire = (type, x, y) =>
     split.dispatchEvent(
@@ -89,6 +93,8 @@ async function main() {
     drv = await connect({ profile: 'tagfox-test-splitter', scope: SCOPES.repo });
     console.log('Hook ready.');
     await drv.settle('startup');
+    await drv.T('setRunnerMode', true);
+    await drv.settle('runner on');
     await sleep(200);
 
     const d = await drv.ev(DRAG);

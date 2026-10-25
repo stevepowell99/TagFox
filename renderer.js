@@ -27,7 +27,6 @@
       filesOnly: 'tagBrowserFilesOnly',
       showSubfolders: 'tagBrowserShowSubfolders',
       hideFiles: 'tagBrowserHideFiles',
-      propsWidthPx: 'tagBrowserPropsW',
       favFolders: 'tagBrowserFavFolders',
       folderFocusStats: 'tagBrowserFolderFocusStats',
       fileFocusStats: 'tagBrowserFileFocusStats',
@@ -88,7 +87,6 @@
         ['tagBrowserOptAsc', 'everythangOptAsc'],
         ['tagBrowserFoldersOnly', 'everythangFoldersOnly'],
         ['tagBrowserFilesOnly', 'everythangFilesOnly'],
-        ['tagBrowserPropsW', 'everythangPropsW'],
         ['tagBrowserTableCols', 'everythangTableCols'],
         ['tagBrowserFavFolders', 'everythangFavFolders'],
         ['tagBrowserTagStore', 'everythangTagStore'],
@@ -218,7 +216,6 @@
       });
     }
 
-    let propsPanePx = 300;
     /** Runner's Viewer width once its divider has been dragged; null keeps it at a third of the window. */
     let runnerViewerPx = null;
     const PROPS_PANE_MIN_PX = 200;
@@ -2361,10 +2358,9 @@
       const aside = document.getElementById('propsAside');
       if (!aside) return;
       /* Runner's CSS holds the Viewer at a third until the divider is dragged; the class lets the inline width through. */
-      const runnerSized = isRunnerMode() && runnerViewerPx != null;
-      document.body.classList.toggle('tagfox-runner-viewer-sized', runnerSized);
-      if (isRunnerMode()) aside.style.width = runnerSized ? clampPropsPaneWidthPx(runnerViewerPx) + 'px' : '';
-      else aside.style.width = clampPropsPaneWidthPx(propsPanePx) + 'px';
+      const sized = runnerViewerPx != null;
+      document.body.classList.toggle('tagfox-runner-viewer-sized', sized);
+      aside.style.width = sized ? clampPropsPaneWidthPx(runnerViewerPx) + 'px' : '';
     }
 
     function applyViewerDocSplitSizes() {
@@ -2429,15 +2425,12 @@
     }
 
     function loadPaneWidthsFromStorage() {
-      const pw = parseInt(localStorage.getItem(LS.propsWidthPx) || '', 10);
-      if (Number.isFinite(pw) && pw >= PROPS_PANE_MIN_PX && pw <= PROPS_PANE_MAX_PX) propsPanePx = pw;
       const rw = parseInt(localStorage.getItem(LS.runnerViewerWidthPx) || '', 10);
       runnerViewerPx = Number.isFinite(rw) && rw >= PROPS_PANE_MIN_PX && rw <= PROPS_PANE_MAX_PX ? rw : null;
       applyPaneWidths();
     }
 
     function persistPaneWidths() {
-      localStorage.setItem(LS.propsWidthPx, String(propsPanePx));
       if (runnerViewerPx == null) localStorage.removeItem(LS.runnerViewerWidthPx);
       else localStorage.setItem(LS.runnerViewerWidthPx, String(runnerViewerPx));
     }
@@ -2496,8 +2489,7 @@
         function move(ev) {
           // Dragging the handle right widens the left (results) pane; inverted delta matches that motion.
           const w = Math.min(maxW, Math.max(PROPS_PANE_MIN_PX, startW - (ev.clientX - startX)));
-          if (isRunnerMode()) runnerViewerPx = w;
-          else propsPanePx = w;
+          runnerViewerPx = w;
           moved = true;
           if (!raf) raf = requestAnimationFrame(flushPaneWidth);
         }

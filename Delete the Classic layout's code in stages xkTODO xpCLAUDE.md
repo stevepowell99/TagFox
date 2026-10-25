@@ -2,7 +2,7 @@
 
 Steve decided on 24 October 2026 to keep only Runner: hide Classic first, then delete its code in stages. Classic is hidden (no layout switch, every real start in Runner; the test hook still opens a fresh profile in Classic so its tests guard the code until it goes). This file is the inventory to delete against.
 
-- **Each stage** deletes one area (for example Classic's remembered Viewer width), its CSS and HTML, and the tests that cover only it, and keeps every piece Runner depends on (listed below). Run the full suite after each stage.
+- **Each stage** deletes one area (for example Classic's deadline panel), its CSS and HTML, and the tests that cover only it, and keeps every piece Runner depends on (listed below). Run the full suite after each stage.
 - **Steve decided on 25 October 2026** what Runner gains before Classic's code goes: the deadline filters as `/` Due commands; a "Show only starred items" command instead of a visible star list; and Windows Recent as a ranking boost rather than a list. A "Search this folder only" command keeps typing to the current folder's own contents. All four are in Runner now. The Shelf shows in Runner (`2d8c22b`), and so does the Restart button, in the search box. Saved searches are back in Runner too (Steve, 25 October 2026): `/` commands ("Save this search", then one per saved search) and `Alt`+`1`…`9`, reading the same `LS.favSearches` list Classic saved, so stage two took only Classic's bar.
 
 Read-only survey by a subagent at main `74c8ac1`; line numbers are approximate. Since then Runner has gained chips for the deadline and hide-until filters (the hazard the survey found).
@@ -34,7 +34,7 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 
 ### Viewer, Settings, global shortcuts
 
-- Viewer modes and the splitter `#splitProps` are shared; only Classic's remembered width (`LS.propsWidthPx`, `propsPanePx`) is Classic's. Runner keeps its own (`LS.runnerViewerWidthPx`) and holds the Viewer at a third until the divider is dragged.
+- Viewer modes and the splitter `#splitProps` are shared. The divider sets one width (`runnerViewerPx`, `LS.runnerViewerWidthPx`), and Runner holds the Viewer at a third until the divider is dragged.
 - Settings: only "Open the shelf folder" is Classic's. **Folder groups** (Search results) frames a selected folder with the rows under it that follow it, in both layouts.
 - Ctrl+Alt+Space and Quick TODO are shared. **Ctrl+Shift+Space** (`openRecentChanges`) resets the search in place in both layouts; Runner's branch is guarded in `runner-layout.cjs`, and Classic's reset (every option off but Match path, subfolders and everything shown) in `recent-changes.cjs`.
 
@@ -52,8 +52,8 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 
 ## Tests
 
-- **Classic only:** `smoke`, `fuzz`, `splitter-drag`, `recent-changes`.
-- **Runner only:** the `runner-*` tests and `viewer-runner`, several with Classic round-trip checks that would need rewriting.
+- **Classic only:** `smoke`, `fuzz`, `recent-changes`.
+- **Runner only:** the `runner-*` tests, `viewer-runner` and `splitter-drag`, several with Classic round-trip checks that would need rewriting.
 - **Both:** `hotkey-raise-select`, `hover-preview`, `row-actions-keys`, `window-chrome`.
 - **Layout-neutral but run in Classic:** `menu-enter` (the ▾ subfolder menu), `md-preview-no-write`, `quiet-refresh`, `loadmore-regression`, `delete-hides-row`, `restart-in-terminal`, `gmist-start-guard`, `help-build`, `tags-dates`.
 - `test/README.md` omits tags-dates, repro-crash, gmist-start-guard and hover-preview.
