@@ -2594,6 +2594,47 @@ ipcMain.handle('window-chrome-colors', (event, colors) => {
   return { ok: true };
 });
 
+/**
+ * A blank window has to be able to say why. The page's own failures go to the perf log: each load, a failed
+ * load, a preload error, the renderer dying, the window hanging, and console errors (ten a minute at most).
+ * On 25 October 2026 the window went blank under Steve and nothing on disk could say whether the page had
+ * crashed, failed to load or thrown. A dead renderer leaves the window white until a restart, so a crashed
+ * page is loaded again, at most once a minute.
+ */
+function watchPageHealth(win) {
+  const wc = win.webContents;
+  let lastRecoverAt = 0;
+  let errorMinute = 0;
+  let errorsThisMinute = 0;
+  wc.on('did-finish-load', () => mainPerfLog('page loaded ' + path.basename(wc.getURL().split('#')[0])));
+  wc.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
+    if (isMainFrame) mainPerfLog(`page failed-load ${code} ${desc} ${url}`);
+  });
+  wc.on('preload-error', (_e, preloadPath, err) => mainPerfLog(`page preload-error ${path.basename(preloadPath)} ${err && err.message}`));
+  wc.on('render-process-gone', (_e, details) => {
+    const recover = Date.now() - lastRecoverAt > 60000;
+    mainPerfLog(`page renderer-gone reason=${details.reason} exit=${details.exitCode}${recover ? ', reloading' : ', not reloading again within a minute'}`);
+    if (!recover || win.isDestroyed()) return;
+    lastRecoverAt = Date.now();
+    /* Not from inside the event: a reload made there never loaded (measured with CDP Page.crash). */
+    setTimeout(() => {
+      if (!win.isDestroyed()) wc.reload();
+    }, 1000);
+  });
+  win.on('unresponsive', () => mainPerfLog('page unresponsive'));
+  win.on('responsive', () => mainPerfLog('page responsive again'));
+  wc.on('console-message', (_e, level, message, line, sourceId) => {
+    if (level < 3) return;
+    const minute = Math.floor(Date.now() / 60000);
+    if (minute !== errorMinute) {
+      errorMinute = minute;
+      errorsThisMinute = 0;
+    }
+    if (++errorsThisMinute > 10) return;
+    mainPerfLog(`page error ${String(message).slice(0, 300)} (${path.basename(String(sourceId || ''))}:${line})`);
+  });
+}
+
 function createWindow() {
   const chrome = loadWindowChrome();
   const hideTitleBar = !!chrome.hideTitleBar && process.platform === 'win32';
@@ -2637,6 +2678,7 @@ function createWindow() {
     if (fileDialogTarget) setFileDialogTarget(null);
   });
   attachPageZoomShortcuts(win.webContents);
+  watchPageHealth(win);
   win.loadFile(path.join(__dirname, 'index.html'));
   win.webContents.setWindowOpenHandler(({ url: openUrl }) => {
     try {

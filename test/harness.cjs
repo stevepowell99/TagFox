@@ -204,7 +204,7 @@ async function connect({ profile, maxResults = 60, scope = SCOPES.repo, disableA
     console.log('  FAIL the test ended before it finished (its driver was never closed)');
     process.exitCode = 1;
   });
-  return { baseUrl, userData, pid: child.pid, ev, T, state, diag, settle, send: cdp.send, stderr: () => stderr, close };
+  return { baseUrl, userData, port, pid: child.pid, ev, T, state, diag, settle, send: cdp.send, stderr: () => stderr, close };
 }
 
 // Standard structural invariants every settled state must satisfy. Returns an array of problem strings.
