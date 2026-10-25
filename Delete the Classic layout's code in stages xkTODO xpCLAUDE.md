@@ -21,7 +21,7 @@ Read-only survey by a subagent at main `74c8ac1`; line numbers are approximate. 
 | Files and folders / folders only / files only | `optRvAll`, `optRvDirsOnly`, `optRvFilesOnly` radios | Partial: `/folders`, `/files` | `resultsContentMode` |
 | Match options | toolbar | Partial: `/` commands and Ctrl keys | `searchOptionsFromUI`, `toggleSearchOptCheckbox` |
 | Recency 1h / 1d / 1w / 1m / 1y / All | toolbar radios | Partial: `/` has all, 1h, 1d, 1w; 1m and 1y only by Ctrl+R cycling | `setRecencyFilterMode` |
-| Sort by path, oldest first, or Z-A | nothing on screen sets one. A fresh profile starts on Path, A-Z (`freshProfileSortsByPath`), so every test that opens in Classic runs on a path sort; otherwise only a saved Classic value sets one. Folder rows take a tint while Path is the sort | No: smart, date, name, largest or smallest first; Runner replaces a fresh profile's Path sort with its own at startup | `sortColumn`/`sortAsc` through `applySearchState`, `syncSortPathClass`, `freshProfileSortsByPath` |
+| Sort by path, oldest first, or Z-A | nothing on screen sets one. A fresh profile starts on Path, A-Z (`freshProfileSortsByPath`); otherwise only a saved Classic value sets one. Folder rows take a tint while Path is the sort | No: smart, date, name, largest or smallest first. `applyRunnerAtStartup` sets `sortColumn` from Runner's own sort, so a Path sort lasts only until then | `sortColumn`/`sortAsc` through `applySearchState`, `syncSortPathClass`, `freshProfileSortsByPath`, `compareRowsBySort`'s path case, the `results-sort-path` CSS |
 
 ### Shelf
 
@@ -52,14 +52,14 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 ## Tests
 
 - **Runner:** a test instance opens in Runner from its first load, as every start does, so every test that opens a window runs in Runner without switching.
-- **Classic code that nothing reaches:** the Shelf's rotated strip and its inline width (`syncShelfAsideWidth` past its Runner return), the status line's place in Classic's markup (`placeStatusLineForLayout(false)`) and the switch back to Classic (the `on === false` half of `applyRunnerModeSync`, which saves Runner's state and restores `LS.runnerClassicStash`). The one call left is `applyRunnerModeSync(true, { startup: true })` at startup, so a stage that deletes them has neither a caller nor a test to rewrite.
+- **Classic CSS that nothing reaches:** the Shelf's rotated strip and narrow column (`.app-shelf`, `.app-shelf-rot` and `.app-shelf--rhs .app-shelf-rot`, which Runner's block overrides). No test covers them; compare the Shelf's computed styles before and after deleting them.
 - **No layout:** `restart-in-terminal`, `help-build` and `tags-dates` do not go through the harness's `connect`.
 - `test/README.md` omits tags-dates and repro-crash.
 
 ## Stages named so far
 
 - **Move the rest of Classic's key handler into `RUNNER_KEYS`:** the keys in the Keys bullet above.
-- **The `isRunnerMode()` tests:** 49 in `renderer.js`. It reads `runnerModeOn`, which startup sets and nothing clears, so a Classic branch can run only in code that runs before `applyRunnerModeSync(true, { startup: true })`; say which those are before deleting a branch.
+- **Path sort:** everything in the Code column of the "Sort by path" row above.
 - **`runSearch`'s `eventKind`** reaches only the search debug log (`runSearch.start`), through `scheduleSearch` and `runSearchNow`, so the argument can go from every call site.
 
 ## Decisions before any deletion

@@ -800,7 +800,6 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
  * rotate(-90deg) geometry (LHS strip):
  *   pre-rot WIDTH  = screen VERTICAL (along results column)
  *   pre-rot HEIGHT = screen HORIZONTAL (aside column width)
- * JS sets rot.style.minWidth = parent height so strip fills column vertically.
  * RHS strip uses +90deg (mirror) so text reads the same way along the edge.
  */
 .app-shelf-rot {
@@ -3228,8 +3227,7 @@ body.tagfox-runner.tagfox-runner-viewer-off #propsAside {
 [data-bs-theme="dark"] .tagfox-runner-cmd.tagfox-runner-cmd--active {
   background-color: #312e81;
 }
-/* Shelf: a strip under the list, one line high while empty, growing to a few lines of chips. Classic's
-   strip is rotated beside the list; here it lies flat, so syncShelfAsideWidth leaves its size to CSS.
+/* Shelf: a strip under the list, one line high while empty, growing to a few lines of chips, sized by CSS.
    The list runs down to the Shelf, and the status line is docked over the list's foot: it shares the list's
    grid cell, pinned to the cell's bottom, so it takes no height of its own and nothing moves when a message
    comes or goes. */

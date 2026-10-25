@@ -140,7 +140,7 @@ async function main() {
 
     await key('Shift', 'ShiftLeft', 16); // a hidden window runs no frames until its first input
     let s = await R();
-    check(s.on && s.bodyClass, `Runner is on`);
+    check(s.bodyClass, `Runner is on`);
 
     // Empty box: the folder's own contents only.
     check(await waitForRow(path.join(root, 'alphafold-note.md'), 'browse'), 'empty box lists the current folder');

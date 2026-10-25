@@ -39,7 +39,6 @@
       tagFilterCombineOr: 'tagBrowserTagCombineOr',
       recencyFilter: 'tagBrowserRecencyFilter',
       searchDebug: 'tagBrowserSearchDebug',
-      helpModalTab: 'tagBrowserHelpModalTab',
       autoRefreshSec: 'tagBrowserAutoRefreshSec',
       autoRefreshDefaultMoved: 'tagBrowserAutoRefreshDefaultMoved',
       optPathDefaultMoved: 'tagBrowserOptPathDefaultMoved',
@@ -55,9 +54,8 @@
       globalViewerBasenames: 'tagBrowserGlobalViewerBasenames',
       viewerDocSplitPct: 'tagBrowserViewerDocSplitPct',
       viewerDocSplitPctTheater: 'tagBrowserViewerDocSplitPctTheater',
-      /* Runner layout: which layout the toggle key opens, and each layout's search state while the other is up. */
+      /* Runner's search state, applied at every start. */
       runnerState: 'tagBrowserRunnerState',
-      runnerClassicStash: 'tagBrowserRunnerClassicStash',
       runnerSort: 'tagBrowserRunnerSort',
       /* Saved searches, run as / commands and Alt+1…9. Classic's list under the same key, so its entries carry on. */
       favSearches: 'tagBrowserFavSearches',
@@ -2504,7 +2502,6 @@
       });
       /* Runner: a double-click puts the Viewer back to a third of the window. */
       split.addEventListener('dblclick', () => {
-        if (!isRunnerMode()) return;
         runnerViewerPx = null;
         applyPaneWidths();
         persistPaneWidths();
@@ -2635,7 +2632,6 @@
     /** Scope and query the render window was last reset for. */
     let runnerRenderKey = null;
 
-    let runnerModeOn = false;
     /** 'smart' re-ranks; 'date' (newest first), 'name', 'size' (largest first) and 'size-asc' are plain sorts. */
     const RUNNER_SORTS = ['smart', 'date', 'name', 'size', 'size-asc'];
     let runnerSort = 'smart';
@@ -2647,10 +2643,6 @@
     let runnerPendingSelectPath = null;
     /** Everything's match count for the last main query, to say when the re-rank saw only part of it. */
     let runnerTotalHits = null;
-
-    function isRunnerMode() {
-      return runnerModeOn;
-    }
 
     function runnerDefaultSearchState() {
       return {
@@ -2689,37 +2681,26 @@
       return { col: 'date_modified', asc: false };
     }
 
-    /** Apply a layout to the live UI without searching. startup: the UI already holds this layout's state. */
-    function applyRunnerModeSync(on, opts = {}) {
-      on = !!on;
-      if (on) {
-        if (!opts.startup) {
-          lsSetJson(LS.runnerClassicStash, serializeSearchState());
-        }
-        const savedSort = localStorage.getItem(LS.runnerSort);
-        runnerSort = RUNNER_SORTS.includes(savedSort) ? savedSort : 'smart';
-        const saved = lsGetJson(LS.runnerState, null);
-        const st = searchStateWithoutCeiling({ ...runnerDefaultSearchState(), ...(saved || {}) });
-        const sc = runnerSortColumnFor(runnerSort);
-        st.sortColumn = sc.col;
-        st.sortAsc = sc.asc;
-        applySearchState(st);
-        /* Runner hid ~ paths by default until October 2026; carry that saved hide over to showing them once.
-           A hide chosen after this survives, because the marker is written either way. */
-        if (localStorage.getItem(LS.runnerTildeShownMoved) !== '1') {
-          localStorage.setItem(LS.runnerTildeShownMoved, '1');
-          runnerSetOpt('optHideTilde', false);
-          lsSetJson(LS.runnerState, serializeSearchState());
-        }
-      } else if (runnerModeOn) {
+    /** Apply Runner's saved search state and its chrome to the live UI at startup, without searching. */
+    function applyRunnerAtStartup() {
+      const savedSort = localStorage.getItem(LS.runnerSort);
+      runnerSort = RUNNER_SORTS.includes(savedSort) ? savedSort : 'smart';
+      const saved = lsGetJson(LS.runnerState, null);
+      const st = searchStateWithoutCeiling({ ...runnerDefaultSearchState(), ...(saved || {}) });
+      const sc = runnerSortColumnFor(runnerSort);
+      st.sortColumn = sc.col;
+      st.sortAsc = sc.asc;
+      applySearchState(st);
+      /* Runner hid ~ paths by default until October 2026; carry that saved hide over to showing them once.
+         A hide chosen after this survives, because the marker is written either way. */
+      if (localStorage.getItem(LS.runnerTildeShownMoved) !== '1') {
+        localStorage.setItem(LS.runnerTildeShownMoved, '1');
+        runnerSetOpt('optHideTilde', false);
         lsSetJson(LS.runnerState, serializeSearchState());
-        const stash = lsGetJson(LS.runnerClassicStash, null);
-        if (stash) applySearchState(searchStateWithoutCeiling(stash));
       }
-      runnerModeOn = on;
       selectAfterSearchKey = null;
-      document.body.classList.toggle('tagfox-runner', on);
-      placeStatusLineForLayout(on);
+      document.body.classList.add('tagfox-runner');
+      placeStatusLine();
       closeRunnerCmdList(false);
       setRunnerOptsPanelOpen(false);
       renderRunnerScopeChip();
@@ -2727,34 +2708,17 @@
       applyRunnerViewerOff();
       applyPaneWidths();
       const split = document.getElementById('splitProps');
-      if (split) split.title = on ? 'Drag to resize the Viewer; double-click for a third of the window' : 'Drag';
-      scheduleSyncShelfAsideWidth();
+      if (split) split.title = 'Drag to resize the Viewer; double-click for a third of the window';
       refreshRunnerWindowsRecent();
     }
-
-    /** Moves an element into Runner's layout (into runnerParent, before runnerBefore or at the end), or back
-        to where Classic's markup put it. */
-    function placeForLayout(el, on, runnerParent, runnerBefore) {
-      if (!el) return;
-      if (!el._classicHome) el._classicHome = { parent: el.parentElement, next: el.nextElementSibling };
-      if (on) {
-        if (runnerParent) runnerParent.insertBefore(el, runnerBefore && runnerBefore.parentElement === runnerParent ? runnerBefore : null);
-      } else {
-        const { parent, next } = el._classicHome;
-        parent.insertBefore(el, next && next.parentElement === parent ? next : null);
-      }
-    }
-
-    /** Classic's header holds the Restart button and Runner has no header, so in Runner the button sits in
-        the box, before the rank note. It shows only when TagFox's own code has changed since it started. */
 
     /** Runner has no status bar along the window's foot: its status line goes in the list's column, where
         CSS floats it over the list's foot just above the Shelf, and holds the rotating tip until a message
         comes. */
-    function placeStatusLineForLayout(on) {
+    function placeStatusLine() {
       const bar = document.getElementById('tagfoxNavbarStatus');
       const shelf = document.getElementById('appShelf');
-      placeForLayout(bar, on, shelf && shelf.parentElement, shelf);
+      if (bar && shelf && shelf.parentElement) shelf.parentElement.insertBefore(bar, shelf);
     }
 
     /** A typed file type: `.pdf` or `*.pdf`, or `-.tmp` to leave one out. */
@@ -3000,7 +2964,7 @@
         used path that matches, and the newest Temp hits. Merged into the main rows; never paged. */
     /** Runner: a newer search has been asked for since the running one took the mutex. */
     function runnerSearchSuperseded() {
-      return isRunnerMode() && activeSearchRequest !== searchRequestSeq;
+      return activeSearchRequest !== searchRequestSeq;
     }
 
     async function runnerExtraRows({ runId, ceilingNorms, rootFolder, queryForEs, recursive, options, cap, after }) {
@@ -3093,14 +3057,13 @@
       runnerRenderLimit = RUNNER_RENDER_PAGE;
     }
 
-    /** Rows drawn: everything in Classic, the window in Runner. */
+    /** Rows drawn: the render window. */
     function renderedRowCount(total) {
-      return isRunnerMode() ? Math.min(total, runnerRenderLimit) : total;
+      return Math.min(total, runnerRenderLimit);
     }
 
     /** Draw more rows when the selection or the scroll reaches the end of the window. */
     function runnerGrowRenderWindow(toIdx) {
-      if (!isRunnerMode()) return false;
       const total = listRowsForUi().length;
       if (runnerRenderLimit >= total || toIdx < runnerRenderLimit - 3) return false;
       runnerRenderLimit = Math.min(total, Math.max(runnerRenderLimit, toIdx + 1) + RUNNER_RENDER_PAGE);
@@ -3117,7 +3080,7 @@
     function renderRunnerRankNote() {
       const el = document.getElementById('runnerRankNote');
       if (!el) return;
-      const partial = isRunnerMode() && runnerSort === 'smart' && resultsPagingCtx && resultsPagingCtx.hasMore;
+      const partial = runnerSort === 'smart' && resultsPagingCtx && resultsPagingCtx.hasMore;
       el.classList.toggle('d-none', !partial);
       if (!partial) return;
       const seen = resultsPagingCtx.singleOffset;
@@ -3132,24 +3095,17 @@
     }
 
     /** After a search: a new list (scope or query changed) selects its top row, or the folder just left, so ↓, Tab
-        and Enter start from it. Classic does so only for typed text, and never re-selects within the same list:
-        a folder browsed with an empty box keeps its folder doc in the Viewer, and rows unchecked by hand stay
-        unchecked through F5 and auto-refresh. `early` is Runner's paint of the main rows before the merged list
-        (runSearch): it selects the same way but leaves the list unrecorded, so the merged list selects its own top
-        row, unless the selection has been moved by hand in between. */
+        and Enter start from it. Within the same list the selection stays, so rows unchecked by hand stay unchecked
+        through F5 and auto-refresh. `early` is the paint of the main rows before the merged list (runSearch): it
+        selects the same way but leaves the list unrecorded, so the merged list selects its own top row, unless the
+        selection has been moved by hand in between. */
     function selectRowAfterSearch(query, rootFolder, { early = false } = {}) {
       const key = selectAfterSearchKeyFor(query, rootFolder);
       const rows = listRowsForUi();
-      const classic = !isRunnerMode();
       const earlyPick = earlySelect && earlySelect.key === key ? earlySelect.path : null;
       earlySelect = null;
-      /* Classic records no key for an empty list, so the same text finding rows on a later run still selects. */
       if (!rows.length) {
-        if (!classic && !early) selectAfterSearchKey = key;
-        return;
-      }
-      if (classic && (key === selectAfterSearchKey || !String(query || '').trim())) {
-        selectAfterSearchKey = key;
+        if (!early) selectAfterSearchKey = key;
         return;
       }
       const idxOf = (p) => {
@@ -3319,7 +3275,7 @@
        folder nothing is left out, or the folder would look empty. */
     const RUNNER_TEMP_EXCLUDE = '!path:\\appdata\\local\\temp\\';
     function runnerLeavesOutTemp(rootFolder) {
-      return isRunnerMode() && !/[\\/]appdata[\\/]local[\\/]temp([\\/]|$)/i.test(String(rootFolder || ''));
+      return !/[\\/]appdata[\\/]local[\\/]temp([\\/]|$)/i.test(String(rootFolder || ''));
     }
 
     function runnerHideTempOn() {
@@ -3329,7 +3285,7 @@
     /** Starred only: Runner lists the stars themselves (under the current folder, if any), which is its
         star list (Steve, October 2026). */
     function runnerStarredOnlyOn() {
-      return isRunnerMode() && localStorage.getItem(LS.runnerStarredOnly) === '1';
+      return localStorage.getItem(LS.runnerStarredOnly) === '1';
     }
 
     function runnerToggleStarredOnly() {
@@ -3342,7 +3298,7 @@
     /** This folder only: typing (or a tag, a deadline range, Starred only) searches the current folder's own
         contents rather than everything below it. No folder means the whole index either way. */
     function runnerThisFolderOnlyOn() {
-      return isRunnerMode() && localStorage.getItem(LS.runnerThisFolderOnly) === '1';
+      return localStorage.getItem(LS.runnerThisFolderOnly) === '1';
     }
 
     function runnerToggleThisFolderOnly() {
@@ -3364,7 +3320,7 @@
     let runnerWindowsRecentAskedAt = 0;
     function refreshRunnerWindowsRecent() {
       const tb = window.tagBrowser;
-      if (!isRunnerMode() || !tb || typeof tb.windowsRecentFiles !== 'function') return;
+      if (!tb || typeof tb.windowsRecentFiles !== 'function') return;
       if (Date.now() - runnerWindowsRecentAskedAt < 60e3) return;
       runnerWindowsRecentAskedAt = Date.now();
       void Promise.all([
@@ -3859,7 +3815,7 @@
     ];
 
     function runnerActiveFilterChips() {
-      return isRunnerMode() ? RUNNER_FILTER_CHIPS.filter((c) => c.on()) : [];
+      return RUNNER_FILTER_CHIPS.filter((c) => c.on());
     }
 
     /** What an empty list was looking for: the folder, the text, every chip that narrowed it, and inside a
@@ -3887,7 +3843,7 @@
       const el = document.getElementById('runnerEmptyNote');
       if (!el) return;
       clearTimeout(runnerEmptyNoteTimer);
-      if (!isRunnerMode() || listRowsForUi().length) {
+      if (listRowsForUi().length) {
         el.classList.add('d-none');
         return;
       }
@@ -3896,7 +3852,7 @@
           runnerEmptyNoteTimer = setTimeout(show, 150);
           return;
         }
-        if (!isRunnerMode() || listRowsForUi().length) return;
+        if (listRowsForUi().length) return;
         el.textContent = runnerEmptyNoteText();
         el.classList.remove('d-none');
       };
@@ -4239,7 +4195,7 @@
     }
     function applyRunnerViewerOff() {
       const off = runnerViewerOff();
-      document.body.classList.toggle('tagfox-runner-viewer-off', isRunnerMode() && off);
+      document.body.classList.toggle('tagfox-runner-viewer-off', off);
       const btn = document.getElementById('btnRunnerViewer');
       if (!btn) return;
       btn.setAttribute('aria-pressed', off ? 'false' : 'true');
@@ -4814,13 +4770,13 @@
         releaseMutex = r;
       });
       await prev;
-      /* Runner: a newer search was asked for while this one waited its turn, so this one has nothing left
+      /* A newer search was asked for while this one waited its turn, so this one has nothing left
          to show. Everything answers one query at a time, so running it anyway put its four or five queries
          ahead of the newest keystroke's, and on a slow day typing four letters ran three stale searches in
          full first. It waits for the newest instead, so a caller that awaits it still resumes once the list
          for the current box is on screen. An auto-refresh tick starts only when nothing is in flight, so it
          never overtakes a typed search. */
-      if (isRunnerMode() && myRequest !== searchRequestSeq) {
+      if (myRequest !== searchRequestSeq) {
         runnerSearchCounters.stepAside++;
         releaseMutex();
         let tail;
@@ -4831,7 +4787,7 @@
         return;
       }
       activeSearchRequest = myRequest;
-      if (isRunnerMode()) runnerSearchCounters.run++;
+      runnerSearchCounters.run++;
       searchFlowRunning = true;
       try {
         if (searchDebounceTimer) {
@@ -5239,7 +5195,7 @@
         the bar is still showing: an action's result starts a search, whose "Searching…" would otherwise
         be all the bar said for the result's five seconds. */
     function setStatusMain(text, { progress = false } = {}) {
-      if (progress && isRunnerMode() && document.body.classList.contains('tagfox-runner-status-on')) return;
+      if (progress && document.body.classList.contains('tagfox-runner-status-on')) return;
       const el = document.getElementById('statusMain');
       if (el) el.textContent = text == null ? '' : String(text);
       if (text && !progress) flashRunnerStatus();
@@ -5250,7 +5206,6 @@
     const RUNNER_STATUS_SHOW_MS = 5000;
     let runnerStatusTimer = null;
     function flashRunnerStatus() {
-      if (!isRunnerMode()) return;
       document.body.classList.add('tagfox-runner-status-on');
       clearTimeout(runnerStatusTimer);
       const hide = () => {
@@ -5350,12 +5305,12 @@
       return rest.join(sep);
     }
 
-    /** Path column: full path when there is no scope; otherwise parent folder trail under scope only. */
-    function pathColumnDisplayForRow(fp, isFolder) {
+    /** Path column: the folder a row is in, relative to the current folder when there is one. */
+    function pathColumnDisplayForRow(fp) {
       const scope = currentScopeFolderPath();
       const parent = T.parentDir(fp);
       /* Runner shows a file's name on its own, so the path is only ever the folder it is in. */
-      if (!scope) return isFolder || isRunnerMode() ? parent : fp;
+      if (!scope) return parent;
       const rel = pathRelativeToScopeDir(parent);
       return rel || '—';
     }
@@ -6548,7 +6503,7 @@
       }
       /* Runner: the buttons go in the box's folder chip instead, before its x, shown while it is hovered. */
       const runnerChip = document.getElementById('runnerScopeChip');
-      if (isRunnerMode() && scopeRowActs && runnerChip && !runnerChip.classList.contains('d-none')) {
+      if (scopeRowActs && runnerChip && !runnerChip.classList.contains('d-none')) {
         runnerChip.insertBefore(scopeRowActs, runnerChip.querySelector('.tagfox-runner-scope-chip-x'));
       }
       syncScopeBarButtons();
@@ -6560,7 +6515,6 @@
     /** A breadcrumb pill: go to that folder. Runner goes the way its arrow keys do: the box is cleared, and the
         folder on the way back to where you were is selected. */
     async function goToBreadcrumbFolder(folder) {
-      if (!isRunnerMode()) return applySearchScopeAndRefresh(folder);
       const from = currentScopeFolderPath();
       const k = pathNormKey(folder);
       let back = null;
@@ -6577,7 +6531,7 @@
         the page, since the room depends on the window and the Viewer's width. */
     function fitRunnerBreadcrumb() {
       const bar = document.getElementById('breadcrumbBar');
-      if (!bar || !isRunnerMode() || bar.classList.contains('d-none')) return;
+      if (!bar || bar.classList.contains('d-none')) return;
       const pills = Array.from(bar.querySelectorAll(':scope > .tagfox-breadcrumb-folder-chip'));
       if (!pills.length) return;
       let more = bar.querySelector(':scope > .tagfox-runner-crumb-more');
@@ -9498,16 +9452,6 @@
       return (String(searchText || '').trim() + ' ' + clause).trim();
     }
 
-    function formatSize(n) {
-      if (n == null || n === '') return '—';
-      const x = Number(n);
-      if (!Number.isFinite(x)) return String(n);
-      if (x < 1024) return x + ' B';
-      if (x < 1024 * 1024) return (x / 1024).toFixed(1) + ' KB';
-      if (x < 1024 * 1024 * 1024) return (x / (1024 * 1024)).toFixed(1) + ' MB';
-      return (x / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
-    }
-
     /** Runner's size: at most three figures and the unit ("14 MB", "1.4 MB", "335 KB"), or null. */
     function runnerSizeParts(n) {
       if (n == null) return null;
@@ -10041,11 +9985,7 @@
           }
           const scopeDest = currentScopeFolderPath();
           if (!scopeDest) {
-            setStatusMain(
-              isRunnerMode()
-                ? 'Drop onto a folder row, or go into a folder first (→ on its row) to drop into the list.'
-                : 'Set the current folder (breadcrumb or path editor) to drop into the list.'
-            );
+            setStatusMain('Drop onto a folder row, or go into a folder first (→ on its row) to drop into the list.');
             return;
           }
           await applyInternalPathsDrop(scopeDest, paths, e.shiftKey ? 'copy' : 'move');
@@ -10127,37 +10067,6 @@
       return uniq;
     }
 
-    /**
-     * Rotated Shelf strip sizing.
-     * rot.style.minWidth = parent height: pre-rot width fills screen vertical after -90deg.
-     * aside.style.width  = br.width: post-rot width = pre-rot HEIGHT (content rows, thin).
-     */
-    function syncShelfAsideWidth() {
-      const aside = document.getElementById('appShelf');
-      const rot = aside?.querySelector?.('.app-shelf-rot');
-      if (!aside || !rot) return;
-      // Pre-rot minWidth ≈ column height so ±90° strip spans the shelf; match results column height (no vertical inset — aligns with results card / table).
-      rot.style.minWidth = '';
-      /* Runner's strip lies flat under the list and sizes itself. */
-      if (isRunnerMode()) {
-        aside.style.width = '';
-        return;
-      }
-      const parent = aside.closest('.results-with-shelf') || aside.parentElement;
-      const h = parent ? parent.clientHeight : 0;
-      if (h > 48) rot.style.minWidth = Math.max(48, h) + 'px';
-      const br = rot.getBoundingClientRect();
-      aside.style.width = Math.max(48, Math.ceil(br.width)) + 'px';
-    }
-
-    function scheduleSyncShelfAsideWidth() {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          syncShelfAsideWidth();
-        });
-      });
-    }
-
     /** One Shelf chip: in-app paths drag, or hand / Alt+startDragFiles for Explorer (paths always an array). */
     function bindShelfChipDrag(chip, paths) {
       const list = Array.isArray(paths) ? paths.filter((p) => String(p || '').trim()) : [];
@@ -10196,7 +10105,6 @@
         hint.classList.remove('d-none');
         if (clearAllBtn) clearAllBtn.classList.add('d-none');
         refreshTagFoxChromeTooltips(zone);
-        scheduleSyncShelfAsideWidth();
         return;
       }
       hint.classList.add('d-none');
@@ -10269,14 +10177,12 @@
       }
       refreshTagFoxChromeTooltips(zone);
       refreshTagFoxChromeTooltips(chips);
-      scheduleSyncShelfAsideWidth();
     }
 
     function bindShelfDrop() {
       const aside = document.getElementById('appShelf');
       if (!aside || aside.dataset.shelfDropBound === '1') return;
       aside.dataset.shelfDropBound = '1';
-      window.addEventListener('resize', syncShelfAsideWidth);
 
       function shelfAllowsDt(dt) {
         return dataTransferHasTagBrowserOrFiles(dt);
@@ -10712,7 +10618,7 @@
       patchResultRowsAfterRenames(pairs);
       pruneLastRowsRenamedSources(pairs);
       dedupeLastRowsByPathKey();
-      sortLastRowsForDisplay(true);
+      sortLastRowsForDisplay();
     }
 
     /** Paths just moved away or recycled: hide their rows at once and stop a lagging Everything index resurrecting them. */
@@ -10810,26 +10716,11 @@
       rows.sort((a, b) => compareRowsBySort(a, b, col, asc));
     }
 
-    /** Client-side re-sort: always when force; else path (full-path string order) only. */
-    function sortLastRowsForDisplay(force) {
+    /** Runner merges extra queries into the page, so it always sorts here, and its smart order re-ranks. */
+    function sortLastRowsForDisplay() {
       if (!lastRows.length) return;
-      /* Runner merges extra queries into the page, so it always sorts here, and its smart order re-ranks. */
-      if (isRunnerMode()) {
-        if (runnerSort === 'smart') rankRowsForRunner(lastRows);
-        else sortRowsForDisplay(lastRows, sortColumn, sortAsc);
-        return;
-      }
-      if (!force && sortColumn !== 'path') return;
-      const before = lastRows.length;
-      sortRowsForDisplay(lastRows, sortColumn, sortAsc);
-      searchDebugLog('sortLastRowsForDisplay', {
-        force: !!force,
-        col: sortColumn,
-        asc: sortAsc,
-        count: before,
-        first: lastRows.slice(0, 3).map((r) => fullPathForRow(r)),
-        last: lastRows.slice(-3).map((r) => fullPathForRow(r)),
-      });
+      if (runnerSort === 'smart') rankRowsForRunner(lastRows);
+      else sortRowsForDisplay(lastRows, sortColumn, sortAsc);
     }
 
     function rowIsFolder(row) {
@@ -11229,9 +11120,8 @@
 
     function saveSettings() {
       if (!settingsLoadCompleted) return;
-      /* Runner's own search state is applied at every start in Runner, so it is kept current here: written
-         only on leaving Runner, a change made in Runner (system files, whole words) was gone after a restart. */
-      if (runnerModeOn) lsSetJson(LS.runnerState, serializeSearchState());
+      /* Runner's own search state is applied at every start, so it is kept current here. */
+      lsSetJson(LS.runnerState, serializeSearchState());
       localStorage.setItem(LS.baseUrl, document.getElementById('baseUrl').value.trim());
       localStorage.setItem(LS.rootFolder, document.getElementById('rootFolder').value.trim());
       {
@@ -11627,8 +11517,7 @@
 
     function commitSearchHistoryIfChanged() {
       if (searchHistNavigating) return;
-      /* The two layouts share one history; the mark says whose view and filters an entry carries. */
-      const s = { ...serializeSearchState(), runner: isRunnerMode() };
+      const s = serializeSearchState();
       const cur = searchHist[searchHistIdx];
       if (cur && searchStatesEqual(s, cur)) return;
       searchHist = searchHist.slice(0, searchHistIdx + 1);
@@ -11703,9 +11592,7 @@
       try {
         searchHistIdx = next;
         const entry = searchHist[searchHistIdx];
-        /* Each layout keeps its own view and filters, so a step to an entry made in the other layout
-           brings back only its text and folder. */
-        applySearchState(!!entry.runner === isRunnerMode() ? entry : { ...serializeSearchState(), query: entry.query, rootFolder: entry.rootFolder });
+        applySearchState(entry);
         persistActiveTagFilter();
         saveSettings();
         syncSortPathClass();
@@ -11717,7 +11604,7 @@
     }
 
     function seedSearchHistoryFromCurrent() {
-      searchHist = [{ ...serializeSearchState(), runner: isRunnerMode() }];
+      searchHist = [serializeSearchState()];
       searchHistIdx = 0;
     }
 
@@ -12665,7 +12552,7 @@
       /* Highlight #query in name/path when enabled (Settings). */
       const qTrim = (document.getElementById('query')?.value || '').trim();
       const queryNeedle = isHighlightMatchedNamesOn() && qTrim ? qTrim : null;
-      const starKeys = isRunnerMode() ? new Set(loadFavouriteFolders().map((p) => pathNormKey(p))) : null;
+      const starKeys = new Set(loadFavouriteFolders().map((p) => pathNormKey(p)));
       const renderN = renderedRowCount(rowsForDisplay.length);
       for (let rowIdx = 0; rowIdx < renderN; rowIdx++) {
         const row = rowsForDisplay[rowIdx];
@@ -12729,32 +12616,28 @@
         tdPath.className = 'col-path text-muted small';
         const pathBox = document.createElement('div');
         pathBox.className = 'path-ellip-start';
-        const pathShown = collapseGDriveShortcutDisplay(pathColumnDisplayForRow(fp, rowIsFolder(row)));
+        const pathShown = collapseGDriveShortcutDisplay(pathColumnDisplayForRow(fp));
         if (pathShown === '—') tdPath.classList.add('col-path--here');
         fillPathCellBox(pathBox, pathShown, queryNeedle);
         tdPath.appendChild(pathBox);
 
         const tdSize = document.createElement('td');
         tdSize.className = 'text-end text-nowrap small results-td-size';
-        if (isRunnerMode()) {
-          /* Blank where the size is unknown, rather than a column of dashes. */
-          const sp = runnerSizeParts(rowSizeBytes(row));
-          if (sp) {
-            tdSize.classList.add('tagfox-runner-size--' + (sp.unit === 'TB' ? 'gb' : sp.unit.toLowerCase()));
-            tdSize.textContent = sp.num;
-            const unit = document.createElement('span');
-            unit.className = 'tagfox-runner-size-unit';
-            unit.textContent = sp.unit;
-            tdSize.appendChild(unit);
-          }
-        } else tdSize.textContent = formatSize(row.size);
+        /* Blank where the size is unknown, rather than a column of dashes. */
+        const sp = runnerSizeParts(rowSizeBytes(row));
+        if (sp) {
+          tdSize.classList.add('tagfox-runner-size--' + (sp.unit === 'TB' ? 'gb' : sp.unit.toLowerCase()));
+          tdSize.textContent = sp.num;
+          const unit = document.createElement('span');
+          unit.className = 'tagfox-runner-size-unit';
+          unit.textContent = sp.unit;
+          tdSize.appendChild(unit);
+        }
         applySizeHeatToElement(tdSize, row);
 
         const tdDate = document.createElement('td');
         tdDate.className = 'text-nowrap small';
-        tdDate.textContent = isRunnerMode()
-          ? formatModifiedShort(modifiedTimeMs(row))
-          : formatModified(row.date_modified ?? row.date_modified_unix);
+        tdDate.textContent = formatModifiedShort(modifiedTimeMs(row));
 
         const tdAct = document.createElement('td');
         /* Toolbar: flex on inner div only — flex on <td> drew white row seams under the icon strip. */
@@ -12947,32 +12830,25 @@
         tdActInner.appendChild(btnDelete);
         tdActInner.appendChild(btnMore);
         tdAct.appendChild(tdActInner);
-        if (starKeys) {
-          const starred = starKeys.has(pathNormKey(fp));
-          const btnStar = document.createElement('button');
-          btnStar.type = 'button';
-          btnStar.className = 'results-row-star tagfox-runner-only' + (starred ? ' results-row-star--on' : '');
-          btnStar.title = starred ? 'Unstar (Ctrl+D)' : 'Star: keeps it near the top of searches (Ctrl+D)';
-          btnStar.setAttribute('aria-label', starred ? 'Unstar' : 'Star');
-          btnStar.setAttribute('aria-pressed', starred ? 'true' : 'false');
-          btnStar.innerHTML = '<i class="fa-' + (starred ? 'solid' : 'regular') + ' fa-star" aria-hidden="true"></i>';
-          btnStar.addEventListener('click', (e) => {
-            e.stopPropagation();
-            toggleStarPath(fp);
-          });
-          tdAct.appendChild(btnStar);
-        }
+        const starred = starKeys.has(pathNormKey(fp));
+        const btnStar = document.createElement('button');
+        btnStar.type = 'button';
+        btnStar.className = 'results-row-star tagfox-runner-only' + (starred ? ' results-row-star--on' : '');
+        btnStar.title = starred ? 'Unstar (Ctrl+D)' : 'Star: keeps it near the top of searches (Ctrl+D)';
+        btnStar.setAttribute('aria-label', starred ? 'Unstar' : 'Star');
+        btnStar.setAttribute('aria-pressed', starred ? 'true' : 'false');
+        btnStar.innerHTML = '<i class="fa-' + (starred ? 'solid' : 'regular') + ' fa-star" aria-hidden="true"></i>';
+        btnStar.addEventListener('click', (e) => {
+          e.stopPropagation();
+          toggleStarPath(fp);
+        });
+        tdAct.appendChild(btnStar);
 
-        const sizeStr = formatSize(row.size);
         const dateStr = formatModified(row.date_modified ?? row.date_modified_unix);
         /* Runner gives a cell a tooltip only when it says more than the cell: the name on disk where tags
            were taken out of the one shown, and the modified time. The selected row's full path is the
            Viewer's path line. */
-        if (!isRunnerMode() || parsedName.pretty !== baseName) bindCellTooltip(tdName, nameTip);
-        if (!isRunnerMode()) {
-          bindCellTooltip(tdPath, fp);
-          bindCellTooltip(tdSize, sizeStr);
-        }
+        if (parsedName.pretty !== baseName) bindCellTooltip(tdName, nameTip);
         bindCellTooltip(tdDate, dateStr);
         /* Per-button JS tooltips (same class as breadcrumb chrome) are built on first hover: bindResultsLazyTooltipsOnce. */
 
@@ -13632,11 +13508,11 @@
     /** Near bottom of #resultsScroll: fetch next page (debounced). */
     function onResultsWrapScrollForPaging() {
       const el = document.getElementById('resultsScroll');
-      if (el && isRunnerMode() && resultsScrollNearBottom(140) && runnerGrowRenderWindow(runnerRenderLimit)) return;
+      if (el && resultsScrollNearBottom(140) && runnerGrowRenderWindow(runnerRenderLimit)) return;
       if (!el || !resultsPagingCtx || !resultsPagingCtx.hasMore) return;
       /* Runner's smart order re-ranks every page it holds, so a page fetched on scroll would reshuffle
          the rows above the reader. It pages on Load more only. */
-      if (isRunnerMode() && runnerSort === 'smart') return;
+      if (runnerSort === 'smart') return;
       if (resultsLoadMoreBusy || searchInFlight) return;
       if (!resultsScrollNearBottom(140)) return;
       if (resultsScrollMoreTimer) return;
@@ -13668,7 +13544,7 @@
       }
       if (autofillPagesLeft <= 0) return;
       if (!resultsPagingCtx?.hasMore || resultsLoadMoreBusy || searchInFlight) return;
-      if (isRunnerMode() && runnerSort === 'smart') return;
+      if (runnerSort === 'smart') return;
       const wrap = document.getElementById('resultsScroll');
       if (!wrap) return;
       const fillsViewport = wrap.scrollHeight > wrap.clientHeight + 8;
@@ -13755,7 +13631,7 @@
         } else {
           lastRows = mergeSearchRowsDedupe(lastRows, add);
           perfTimeSync('loadMore.sort', { rows: lastRows.length }, () =>
-            sortLastRowsForDisplay(!!res.usedFallbackSort)
+            sortLastRowsForDisplay()
           );
           applyTagRenamePendingToLastRows();
           const hasMore = addRawLen === ctx.pageSize;
@@ -13988,26 +13864,15 @@
       resultsPagingCtx = null;
       try {
       cancelPropsPreviewSchedule();
-      if (isRunnerMode()) {
-        runnerResetRenderWindowIfNewList();
-        /* Runner: a plain flat list. An empty box lists the current folder's own contents; typing, a tag to
-           look for, a deadline range or Starred only searches below it, unless This folder only is on. A not-tag
-           alone names nothing to look for, so it only thins that list. */
-        const q = (document.getElementById('query')?.value || '').trim();
-        const wantsTag = [...activeTagKeys].some((k) => !excludedTagKeys.has(k));
-        const below = !!(q || wantsTag || deadlineFilterActive() || runnerStarredOnlyOn()) && !runnerThisFolderOnlyOn();
-        applyResultsViewRadiosToDom(below, resultsContentMode());
-        syncViewRadioActiveFromDom();
-      } else {
-        /* Classic: typing or a tag searches below the folder. */
-        const q = (document.getElementById('query')?.value || '').trim();
-        if (q || activeTagKeys.size) {
-          const cm = resultsContentMode();
-          const keepNarrow = cm === 'files' || cm === 'folders';
-          applyResultsViewRadiosToDom(true, keepNarrow ? cm : 'all');
-          syncViewRadioActiveFromDom();
-        }
-      }
+      runnerResetRenderWindowIfNewList();
+      /* Runner: a plain flat list. An empty box lists the current folder's own contents; typing, a tag to
+         look for, a deadline range or Starred only searches below it, unless This folder only is on. A not-tag
+         alone names nothing to look for, so it only thins that list. */
+      const q = (document.getElementById('query')?.value || '').trim();
+      const wantsTag = [...activeTagKeys].some((k) => !excludedTagKeys.has(k));
+      const below = !!(q || wantsTag || deadlineFilterActive() || runnerStarredOnlyOn()) && !runnerThisFolderOnlyOn();
+      applyResultsViewRadiosToDom(below, resultsContentMode());
+      syncViewRadioActiveFromDom();
       saveSettings();
       const { baseUrl, httpUser, httpPassword } = readEverythingConnection();
       const ceilingNorms = getSearchScopeCeilingFoldersNorms();
@@ -14020,10 +13885,10 @@
       const fo = isFoldersOnly();
       const fileOnly = isFilesOnly();
       const recursive = showSub || !hasScope;
-      const queryForEs = isRunnerMode() ? runnerQueryForEverything(query) : query;
+      const queryForEs = runnerQueryForEverything(query);
       const searchText = everythingSearchTextForUi(ceilingNorms, rootFolder, queryForEs, recursive);
       lastMainSearchText = searchText;
-      const cap = isRunnerMode() ? Math.max(parseMaxResultsCap(), RUNNER_RANK.fetchCap) : parseMaxResultsCap();
+      const cap = Math.max(parseMaxResultsCap(), RUNNER_RANK.fetchCap);
       const countStr = String(cap);
       const baseSearchOpts = everythingOptionsForRequest();
       /* Scope: force Match path whenever path filters are present so tokens limit the index. */
@@ -14082,11 +13947,9 @@
         offset: 0,
         seedOptions: options,
       });
-      const runnerExtraPromise = isRunnerMode()
-        ? runnerExtraRows({ runId, ceilingNorms, rootFolder, queryForEs, recursive, options, cap, after: mainPromise })
-        : null;
+      const runnerExtraPromise = runnerExtraRows({ runId, ceilingNorms, rootFolder, queryForEs, recursive, options, cap, after: mainPromise });
       let runnerExtrasIn = false;
-      if (runnerExtraPromise) runnerExtraPromise.then(() => (runnerExtrasIn = true), () => (runnerExtrasIn = true));
+      runnerExtraPromise.then(() => (runnerExtrasIn = true), () => (runnerExtrasIn = true));
       const res = await mainPromise;
       if (res == null) return;
       if (runId !== searchRunSeq || runnerSearchSuperseded()) return;
@@ -14130,29 +13993,27 @@
       const rawPageLen = got.length;
       if (fo) got = got.filter(rowIsFolder);
       else if (fileOnly) got = got.filter((r) => !rowIsFolder(r));
-      if (isRunnerMode()) {
-        runnerTotalHits = typeof res.totalResults === 'number' ? res.totalResults : null;
-        if (!usedLocalFolderFallback && runnerExtraPromise) {
-          /* A new list paints the main rows while the extra queries finish, 0.1-0.4s later; the merged list then
-             replaces them. Not for an auto-refresh tick, whose list would shrink and grow back every few seconds. */
-          if (!runnerExtrasIn && !quietAutoRefreshRender && !runnerSearchSuperseded() && selectAfterSearchKeyFor(query, rootFolder) !== selectAfterSearchKey) {
-            lastRows = got;
-            dedupeLastRowsByPathKey();
-            sortLastRowsForDisplay(!!res.usedFallbackSort);
-            applyTagRenamePendingToLastRows();
-            renderTable();
-            selectRowAfterSearch(query, rootFolder, { early: true });
-          }
-          let extra = await runnerExtraPromise;
-          if (runId !== searchRunSeq || runnerSearchSuperseded()) return;
-          if (fo) extra = extra.filter(rowIsFolder);
-          else if (fileOnly) extra = extra.filter((r) => !rowIsFolder(r));
-          got = mergeSearchRowsDedupe(got, extra);
+      runnerTotalHits = typeof res.totalResults === 'number' ? res.totalResults : null;
+      if (!usedLocalFolderFallback) {
+        /* A new list paints the main rows while the extra queries finish, 0.1-0.4s later; the merged list then
+           replaces them. Not for an auto-refresh tick, whose list would shrink and grow back every few seconds. */
+        if (!runnerExtrasIn && !quietAutoRefreshRender && !runnerSearchSuperseded() && selectAfterSearchKeyFor(query, rootFolder) !== selectAfterSearchKey) {
+          lastRows = got;
+          dedupeLastRowsByPathKey();
+          sortLastRowsForDisplay();
+          applyTagRenamePendingToLastRows();
+          renderTable();
+          selectRowAfterSearch(query, rootFolder, { early: true });
         }
+        let extra = await runnerExtraPromise;
+        if (runId !== searchRunSeq || runnerSearchSuperseded()) return;
+        if (fo) extra = extra.filter(rowIsFolder);
+        else if (fileOnly) extra = extra.filter((r) => !rowIsFolder(r));
+        got = mergeSearchRowsDedupe(got, extra);
       }
       lastRows = got;
       dedupeLastRowsByPathKey(); // Everything can repeat the same path in one page, which would list it twice.
-      sortLastRowsForDisplay(!!res.usedFallbackSort);
+      sortLastRowsForDisplay();
       applyTagRenamePendingToLastRows();
       searchDebugLog('runSearch.single.final', {
         runId,
@@ -14227,7 +14088,7 @@
       scheduleSearch();
       scheduleSearchHistoryCommit();
       /* A pasted path goes there at once; a typed one waits for Enter, so the search runs as it is typed. */
-      if (isRunnerMode() && e.inputType === 'insertFromPaste') void runnerGoToPathInBox();
+      if (e.inputType === 'insertFromPaste') void runnerGoToPathInBox();
     });
     // Electron/Windows: sometimes the page keeps rendering but keyboard focus is stuck in window chrome
     // (after a native drag, a child window, or some button clicks). win.focus()/webContents.focus() are
@@ -14597,7 +14458,7 @@
         syncFolderDocTagPillsDisplay();
         folderDocOnFilenameUiChanged();
       }
-      if (isRunnerMode()) focusQueryBox(false);
+      focusQueryBox(false);
     });
     document.getElementById('bulkRenameModal').addEventListener('shown.bs.modal', () => {
       requestAnimationFrame(() => {
@@ -15139,14 +15000,12 @@
       wrap?.focus({ preventScroll: true });
     }
 
-    /** After toolbar/chrome control click: query if no rows, else results region (for ↑/↓ etc.). */
+    /** After a toolbar or chrome control click: back to the search box. */
     function focusMainWorkingArea() {
       if (tagfoxModalBlocksWorkAreaFocus()) return;
       if (isTypingTarget(document.activeElement)) return;
       pullWebContentsKeyboardFocus();
-      const rows = listRowsForUi();
-      if (selectedFullPath && rows.length && !isRunnerMode()) document.getElementById('resultsWrap')?.focus({ preventScroll: true });
-      else focusQueryBox(false);
+      focusQueryBox(false);
     }
 
     /** True when focus is in a real text field (not checkbox/radio — those are never “typing” targets). */
@@ -15288,7 +15147,7 @@
       if (e.ctrlKey || e.metaKey || e.altKey) return false;
       if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta') return false;
       if (document.querySelector('.modal.show')) return false;
-      if (isRunnerMode() && (runnerCmdListIsOpen() || runnerOptsPanelOpen)) return false;
+      if (runnerCmdListIsOpen() || runnerOptsPanelOpen) return false;
       const wrap = document.getElementById('resultsWrap');
       const t = e.target;
       const btn = t && t.closest ? t.closest('#tbody .results-td-actions-inner button') : null;
@@ -15700,7 +15559,7 @@
       (e) => {
       if (e.defaultPrevented) return;
       if (rowActionStripHandleKeydown(e)) return;
-      if (isRunnerMode() && runnerHandleKeydown(e)) return;
+      if (runnerHandleKeydown(e)) return;
 
       if (e.key === 'Escape' && isPropsTheaterOn() && !document.querySelector('.modal.show')) {
         e.preventDefault();
@@ -16319,21 +16178,13 @@
     const HELP_TAB_IDS = ['essentials', 'search', 'files-folders', 'viewer', 'projects', 'runner', 'installation'];
     /** A tab asked for by whatever opened Help (`?` asks for Keys, the Settings link for Setting up), used once. */
     let helpTabOnNextOpen = '';
-    /** Runner opens Help on Get started (F1, the / command); Classic reopens the tab last read. */
+    /** Help opens on Get started (F1, the / command), or on the tab its caller asked for. */
     function restoreHelpModalTab() {
       const once = helpTabOnNextOpen;
       helpTabOnNextOpen = '';
-      const raw = localStorage.getItem(LS.helpModalTab);
-      const id = HELP_TAB_IDS.includes(once) ? once : isRunnerMode() ? 'essentials' : HELP_TAB_IDS.includes(raw) ? raw : 'essentials';
+      const id = HELP_TAB_IDS.includes(once) ? once : 'essentials';
       const btn = document.getElementById('help-tab-' + id);
       if (btn) bootstrap.Tab.getOrCreateInstance(btn).show();
-    }
-    const helpModalTabs = document.getElementById('helpModalTabs');
-    if (helpModalTabs) {
-      helpModalTabs.addEventListener('shown.bs.tab', (ev) => {
-        const t = ev.target && ev.target.getAttribute('data-help-tab');
-        if (t && HELP_TAB_IDS.includes(t)) localStorage.setItem(LS.helpModalTab, t);
-      });
     }
     // Any Bootstrap modal: clear breadcrumb ▾ + chained flyouts so nothing sits above the dimmer.
     document.querySelectorAll('.modal').forEach((modalEl) => {
@@ -16475,7 +16326,6 @@
     if (localStorage.getItem(LS.darkMode) === '1') document.documentElement.setAttribute('data-bs-theme', 'dark');
     void initWindowChrome();
 
-    seedSearchHistoryFromCurrent();
     bindVerticalSplitters();
     bindViewerDocSplitters();
     document.getElementById('propsTheaterBackdrop').addEventListener('click', () => setPropsTheaterMode(false));
@@ -16486,15 +16336,16 @@
     bindScopeFolderDropdownDragCaptureOnce();
     installLongTaskMonitor();
     installRendererPerfProbe();
-    renderTable();
     bindRunnerChromeOnce();
-    /* Runner is the only layout (Steve, 24 October 2026), for a test instance as for every other start.
-       Classic's code that is left is deleted in stages. */
-    applyRunnerModeSync(true, { startup: true });
+    /* Runner is the only layout (Steve, 24 October 2026). Classic's code that is left is deleted in stages. */
+    applyRunnerAtStartup();
+    seedSearchHistoryFromCurrent();
     updateQueryPlaceholder();
     syncSortPathClass();
     renderScopeBreadcrumb();
     scheduleSearch();
+    /* After the search is scheduled, so the empty-list note waits for its rows instead of showing at once. */
+    renderTable();
     startDidYouKnowTips();
     void renderShelf().then(() => refreshTagFoxChromeTooltips(document.body));
     /* A hidden window (autostart, tests) runs no frames until it is shown or gets a key, so this can land after the
@@ -16570,8 +16421,8 @@
         fileDialogTarget: (info) => setFileDialogTarget(info),
         fileDialogSends: () => fileDialogSendLog.slice(),
         machineFeatures: () => machineFeaturesSeen,
-        /* Redraw the Shelf from its folder now, and size it, rather than wait for a disk-change event. */
-        renderShelf: () => renderShelf().then(() => (syncShelfAsideWidth(), true)),
+        /* Redraw the Shelf from its folder now, rather than wait for a disk-change event. */
+        renderShelf: () => renderShelf().then(() => true),
         /* Every key Runner's key table names, as it spells them, and the next tip shown now. */
         runnerKeyNames: () => RUNNER_KEYS.flatMap((k) => k.keys),
         showNextTip: () => (showNextDidYouKnowTip(), true),
@@ -16615,7 +16466,6 @@
         commitHistory: () => commitSearchHistoryNow(),
         toggleStar: (p) => toggleStarPath(String(p)),
         runnerState: () => ({
-          on: isRunnerMode(),
           bodyClass: document.body.classList.contains('tagfox-runner'),
           sort: runnerSort,
           query: document.getElementById('query')?.value || '',
