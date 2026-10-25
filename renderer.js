@@ -4160,6 +4160,50 @@
       await go();
     }
 
+    /** The box's text as an absolute path, if it is one: a drive path (C:\…, C:/…, a bare C:) or a UNC path,
+        with surrounding quotes taken off, as Explorer's "Copy as path" adds them. Else ''. */
+    function runnerPathInBox(text) {
+      let s = String(text || '').trim();
+      if (s.length > 1 && /^(["']).*\1$/.test(s)) s = s.slice(1, -1).trim();
+      if (/^[a-z]:([\\/]|$)/i.test(s)) return s.replace(/\//g, '\\');
+      if (/^\\\\[^\\/]+[\\/][^\\/]+/.test(s)) return s;
+      return '';
+    }
+
+    /** Runner has no address bar, so a path in the box goes there: a folder is opened, a file's folder is
+        opened with the file selected, and the box is emptied (or, when the folder lists too many rows to
+        include the file, given the file's name). Anything that does not exist (main's
+        `path-kinds` says so) is left in the box as an ordinary search, and so returns false. */
+    async function runnerGoToPathInBox() {
+      const q = document.getElementById('query');
+      const p = runnerPathInBox(q.value);
+      if (!p) return false;
+      let kind = 'missing';
+      try {
+        const r = await window.tagBrowser.pathKinds([p]);
+        kind = (r && r.kinds && r.kinds[p]) || 'missing';
+      } catch (_) {}
+      /* Typing on while main looked means the box no longer says this path. */
+      if (kind === 'missing' || runnerPathInBox(q.value) !== p) return false;
+      const folder = normalizeFolderPathForEverything(kind === 'folder' ? p : T.parentDir(p));
+      await runnerNavigate(() => applySearchScopeAndRefresh(folder), kind === 'file' ? p : null);
+      /* A folder lists only its newest rows (fetchCap), so an older file in a big one is looked for by name. */
+      const k = pathNormKey(p);
+      if (kind === 'file' && !listRowsForUi().some((r) => pathNormKey(fullPathForRow(r)) === k)) {
+        runnerPendingSelectPath = p;
+        q.value = T.baseName(p);
+        syncQueryGhostUi();
+        await runSearchNow();
+      }
+      return true;
+    }
+
+    /** Enter: a path in the box goes there; otherwise the selected row opens. */
+    async function runnerEnter(c) {
+      if (c.inBox && (await runnerGoToPathInBox())) return;
+      await runnerActivateSelection('open');
+    }
+
     function runnerEnterSelectedFolder() {
       const row = selectedFullPath ? selectedRowForActions() : null;
       if (!row || !rowIsFolder(row)) return false;
@@ -4360,7 +4404,7 @@
       }
       if (!text) return;
       q.setRangeText(text.replace(/[\r\n]+/g, ' '), q.selectionStart, q.selectionEnd, 'end');
-      q.dispatchEvent(new Event('input', { bubbles: true }));
+      q.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertFromPaste' }));
     }
 
     /** The Viewer's full-path line (Runner only; Classic has its Path column and breadcrumb). Click copies it. */
@@ -5077,7 +5121,7 @@
       { group: 'Folders', keys: ['Ctrl+Shift+1…9'], does: 'Starred item 1 to 9', when: (c) => c.mod && c.shift && !c.alt && /^Digit[1-9]$/.test(c.code), run: () => 'classic' },
 
       /* Open and act */
-      { group: 'Open and act', keys: ['Enter'], does: 'Open the selected row; a folder opens here', when: (c) => c.plain && !c.shift && c.key === 'Enter' && (c.inBox || c.inList), run: () => void runnerActivateSelection('open') },
+      { group: 'Open and act', keys: ['Enter'], does: 'Open the selected row; a folder opens here. With a path typed in the box, go there', when: (c) => c.plain && !c.shift && c.key === 'Enter' && (c.inBox || c.inList), run: (c) => void runnerEnter(c) },
       { group: 'Open and act', keys: ['Ctrl+Enter'], does: 'Open its folder in File Explorer, with it selected', when: (c) => c.mod && !c.alt && !c.shift && c.key === 'Enter', run: () => void runnerActivateSelection('reveal') },
       { group: 'Open and act', keys: ['Alt+Enter'], does: 'Properties', when: (c) => c.alt && !c.mod && !c.shift && c.key === 'Enter', run: () => void runnerActivateSelection('properties') },
       { group: 'Open and act', keys: ['Alt+P'], does: 'Show or hide the Viewer', when: (c) => c.alt && !c.mod && !c.shift && c.k === 'p', run: () => runnerToggleViewer() },
@@ -17911,11 +17955,13 @@
       if (tr && !(e.relatedTarget && tr.contains(e.relatedTarget))) tr.classList.remove('results-row-actions-kbd');
     });
 
-    document.getElementById('query').addEventListener('input', () => {
+    document.getElementById('query').addEventListener('input', (e) => {
       syncQueryGhostUi();
       if (runnerCmdOnInput()) return;
       scheduleSearch();
       scheduleSearchHistoryCommit();
+      /* A pasted path goes there at once; a typed one waits for Enter, so the search runs as it is typed. */
+      if (isRunnerMode() && e.inputType === 'insertFromPaste') void runnerGoToPathInBox();
     });
     // Electron/Windows: sometimes the page keeps rendering but keyboard focus is stuck in window chrome
     // (after a native drag, a child window, or some button clicks). win.focus()/webContents.focus() are

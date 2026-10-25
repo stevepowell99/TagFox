@@ -149,6 +149,7 @@ Type to search. With the box empty you see the current folder's own contents; on
 
 ### 🔎 What you can type
 
+- A path goes there. Paste a folder's path (`C:\Users\Zoom\Downloads`, or Explorer's "Copy as path" with its quotes) and Runner opens that folder; paste a file's path and it opens the file's folder with the file selected. A typed path goes there when you press `Enter`, so until then it is searched for like any other text. A path that does not exist is just a search.
 - A leading `-word` leaves out anything matching that word.
 - A file type lists only that type: `.pdf`, or just `pdf` for the common document, image, audio and video types. Several (`.docx .pdf`) list any of them, and `-pdf` leaves a type out. A file type on its own lists the newest first; with other words, as in `budget xlsx`, the words decide the order. Words such as `map`, `log` and `key` stay words, so "causal map" is not a search for .map files.
 - `^word` matches only where a word starts: `^map` finds `map.json` and `old map.md` but not `roadmap.txt`. The `/` command **Word starts only** does the same for every word.

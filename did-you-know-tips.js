@@ -19,6 +19,7 @@
     { score: 5, tip: [K('Ctrl+D'), ' stars the selected row. Starred items rank higher, and ', K('Ctrl+Shift+1…9'), ' opens the first nine.'] },
     { score: 5, tip: [K('Ctrl+T'), ' edits the tags of the selected or checked rows. Tags live in the file name, as in ', C('Report xkTODO.docx'), '.'] },
     { score: 5, tip: ['Drag rows onto the Shelf under the list, go to another folder, then drag them onto a folder row. ', K('Shift'), ' copies.'] },
+    { score: 4, tip: ["Paste a folder's or a file's path into the box to go straight there; a typed one goes on ", K('Enter'), '.'] },
     { score: 4, tip: [C('-word'), ' leaves out anything matching that word.'] },
     { score: 4, tip: ['A file type lists only that type: ', C('.pdf'), ', or just ', C('pdf'), '. On its own it lists the newest first.'] },
     { score: 4, tip: [C('^map'), ' matches only where a word starts: ', C('map.json'), ' but not ', C('roadmap.txt'), '.'] },
