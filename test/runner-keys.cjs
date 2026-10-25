@@ -4,9 +4,8 @@
 //   - checkboxes come back once two or more rows are checked (Shift+Down), and Esc drops them again;
 //   - Enter straight after typing, inside the search's wait, acts on the new search's top row, not on the
 //     row that was selected before;
-//   - typing with the focus off the box goes into the box instead of firing Classic's letter shortcuts;
+//   - typing with the focus off the box goes into the box;
 //   - a held Backspace that runs past the text keeps the folder, while a fresh press drops it;
-//   - Ctrl+L, Classic's recent-folders menu, opens nothing in Runner;
 //   - Ctrl held alone numbers the rows on screen and Ctrl+2 opens the second;
 //   - PageDown, Ctrl+End and Ctrl+Home move by a page, to the end and back;
 //   - Tab and Shift+Tab move between the box and the list, as in Everything, and Space in the list toggles
@@ -106,7 +105,7 @@ async function main() {
     await drv.settle('ctrl m');
     s = await R();
     check(s.sort === 'date' && (await chipsShown()).includes('sort'), `Ctrl+M sorts by date and a chip says so (sort ${s.sort})`);
-    await letter('r', 2); // Ctrl+R: Classic's recency cycle, All to 1h
+    await letter('r', 2); // Ctrl+R: the recency cycle, All to 1h
     await drv.settle('ctrl r');
     s = await R();
     const label = await drv.ev(`document.querySelector('#runnerFilterChips [data-filter-id="recency"]')?.textContent || ''`);
@@ -368,23 +367,16 @@ async function main() {
     s = await R();
     check(norm(s.rows[0]) === norm(progFile), 'inside a ProgramData folder nothing is pushed down');
 
-    // Alt+Left and Alt+Right step through searches. History is shared with Classic, so a Classic entry brings
-    // its text and folder into Runner.
-    await drv.T('setRunnerMode', false);
-    await drv.settle('classic for history');
-    await drv.T('configure', { rootFolder: root });
-    await drv.T('setQuery', 'classicword');
-    await drv.settle('classic search');
+    // Alt+Left and Alt+Right step through searches, each with its text and its folder.
+    await go(root, 'firstword');
     await drv.T('commitHistory');
-    await drv.T('setRunnerMode', true);
-    await drv.settle('runner for history');
     await go(alpha, 'runnerword');
     await drv.T('commitHistory');
     await focusBox();
     await key('ArrowLeft', 'ArrowLeft', 37, 1);
     await drv.settle('alt left');
     s = await R();
-    check(s.query === 'classicword' && norm(s.scope) === norm(root), `Alt+Left brings back a Classic search's text and folder (box "${s.query}")`);
+    check(s.query === 'firstword' && norm(s.scope) === norm(root), `Alt+Left brings back the search before, with its text and folder (box "${s.query}")`);
     await key('ArrowRight', 'ArrowRight', 39, 1);
     await drv.settle('alt right');
     s = await R();

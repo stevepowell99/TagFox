@@ -1,7 +1,7 @@
 // The Shelf in Runner: a strip under the list that is one line high while empty and a few lines at most
 // when full, takes a drop (a move, or a copy with Shift), gives its items back to a folder row, keeps the
 // status line off its chips, and sends an item to the Recycle Bin rather than deleting it, since a drop onto
-// the Shelf moves the original there. Classic's rotated strip is checked last, so its sizing still runs.
+// the Shelf moves the original there.
 //
 // The drags are synthetic DragEvents carrying TagFox's own paths payload, the in-app drag a row or a chip
 // starts; a drag to another app (Alt+drag) is a native OS drag and is not driven here.
@@ -154,18 +154,6 @@ async function main() {
     check(clicked && gone, "set up: a chip's x takes the item off the Shelf");
     recycled = recycleBinEntriesFor(recycleName, t0);
     check(recycled.length === 1, `and it is in the Recycle Bin, not deleted (${recycled.length} Recycle Bin entries for it, out of 1)`);
-
-    /* Classic: the rotated strip still gets its inline size, and the status offset goes. */
-    await drv.T('setRunnerMode', false);
-    await drv.settle('classic');
-    await drv.T('renderShelf');
-    await sleep(200);
-    const classic = await drv.ev(`(() => {
-      const aside = document.getElementById('appShelf');
-      const b = aside.getBoundingClientRect();
-      return { w: b.width, h: b.height, inline: aside.style.width, offset: document.body.style.getPropertyValue('--tagfox-runner-shelf-h') };
-    })()`);
-    check(classic.w > 0 && classic.h > 200 && /px$/.test(classic.inline) && !classic.offset, `Classic keeps its rotated strip beside the list (${JSON.stringify(classic)})`);
   } catch (e) {
     failures.push('threw: ' + (e && e.stack ? e.stack : e));
     console.error(e);

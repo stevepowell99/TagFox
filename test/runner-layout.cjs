@@ -23,8 +23,7 @@
 //     hides it;
 //   - there is no standing status line: a search leaves the bar hidden, F5's report brings it up and it goes
 //     again, and a partly ranked list says so in the box;
-//   - the Restart button sits in the search box and takes a click;
-//   - switching back to Classic, which only the test hook can still do, restores Classic's own view settings.
+//   - the Restart button sits in the search box and takes a click.
 //
 // Run: node test/runner-layout.cjs
 
@@ -62,7 +61,7 @@ async function main() {
   });
   const sizeOld = new Date(Date.now() - 400 * 864e5);
   fs.utimesSync(sizeFiles[0], sizeOld, sizeOld);
-  // Classic's deadline and hide-until filters: one file due today, one hidden for a month, one plain.
+  // The deadline and hide-until filters: one file due today, one hidden for a month, one plain.
   const isoDay = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const dueFile = path.join(extra, 'chipcheck due xd-' + isoDay(new Date()) + '.txt');
   const laterFile = path.join(extra, 'chipcheck later xh-' + isoDay(new Date(Date.now() + 30 * 864e5)) + '.txt');
@@ -118,7 +117,6 @@ async function main() {
     drv = await connect({ profile: 'tagfox-test-runner', scope: root });
     console.log('Hook ready.');
     await drv.settle('startup');
-    const classicView = await drv.ev(`(document.getElementById('optRvSubsOn').checked ? 'subfolders' : 'this folder') + ', ' + document.querySelector('input[name="rvContent"]:checked')?.value`);
 
     const key = async (k, code, vk, mods = 0, text) => {
       await drv.send('Input.dispatchKeyEvent', { type: text ? 'keyDown' : 'rawKeyDown', key: k, code, windowsVirtualKeyCode: vk, modifiers: mods, text });
@@ -394,7 +392,7 @@ async function main() {
     check(JSON.stringify(sizeOrder()) === JSON.stringify(sizeFiles.map(norm).reverse()), `the other size command sorts smallest first (${sizeOrder().map((p) => path.basename(p))})`);
     await drv.T('setRunnerSort', 'smart');
 
-    // A deadline range or a shown hide-until, set in Classic and kept across layouts, shows as a chip whose x clears it.
+    // A deadline range or a shown hide-until shows as a chip whose x clears it.
     await drv.T('setQuery', 'chipcheck');
     let chipRows = false;
     for (let i = 0; i < 20 && !chipRows; i++) {
@@ -591,13 +589,6 @@ async function main() {
       return { ok: r.width > 0 && r.left >= box.left && r.right <= box.right && !!hit && b.contains(hit), w: Math.round(r.width) };
     })()`);
     check(restartSeen.ok, `once code has changed it shows there and takes a click (${JSON.stringify(restartSeen)})`);
-
-    // Back to Classic, which only the test hook can still reach.
-    await drv.T('setRunnerMode', false);
-    await drv.settle('classic');
-    s = await R();
-    const view = await drv.ev(`(document.getElementById('optRvSubsOn').checked ? 'subfolders' : 'this folder') + ', ' + document.querySelector('input[name="rvContent"]:checked')?.value`);
-    check(!s.on && !s.bodyClass && view === classicView, `Classic is back with its own view (${view}, was ${classicView})`);
   } catch (e) {
     failures.push('threw: ' + (e && e.stack ? e.stack : e));
     console.error(e);

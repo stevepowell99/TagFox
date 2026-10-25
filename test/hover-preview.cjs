@@ -1,7 +1,7 @@
 // Hover preview (Settings "Preview on hover"): a large thumbnail while the pointer rests on a file row's icon.
 // Steve found previews left stuck over the list. The cause was a repaint: the row under a resting pointer
 // is replaced, so the browser never sends a mouseout for it, and a preview opened over a file stayed put
-// once the list redrew into folders. This checks, in Classic and in Runner:
+// once the list redrew into folders. This checks, in Runner:
 //   - resting on the row's name shows nothing: only the icon at the left of the row opens a preview;
 //   - resting on the icon opens it (positive control: a preview that never opened would pass the rest);
 //   - a repaint that takes the row away from under the open preview, with the pointer not moving, closes it;
@@ -71,7 +71,7 @@ async function main() {
   fs.writeFileSync(path.join(root, 'hovernote.txt'), 'note\n');
   let drv;
   try {
-    drv = await connect({ profile: 'tagfox-test-hover', scope: root });
+    drv = await connect({ runner: true, profile: 'tagfox-test-hover', scope: root });
     console.log('Hook ready.');
     await drv.ev(`(() => { const c = document.getElementById('optHoverPreview'); c.checked = true; c.dispatchEvent(new Event('change')); return 1; })()`);
 
@@ -108,53 +108,46 @@ async function main() {
       await drv.settle(label);
     };
 
-    for (const layout of ['Classic', 'Runner']) {
-      // Classic is scoped to the test folder; Runner searches everywhere, so it names the file.
-      const baseQuery = layout === 'Runner' ? 'hoverpic' : '';
-      if (layout === 'Runner') {
-        await drv.T('setRunnerMode', true);
-        await drv.settle('runner');
-      }
-      await drv.T('setQuery', baseQuery);
-      let r = await waitRow(layout + ' row');
-      check(!!r, `${layout}: the image row is listed`);
-      if (!r) continue;
-      await move(5, 5);
-      await sleep(200);
+    const baseQuery = 'hoverpic';
+    await drv.T('setQuery', baseQuery);
+    let r = await waitRow('row');
+    check(!!r, 'the image row is listed');
+    if (!r) throw new Error('the image row never appeared');
+    await move(5, 5);
+    await sleep(200);
 
-      await move(r.name.x, r.name.y);
-      check(!(await waitShown(1200)), `${layout}: resting on the row's name opens no preview`);
+    await move(r.name.x, r.name.y);
+    check(!(await waitShown(1200)), "resting on the row's name opens no preview");
 
-      await move(r.tile.x, r.tile.y);
-      const opened = await waitShown(4000);
-      check(opened, `${layout}: resting on the row's icon opens the preview`);
+    await move(r.tile.x, r.tile.y);
+    const opened = await waitShown(4000);
+    check(opened, "resting on the row's icon opens the preview");
 
-      // Repaint under the open preview with the pointer not moving: its row is gone, so it must close
-      // and stay closed. (The same row repainted in place may reopen it: the pointer is on that icon.)
-      await repaintWithoutImage(layout + ' repaint');
-      check(opened && !(await shown()) && !(await waitShown(1200)), `${layout}: a repaint that removes the row under the open preview closes it`);
+    // Repaint under the open preview with the pointer not moving: its row is gone, so it must close
+    // and stay closed. (The same row repainted in place may reopen it: the pointer is on that icon.)
+    await repaintWithoutImage('repaint');
+    check(opened && !(await shown()) && !(await waitShown(1200)), 'a repaint that removes the row under the open preview closes it');
 
-      // The same while the preview is still on its way: it must not open afterwards.
-      await move(5, 5);
-      await drv.T('setQuery', baseQuery);
-      r = (await waitRow(layout + ' row again')) || r;
-      await move(r.tile.x, r.tile.y);
-      await sleep(60);
-      await repaintWithoutImage(layout + ' repaint pending');
-      check(!(await waitShown(1500)), `${layout}: a repaint before the preview arrives stops it opening`);
+    // The same while the preview is still on its way: it must not open afterwards.
+    await move(5, 5);
+    await drv.T('setQuery', baseQuery);
+    r = (await waitRow('row again')) || r;
+    await move(r.tile.x, r.tile.y);
+    await sleep(60);
+    await repaintWithoutImage('repaint pending');
+    check(!(await waitShown(1500)), 'a repaint before the preview arrives stops it opening');
 
-      // A key press closes it.
-      await move(5, 5);
-      await drv.T('setQuery', baseQuery);
-      r = (await waitRow(layout + ' row for key')) || r;
-      await move(r.tile.x, r.tile.y);
-      const again = await waitShown(4000);
-      await drv.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16 });
-      await drv.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16 });
-      await sleep(150);
-      check(again && !(await shown()), `${layout}: a key press closes the preview (opened: ${again})`);
-      await move(5, 5);
-    }
+    // A key press closes it.
+    await move(5, 5);
+    await drv.T('setQuery', baseQuery);
+    r = (await waitRow('row for key')) || r;
+    await move(r.tile.x, r.tile.y);
+    const again = await waitShown(4000);
+    await drv.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16 });
+    await drv.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16 });
+    await sleep(150);
+    check(again && !(await shown()), `a key press closes the preview (opened: ${again})`);
+    await move(5, 5);
   } catch (e) {
     failures.push('threw: ' + (e && e.stack ? e.stack : e));
     console.error(e);

@@ -30,7 +30,7 @@ async function main() {
   fs.writeFileSync(path.join(folder, 'inside.txt'), 'x\n');
   let drv;
   try {
-    drv = await connect({ profile: 'tagfox-test-hotkey-raise-select', scope: SCOPES.repo });
+    drv = await connect({ runner: true, profile: 'tagfox-test-hotkey-raise-select', scope: SCOPES.repo });
     const { ev, T, settle, send } = drv;
     await settle('startup');
     const key = async (k, code, vk, text) => {
@@ -122,62 +122,44 @@ async function main() {
     b = await box();
     check(b.value === 'x', 'typing after a raise replaces the whole query', `box "${b.value}"`);
 
-    // Arrow out of it, Classic: ArrowDown steps into the results list.
-    await T('setQuery', 'readme');
-    await T('runSearchNow', 'identity');
-    await settle('rows again');
-    b = await raiseMessageFirst();
-    check(whole(b), 'Classic: selected again before arrowing', desc(b));
-    await key('ArrowDown', 'ArrowDown', 40);
-    const where = await ev(`(() => ({ inBox: document.activeElement.id === 'query', value: document.getElementById('query').value }))()`);
-    check(!where.inBox && where.value === 'readme', 'Classic: ArrowDown leaves the selected query for the results list, text intact', JSON.stringify(where));
-
-    // Runner uses the same raise and focus path. The box holds a folder's name inside the repo, so Right
-    // would enter that folder and Left would go up: the first arrow after a raise must only collapse the
-    // selection, and the second (the positive control) must do what it does in an ordinary box.
+    // Arrow out of it. The box holds a folder's name, so Right would enter that folder and Left would go
+    // up: the first arrow after a raise must only collapse the selection, and the second (the positive
+    // control) must do what it does in an ordinary box.
     const norm = (p) => String(p || '').replace(/[\\/]+$/, '').toLowerCase();
     const scope = () => ev(`document.getElementById('rootFolder').value`);
     // The index may take a moment to see the new folder, so search again until it is listed.
-    const runnerFolderSearch = async () => {
+    const folderSearch = async () => {
       let st;
       for (let i = 0; i < 25; i++) {
         await T('configure', { rootFolder: root });
         await T('setQuery', word);
         await T('runSearchNow', 'identity');
-        await settle('runner folder');
+        await settle('folder');
         st = await T('runnerState');
         if (st.rows.some((r) => norm(r) === norm(folder))) break;
         await sleep(400);
       }
       return st;
     };
-    await T('setRunnerMode', true);
-    await settle('runner on');
-    const top = await runnerFolderSearch();
-    check(top.rows.some((r) => norm(r) === norm(folder)), 'Runner: the folder is listed', JSON.stringify(top.rows.slice(0, 3)));
+    const top = await folderSearch();
+    check(top.rows.some((r) => norm(r) === norm(folder)), 'the folder is listed', JSON.stringify(top.rows.slice(0, 3)));
     b = await raiseMessageFirst();
-    check(whole(b), 'Runner: the hotkey raise selects the whole query', desc(b));
+    check(whole(b), 'the hotkey raise selects the whole query', desc(b));
     await key('ArrowRight', 'ArrowRight', 39);
     b = await box();
-    check(caretAt(b, b.len) && b.value === word && norm(await scope()) === norm(root), 'Runner: Right collapses the selection to its end and does not enter the folder', desc(b) + `, folder "${await scope()}"`);
+    check(caretAt(b, b.len) && b.value === word && norm(await scope()) === norm(root), 'Right collapses the selection to its end and does not enter the folder', desc(b) + `, folder "${await scope()}"`);
     await key('ArrowRight', 'ArrowRight', 39);
     await settle('right again');
-    check(norm(await scope()) === norm(folder), 'Runner: Right again, with the caret at the end, enters the folder', `folder "${await scope()}"`);
+    check(norm(await scope()) === norm(folder), 'Right again, with the caret at the end, enters the folder', `folder "${await scope()}"`);
 
-    await runnerFolderSearch();
+    await folderSearch();
     b = await raiseMessageFirst();
     await key('ArrowLeft', 'ArrowLeft', 37);
     b = await box();
-    check(caretAt(b, 0) && b.value === word && norm(await scope()) === norm(root), 'Runner: Left collapses the selection to its start and does not go up a folder', desc(b) + `, folder "${await scope()}"`);
+    check(caretAt(b, 0) && b.value === word && norm(await scope()) === norm(root), 'Left collapses the selection to its start and does not go up a folder', desc(b) + `, folder "${await scope()}"`);
     await key('ArrowLeft', 'ArrowLeft', 37);
     await settle('left again');
-    check(norm(await scope()) !== norm(root), 'Runner: Left again, with the caret at the start, goes up a folder', `folder "${await scope()}"`);
-
-    await runnerFolderSearch();
-    b = await raiseMessageFirst();
-    await key('x', 'KeyX', 88, 'x');
-    b = await box();
-    check(b.value === 'x', 'Runner: typing after a raise replaces the whole query', `box "${b.value}"`);
+    check(norm(await scope()) !== norm(root), 'Left again, with the caret at the start, goes up a folder', `folder "${await scope()}"`);
 
     await ev(`delete document.hasFocus; 1`);
   } catch (e) {

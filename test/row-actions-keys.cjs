@@ -1,16 +1,16 @@
-// The selected row's action buttons by keyboard, in Classic and in Runner, driven with real key events over CDP:
-//   - typing selects the top row in both layouts, so Tab has a row to work on; in Classic an empty box selects
-//     nothing (a folder's doc stays in the Viewer) and a refresh of the same list does not re-check a row
-//     unchecked by hand;
-//   - Tab in the list puts the focus on the selected row's first button and marks the row, and Runner, which
-//     shows the strip only on hover, shows it with the pointer elsewhere;
+// The selected row's action buttons by keyboard in Runner, driven with real key events over CDP:
+//   - typing selects the top row, so Tab has a row to work on;
+//   - Tab from the box goes into the list, and Tab in the list puts the focus on the selected row's first
+//     button and marks the row, and shows the strip, which otherwise shows only on hover, with the pointer
+//     elsewhere;
 //   - further Tabs step along the buttons and wrap; Shift+Tab steps back and wraps the other way;
 //   - the status line names the focused button;
 //   - Esc goes back to the list and closes the strip, without Runner's own Esc steps clearing the text;
 //   - any other key (Down) leaves the strip and acts on the list;
-//   - Enter (Classic) and Space (Runner) press the focused button. The button pressed is "Open parent folder",
-//     whose effect is visible and launches nothing: the scope moves to the row's folder. This is the half that
-//     matters, since a strip that took the focus and pressed nothing would pass the rest.
+//   - Space presses the focused button. The button pressed is "Open parent folder", whose effect is visible
+//     and launches nothing: the scope moves to the row's folder. This is the half that matters, since a strip
+//     that took the focus and pressed nothing would pass the rest;
+//   - a refresh of the same list does not put back a check taken off a row by hand.
 //
 // Run: node test/row-actions-keys.cjs
 
@@ -33,7 +33,7 @@ async function main() {
 
   let drv;
   try {
-    drv = await connect({ profile: 'tagfox-test-row-actions-keys', scope: root });
+    drv = await connect({ runner: true, profile: 'tagfox-test-row-actions-keys', scope: root });
     console.log('Hook ready.');
     await drv.settle('startup');
     const key = async (k, code, vk, mods = 0, text) => {
@@ -83,92 +83,74 @@ async function main() {
     await key('Shift', 'ShiftLeft', 16); // a hidden window runs no frames until its first input
     await drv.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 }); // no row hovered
 
-    for (const layout of ['classic', 'runner']) {
-      console.log(`\n${layout}:`);
-      await drv.T('setRunnerMode', layout === 'runner');
-      await drv.settle(layout);
-      let s;
-      if (layout === 'classic') {
-        await drv.T('configure', { rootFolder: root });
-        await drv.T('setQuery', '');
-        await drv.T('runSearchNow', 'identity');
-        await drv.settle('empty box');
-        s = await R();
-        check(!s.selected && s.checked === 0, `Classic: browsing a folder with an empty box selects no row, so its folder doc stays in the Viewer (${path.basename(s.selected)})`);
-      }
-      await go();
-      s = await R();
-      check(s.rows.length >= 2, `set up: two rows (${s.rows.length})`);
-      check(norm(s.selected) === norm(s.rows[0]), `typing selects the top row (${path.basename(s.selected)})`);
+    await go();
+    let s = await R();
+    check(s.rows.length >= 2, `set up: two rows (${s.rows.length})`);
+    check(norm(s.selected) === norm(s.rows[0]), `typing selects the top row (${path.basename(s.selected)})`);
 
-      // Into the list: Classic by Down from the box, Runner by Tab from the box.
-      await focusBox();
-      if (layout === 'classic') await key('ArrowDown', 'ArrowDown', 40);
-      else await tab(false);
-      s = await R();
-      const firstRow = s.selected;
-      check(!!firstRow && !s.focusInBox, `set up: a row is selected and the focus has left the box (${path.basename(firstRow)})`);
-      let st = await strip();
-      check(st.index < 0 && st.marked === 0, 'set up: no button has the focus yet');
+    // Into the list, by Tab from the box.
+    await focusBox();
+    await tab(false);
+    s = await R();
+    const firstRow = s.selected;
+    check(!!firstRow && !s.focusInBox, `set up: a row is selected and the focus has left the box (${path.basename(firstRow)})`);
+    let st = await strip();
+    check(st.index < 0 && st.marked === 0, 'set up: no button has the focus yet');
 
-      await tab(false);
-      st = await strip();
-      check(st.index === 0 && st.marked === 1, `Tab in the list focuses the selected row's first button (${JSON.stringify(st)})`);
-      check(st.shown, 'and the strip is on screen with the pointer elsewhere');
-      s = await R();
-      check(st.label && s.status.startsWith(st.label), `the status line names it ("${s.status.slice(0, 60)}")`);
-      check(norm(s.selected) === norm(firstRow), 'the selection has not moved');
+    await tab(false);
+    st = await strip();
+    check(st.index === 0 && st.marked === 1, `Tab in the list focuses the selected row's first button (${JSON.stringify(st)})`);
+    check(st.shown, 'and the strip is on screen with the pointer elsewhere');
+    s = await R();
+    check(st.label && s.status.startsWith(st.label), `the status line names it ("${s.status.slice(0, 60)}")`);
+    check(norm(s.selected) === norm(firstRow), 'the selection has not moved');
 
-      await tab(false);
-      check((await strip()).index === 1, 'Tab again moves to the second button');
-      await tab(true);
-      check((await strip()).index === 0, 'Shift+Tab steps back');
-      await tab(true);
-      st = await strip();
-      check(st.index === st.count - 1 && st.count > 2, `Shift+Tab from the first wraps to the last (${st.index} of ${st.count})`);
-      await tab(false);
-      check((await strip()).index === 0, 'Tab from the last wraps to the first');
+    await tab(false);
+    check((await strip()).index === 1, 'Tab again moves to the second button');
+    await tab(true);
+    check((await strip()).index === 0, 'Shift+Tab steps back');
+    await tab(true);
+    st = await strip();
+    check(st.index === st.count - 1 && st.count > 2, `Shift+Tab from the first wraps to the last (${st.index} of ${st.count})`);
+    await tab(false);
+    check((await strip()).index === 0, 'Tab from the last wraps to the first');
 
-      // Esc: back to the list, strip closed, and nothing else.
-      const before = await R();
-      await key('Escape', 'Escape', 27);
-      st = await strip();
-      s = await R();
-      check(st.inWrap && st.marked === 0 && st.index < 0, `Esc goes back to the list and closes the strip (${JSON.stringify(st)})`);
-      if (layout === 'runner') check(!st.shown, 'and Runner hides it again');
-      check(s.query === before.query && norm(s.scope) === norm(before.scope), `Esc changes nothing else (box "${s.query}")`);
+    // Esc: back to the list, strip closed, and nothing else.
+    const before = await R();
+    await key('Escape', 'Escape', 27);
+    st = await strip();
+    s = await R();
+    check(st.inWrap && st.marked === 0 && st.index < 0, `Esc goes back to the list and closes the strip (${JSON.stringify(st)})`);
+    check(!st.shown, 'and hides it again');
+    check(s.query === before.query && norm(s.scope) === norm(before.scope), `Esc changes nothing else (box "${s.query}")`);
 
-      // Any other key leaves the strip and acts on the list.
-      await tab(false);
-      await key('ArrowDown', 'ArrowDown', 40);
-      st = await strip();
-      s = await R();
-      check(st.marked === 0 && st.index < 0, `Down leaves the strip (${JSON.stringify(st)})`);
-      check(norm(s.selected) !== norm(firstRow) && s.rows.some((r) => norm(r) === norm(s.selected)), `and moves the selection (${path.basename(s.selected)})`);
+    // Any other key leaves the strip and acts on the list.
+    await tab(false);
+    await key('ArrowDown', 'ArrowDown', 40);
+    st = await strip();
+    s = await R();
+    check(st.marked === 0 && st.index < 0, `Down leaves the strip (${JSON.stringify(st)})`);
+    check(norm(s.selected) !== norm(firstRow) && s.rows.some((r) => norm(r) === norm(s.selected)), `and moves the selection (${path.basename(s.selected)})`);
 
-      // Press a button: Open parent folder, which moves the scope to the row's folder.
-      await tab(false);
-      check(await tabTo('Open parent folder'), 'Tab reaches Open parent folder');
-      if (layout === 'classic') await key('Enter', 'Enter', 13, 0, '\r');
-      else await key(' ', 'Space', 32, 0, ' ');
-      await drv.settle('pressed');
-      s = await R();
-      check(norm(s.scope) === norm(sub), `${layout === 'classic' ? 'Enter' : 'Space'} presses it: the scope is now the row's folder (${path.basename(s.scope)})`);
+    // Press a button: Open parent folder, which moves the scope to the row's folder.
+    await tab(false);
+    check(await tabTo('Open parent folder'), 'Tab reaches Open parent folder');
+    await key(' ', 'Space', 32, 0, ' ');
+    await drv.settle('pressed');
+    s = await R();
+    check(norm(s.scope) === norm(sub), `Space presses it: the scope is now the row's folder (${path.basename(s.scope)})`);
 
-      if (layout === 'classic') {
-        // A refresh of the same list must not put back a check taken off by hand (auto-refresh runs every 5s).
-        s = await R();
-        check(norm(s.selected) === norm(s.rows[0]) && s.checked === 1, `the new folder's list selects its top row (${path.basename(s.selected)}, ${s.checked} checked)`);
-        await drv.ev(`document.getElementById('resultsWrap').focus(); 1`);
-        await key(' ', 'Space', 32, 0, ' ');
-        s = await R();
-        check(s.checked === 0, `set up: Space unchecks it (${s.checked} checked)`);
-        await drv.T('runSearchNow', 'identity');
-        await drv.settle('refresh');
-        s = await R();
-        check(s.checked === 0, `a refresh of the same list leaves it unchecked (${s.checked} checked)`);
-      }
-    }
+    // A refresh of the same list must not put back a check taken off by hand (auto-refresh runs every 5s).
+    s = await R();
+    check(norm(s.selected) === norm(s.rows[0]) && s.checked === 1, `the new folder's list selects its top row (${path.basename(s.selected)}, ${s.checked} checked)`);
+    await drv.ev(`document.getElementById('resultsWrap').focus(); 1`);
+    await key(' ', 'Space', 32, 0, ' ');
+    s = await R();
+    check(s.checked === 0, `set up: Space unchecks it (${s.checked} checked)`);
+    await drv.T('runSearchNow', 'identity');
+    await drv.settle('refresh');
+    s = await R();
+    check(s.checked === 0, `a refresh of the same list leaves it unchecked (${s.checked} checked)`);
   } catch (e) {
     failures.push('threw: ' + (e && e.stack ? e.stack : e));
     console.error(e);

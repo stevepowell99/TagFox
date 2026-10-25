@@ -51,15 +51,15 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 
 ## Tests
 
-- **Runner only:** the `runner-*` tests, `viewer-runner` and `splitter-drag`, several with Classic round-trip checks that would need rewriting. Through the harness's `runner` option, also `delete-hides-row`, `fuzz`, `gmist-start-guard`, `loadmore-regression`, `machine-features`, `md-preview-no-write`, `menu-enter`, `page-health`, `quiet-refresh`, `recent-changes`, `smoke` and `zoom-restore`.
-- **Both:** `hotkey-raise-select`, `hover-preview`, `row-actions-keys`, `window-chrome`.
+- **Runner:** every test in the suite that opens a window runs in Runner. The `runner-*` tests, `close-hides`, `file-dialog-handoff`, `refresh-visible`, `splitter-drag` and `viewer-runner` switch with `setRunnerMode(true)`; the rest pass the harness's `runner` option. None switches back to Classic. `manual-browser-open`, run by hand, stays in Classic, since it only opens a browser tab from main.
+- **Classic code that no test reaches:** the Shelf's rotated strip and its inline width (`syncShelfAsideWidth` past its Runner return), the status line's place in Classic's markup (`placeStatusLineForLayout(false)`) and the switch back to Classic (`applyRunnerModeSync(false)`, which saves Runner's state and restores `LS.runnerClassicStash`). Their checks went when every test moved to Runner, so a stage that deletes them has nothing to rewrite.
 - **No layout:** `restart-in-terminal`, `help-build` and `tags-dates` do not go through the harness's `connect`.
-- `test/README.md` omits tags-dates, repro-crash, gmist-start-guard and hover-preview.
+- `test/README.md` omits tags-dates and repro-crash.
 
 ## Stages named so far
 
-- **Test instances open in Runner:** the Classic halves of the Both tests and the round trips in the `runner-*` tests go; then a test instance opens in Runner from its first load and the harness's `runner` option goes.
-- **Move the rest of Classic's key handler into `RUNNER_KEYS`:** the keys in the Keys bullet above. `hotkey-raise-select` and `row-actions-keys` press keys in Classic, so they move to Runner in the same stage.
+- **Test instances open in Runner:** a test instance opens in Runner from its first load, and the harness's `runner` option and the tests' own `setRunnerMode(true)` calls go.
+- **Move the rest of Classic's key handler into `RUNNER_KEYS`:** the keys in the Keys bullet above.
 - **`runSearch`'s `eventKind`** reaches only the search debug log (`runSearch.start`), through `scheduleSearch` and `runSearchNow`, so the argument can go from every call site.
 
 ## Decisions before any deletion

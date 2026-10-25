@@ -4,7 +4,7 @@
 //   - the page knows it is frameless, and the window buttons are really there (windowControlsOverlay);
 //   - the drag strip is the top strip, the content starts below it, and the 3px gradient that is
 //     .app-shell's own ::before stays 3px (the strip once took that pseudo-element and stretched it);
-//   - nothing clickable sits under the window buttons, in Runner, in Classic, or in the expanded Viewer;
+//   - nothing clickable sits under the window buttons, in the list or in the expanded Viewer;
 //   - the window buttons take the page's colours, light and dark;
 //   - with the setting off the window is framed as before (positive control: a test that never saw a
 //     frameless window would pass the rest of this file on a framed one).
@@ -24,6 +24,7 @@ async function main() {
   let drv;
   try {
     drv = await connect({
+      runner: true,
       profile: 'tagfox-test-window-chrome',
       profileFiles: { 'tagfox-window-chrome.json': JSON.stringify({ hideTitleBar: true }) },
     });
@@ -47,8 +48,6 @@ async function main() {
       return hits;
     })()`);
 
-    await drv.T('setRunnerMode', true);
-    await drv.settle('runner');
     const runner = await drv.ev(`(() => {
       const strip = getComputedStyle(document.body, '::after');
       const q = document.getElementById('query').getBoundingClientRect();
@@ -58,28 +57,21 @@ async function main() {
         queryTop: q.top,
       };
     })()`);
-    check(Math.abs(runner.stripH - tba.height) < 1 && runner.stripRegion === 'drag', `Runner: the drag strip is the title bar's height (${runner.stripH} vs ${tba.height}, ${runner.stripRegion})`);
-    check(Math.abs(runner.gradientH - 3) < 0.5, `Runner: the gradient stays 3px (${runner.gradientH})`);
-    check(runner.queryTop >= tba.height, `Runner: the search box starts below the strip (${Math.round(runner.queryTop)})`);
+    check(Math.abs(runner.stripH - tba.height) < 1 && runner.stripRegion === 'drag', `the drag strip is the title bar's height (${runner.stripH} vs ${tba.height}, ${runner.stripRegion})`);
+    check(Math.abs(runner.gradientH - 3) < 0.5, `the gradient stays 3px (${runner.gradientH})`);
+    check(runner.queryTop >= tba.height, `the search box starts below the strip (${Math.round(runner.queryTop)})`);
     let hits = await underButtons('body');
-    check(hits.length === 0, `Runner: nothing clickable under the window buttons ${JSON.stringify(hits)}`);
+    check(hits.length === 0, `nothing clickable under the window buttons ${JSON.stringify(hits)}`);
 
     // Expanded Viewer (Shift+Space): starts below the strip and keeps its own header buttons clear.
     await drv.ev(`document.getElementById('btnPropsTheaterToggle').click(), 1`);
     await sleep(400);
     const th = await drv.ev(`(() => { const a = document.getElementById('propsAside'); const r = a.getBoundingClientRect(); return { on: a.classList.contains('props-theater'), top: r.top, w: r.width, vw: innerWidth }; })()`);
     check(th.on && th.top >= tba.height - 0.5, `expanded Viewer starts below the strip (top ${Math.round(th.top)})`);
-    check(th.w > th.vw * 0.85, `expanded Viewer is near full width in Runner (${Math.round(th.w)} of ${th.vw})`);
+    check(th.w > th.vw * 0.85, `expanded Viewer is near full width (${Math.round(th.w)} of ${th.vw})`);
     hits = await underButtons('#propsAside');
     check(hits.length === 0, `expanded Viewer: nothing clickable under the window buttons ${JSON.stringify(hits)}`);
     await drv.ev(`document.getElementById('btnPropsTheaterToggle').click(), 1`);
-
-    await drv.T('setRunnerMode', false);
-    await drv.settle('classic');
-    const classicStrip = await drv.ev(`(() => { const s = getComputedStyle(document.body, '::after'); return { h: parseFloat(s.height), region: s.webkitAppRegion || s.getPropertyValue('-webkit-app-region') }; })()`);
-    check(Math.abs(classicStrip.h - tba.height) < 1 && classicStrip.region === 'drag', `Classic: the same drag strip (${classicStrip.h} vs ${tba.height}, ${classicStrip.region})`);
-    hits = await underButtons('body');
-    check(hits.length === 0, `Classic: nothing clickable under the window buttons ${JSON.stringify(hits)}`);
 
     // Colours: the window buttons follow the page; main keeps them in the profile for the next start.
     const chromeFile = path.join(drv.userData, 'tagfox-window-chrome.json');
@@ -98,7 +90,7 @@ async function main() {
 
     // Positive control: the same checks' premise is false on a framed window. Its own port and profile, so
     // it cannot reach the instance just closed while that one is still going down.
-    drv = await connect({ profile: 'tagfox-test-window-chrome-framed' });
+    drv = await connect({ runner: true, profile: 'tagfox-test-window-chrome-framed' });
     console.log('Hook ready (title bar shown).');
     const framed = await drv.ev(`({ frameless: document.body.classList.contains('tagfox-frameless'), wco: !!(navigator.windowControlsOverlay && navigator.windowControlsOverlay.visible) })`);
     check(!framed.frameless && !framed.wco, `with the setting off the window keeps its title bar (${JSON.stringify(framed)})`);

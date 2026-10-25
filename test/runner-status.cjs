@@ -2,8 +2,7 @@
 // the list running down to the Shelf. It holds the rotating tip until a message comes. A message shows as a box, hides the tip, keeps the list where it was,
 // and gives the line back to the tip once it has gone. Then the tips themselves: every key a tip names is a
 // key Runner's key table lists (or a global shortcut), and every `/` command a tip names finds that command,
-// so a tip cannot describe a key or a command that does not exist. Last, Classic gets its footer and header
-// tip back.
+// so a tip cannot describe a key or a command that does not exist.
 //
 // Run: node test/runner-status.cjs
 
@@ -115,15 +114,6 @@ async function main() {
     }
     const unlisted = slashes.filter((s) => !(s in SLASH_EXPECT));
     check(slashes.length >= 4 && wrong.length === 0 && unlisted.length === 0, `every / command the tips name is offered first (${slashes.join(', ')}${wrong.length ? '; ' + wrong.join('; ') : ''}${unlisted.length ? '; no expectation for ' + unlisted.join(', ') : ''})`);
-
-    // Classic: the footer goes back where Classic's markup put it, with the tip still in it.
-    await drv.T('setRunnerMode', false);
-    await drv.settle('classic');
-    const classic = await drv.ev(`(() => ({
-      footerInBody: document.getElementById('tagfoxNavbarStatus').parentElement === document.body,
-      tipInFooter: !!document.getElementById('navbarDidYouKnow').closest('#tagfoxNavbarStatus'),
-    }))()`);
-    check(classic.footerInBody && classic.tipInFooter, `Classic gets its footer back, with the tip in it (${JSON.stringify(classic)})`);
   } catch (e) {
     failures.push('threw: ' + (e && e.stack ? e.stack : e));
     console.error(e);
