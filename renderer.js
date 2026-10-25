@@ -4205,9 +4205,12 @@
       return true;
     }
 
-    /** Enter: a path in the box goes there; otherwise the selected row opens. */
+    /** Enter: a path in the box goes there; with an empty list inside a folder, the same text is searched for
+        everywhere (never a path that does not exist, which no search would find); otherwise the selected row opens. */
     async function runnerEnter(c) {
       if (c.inBox && (await runnerGoToPathInBox())) return;
+      const pathTyped = !!runnerPathInBox(document.getElementById('query').value);
+      if (c.inBox && !pathTyped && (await runnerSearchEverywhereWhenEmpty())) return;
       await runnerActivateSelection('open');
     }
 
@@ -4541,9 +4544,11 @@
     /** Every setting that differs from Runner's default shows as a chip under the box, and its x puts the
         default back, so a filter switched on by a key or a / command never hides rows without saying so. */
     const RUNNER_FILTER_CHIPS = [
+      /* narrows: false for a chip that cannot be why a list is empty (runnerEmptyNoteText). */
       {
         id: 'sort',
         icon: 'fa-arrow-down-wide-short',
+        narrows: false,
         on: () => runnerSort !== 'smart',
         label: () =>
           ({ date: 'Sorted by date', name: 'Sorted by name', size: 'Largest first', 'size-asc': 'Smallest first' })[runnerSort],
@@ -4573,6 +4578,7 @@
       {
         id: 'system',
         icon: 'fa-eye',
+        narrows: false,
         on: () => !isHideSpecialPaths(),
         label: () => 'Showing system files',
         reset: () => runnerToggleSystemFiles(),
@@ -4636,6 +4642,7 @@
       {
         id: 'hidden-until',
         icon: 'fa-eye',
+        narrows: false,
         on: () => showHiddenUntil,
         label: () => 'Showing files hidden until a later date',
         reset: () => setShowHiddenUntil(false),
@@ -4644,6 +4651,56 @@
 
     function runnerActiveFilterChips() {
       return isRunnerMode() ? RUNNER_FILTER_CHIPS.filter((c) => c.on()) : [];
+    }
+
+    /** What an empty list was looking for: the folder, the text, every chip that narrowed it, and inside a
+        folder that Enter searches everywhere instead (runnerEnter). */
+    function runnerEmptyNoteText() {
+      const q = document.getElementById('query').value.trim();
+      const folder = currentScopeFolderPath();
+      const name = folder ? T.baseName(folder) || folder : '';
+      let head = 'Nothing matches';
+      if (folder && q) head = 'Nothing ' + (runnerThisFolderOnlyOn() ? 'in ' : 'below ') + name + ' matches ‘' + q + '’';
+      else if (folder) head = 'Nothing in ' + name;
+      else if (q) head = 'Nothing matches ‘' + q + '’';
+      const parts = [head];
+      const chips = runnerActiveFilterChips().filter((c) => c.narrows !== false).map((c) => c.label());
+      if (chips.length) parts.push((chips.length === 1 ? 'Filter on: ' : 'Filters on: ') + chips.join(', '));
+      if (folder) parts.push('Enter: search everywhere');
+      return parts.join(' · ');
+    }
+
+    /** An empty list says why, in one muted line where the rows would be. It shows only once the searches
+        have settled, so it never flashes up while a word is typed or between a list's early paint and its
+        merged list; rows arriving hide it at once. */
+    let runnerEmptyNoteTimer = null;
+    function renderRunnerEmptyNote() {
+      const el = document.getElementById('runnerEmptyNote');
+      if (!el) return;
+      clearTimeout(runnerEmptyNoteTimer);
+      if (!isRunnerMode() || listRowsForUi().length) {
+        el.classList.add('d-none');
+        return;
+      }
+      const show = () => {
+        if (searchInFlight || searchDebounceTimer) {
+          runnerEmptyNoteTimer = setTimeout(show, 150);
+          return;
+        }
+        if (!isRunnerMode() || listRowsForUi().length) return;
+        el.textContent = runnerEmptyNoteText();
+        el.classList.remove('d-none');
+      };
+      show();
+    }
+
+    /** Enter in the box with an empty list inside a folder: search everywhere for the same text. */
+    async function runnerSearchEverywhereWhenEmpty() {
+      if (searchDebounceTimer) await runSearchNow();
+      else if (searchInFlight) await searchMutex;
+      if (listRowsForUi().length || !currentScopeFolderPath()) return false;
+      clearSearchScope();
+      return true;
     }
 
     function renderRunnerFilterChips() {
@@ -5141,7 +5198,7 @@
       { group: 'Folders', keys: ['Ctrl+Shift+1…9'], does: 'Starred item 1 to 9', when: (c) => c.mod && c.shift && !c.alt && /^Digit[1-9]$/.test(c.code), run: () => 'classic' },
 
       /* Open and act */
-      { group: 'Open and act', keys: ['Enter'], does: 'Open the selected row; a folder opens here. With a path typed in the box, go there', when: (c) => c.plain && !c.shift && c.key === 'Enter' && (c.inBox || c.inList), run: (c) => void runnerEnter(c) },
+      { group: 'Open and act', keys: ['Enter'], does: 'Open the selected row; a folder opens here. With a path typed in the box, go there; with nothing listed inside a folder, search everywhere', when: (c) => c.plain && !c.shift && c.key === 'Enter' && (c.inBox || c.inList), run: (c) => void runnerEnter(c) },
       { group: 'Open and act', keys: ['Ctrl+Enter'], does: 'Open its folder in File Explorer, with it selected', when: (c) => c.mod && !c.alt && !c.shift && c.key === 'Enter', run: () => void runnerActivateSelection('reveal') },
       { group: 'Open and act', keys: ['Alt+Enter'], does: 'Properties', when: (c) => c.alt && !c.mod && !c.shift && c.key === 'Enter', run: () => void runnerActivateSelection('properties') },
       { group: 'Open and act', keys: ['Alt+P'], does: 'Show or hide the Viewer', when: (c) => c.alt && !c.mod && !c.shift && c.k === 'p', run: () => runnerToggleViewer() },
@@ -16604,6 +16661,7 @@
       }
       updateSelectAllCheckboxState();
       updateEmptyResultsPulseHints(rowsForDisplay.length);
+      renderRunnerEmptyNote();
       updateResultsLoadMoreUi();
       scheduleFolderChildCountsForVisibleResultsRows();
       lastRenderedTableSig = resultsTableRenderSignature();

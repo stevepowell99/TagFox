@@ -194,6 +194,7 @@ Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when
 
               <h3>🔎 What you can type</h3>
               <ul>
+              <li>When nothing matches, a line where the rows would be says what was searched: the folder, the text and any filter that narrowed it. Inside a folder, <code>Enter</code> then searches everywhere for the same text.</li>
               <li>A path goes there. Paste a folder&#39;s path (<code>C:\Users\Zoom\Downloads</code>, or Explorer&#39;s &quot;Copy as path&quot; with its quotes) and Runner opens that folder; paste a file&#39;s path and it opens the file&#39;s folder with the file selected. A typed path goes there when you press <code>Enter</code>, so until then it is searched for like any other text. A path that does not exist is just a search.</li>
               <li>A leading <code>-word</code> leaves out anything matching that word.</li>
               <li>A file type lists only that type: <code>.pdf</code>, or just <code>pdf</code> for the common document, image, audio and video types. Several (<code>.docx .pdf</code>) list any of them, and <code>-pdf</code> leaves a type out. A file type on its own lists the newest first; with other words, as in <code>budget xlsx</code>, the words decide the order. Words such as <code>map</code>, <code>log</code> and <code>key</code> stay words, so &quot;causal map&quot; is not a search for .map files.</li>

@@ -3110,6 +3110,13 @@ body.tagfox-runner.tagfox-runner-status-on .tagfox-runner-status-icon {
 body.tagfox-runner.tagfox-runner-status-on #navbarDidYouKnow {
   display: none;
 }
+/* An empty list's reason, one muted line where the rows would be (renderRunnerEmptyNote). */
+.tagfox-runner-empty-note {
+  padding: 0.85rem 1rem;
+  color: var(--runner-muted);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
 body.tagfox-runner #navbarDidYouKnow {
   margin: 0 !important;
   padding: 0 !important;
