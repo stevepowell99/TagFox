@@ -13,39 +13,6 @@
 </head>
 <body class="app-shell bg-body-secondary">
   <button type="button" id="propsTheaterBackdrop" class="props-theater-backdrop d-none" aria-label="Close expanded viewer" title="Close"></button>
-  <!-- Top chrome: toolbar + title (status line is bottom footer) -->
-  <header class="tagfox-app-header border-bottom bg-body px-2 py-2 d-flex align-items-center gap-2 flex-shrink-0 flex-wrap">
-    <div class="d-flex align-items-center gap-1 flex-shrink-0">
-      <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSearchHistBack" title="Previous search (Alt+←)" aria-label="Previous search state"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i></button>
-      <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSearchHistFwd" title="Next search (Alt+→)" aria-label="Next search state"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
-      <button type="button" class="btn btn-sm btn-outline-secondary" id="btnUndo" title="Nothing to undo (Ctrl+Z)" aria-label="Undo last change" disabled><i class="fa-solid fa-rotate-left" aria-hidden="true"></i></button>
-      <button type="button" class="btn btn-sm btn-warning d-none" id="btnRestartTagFox" title="TagFox's own code has changed since it started. Restart to run it." aria-label="Restart TagFox"><i class="fa-solid fa-power-off" aria-hidden="true"></i> Restart</button>
-      <button type="button" class="btn btn-sm btn-outline-secondary" id="btnRefreshResults" title="Re-run this search against Everything (F5). The status line reports the time and what changed." aria-label="Refresh results"><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i></button>
-      <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#helpModal" title="Help (F1)" aria-label="Help"><i class="fa-solid fa-circle-question" aria-hidden="true"></i></button>
-      <button type="button" class="btn btn-sm btn-outline-secondary" id="btnToggleDarkMode" title="Toggle dark / light mode" aria-label="Toggle dark / light mode"><i class="fa-solid fa-moon" aria-hidden="true"></i><i class="fa-solid fa-sun" aria-hidden="true"></i></button>
-      <div class="btn-group btn-group-sm tagfox-zoom-group" role="group" aria-label="Zoom">
-        <button type="button" class="btn btn-outline-secondary" id="btnZoomOut" title="Make everything smaller (Ctrl+-)" aria-label="Zoom out"><i class="fa-solid fa-magnifying-glass-minus" aria-hidden="true"></i></button>
-        <button type="button" class="btn btn-outline-secondary tagfox-zoom-level" id="btnZoomReset" title="Back to normal size (Ctrl+0)" aria-label="Reset zoom to 100 per cent">100%</button>
-        <button type="button" class="btn btn-outline-secondary" id="btnZoomIn" title="Make everything bigger (Ctrl+plus)" aria-label="Zoom in"><i class="fa-solid fa-magnifying-glass-plus" aria-hidden="true"></i></button>
-      </div>
-      <button
-        type="button"
-        class="btn btn-sm btn-outline-secondary"
-        id="btnToggleSettings"
-        data-bs-toggle="offcanvas"
-        data-bs-target="#settingsPanel"
-        aria-controls="settingsPanel"
-        title="Show or hide Settings — Ctrl+,; Everything URL, results per page, auto-refresh, HTTP auth, list options"
-      >
-        Settings
-      </button>
-      <button type="button" class="btn btn-sm btn-outline-warning" id="btnSearchDebugTestCycle" title="Step 1: turn on logging if needed, clear log, then capture — same as Clear log">New dbg</button>
-      <span id="navbarGoogleDrivePing" class="d-inline-flex align-items-center ms-1 small" aria-live="polite"></span>
-    </div>
-    <span id="navbarDidYouKnow" class="tagfox-navbar-dyk-wrap min-w-0 flex-grow-1 small ms-2 rounded px-2 py-1 border" aria-live="polite"></span>
-    <span class="h6 mb-0 flex-shrink-0">🦊 TagFox</span>
-  </header>
-
   <!-- Everything + app settings: offcanvas from the left (not a strip dropping under the header). -->
   <div
     class="offcanvas offcanvas-start bg-body text-body tagfox-settings-offcanvas"
@@ -621,6 +588,8 @@
             <div id="queryGhostHint" class="tagfox-query-ghost-hint" aria-hidden="true"></div>
             <input type="text" id="query" class="form-control tagfox-query-empty" placeholder="" autocomplete="off" />
           </div>
+          <!-- Shown only once TagFox's own code has changed since it started (refreshRunningNow). -->
+          <button type="button" class="btn btn-sm btn-warning d-none" id="btnRestartTagFox" title="TagFox's own code has changed since it started. Restart to run it." aria-label="Restart TagFox"><i class="fa-solid fa-power-off" aria-hidden="true"></i> Restart</button>
           <!-- Runner only: shown when the smart order ranked only part of the matches (renderRunnerRankNote). -->
           <span id="runnerRankNote" class="tagfox-runner-only tagfox-runner-rank-note d-none"></span>
           <!-- Runner only: the Viewer toggle, and the options, one low-contrast control that opens on click. -->
@@ -1063,6 +1032,7 @@
   >
     <i class="fa-solid fa-circle-info tagfox-runner-only tagfox-runner-status-icon" aria-hidden="true"></i>
     <span id="statusMain" class="min-w-0"></span>
+    <span id="navbarDidYouKnow" class="tagfox-navbar-dyk-wrap min-w-0 flex-grow-1 small ms-2 rounded px-2 py-1 border" aria-live="polite"></span>
   </footer>
 
   <!-- Quick TODO: fixed strip (z-index in styles.css — below modal backdrop 1100 so #tagModal stays on top). -->

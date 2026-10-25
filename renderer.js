@@ -339,10 +339,6 @@
       warn: console.warn.bind(console),
       error: console.error.bind(console),
     };
-    /** Two-step test control: next click after clear expects Copy. */
-    let searchDebugTestAwaitingCopy = false;
-    /** Fresh debug capture: run one deeper scope probe on the next search. */
-    let searchDebugNextScopedProbe = false;
     /** Incremented at each runSearch start; in-flight HTTP from an older id must not touch UI (overlapping debounced runs). */
     let searchRunSeq = 0;
     /** The main query's text as sent to Everything, for the test hook. */
@@ -2005,7 +2001,7 @@
      * `toolbar=0` is the only thing that closes that sidebar: measured 1 September 2026 against the
      * Electron PDF viewer at 1728px, `pagemode=none` left the thumbnails exactly where they were.
      * It takes the plugin's own toolbar with it (page counter, zoom buttons, print, download), which
-     * is the price of the sidebar going; Ctrl+wheel still zooms and the TagFox header still refreshes.
+     * is the price of the sidebar going; Ctrl+wheel still zooms and the Viewer's header still carries Reload.
      * The side pane is a glance, so it drops the toolbar too and fits the page to the pane's width
      * (Steve, 25 October 2026): with the toolbar the page sat small under a dark bar, and at a third
      * of a wide window the sidebar could still open there.
@@ -2894,7 +2890,6 @@
       selectAfterSearchKey = null;
       localStorage.setItem(LS.toggleOpens, on ? 'runner' : 'classic');
       document.body.classList.toggle('tagfox-runner', on);
-      placeRestartButtonForLayout(on);
       placeStatusLineForLayout(on);
       closeRunnerCmdList(false);
       setRunnerOptsPanelOpen(false);
@@ -2923,19 +2918,14 @@
 
     /** Classic's header holds the Restart button and Runner has no header, so in Runner the button sits in
         the box, before the rank note. It shows only when TagFox's own code has changed since it started. */
-    function placeRestartButtonForLayout(on) {
-      const note = document.getElementById('runnerRankNote');
-      placeForLayout(document.getElementById('btnRestartTagFox'), on, note && note.parentElement, note);
-    }
 
-    /** Runner has no header and no status bar along the window's foot: its status line goes in the list's
-        column, where CSS floats it over the list's foot just above the Shelf, and holds the header's rotating
-        tip until a message comes. */
+    /** Runner has no status bar along the window's foot: its status line goes in the list's column, where
+        CSS floats it over the list's foot just above the Shelf, and holds the rotating tip until a message
+        comes. */
     function placeStatusLineForLayout(on) {
       const bar = document.getElementById('tagfoxNavbarStatus');
       const shelf = document.getElementById('appShelf');
       placeForLayout(bar, on, shelf && shelf.parentElement, shelf);
-      placeForLayout(document.getElementById('navbarDidYouKnow'), on, bar, null);
     }
 
     /** Switch layouts (the test hook only: Runner is the one layout on screen) and re-run the search. */
@@ -3747,8 +3737,8 @@
       { id: 'recent-1w', group: 'Modified', label: 'Modified in the last week', isOn: () => recencyFilterMode() === '1w', run: () => runnerSetRecency('1w') },
       { id: 'new-todo', group: 'TagFox', label: 'New TODO in this folder', run: () => runnerNewTodoHere() },
       { id: 'refresh', group: 'TagFox', label: 'Refresh (F5)', run: () => void refreshResultsFromUi() },
-      { id: 'dark', group: 'TagFox', label: 'Dark or light mode', run: () => document.getElementById('btnToggleDarkMode')?.click() },
-      { id: 'settings', group: 'TagFox', label: 'Settings', run: () => document.getElementById('btnToggleSettings')?.click() },
+      { id: 'dark', group: 'TagFox', label: 'Dark or light mode', run: () => toggleDarkMode() },
+      { id: 'settings', group: 'TagFox', label: 'Settings', run: () => toggleSettingsPanel() },
       { id: 'help', group: 'TagFox', label: 'Help (F1)', run: () => bootstrap.Modal.getOrCreateInstance(document.getElementById('helpModal')).show() },
       { id: 'quit', group: 'TagFox', label: 'Quit TagFox (its shortcut stops working until TagFox starts again)', run: () => void window.tagBrowser?.quitTagFox?.() },
     ];
@@ -4937,7 +4927,7 @@
     }
 
     /* True only for the duration of an auto-refresh tick's search. It buys two things the explicit
-       routes (F5, the header button, a disk mutation) must not have: renderTable may skip a rebuild
+       routes (F5, the Refresh command, a disk mutation) must not have: renderTable may skip a rebuild
        that would paint the same rows again, and a rebuild that does happen keeps the scroll position.
        An explicit refresh is a thing Steve asked for, so it always repaints and always reports. */
     let quietAutoRefreshRender = false;
@@ -5518,22 +5508,8 @@
        are recoverable from the Windows Recycle Bin (runUndo says so). Bare `z` still sorts by size. ===== */
     let undoEntry = null; // { label, invert: async () => boolean }
 
-    /** Reflect the current undo entry on the toolbar button (enabled + tooltip). */
-    function updateUndoButton() {
-      const b = document.getElementById('btnUndo');
-      if (!b) return;
-      if (undoEntry) {
-        b.disabled = false;
-        b.title = 'Undo: ' + undoEntry.label + ' (Ctrl+Z)';
-      } else {
-        b.disabled = true;
-        b.title = 'Nothing to undo (Ctrl+Z)';
-      }
-    }
-
     function setUndoEntry(entry) {
       undoEntry = entry;
-      updateUndoButton();
     }
 
     /** Record an undo that reverses a batch of renames (to → from). rootPrefix captured as it was at action time. */
@@ -5677,50 +5653,6 @@
       if (viewModeSentence)
         segments.push('<span class="tagfox-status-view-suffix">' + escStatusHtmlForStatus(viewModeSentence) + '</span>');
       return segments.join(' · ');
-    }
-
-    /** After startup: one Drive API call — green tick (or warning) in header next to New dbg. */
-    async function refreshGoogleDriveApiPingSegment() {
-      const mount = document.getElementById('navbarGoogleDrivePing');
-      if (!window.tagBrowser || typeof window.tagBrowser.googleDriveApiPing !== 'function') {
-        if (mount) mount.innerHTML = '';
-        return;
-      }
-      try {
-        const r = await window.tagBrowser.googleDriveApiPing();
-        if (r && r.skipped) {
-          if (mount) mount.innerHTML = '';
-          return;
-        }
-        if (r && r.ok && r.email) {
-          const tip =
-            'Drive API: ' +
-            r.email +
-            (r.sampleFileName ? ' · ' + r.sampleFileName : '');
-          const safeTip = String(tip).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-          if (mount)
-            mount.innerHTML =
-              '<span class="tagfox-navbar-drive-ping" title="' +
-              safeTip +
-              '" aria-label="' +
-              safeTip +
-              '"><i class="fa-solid fa-check text-success" aria-hidden="true"></i></span>';
-        } else if (r && r.error) {
-          const short = String(r.error).length > 96 ? String(r.error).slice(0, 96) + '…' : String(r.error);
-          if (mount)
-            mount.innerHTML =
-              '<span class="tagfox-navbar-drive-ping text-warning small">' +
-              escStatusHtmlForStatus('Drive API: ' + short) +
-              '</span>';
-        } else {
-          if (mount) mount.innerHTML = '';
-        }
-      } catch (e) {
-        const msg = 'Drive API: ' + String(e.message || e);
-        if (mount)
-          mount.innerHTML =
-            '<span class="tagfox-navbar-drive-ping text-warning small">' + escStatusHtmlForStatus(msg) + '</span>';
-      }
     }
 
     /** Folder that scopes the search (Settings “Scope folder” field). */
@@ -11258,12 +11190,6 @@
       return L === 'G' || L === 'H' ? L : '';
     }
 
-    function googleDriveDebugSharedDrivesPathForScope(fullPath) {
-      const L = googleDriveDebugRootLetter(fullPath);
-      if (!L) return '';
-      return `${L}:\\Shared drives`;
-    }
-
     async function maybeBuildLocalCloudBrowseFallbackRows({ runId, rootFolder, query, recursive }) {
       const normRoot = normalizeFolderPathForEverything(String(rootFolder || '').trim());
       const plainBrowseOnly = !String(query || '').trim() && activeTagKeys.size === 0 && recencyFilterMode() === 'all';
@@ -11338,21 +11264,14 @@
       resultSource,
     }) {
       if (!isSearchDebugOn()) return;
-      const oneShot = !!searchDebugNextScopedProbe;
-      searchDebugNextScopedProbe = false;
       const normRoot = normalizeFolderPathForEverything(String(rootFolder || '').trim());
       const gdRootLetter = googleDriveDebugRootLetter(normRoot);
-      const sharedDrivesPath = googleDriveDebugSharedDrivesPathForScope(normRoot);
-      if (!normRoot) {
-        if (oneShot) searchDebugLog('scope.debug.skip', { runId, reason: 'noRootFolder' });
-        return;
-      }
+      if (!normRoot) return;
       const shortcutPath = searchDebugPathLooksLikeShortcutTargets(normRoot);
-      if (!oneShot && !shortcutPath && currentRowsLen > 0) return;
+      if (!shortcutPath && currentRowsLen > 0) return;
       const plainBrowseOnly = !String(query || '').trim() && activeTagKeys.size === 0 && recencyFilterMode() === 'all';
       searchDebugLog('scope.debug.begin', {
         runId,
-        oneShot,
         normRoot,
         shortcutPath,
         recursive,
@@ -11377,16 +11296,6 @@
         }
       } else {
         searchDebugLog('scope.debug.folderSnapshotSkip', { reason: 'noBridge' });
-      }
-      if (oneShot && sharedDrivesPath && window.tagBrowser && typeof window.tagBrowser.debugFolderSnapshot === 'function') {
-        try {
-          const sharedSnap = await window.tagBrowser.debugFolderSnapshot({ folderPath: sharedDrivesPath });
-          if (runId !== searchRunSeq) return;
-          searchDebugLog('scope.debug.sharedDrivesSnapshot', sharedSnap);
-        } catch (e) {
-          if (runId !== searchRunSeq) return;
-          searchDebugLog('scope.debug.sharedDrivesSnapshotError', { err: String(e && e.message ? e.message : e) });
-        }
       }
       if (!plainBrowseOnly) {
         searchDebugLog('scope.debug.httpProbeSkip', { runId, reason: 'queryTagsOrRecencyActive' });
@@ -11450,54 +11359,6 @@
           err: res && res.ok ? '' : (res && res.error) || 'unknown',
           ...(res && res.debug ? { debug: res.debug } : {}),
         });
-      }
-      if (oneShot && sharedDrivesPath && pathNormKey(sharedDrivesPath) !== pathNormKey(cleanRoot)) {
-        const sharedVariants = [
-          {
-            label: 'sharedDrives_treeQuotedTrailingSlash_p1',
-            searchText: (searchDebugQuotedTreeToken(sharedDrivesPath, true) + suffix).trim(),
-            options: { ...currentOptions, pathSearch: true, offset: 0 },
-          },
-          {
-            label: 'sharedDrives_treeQuotedNoTrailingSlash_p1',
-            searchText: (searchDebugQuotedTreeToken(sharedDrivesPath, false) + suffix).trim(),
-            options: { ...currentOptions, pathSearch: true, offset: 0 },
-          },
-        ];
-        for (const variant of sharedVariants) {
-          let res;
-          try {
-            res = await window.tagBrowser.search({
-              baseUrl,
-              searchText: variant.searchText,
-              count: '20',
-              httpUser,
-              httpPassword,
-              options: variant.options,
-            });
-          } catch (e) {
-            if (runId !== searchRunSeq) return;
-            searchDebugLog('scope.debug.httpProbeThrow', {
-              runId,
-              label: variant.label,
-              err: String(e && e.message ? e.message : e),
-            });
-            continue;
-          }
-          if (runId !== searchRunSeq) return;
-          const rows = Array.isArray(res && res.rows) ? res.rows : [];
-          searchDebugLog('scope.debug.httpProbe', {
-            runId,
-            label: variant.label,
-            searchText: variant.searchText,
-            pathSearch: !!variant.options.pathSearch,
-            ok: !!(res && res.ok),
-            rows: rows.length,
-            first: rows.slice(0, 3).map((r) => fullPathForRow(r)),
-            err: res && res.ok ? '' : (res && res.error) || 'unknown',
-            ...(res && res.debug ? { debug: res.debug } : {}),
-          });
-        }
       }
     }
 
@@ -12236,15 +12097,6 @@
       searchDebugRender();
     }
 
-    function syncSearchDebugTestCycleBtn() {
-      const b = document.getElementById('btnSearchDebugTestCycle');
-      if (!b) return;
-      b.textContent = searchDebugTestAwaitingCopy ? 'Copy dbg' : 'New dbg';
-      b.title = searchDebugTestAwaitingCopy
-        ? 'Step 2: copy search debug log to the clipboard'
-        : 'Step 1: turn on logging if needed, clear log, then capture — same as Clear log';
-    }
-
     /** System clipboard as plain text — prefer main process (Electron). */
     async function copyPlainTextToClipboard(text) {
       if (window.tagBrowser && typeof window.tagBrowser.clipboardWriteText === 'function') {
@@ -12514,14 +12366,6 @@
       return JSON.stringify(a) === JSON.stringify(b);
     }
 
-    function updateSearchHistoryNavUI() {
-      const back = document.getElementById('btnSearchHistBack');
-      const fwd = document.getElementById('btnSearchHistFwd');
-      if (!back || !fwd) return;
-      back.disabled = searchHistIdx <= 0;
-      fwd.disabled = searchHistIdx >= searchHist.length - 1;
-    }
-
     function scheduleSearchHistoryCommit() {
       if (searchHistNavigating) return;
       if (searchHistDebounceTimer) clearTimeout(searchHistDebounceTimer);
@@ -12555,7 +12399,6 @@
         searchHistIdx = Math.max(0, searchHistIdx - drop);
       }
       searchHistIdx = searchHist.length - 1;
-      updateSearchHistoryNavUI();
     }
 
     function applySearchState(s) {
@@ -12631,14 +12474,12 @@
         await runSearchNow();
       } finally {
         searchHistNavigating = false;
-        updateSearchHistoryNavUI();
       }
     }
 
     function seedSearchHistoryFromCurrent() {
       searchHist = [{ ...serializeSearchState(), runner: isRunnerMode() }];
       searchHistIdx = 0;
-      updateSearchHistoryNavUI();
     }
 
     /** Folder glyph in Name column (Font Awesome). */
@@ -13908,7 +13749,7 @@
       /* An auto-refresh tick that came back with the same rows must not rebuild the table. The rebuild
          is what made the timer intrusive: it drops the scroll position, disposes and remakes every
          tooltip, and moves the row under the pointer. Same guard as the folder-thumbs grid, and it
-         fires only for a timer tick, never for F5 or the header button. */
+         fires only for a timer tick, never for F5 or the Refresh command. */
       if (quietAutoRefreshRender) {
         const sig = resultsTableRenderSignature();
         if (sig === lastRenderedTableSig && tbody.childElementCount) return;
@@ -15384,7 +15225,7 @@
         options,
       });
 
-      /* An explicit refresh (F5 or the header button) that finds nothing new reads exactly like one that
+      /* An explicit refresh (F5 or the Refresh command) that finds nothing new reads exactly like one that
          never ran, which is what "F5 sometimes does not refresh" looks like from the outside. So a refresh
          reports the clock time it finished and what changed, and the keys it started from are kept here. */
       const explicitRefresh = !!(opts && opts.uiHint === 'f5');
@@ -15946,16 +15787,8 @@
     document.getElementById('optSearchDebug').addEventListener('change', () => {
       saveSettings();
       if (isSearchDebugOn()) searchDebugLog('debug.enabled', { on: true });
-      else {
-        searchDebugNextScopedProbe = false;
-        searchDebugTestAwaitingCopy = false;
-        syncSearchDebugTestCycleBtn();
-      }
     });
     document.getElementById('btnClearSearchDebug').addEventListener('click', () => {
-      searchDebugNextScopedProbe = false;
-      searchDebugTestAwaitingCopy = false;
-      syncSearchDebugTestCycleBtn();
       searchDebugClear();
       searchDebugLog('debug.cleared', {});
     });
@@ -15965,34 +15798,10 @@
       const ok = await copyPlainTextToClipboard(text);
       const status = document.getElementById('statusMain');
       if (ok) {
-        searchDebugTestAwaitingCopy = false;
-        syncSearchDebugTestCycleBtn();
         if (status) setStatusMain('Debug log copied.');
       } else if (status) {
         setStatusMain('Could not copy debug log.');
       }
-    });
-    syncSearchDebugTestCycleBtn();
-    document.getElementById('btnSearchDebugTestCycle')?.addEventListener('click', () => {
-      if (searchDebugTestAwaitingCopy) {
-        searchDebugTestAwaitingCopy = false;
-        syncSearchDebugTestCycleBtn();
-        document.getElementById('btnCopySearchDebug')?.click();
-        return;
-      }
-      const opt = document.getElementById('optSearchDebug');
-      const wasOff = !!(opt && !opt.checked);
-      if (wasOff) {
-        opt.checked = true;
-        saveSettings();
-      }
-      searchDebugClear();
-      if (wasOff) searchDebugLog('debug.enabled', { on: true });
-      searchDebugLog('debug.cleared', {});
-      searchDebugNextScopedProbe = true;
-      searchDebugLog('debug.captureArmed', { nextScopedProbe: true });
-      searchDebugTestAwaitingCopy = true;
-      syncSearchDebugTestCycleBtn();
     });
 
     document.getElementById('btnBulkClip').addEventListener('click', async () => {
@@ -16572,17 +16381,11 @@
       return raised;
     }
 
-    /** The one explicit-refresh path: F5 (either route) and the header Refresh button. Spins the button
-        while the search runs, so a refresh that finds nothing new still shows it happened. */
+    /** The one explicit-refresh path: F5 (either route) and the Refresh command, from the / list or the
+        options panel. The search reports the clock time and what changed, so a refresh that finds nothing new
+        still shows it ran. */
     async function refreshResultsFromUi() {
-      const btn = document.getElementById('btnRefreshResults');
-      const icon = btn?.querySelector('i');
-      icon?.classList.add('fa-spin');
-      try {
-        await runSearchNow('refresh', { uiHint: 'f5' });
-      } finally {
-        icon?.classList.remove('fa-spin');
-      }
+      await runSearchNow('refresh', { uiHint: 'f5' });
     }
 
     /** After programmatic list selection: move keyboard focus off stray buttons onto the results region. */
@@ -16594,7 +16397,7 @@
       if (ae && isTypingTarget(ae)) return;
       /* Already in the list: skip refocus — was every ↑/↓ and felt jerky. */
       if (wrap && (ae === wrap || (ae.nodeType === Node.ELEMENT_NODE && wrap.contains(ae)))) return;
-      /* No pullWebContents: window keydown uses capture:true — arrows work even when focus is on a header button; IPC was jerky. */
+      /* No pullWebContents: window keydown uses capture:true — arrows work even when focus is on a button; IPC was jerky. */
       wrap?.focus({ preventScroll: true });
     }
 
@@ -17386,7 +17189,7 @@
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
         e.preventDefault();
-        document.getElementById('btnToggleSettings')?.click();
+        toggleSettingsPanel();
         return;
       }
       if (e.key === 'F1') {
@@ -18011,7 +17814,7 @@
         tf.textContent =
           'TagFox: started ' + whenText(info.startedAt) + ', PID ' + info.pid +
           (info.restartsInTerminal ? ', under npm start' : ', not under npm start (a restart detaches it)') +
-          (stale.length ? '. Code changed since: ' + stale.join(', ') + ' (Restart in the header).' : '. Running the code on disk.');
+          (stale.length ? '. Code changed since: ' + stale.join(', ') + ' (Restart in the search box).' : '. Running the code on disk.');
       }
       const gm = document.getElementById('runningNowGmist');
       if (gm && withGmist && info.gmist) {
@@ -18067,13 +17870,6 @@
       const f = document.getElementById('scopeFolderHistoryFilter');
       if (f) f.focus();
     });
-    document.getElementById('btnSearchHistBack').addEventListener('click', () => void goSearchHistory(-1));
-    document.getElementById('btnSearchHistFwd').addEventListener('click', () => void goSearchHistory(1));
-    document.getElementById('btnUndo')?.addEventListener('click', () => void runUndo());
-    /* Same action as F5, on a button, because F5 only arrives when the page holds OS keyboard focus and
-       Steve loses that often enough to report refreshes that never happened. A click always lands. */
-    document.getElementById('btnRefreshResults')?.addEventListener('click', () => void refreshResultsFromUi());
-    updateUndoButton();
     renderScopeBreadcrumb();
     bindResultsTableDragDrop();
     document.addEventListener(
@@ -18155,7 +17951,8 @@
     installTagFoxTooltipGuardsOnce();
     bindShelfDrop();
     document.getElementById('btnEverythingHttpOpenSettings')?.addEventListener('click', () => {
-      document.getElementById('btnToggleSettings')?.click();
+      const el = document.getElementById('settingsPanel');
+      if (el) bootstrap.Offcanvas.getOrCreateInstance(el).show();
     });
     document.getElementById('btnEverythingHttpSetupHelp')?.addEventListener('click', () => {
       helpTabOnNextOpen = 'installation';
@@ -18190,33 +17987,23 @@
       localStorage.setItem(LS.sortBy, sortColumn);
       localStorage.setItem(LS.optAsc, '1');
     }
-    /* Page zoom: navbar buttons for anyone who does not know Ctrl +/-, level remembered across restarts */
+    /* Page zoom: Ctrl+= / - / 0 and the View menu change it in main, which tells the page; the level is
+       remembered across restarts. */
     (function initPageZoom() {
-      const out = document.getElementById('btnZoomOut');
-      const reset = document.getElementById('btnZoomReset');
-      const zin = document.getElementById('btnZoomIn');
-      if (!out || !reset || !zin) return;
-      const show = (factor) => {
-        const pct = Math.round((Number(factor) || 1) * 100);
-        reset.textContent = pct + '%';
+      const remember = (factor) => {
         try {
           localStorage.setItem(LS.pageZoom, String(Number(factor) || 1));
         } catch (_) {}
       };
-      const step = async (dir) => {
-        const r = await window.tagBrowser.pageZoom(dir);
-        if (r && r.ok) show(r.factor);
-      };
-      window.tagBrowser.setPageZoomChangedHandler(show);
-      out.addEventListener('click', () => void step('out'));
-      zin.addEventListener('click', () => void step('in'));
-      reset.addEventListener('click', () => void step('reset'));
+      window.tagBrowser.setPageZoomChangedHandler(remember);
       let saved = 1;
       try {
         saved = Number(localStorage.getItem(LS.pageZoom)) || 1;
       } catch (_) {}
       /* Restore even at 1: main is the only place that knows the real factor after a reload. */
-      void step(saved);
+      void window.tagBrowser.pageZoom(saved).then((r) => {
+        if (r && r.ok) remember(r.factor);
+      });
     })();
 
     /** Settings → Hide the window's title bar. The window's frame is fixed when it is created (main.js
@@ -18268,18 +18055,20 @@
       if (bg && fg) void window.tagBrowser.windowChromeColors({ color: bg, symbolColor: fg });
     }
 
-    /* Dark / light mode: apply saved preference, wire toggle button */
-    (function initDarkMode() {
+    /** Dark / light mode (the / command): flips the theme and remembers it. */
+    function toggleDarkMode() {
       const html = document.documentElement;
-      const saved = localStorage.getItem(LS.darkMode);
-      if (saved === '1') html.setAttribute('data-bs-theme', 'dark');
-      document.getElementById('btnToggleDarkMode')?.addEventListener('click', () => {
-        const isDark = html.getAttribute('data-bs-theme') === 'dark';
-        if (isDark) { html.removeAttribute('data-bs-theme'); localStorage.setItem(LS.darkMode, '0'); }
-        else { html.setAttribute('data-bs-theme', 'dark'); localStorage.setItem(LS.darkMode, '1'); }
-        syncTitleBarOverlayColors();
-      });
-    })();
+      const isDark = html.getAttribute('data-bs-theme') === 'dark';
+      if (isDark) { html.removeAttribute('data-bs-theme'); localStorage.setItem(LS.darkMode, '0'); }
+      else { html.setAttribute('data-bs-theme', 'dark'); localStorage.setItem(LS.darkMode, '1'); }
+      syncTitleBarOverlayColors();
+    }
+    /** Settings (Ctrl+, and the / command) opens and closes the offcanvas panel. */
+    function toggleSettingsPanel() {
+      const el = document.getElementById('settingsPanel');
+      if (el) bootstrap.Offcanvas.getOrCreateInstance(el).toggle();
+    }
+    if (localStorage.getItem(LS.darkMode) === '1') document.documentElement.setAttribute('data-bs-theme', 'dark');
     void initWindowChrome();
 
     seedSearchHistoryFromCurrent();
@@ -18309,8 +18098,6 @@
     }
     scheduleSearch();
     startDidYouKnowTips();
-    /** Drive API hello-world (navbar tick after New dbg). */
-    setTimeout(() => void refreshGoogleDriveApiPingSegment(), 1200);
     void renderShelf().then(() => refreshTagFoxChromeTooltips(document.body));
     /* A hidden window (autostart, tests) runs no frames until it is shown or gets a key, so this can land after the
        user has already opened a menu or focused something; it must not take focus back from them. */

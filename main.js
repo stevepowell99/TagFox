@@ -2076,9 +2076,9 @@ function focusedMenuWebContents(focusedWindow) {
   return w.webContents;
 }
 
-/** Page zoom steps — shared by View menu (clicks), attachPageZoomShortcuts (keyboard) and the navbar buttons (IPC). */
+/** Page zoom steps — shared by View menu (clicks) and attachPageZoomShortcuts (keyboard). */
 function notifyPageZoom(wc) {
-  /* The navbar control shows the level, so every route that changes zoom has to tell the page. */
+  /* The page remembers the level for the next start, so every route that changes zoom has to tell it. */
   if (!wc || wc.isDestroyed()) return;
   try {
     wc.send('tagfox-page-zoom-changed', wc.getZoomFactor());
@@ -2984,17 +2984,11 @@ ipcMain.on('tagfox-perf-log', (_event, line) => {
   mainPerfLog('rend ' + String(line || '').slice(0, 300));
 });
 
-/**
- * Navbar zoom buttons: same steps as Ctrl +/- and the View menu, for anyone who does not know the shortcut.
- * dir is 'in' | 'out' | 'reset' | 'get', or a zoom factor to restore.
- */
-ipcMain.handle('page-zoom', (event, dir) => {
+/** Restores the zoom factor the page saved at its last start. */
+ipcMain.handle('page-zoom', (event, factor) => {
   const wc = event.sender;
   if (!wc || wc.isDestroyed()) return { ok: false, factor: 1 };
-  if (dir === 'in') pageZoomIn(wc);
-  else if (dir === 'out') pageZoomOut(wc);
-  else if (dir === 'reset') pageZoomReset(wc);
-  else if (dir !== 'get') pageZoomSet(wc, dir);
+  pageZoomSet(wc, factor);
   return { ok: true, factor: wc.getZoomFactor() };
 });
 
@@ -5329,46 +5323,6 @@ ipcMain.handle('show-print-pdf-menu', async (event, { x, y } = {}) => {
 ipcMain.handle('open-gmist-window', async (event, { url, label }) => {
   const parent = BrowserWindow.fromWebContents(event.sender);
   return openWebEditorWindow(parent, url, 'gmistLocal', { label });
-});
-
-/** Read-only sign-of-life: proves OAuth token works with Drive API (does not open browser or run consent). */
-ipcMain.handle('google-drive-api-ping', async () => {
-  const cfg = readGoogleOAuthClientConfigSync();
-  if (!cfg) return { ok: false, skipped: true, reason: 'no_config' };
-  const tok = readGoogleOAuthTokenSync();
-  if (!tok || (!tok.access_token && !tok.refresh_token)) {
-    return { ok: false, error: 'No saved OAuth token yet.' };
-  }
-  try {
-    const oauth2 = new OAuth2Client(cfg.clientId, cfg.clientSecret, cfg.redirectUri);
-    oauth2.setCredentials(tok);
-    const drive = createDriveClient({ version: 'v3', auth: oauth2 });
-    const about = await drive.about.get({ fields: 'user(displayName,emailAddress)' });
-    let sampleFileName = '';
-    try {
-      const list = await drive.files.list({
-        pageSize: 1,
-        fields: 'files(name)',
-        supportsAllDrives: true,
-        includeItemsFromAllDrives: true,
-      });
-      const f = list.data.files && list.data.files[0];
-      if (f && f.name) sampleFileName = String(f.name);
-    } catch (_) {}
-    const u = about.data && about.data.user;
-    return {
-      ok: true,
-      email: (u && u.emailAddress) || '',
-      displayName: (u && u.displayName) || '',
-      sampleFileName,
-    };
-  } catch (e) {
-    const body = e && e.response && e.response.data;
-    const msg =
-      (body && (body.error_description || body.error?.message || body.error)) ||
-      String(e.message || e);
-    return { ok: false, error: typeof msg === 'string' ? msg : String(msg) };
-  }
 });
 
 ipcMain.handle('resolve-shell-shortcut', async (_event, { fullPath }) => resolveShellShortcutLnkWin(fullPath));

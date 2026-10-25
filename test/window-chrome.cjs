@@ -2,7 +2,7 @@
 // on, creates the window with titleBarStyle 'hidden', so Windows draws only its window buttons over the
 // page's top right. This launches with the setting seeded in the profile and checks:
 //   - the page knows it is frameless, and the window buttons are really there (windowControlsOverlay);
-//   - Runner's drag strip is the top strip, the content starts below it, and the 3px gradient that is
+//   - the drag strip is the top strip, the content starts below it, and the 3px gradient that is
 //     .app-shell's own ::before stays 3px (the strip once took that pseudo-element and stretched it);
 //   - nothing clickable sits under the window buttons, in Runner, in Classic, or in the expanded Viewer;
 //   - the window buttons take the page's colours, light and dark;
@@ -76,8 +76,8 @@ async function main() {
 
     await drv.T('setRunnerMode', false);
     await drv.settle('classic');
-    const hdr = await drv.ev(`(() => { const h = document.querySelector('.tagfox-app-header'); const b = h.querySelector('button'); return { region: getComputedStyle(h).webkitAppRegion, btnRegion: getComputedStyle(b).webkitAppRegion }; })()`);
-    check(hdr.region === 'drag' && hdr.btnRegion === 'no-drag', `Classic: the header drags and its buttons click (${hdr.region}/${hdr.btnRegion})`);
+    const classicStrip = await drv.ev(`(() => { const s = getComputedStyle(document.body, '::after'); return { h: parseFloat(s.height), region: s.webkitAppRegion || s.getPropertyValue('-webkit-app-region') }; })()`);
+    check(Math.abs(classicStrip.h - tba.height) < 1 && classicStrip.region === 'drag', `Classic: the same drag strip (${classicStrip.h} vs ${tba.height}, ${classicStrip.region})`);
     hits = await underButtons('body');
     check(hits.length === 0, `Classic: nothing clickable under the window buttons ${JSON.stringify(hits)}`);
 
@@ -88,11 +88,11 @@ async function main() {
       try { return JSON.parse(fs.readFileSync(chromeFile, 'utf8')); } catch (_) { return {}; }
     };
     const light = await readColours();
-    await drv.ev(`document.getElementById('btnToggleDarkMode').click(), 1`);
+    await drv.T('runCommand', 'dark');
     const dark = await readColours();
     check(/^#[0-9a-f]{6}$/i.test(light.overlayColor || '') && /^#[0-9a-f]{6}$/i.test(dark.overlayColor || '') && light.overlayColor !== dark.overlayColor,
       `window buttons follow the theme (light ${light.overlayColor}/${light.overlaySymbolColor}, dark ${dark.overlayColor}/${dark.overlaySymbolColor})`);
-    await drv.ev(`document.getElementById('btnToggleDarkMode').click(), 1`);
+    await drv.T('runCommand', 'dark');
     drv.close();
     drv = null;
 

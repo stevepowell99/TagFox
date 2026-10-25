@@ -529,7 +529,6 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   font-size: 0.65rem;
   line-height: 1.2;
 }
-header .h6 { font-weight: 600; letter-spacing: -0.02em; color: var(--tb-accent); }
 .dropdown-menu { border: 1px solid #e4e4e7; box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
 .modal-content { border-radius: 0.75rem; box-shadow: 0 20px 60px rgba(0,0,0,0.12); }
 .props-panel { background: #fff !important; }
@@ -1405,12 +1404,7 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
 }
 /* Flex column: inner #resultsScroll owns vertical scroll. */
 .results-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-/* Main window chrome + bottom status: same stacking tier (dropdowns/flyouts use higher z in their rules). */
-.tagfox-app-header {
-  position: relative;
-  z-index: 1038;
-}
-/* Did-you-know strip: distinct from header chrome (Bootstrap subtle + border on the span). */
+/* Did-you-know strip (Bootstrap subtle + border on the span). */
 .tagfox-navbar-dyk-wrap {
   background-color: var(--bs-info-bg-subtle);
   border-color: color-mix(in srgb, var(--bs-info) 28%, var(--bs-border-color)) !important;
@@ -1729,7 +1723,7 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
   flex-shrink: 0;
 }
 /*
-  Stacking (low → high): .tagfox-app-header 1038; .tagfox-search-toolbar-row 1040;
+  Stacking (low → high): .tagfox-search-toolbar-row 1040;
   .scope-breadcrumb-row 1043 (above search row menus only — must stay below .tag-toolbar-row so Advanced panel overlaps breadcrumb);
   .tag-toolbar-row 1045 (+ .tagfox-advanced-wrap 1041);
   #quickTodoPop 1098; body ul.breadcrumb-folder-flyout 1092–1099 (renderer.js; below .modal-backdrop 1100);
@@ -1824,7 +1818,6 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
   z-index: 1;
 }
 /* Modal open: drop back so backdrop + dimmer cover the bar (was stacking “above” the overlay). */
-body.modal-open .tagfox-app-header,
 body.modal-open .tagfox-app-statusbar,
 body.modal-open .scope-breadcrumb-row,
 body.modal-open .tagfox-search-toolbar-row,
@@ -2135,17 +2128,7 @@ body > .tooltip {
 [data-bs-theme="dark"] #propsTheaterBackdrop {
   background: rgba(0, 0, 0, 0.55);
 }
-/* Dark mode toggle icon swap */
-[data-bs-theme="dark"] #btnToggleDarkMode .fa-moon { display: none; }
-[data-bs-theme="dark"] #btnToggleDarkMode .fa-sun { display: inline; }
-#btnToggleDarkMode .fa-sun { display: none; }
 /* ─── End dark theme ─── */
-
-/* Zoom level button: fixed width so the +/- buttons do not shuffle as the percentage changes. */
-.tagfox-zoom-level {
-  min-width: 3.4rem;
-  font-variant-numeric: tabular-nums;
-}
 
 /* ─── Runner layout (body.tagfox-runner; Settings → "Toggle key opens") ───
    A second layout of the same page: one large search box, the results under it, the Viewer on the
@@ -2153,7 +2136,6 @@ body > .tooltip {
 body:not(.tagfox-runner) .tagfox-runner-only {
   display: none !important;
 }
-body.tagfox-runner .tagfox-app-header,
 body.tagfox-runner .tag-toolbar-row,
 body.tagfox-runner .tagfox-status-view-opts,
 body.tagfox-runner.tagfox-runner-viewer-off #splitProps,
@@ -2378,7 +2360,7 @@ body.tagfox-runner #queryInputGroup .tagfox-query-clear.btn {
   color: var(--tb-accent);
 }
 /* Partial ranking: a muted note in the box, the full sentence in its tooltip. */
-/* Runner has no header, so the Restart button sits in the box (placeRestartButtonForLayout), as a small pill. */
+/* The Restart button sits in the box as a small pill. */
 body.tagfox-runner #queryInputGroup #btnRestartTagFox {
   align-self: center;
   flex-shrink: 0;
@@ -3562,19 +3544,11 @@ body.tagfox-frameless {
   --tagfox-titlebar-h: env(titlebar-area-height, 34px);
   --tagfox-window-buttons-w: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 140px)));
 }
-body.tagfox-frameless .tagfox-app-header {
-  -webkit-app-region: drag;
-  min-height: var(--tagfox-titlebar-h);
-  padding-right: calc(var(--tagfox-window-buttons-w) + 0.5rem) !important;
-}
-body.tagfox-frameless .tagfox-app-header :is(button, a, input, select, label, textarea, .dropdown, .dropdown-menu, .btn-group, .input-group, [role="button"], [tabindex]) {
-  -webkit-app-region: no-drag;
-}
-/* Runner has no header: an empty strip above everything is the handle. */
-body.tagfox-frameless.tagfox-runner {
+/* An empty strip above everything is the handle. */
+body.tagfox-frameless {
   padding-top: var(--tagfox-titlebar-h);
 }
-body.tagfox-frameless.tagfox-runner::after {
+body.tagfox-frameless::after {
   content: '';
   position: fixed;
   top: 0;

@@ -569,10 +569,10 @@ async function main() {
     const probs = structuralProblems(await drv.state());
     check(!probs.length, 'structural invariants hold in Runner' + (probs.length ? ': ' + probs.join('; ') : ''));
 
-    // The Restart button lives in Classic's header, which Runner hides, so Runner puts it in the box.
+    // The Restart button sits in the search box.
     const restartWhere = () =>
-      drv.ev(`(() => { const b = document.getElementById('btnRestartTagFox'); return !b ? 'missing' : b.closest('#queryInputGroup') ? 'box' : b.closest('.tagfox-app-header') ? 'header' : 'elsewhere'; })()`);
-    check((await restartWhere()) === 'box', `in Runner the Restart button is in the search box (${await restartWhere()})`);
+      drv.ev(`(() => { const b = document.getElementById('btnRestartTagFox'); return !b ? 'missing' : b.closest('#queryInputGroup') ? 'box' : 'elsewhere'; })()`);
+    check((await restartWhere()) === 'box', `the Restart button is in the search box (${await restartWhere()})`);
     const restartSeen = await drv.ev(`(() => {
       const b = document.getElementById('btnRestartTagFox');
       b.classList.remove('d-none');
@@ -604,7 +604,6 @@ async function main() {
     const view = await drv.ev(`(document.getElementById('optRvSubsOn').checked ? 'subfolders' : 'this folder') + ', ' + document.querySelector('input[name="rvContent"]:checked')?.value`);
     check(!s.on && !s.bodyClass && view === classicView, `Classic is back with its own view (${view}, was ${classicView})`);
     check(/\bhits?\b/.test(s.status), `Classic keeps its standing status line ("${s.status.slice(0, 60)}")`);
-    check((await restartWhere()) === 'header', `in Classic the Restart button is back in the header (${await restartWhere()})`);
   } catch (e) {
     failures.push('threw: ' + (e && e.stack ? e.stack : e));
     console.error(e);

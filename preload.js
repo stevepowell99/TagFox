@@ -79,8 +79,6 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   restartTagFox: () => ipcRenderer.invoke('tagfox-restart'),
   /** Open a local gmist URL in a TagFox child window (localhost only), like the Google Workspace window. */
   openGmistWindow: (payload) => ipcRenderer.invoke('open-gmist-window', payload),
-  /** Hello-world: Drive API about.get + one files.list row (existing token only; no OAuth popup). */
-  googleDriveApiPing: () => ipcRenderer.invoke('google-drive-api-ping'),
   resolveFolderViewerDoc: (payload) => ipcRenderer.invoke('resolve-folder-viewer-doc', payload),
   collectGlobalViewerDocs: (payload) => ipcRenderer.invoke('collect-global-viewer-docs', payload),
   resolveShellShortcut: (payload) => ipcRenderer.invoke('resolve-shell-shortcut', payload),
@@ -161,7 +159,7 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   fileDialogCancel: () => ipcRenderer.invoke('file-dialog-cancel'),
   pickScopeFolder: () => ipcRenderer.invoke('pick-scope-folder'),
   userHomeDir: () => ipcRenderer.invoke('user-home-dir'),
-  /** Page zoom for the navbar buttons: 'in' | 'out' | 'reset' | 'get', or a factor to restore. */
+  /** Restore the page zoom factor saved at the last start. */
   pageZoom: (dir) => ipcRenderer.invoke('page-zoom', dir),
   setPageZoomChangedHandler: (fn) => {
     onPageZoomChanged = typeof fn === 'function' ? fn : null;

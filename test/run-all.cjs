@@ -25,7 +25,7 @@ const runs = [
   { name: 'recent folders filter', args: ['recent-folders-filter.cjs'] },
   { name: 'recent tab (global hotkey)', args: ['recent-tab.cjs'] },
   { name: 'hotkey raise selects the query', args: ['hotkey-raise-select.cjs'] },
-  { name: 'zoom buttons', args: ['zoom-buttons.cjs'] },
+  { name: 'zoom restore', args: ['zoom-restore.cjs'] },
   { name: 'restart stays in the terminal', args: ['restart-in-terminal.cjs'] },
   { name: 'runner layout', args: ['runner-layout.cjs'] },
   { name: 'runner keys', args: ['runner-keys.cjs'] },

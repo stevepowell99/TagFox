@@ -116,14 +116,14 @@ async function main() {
     const unlisted = slashes.filter((s) => !(s in SLASH_EXPECT));
     check(slashes.length >= 4 && wrong.length === 0 && unlisted.length === 0, `every / command the tips name is offered first (${slashes.join(', ')}${wrong.length ? '; ' + wrong.join('; ') : ''}${unlisted.length ? '; no expectation for ' + unlisted.join(', ') : ''})`);
 
-    // Classic: the footer and the header's tip go back where Classic's markup put them.
+    // Classic: the footer goes back where Classic's markup put it, with the tip still in it.
     await drv.T('setRunnerMode', false);
     await drv.settle('classic');
     const classic = await drv.ev(`(() => ({
       footerInBody: document.getElementById('tagfoxNavbarStatus').parentElement === document.body,
-      tipInHeader: !!document.getElementById('navbarDidYouKnow').closest('header'),
+      tipInFooter: !!document.getElementById('navbarDidYouKnow').closest('#tagfoxNavbarStatus'),
     }))()`);
-    check(classic.footerInBody && classic.tipInHeader, `Classic gets its footer and its header tip back (${JSON.stringify(classic)})`);
+    check(classic.footerInBody && classic.tipInFooter, `Classic gets its footer back, with the tip in it (${JSON.stringify(classic)})`);
   } catch (e) {
     failures.push('threw: ' + (e && e.stack ? e.stack : e));
     console.error(e);
