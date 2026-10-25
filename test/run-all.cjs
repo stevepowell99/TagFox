@@ -1,4 +1,4 @@
-// Runs the TagFox dual-pane regression suite sequentially and reports a summary.
+// Runs the TagFox regression suite sequentially and reports a summary.
 // Each test launches its own isolated Electron instance, so they must not run in parallel
 // (they would otherwise fight over CDP ports / profiles). Run: node test/run-all.cjs
 
@@ -15,8 +15,7 @@ const runs = [
   { name: 'tag date families', args: ['tags-dates.cjs'] }, // pure logic, no Electron; first because it is instant
   { name: 'help build', args: ['help-build.cjs'] }, // no Electron either
   { name: 'smoke', args: ['smoke.cjs'] },
-  { name: 'tab lifecycle', args: ['tab-lifecycle.cjs'] },
-  { name: 'crud tab-isolation', args: ['crud-pane-isolation.cjs'] },
+  { name: 'delete hides its row', args: ['delete-hides-row.cjs'] },
   { name: 'load-more regression', args: ['loadmore-regression.cjs'] },
   { name: 'column resize', args: ['column-resize.cjs'] },
   { name: 'splitter drag', args: ['splitter-drag.cjs'] },

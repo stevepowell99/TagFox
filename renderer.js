@@ -394,8 +394,7 @@
     /* Counted so a test can prove that an overtaken search sent nothing, rather than infer it from timings. */
     const runnerSearchCounters = { run: 0, stepAside: 0, extraSent: 0 };
     let topLevelSearchDepth = 0;
-    /** Scratch result tabs. One tab is visible in the single results pane; the rest are passive state snapshots that re-run their own search when activated. Each tab: { id, searchState, lastRows, resultsPagingCtx }. Capped at MAX_TABS. */
-    const MAX_TABS = 10;
+    /** Result tab state (see "Result tab state" below). Each tab: { id, searchState, lastRows, resultsPagingCtx }. */
     let tabs = [];
     let activeTabId = null;
     let nextTabId = 1;
@@ -3206,9 +3205,9 @@
     }
 
     // -------------------------------------------------------------------------
-    // Result tabs (replaced the A/B split panes). One results pane is visible; the
-    // active tab owns the live UI + canonical #results* ids. Inactive tabs are pure
-    // state snapshots — no DOM — that re-run their own search when activated.
+    // Result tab state. The results pane shows the active tab, and `tabs` keeps each saved tab's search
+    // (searchState) across restarts; the active tab also holds its rows and paging. Nothing switches
+    // tabs, so the active tab is the only one ever shown.
     // -------------------------------------------------------------------------
 
     function makeTabId() { return nextTabId++; }
@@ -3218,21 +3217,6 @@
       return { id: makeTabId(), searchState: searchState || null, lastRows: [], resultsPagingCtx: null };
     }
 
-    /** Short label for a tab chip: scope-folder leaf, else the query text, else a default. */
-    function tabTitle(tab) {
-      const st = tab && tab.searchState;
-      if (st) {
-        const root = String(st.rootFolder || '').trim().replace(/[/\\]+$/, '');
-        if (root) {
-          const leaf = segmentPretty(T.baseName(root));
-          if (leaf) return leaf;
-        }
-        const q = String(st.query || '').trim();
-        if (q) return q;
-      }
-      return 'New tab';
-    }
-
     function saveActiveTabStateFromUi() {
       const tab = activeTab();
       if (!tab) return;
@@ -3240,31 +3224,11 @@
       tab.lastRows = Array.isArray(lastRows) ? lastRows.slice() : [];
       tab.resultsPagingCtx = cloneResultsPagingCtx(resultsPagingCtx);
       persistTabsToStorage();
-      renderTabStrip();
-    }
-
-    /** Load a tab's saved state into the single live pane (no id swapping — one pane only). */
-    function restoreTabStateIntoUi(tab) {
-      if (!tab) return;
-      lastRows = Array.isArray(tab.lastRows) ? tab.lastRows.slice() : [];
-      resultsPagingCtx = cloneResultsPagingCtx(tab.resultsPagingCtx);
-      if (tab.searchState) {
-        applySearchState(tab.searchState);
-        updateQueryPlaceholder();
-        persistActiveTagFilter();
-        saveSettings();
-      }
-      updateSortHeaders();
-      renderScopeBreadcrumb();
-      renderTagBar();
-      applyResultsTablePathColumnVisibility();
-      renderTable();
-      bindResultsDomListeners();
     }
 
     /* Tabs persist their searchState (filter / scope / view) across restart as one JSON blob.
        lastRows / resultsPagingCtx are search results (stale after restart) and intentionally not
-       persisted; the active tab's search re-runs at startup and others re-run when activated. */
+       persisted; the active tab's search re-runs at startup. */
     function persistTabsToStorage() {
       try {
         const blob = {
@@ -3282,51 +3246,12 @@
       return obj;
     }
 
-    async function activateTab(id, opts = {}) {
-      if (id === activeTabId) return;
-      const target = tabs.find((t) => t.id === id);
-      if (!target) return;
-      saveActiveTabStateFromUi();
-      activeTabId = id;
-      restoreTabStateIntoUi(target);
-      renderTabStrip();
-      persistTabsToStorage();
-      if (opts && opts.skipSearch) return;
-      await runSearchNow('identity');
-      saveActiveTabStateFromUi();
-    }
-
-    /** Open a new scratch tab (seeded from the current search) and activate it. Refuses at MAX_TABS. */
-    async function openNewTab(opts = {}) {
-      saveActiveTabStateFromUi();
-      if (tabs.length >= MAX_TABS) {
-        setStatusMain('Tab limit reached (' + MAX_TABS + '). Close a tab first.');
-        return null;
-      }
-      const seed = opts.seedFromCurrent === false ? null : serializeSearchState();
-      const tab = newBlankTab(seed);
-      const at = tabIndexById(activeTabId);
-      tabs.splice(at >= 0 ? at + 1 : tabs.length, 0, tab);
-      activeTabId = tab.id;
-      restoreTabStateIntoUi(tab);
-      renderTabStrip();
-      persistTabsToStorage();
-      if (!opts.skipSearch) { await runSearchNow('identity'); saveActiveTabStateFromUi(); }
-      return tab;
-    }
-
-    /** The last hour's changes anywhere, in a tab whose scope is empty: reuse the first such tab (the
-     *  active one if it qualifies) so the shortcut cannot pile up tabs, else open a new one. Either way
-     *  the tab is reset to defaults: no query, no scope folder, no tags, every option off but Match path, smart view,
-     *  1 hour recency. Reached only by the global Ctrl+Shift+Space (main.js RECENT_TAB_ACCEL), so it
-     *  works while TagFox is hidden. At MAX_TABS with every tab scoped there is nothing to reuse and no
-     *  room for another, so the oldest tab (lowest id, so the one open longest) is activated and reset;
-     *  when that is the tab in view, activateTab returns at once and it is reset in place. Refusing
-     *  would leave the window raised on the old scope and recency with nothing on screen to say why. */
+    /** The last hour's changes anywhere, reset in place: no query, no scope folder, no tags, every option
+     *  off but Match path, smart view, 1 hour recency. Reached only by the global Ctrl+Shift+Space (main.js
+     *  RECENT_TAB_ACCEL), so it works while TagFox is hidden. */
     async function openRecentTab() {
       if (isRunnerMode()) {
-        /* Runner keeps one search and shows no tabs, so it resets that search in place to Runner's own
-           defaults, with no folder, no text and the last hour. */
+        /* Runner resets to its own defaults, with no folder, no text and the last hour. */
         leaveScopePathEditChrome();
         document.getElementById('rootFolder').value = '';
         clearSearchQueryInputOnly();
@@ -3334,17 +3259,6 @@
         renderScopeBreadcrumb();
         runnerResetAllFilters({ recency: '1h' });
         return;
-      }
-      saveActiveTabStateFromUi();
-      const emptyScope = (t) => !!t.searchState && !String(t.searchState.rootFolder || '').trim();
-      const reuse = tabs.find((t) => t.id === activeTabId && emptyScope(t)) || tabs.find(emptyScope);
-      if (reuse) {
-        await activateTab(reuse.id, { skipSearch: true });
-      } else if (tabs.length < MAX_TABS) {
-        await openNewTab({ skipSearch: true });
-      } else {
-        const oldest = tabs.reduce((a, b) => (b.id < a.id ? b : a));
-        await activateTab(oldest.id, { skipSearch: true });
       }
       leaveScopePathEditChrome();
       document.getElementById('rootFolder').value = '';
@@ -3362,177 +3276,6 @@
       renderScopeBreadcrumb();
       reimposeSmartViewDefaults();
       saveActiveTabStateFromUi();
-    }
-
-    /** Close a tab. Activates a neighbour; never drops below one tab (the last one resets to blank). */
-    async function closeTab(id) {
-      const idx = tabIndexById(id);
-      if (idx < 0) return;
-      if (tabs.length <= 1) {
-        const only = tabs[0];
-        only.searchState = null;
-        only.lastRows = [];
-        only.resultsPagingCtx = null;
-        restoreTabStateIntoUi(only);
-        renderTabStrip();
-        persistTabsToStorage();
-        await runSearchNow('identity');
-        saveActiveTabStateFromUi();
-        return;
-      }
-      const wasActive = id === activeTabId;
-      tabs.splice(idx, 1);
-      if (!wasActive) {
-        renderTabStrip();
-        persistTabsToStorage();
-        return;
-      }
-      const next = tabs[Math.min(idx, tabs.length - 1)];
-      activeTabId = next.id;
-      restoreTabStateIntoUi(next);
-      renderTabStrip();
-      persistTabsToStorage();
-      await runSearchNow('identity');
-      saveActiveTabStateFromUi();
-    }
-
-    /** Cycle to the next (dir=1) or previous (dir=-1) tab with wraparound. */
-    function cycleTab(dir) {
-      if (tabs.length < 2) return;
-      const at = tabIndexById(activeTabId);
-      const nextIdx = (((at + dir) % tabs.length) + tabs.length) % tabs.length;
-      void activateTab(tabs[nextIdx].id);
-    }
-
-    /** Move a tab within the strip (drag reorder). */
-    function reorderTab(fromIdx, toIdx) {
-      if (fromIdx < 0 || fromIdx >= tabs.length) return;
-      const to = Math.max(0, Math.min(tabs.length - 1, toIdx));
-      if (fromIdx === to) return;
-      const [moved] = tabs.splice(fromIdx, 1);
-      tabs.splice(to, 0, moved);
-      renderTabStrip();
-      persistTabsToStorage();
-    }
-
-    function renderTabStrip() {
-      const list = document.getElementById('resultsTabList');
-      if (!list) return;
-      list.textContent = '';
-      tabs.forEach((tab, idx) => {
-        const chip = document.createElement('div');
-        chip.className = 'results-tab' + (tab.id === activeTabId ? ' results-tab-active' : '');
-        chip.setAttribute('data-tab-id', String(tab.id));
-        chip.setAttribute('data-tab-idx', String(idx));
-        chip.setAttribute('draggable', 'true');
-        chip.title = tabTitle(tab);
-        const label = document.createElement('span');
-        label.className = 'results-tab-label';
-        label.textContent = tabTitle(tab);
-        chip.appendChild(label);
-        const close = document.createElement('button');
-        close.type = 'button';
-        close.className = 'results-tab-close';
-        close.setAttribute('aria-label', 'Close tab');
-        close.innerHTML = '<i class="fa-solid fa-xmark fa-xs" aria-hidden="true"></i>';
-        chip.appendChild(close);
-        list.appendChild(chip);
-      });
-      const addBtn = document.getElementById('btnNewTab');
-      if (addBtn) addBtn.disabled = tabs.length >= MAX_TABS;
-    }
-
-    /* Spring-load: a file/Shelf drag that hovers a tab opens that tab after a short hold, so the
-       user can drop into it. Timer cleared on leave / drop / dragend. */
-    let tabSpringHoverTimer = null;
-    let tabSpringHoverId = null;
-    function clearTabSpringHover() {
-      if (tabSpringHoverTimer) { clearTimeout(tabSpringHoverTimer); tabSpringHoverTimer = null; }
-      tabSpringHoverId = null;
-    }
-    function bindTabStripOnce() {
-      const strip = document.getElementById('resultsTabStrip');
-      if (!strip || strip.dataset.tabStripBound === '1') return;
-      strip.dataset.tabStripBound = '1';
-      let dragFromIdx = -1;
-
-      strip.addEventListener('click', (e) => {
-        if (e.target.closest('#btnNewTab')) { e.preventDefault(); void openNewTab(); return; }
-        const closeBtn = e.target.closest('.results-tab-close');
-        if (closeBtn) {
-          e.preventDefault(); e.stopPropagation();
-          const chip = closeBtn.closest('.results-tab');
-          if (chip) void closeTab(Number(chip.getAttribute('data-tab-id')));
-          return;
-        }
-        const chip = e.target.closest('.results-tab');
-        if (chip) void activateTab(Number(chip.getAttribute('data-tab-id')));
-      });
-      /* Middle-click closes a tab (browser convention). */
-      strip.addEventListener('auxclick', (e) => {
-        if (e.button !== 1) return;
-        const chip = e.target.closest('.results-tab');
-        if (chip) { e.preventDefault(); void closeTab(Number(chip.getAttribute('data-tab-id'))); }
-      });
-
-      strip.addEventListener('dragstart', (e) => {
-        const chip = e.target.closest('.results-tab');
-        if (!chip) return;
-        dragFromIdx = Number(chip.getAttribute('data-tab-idx'));
-        e.dataTransfer.effectAllowed = 'move';
-        try { e.dataTransfer.setData('text/plain', 'tab:' + chip.getAttribute('data-tab-id')); } catch (_) {}
-        chip.classList.add('results-tab-dragging');
-      });
-      strip.addEventListener('dragend', (e) => {
-        const chip = e.target.closest('.results-tab');
-        if (chip) chip.classList.remove('results-tab-dragging');
-        dragFromIdx = -1;
-        clearTabSpringHover();
-      });
-      strip.addEventListener('dragover', (e) => {
-        if (dragFromIdx >= 0) {
-          if (e.target.closest('.results-tab') || e.target.closest('#resultsTabList')) {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-          }
-          return;
-        }
-        if (!dataTransferHasTagBrowserOrFiles(e.dataTransfer)) return;
-        const chip = e.target.closest('.results-tab');
-        if (!chip) { clearTabSpringHover(); return; }
-        e.preventDefault();
-        e.dataTransfer.dropEffect = e.shiftKey ? 'copy' : 'move';
-        const id = Number(chip.getAttribute('data-tab-id'));
-        if (id === activeTabId) { clearTabSpringHover(); return; }
-        if (id !== tabSpringHoverId) {
-          clearTabSpringHover();
-          tabSpringHoverId = id;
-          tabSpringHoverTimer = setTimeout(() => { tabSpringHoverTimer = null; void activateTab(id); }, 550);
-        }
-      });
-      strip.addEventListener('dragleave', (e) => {
-        if (!strip.contains(e.relatedTarget)) clearTabSpringHover();
-      });
-      strip.addEventListener('drop', (e) => {
-        const chip = e.target.closest('.results-tab');
-        if (dragFromIdx >= 0) {
-          e.preventDefault();
-          const toIdx = chip ? Number(chip.getAttribute('data-tab-idx')) : tabs.length - 1;
-          reorderTab(dragFromIdx, toIdx);
-          dragFromIdx = -1;
-          return;
-        }
-        if (!dataTransferHasTagBrowserOrFiles(e.dataTransfer)) return;
-        clearTabSpringHover();
-        if (!chip) return;
-        e.preventDefault();
-        const tab = tabs.find((t) => t.id === Number(chip.getAttribute('data-tab-id')));
-        const paths = collectPathsForShelfDrop(e.dataTransfer);
-        if (!tab || !paths.length) return;
-        const dest = normalizeFolderPathForEverything(String((tab.searchState && tab.searchState.rootFolder) || '').trim());
-        if (!dest) { setStatusMain('That tab has no folder scope to drop into.'); return; }
-        void applyInternalPathsDrop(dest, paths, e.shiftKey ? 'copy' : 'move');
-      });
     }
 
     // -------------------------------------------------------------------------
@@ -5257,8 +5000,6 @@
       /* Classic keys for parts Runner does not show: answered, or (Ctrl+L, whose recent folders Runner leaves
          to the smart order's use boost) kept from opening a menu nobody can see. */
       { when: (c) => c.ctrl('l'), run: () => {} },
-      { when: (c) => c.mod && !c.alt && c.key === 'Tab', run: () => setStatusMain('Result tabs are only in the Classic layout.') },
-      { when: (c) => c.mod && c.shift && !c.alt && (c.k === 't' || c.k === 'w'), run: () => setStatusMain('Result tabs are only in the Classic layout.') },
       {
         when: (c) => c.ctrl('s'),
         run: () => setStatusMain('In Runner an empty search box shows the folder itself and typing searches everything below it.'),
@@ -5639,10 +5380,8 @@
         }
         await runSearch(eventKind, opts);
         saveActiveTabStateFromUi();
-        /* The active tab is the only one with DOM. Inactive tabs are passive state snapshots re-searched on
-           activation, so F5 / auto-refresh / disk mutation only ever touch the active tab. There is no
-           background flow against another pane, which is where the old dual-pane races and cross-pane bleed
-           lived. */
+        /* One pane: F5, auto-refresh and disk mutation all search the active tab and nothing else, so there is
+           no background flow against another pane, which is where the old dual-pane races and bleed lived. */
       } finally {
         topLevelSearchDepth--;
         if (!isNested && releaseMutex) releaseMutex();
@@ -5660,8 +5399,7 @@
       diskMutationRefreshTimeouts = [];
       /* 350ms catches most index updates (new items at dest appear fast); 1200ms is the slow-index backstop.
          A pure delete needs neither: tombstones already hid the rows, so one quiet pass clears them once
-         Everything catches up, instead of two extra full repaints the user reads as flicker. The retry only
-         ever touches the active pane (singlePaneOnly); the inactive pane refreshes when activated. */
+         Everything catches up, instead of two extra full repaints the user reads as flicker. */
       const delays = opts && opts.quietSingle ? [1000] : [350, 1200];
       for (const delayMs of delays) {
         diskMutationRefreshTimeouts.push(
@@ -17366,8 +17104,7 @@
         clearBigFolderCapSmartNoteIfStale();
       } finally {
         resultsLoadMoreBusy = false;
-        /* loadMore mutates lastRows + resultsPagingCtx; persist them to the active tab or a later tab
-           switch (restoreTabStateIntoUi) reverts to the pre-load-more page and the extra rows vanish. */
+        /* loadMore mutates lastRows + resultsPagingCtx; keep the active tab's copy of them in step. */
         if (runId === searchRunSeq) saveActiveTabStateFromUi();
         updateResultsLoadMoreUi();
       }
@@ -20138,20 +19875,6 @@
         bootstrap.Dropdown.getOrCreateInstance(hb).show();
         return;
       }
-      if (modC && e.shiftKey && (e.key === 't' || e.key === 'T')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        void openNewTab();
-        return;
-      }
-      if (modC && e.shiftKey && (e.key === 'w' || e.key === 'W')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        void closeTab(activeTabId);
-        return;
-      }
       if (modC && !e.shiftKey && (e.key === 't' || e.key === 'T')) {
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
@@ -20219,16 +19942,6 @@
         void applyFavouriteSearchState(list[idx]);
         return;
       }
-      /* Ctrl+Tab / Ctrl+Shift+Tab cycle result tabs (browser convention). Not an OS-level accelerator, so
-         preventDefault here keeps the renderer in control. */
-      if (modC && (e.key === 'Tab' || e.code === 'Tab')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        cycleTab(e.shiftKey ? -1 : 1);
-        return;
-      }
-
       if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === ' ' || e.code === 'Space')) {
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
@@ -20956,7 +20669,6 @@
     seedSearchHistoryFromCurrent();
     bindVerticalSplitters();
     bindViewerDocSplitters();
-    bindTabStripOnce();
     bindFavFoldersSplitter();
     bindFavFoldersCollapseButton();
     bindFavColumnCollapsedHoverExit();
@@ -20996,10 +20708,6 @@
     renderFavSearchesBar();
     renderTagBar();
     renderTable();
-    /* Initialise result tabs from last session (or a single default tab). The live UI already reflects the
-       loaded per-control settings, so it becomes the active tab's state. Other tabs carry only their saved
-       searchState and re-run their own search when first activated. lastRows / resultsPagingCtx are not
-       persisted (stale after restart); the active tab's scheduleSearch() below rebuilds its rows. */
     bindRunnerChromeOnce();
     /* Runner is the only layout on screen (Steve, 24 October 2026). Classic's code stays until it is deleted
        in stages, and a test instance still opens a fresh profile in Classic, so the Classic tests keep
@@ -21012,6 +20720,10 @@
       updateSortHeaders();
       renderScopeBreadcrumb();
     }
+    /* Result tab state from last session (or a single default tab). The live UI already reflects the loaded
+       per-control settings, so it becomes the active tab's state; the other saved tabs keep only their
+       searchState. lastRows / resultsPagingCtx are not persisted (stale after restart); scheduleSearch()
+       below rebuilds the active tab's rows. */
     {
       const saved = loadTabsFromStorage();
       const activeState = serializeSearchState();
@@ -21028,7 +20740,6 @@
         tabs = [newBlankTab(activeState)];
         activeTabId = tabs[0].id;
       }
-      renderTabStrip();
       persistTabsToStorage();
     }
     scheduleSearch();
@@ -21101,20 +20812,13 @@
         setScope: (root) => { const e = document.getElementById('rootFolder'); if (e) e.value = String(root || ''); void runSearchNow('identity'); },
         autoTick: () => maybeAutoRefreshSearchTick(),
         loadMore: () => loadMoreResults(),
-        /* Tab drivers. springHoverTab models the spring-load result: a drag hovering a tab activates it. */
-        newTab: () => openNewTab(),
+        /* What main's tagfox-open-recent-tab and tagfox-hotkey-raised messages call; a test cannot press the
+           OS-wide shortcuts. */
         openRecentTab: () => openRecentTab(),
-        /* What main's tagfox-hotkey-raised message calls; a test cannot press the OS-wide shortcut. */
         hotkeyRaised: () => onHotkeyRaised(),
         /* What main's tagfox-file-dialog-target message calls, and what the renderer has asked main to send since. */
         fileDialogTarget: (info) => setFileDialogTarget(info),
         fileDialogSends: () => fileDialogSendLog.slice(),
-        closeTab: (id) => closeTab(Number(id)),
-        activateTab: (id) => activateTab(Number(id)),
-        cycleTab: (dir) => cycleTab(Number(dir) || 1),
-        reorderTab: (from, to) => reorderTab(Number(from), Number(to)),
-        springHoverTab: (id) => activateTab(Number(id)),
-        tabIds: () => tabs.map((t) => t.id),
         machineFeatures: () => machineFeaturesSeen,
         /* Redraw the Shelf from its folder now, and size it, rather than wait for a disk-change event. */
         renderShelf: () => renderShelf().then(() => (syncShelfAsideWidth(), true)),
@@ -21123,8 +20827,7 @@
         showNextTip: () => (showNextDidYouKnowTip(), true),
         /* Drive the real disk-mutation handler (the IPC callback) so tests can assert refresh behaviour. */
         mutate: (payload) => onPathsMutated(payload),
-        /* Simulate the renderer side of a delete: tombstone the paths + repaint the active pane. Used by
-           crud-pane-isolation to prove a delete in the active tab never touches other tabs' stored rows. */
+        /* The renderer side of a delete: tombstone the paths and repaint, as the trashed IPC callback does. */
         tombstone: (paths) => removeGonePathsFromUiNow(Array.isArray(paths) ? paths : [paths]),
         /* Viewer markdown/text editor. Each driver calls the real function, so a test drives the same
            preview-and-edit path a user does rather than a second copy of it. The synthetic row stands in
@@ -21186,7 +20889,6 @@
           checked: checkedPathsMap.size,
           escStep: runnerEscapeLastStep,
           recency: recencyFilterMode(),
-          tabs: tabs.length,
           sent: lastMainSearchText,
           sentExtra: lastRunnerExtraSearchTexts,
           viewerOff: document.body.classList.contains('tagfox-runner-viewer-off'),
@@ -21218,10 +20920,7 @@
           rows: lastRows.slice(0, 8).map((r) => ({ path: fullPathForRow(r), folder: rowIsFolder(r), mtime: modifiedTimeMs(r) })),
         }),
         state: () => ({
-          activeTabId,
-          activeTabIndex: tabIndexById(activeTabId),
           tabCount: tabs.length,
-          tabs: tabs.map((t) => ({ id: t.id, rows: Array.isArray(t.lastRows) ? t.lastRows.length : 0 })),
           activeTabRows: activeTab() && Array.isArray(activeTab().lastRows) ? activeTab().lastRows.length : 0,
           topLevelSearchDepth,
           searchInFlight,

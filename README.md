@@ -48,13 +48,12 @@ If search feels slow, open **Advanced** and turn off **Folder-contents highlight
 - **Runner layout.** The window is one large search box over a ranked list, with the Viewer on the right third: arrows to move, right and left to go into a folder and back up, `/` for commands and tag filters, `Ctrl`+`D` to star, `Ctrl`+`T` to tag. Name matches rank above path matches, then recent, starred and often-used items. Runner is the only layout on screen; the Classic layout this list otherwise describes is hidden while its code is deleted in stages.
 - **The toggle shortcut selects the search text.** Raising TagFox with the global toggle key (set in Settings) puts the cursor in the search box with its text selected, so typing replaces it and an arrow key steps out of it. Alt-tab and a click into the window leave the cursor where it was.
 - **Hide the window's title bar.** A Settings box, off by default, applied on the next start. Windows then draws only the minimise, maximise and close buttons, over the top right of the page, and you drag the window by its top strip (Runner) or its header row (Classic). Double-clicking there maximises and restores as before.
-- **Favourite folders and saved searches.** Bookmark a folder or a whole search, reorder by drag, and jump back with `Ctrl`+`1` to `9` (searches) or `Ctrl`+`Shift`+`1` to `9` (folders). These are your persistent bookmarks; tabs (below) are for throwaway working views.
+- **Favourite folders and saved searches.** Bookmark a folder or a whole search, reorder by drag, and jump back with `Ctrl`+`1` to `9` (searches) or `Ctrl`+`Shift`+`1` to `9` (folders). These are your persistent bookmarks.
 - **The Shelf.** A staging strip under the results (beside them in Classic), one line high while empty. Drag files onto it from several folders, go elsewhere, then drag them onto a folder row or into the list. A drag moves and `Shift` copies, both onto the Shelf and off it. An item taken off with its × goes to the Recycle Bin. A clipboard for files that does not empty when you move.
 - **Bulk rename.** Check several files, press `Ctrl`+`H`, and use wildcards on the last path segment with a live preview.
 - **Open and Save dialogs.** With another app's Open or Save dialog in front, the toggle shortcut raises TagFox with a strip saying where the next pick goes. Enter sends the selected row to the dialog: in an Open dialog a file opens and a folder is shown; a Save dialog gets the folder, keeps its file name and leaves Save to you.
 - **New TODO.** Create a small markdown file tagged `xkTODO` through the Quick TODO box: the Viewer's **New TODO** puts it in the folder on screen, and the `/` command **New TODO in this folder** in the current folder.
 - **Folder docs.** The Viewer loads the first of `-readme.md`, `readme.md`, `claude.md`, `agents.md`, `about.md`, `index.md` and similar, so each folder can describe itself.
-- **Result tabs.** Open throwaway scratch tabs above the results (the `+` button, up to 10), each holding its own search, scope and filters. Switch by clicking, `Ctrl`+`Tab` / `Ctrl`+`Shift`+`Tab`, or by dragging a file onto a tab to spring it open. Drag tabs to reorder; middle-click or the `×` to close. Tabs are kept for the session.
 - **Paste from Explorer and screenshots.** Paste copied files into the current folder, or paste a screenshot to save `Clipboard image.png` there.
 - **Mixed local and Google Docs.** Local Office files preview inline. Google Workspace shortcuts (`.gdoc`, `.gsheet`, `.gslides`) open in a popup, resolved from the shortcut or the Drive stream, including streamed (on-demand) files.
 - **Doc windows say which document they hold.** A gmist or Google Workspace window is titled with the file it was opened from, and shows that name in its own toolbar too. Minimise it and it becomes a small bar at the bottom of the desktop; Windows draws no text there, so the icon carries two letters from the name instead (`alpha report.docx` becomes AL). Where two open documents would claim the same pair, the second takes another, so README.md, readme notes.md and reference sheet.md show as RE, RN and RS. Each gets a colour of its own, fixed by its letters, so you can pick a window out by colour without reading it.
@@ -95,7 +94,7 @@ The build bundles `google-oauth-client.json` (it is in the `build.files` allowli
 npm test
 ```
 
-This runs the result-tabs and refresh regression suite. The tests launch the real app under the Chrome
+This runs the search, results and refresh regression suite. The tests launch the real app under the Chrome
 DevTools Protocol and drive it through a hidden `#tagfoxtest` hook (inert in normal runs), so they exercise
 the actual `renderer.js`. Everything must be running, the same as for the app. Full detail, including the
 invariants checked and how to add a test, is in [`test/README.md`](test/README.md).
@@ -155,27 +154,25 @@ A window's frame is fixed when it is created, so `main.js` reads `tagfox-window-
 - **The window buttons take the page's colours.** `syncTitleBarOverlayColors` reads the background under the top right corner and the body text colour after a theme or layout change, and main keeps them in the same file so the next start opens in them.
 - Guarded by `test/window-chrome.cjs`, which seeds the setting into a fresh profile.
 
-### Search concurrency and result tabs
+### Search concurrency
 
-The results area is a set of scratch tabs above one visible results pane. That single pane always owns the
-canonical DOM ids (`tbody`, `resultsTable`, and so on), so `renderTable()` (which writes to `#tbody`) always
-targets it. Each tab holds its own `searchState`, `lastRows` and paging context in the `tabs` array;
-switching tabs saves the live UI into the leaving tab (`saveActiveTabStateFromUi`) and loads the entering
-one (`restoreTabStateIntoUi`). Only the active tab has DOM: **inactive tabs are pure state snapshots** with
-no rendered rows, re-searched when you activate them (`activateTab`).
+The results area is one pane, and it owns the canonical DOM ids (`tbody`, `resultsTable`, and so on), so
+`renderTable()` (which writes to `#tbody`) always targets it. A search, F5, auto-refresh or CRUD refresh
+all act on that pane and nothing else. This is why the results code is simple to reason about: there is never
+a second pane rendering in the background. The old two-pane split kept two panes rendered at once, and every
+historical bug (searches rendering into the hidden pane, load-more rows lost on a background refresh, a
+copy/delete in one pane bleeding into the other) came from a background flow re-rendering the *other* pane.
 
-This is why the results code is simple to reason about: there is never a second pane rendering in the
-background. A search, F5, auto-refresh or CRUD refresh only ever touches the active tab. The old two-pane
-split kept both panes rendered at once, and every historical bug (searches rendering into the hidden pane,
-load-more rows lost on a background refresh, a copy/delete in one pane bleeding into the other) came from a
-background flow re-rendering the *other* pane. Removing simultaneous rendering removed that whole bug class.
+The search state is kept in the `tabs` array. Each entry holds a `searchState`, which
+`persistTabsToStorage` saves across restarts, and the active entry, the only one ever shown, also holds
+`lastRows` and the paging context. `saveActiveTabStateFromUi` copies all three from the live UI after
+every search, and Runner calls it before switching layout.
 
 One search flow still runs at a time. `searchMutex` serialises top-level flows; truly nested calls
 (smart narrow / probe re-searches fired synchronously inside an outer `runSearch`) skip the mutex by passing
 `nested: true`. Nesting is marked explicitly: a fresh event-loop task (the debounced search, F5, a
 disk-mutation retry) that fires while another flow is mid-await waits for the mutex rather than running
-concurrently. Activating a tab re-runs its search through the same mutex, so it serialises behind any
-in-flight search.
+concurrently.
 
 In Runner, a search that a newer one overtakes sends nothing more. Every top-level request takes a number
 (`searchRequestSeq`); one that is still waiting for the mutex when a newer request arrives steps aside and
@@ -184,16 +181,11 @@ before each of its extra queries, which go out one at a time after the main quer
 at a time, so otherwise each stale keystroke's four or five queries would hold up the newest one's.
 `runner-query-order.cjs` counts the queries sent to prove it.
 
-`loadMoreResults()` grows `lastRows` and must persist it to the active tab in its `finally`; otherwise a
-later tab switch (which restores from stored state) reverts to the pre-load-more page. Guarded by
-`loadmore-regression.cjs`; cross-tab CRUD isolation by `crud-pane-isolation.cjs`; the tab lifecycle by
-`tab-lifecycle.cjs`.
+`loadMoreResults()` grows `lastRows` and copies it into the active tab in its `finally`, so the stored
+rows always match the rows on screen. Every test's structural check compares the two, and
+`loadmore-regression.cjs` does so after two load-mores.
 
 ### Refresh after CRUD (delete fast-path)
-
-Every CRUD refresh acts on the active tab only; other tabs stay as they were until you switch to one, which
-re-runs its search against disk. So a copy, move or delete in one tab never changes another, and there is no
-stale-snapshot problem to surface: an inactive tab is always refreshed on activation.
 
 A delete only removes rows. `removeGonePathsFromUiNow()` tombstones the deleted paths and repaints once, so
 the rows vanish immediately. Because no new content can appear, `refreshAfterDiskMutation()` detects a pure
@@ -201,7 +193,7 @@ delete (`isPureTombstoneMutation`, payload `trashed` with no `destFolder`/`copie
 immediate re-query, scheduling a single quiet reconcile (~1s) to retire the tombstones once the Everything
 index settles. Moves and pastes bring in new rows and keep the prompt refresh plus the 350ms/1200ms catch-up
 retries. All delete call sites (bulk bar, Delete key, context menu) tag the payload with `trashed: true` so
-the fast-path fires regardless of which refresh call wins the coalesce.
+the fast-path fires regardless of which refresh call wins the coalesce. `delete-hides-row.cjs` checks that a deleted row stays hidden through a refresh.
 
 The recycle itself (`main.js`) was the bigger cost for cloud paths (Google Drive, OneDrive), which take the
 PowerShell route because `shell.trashItem` rejects many of those paths. The old script spawned one PowerShell

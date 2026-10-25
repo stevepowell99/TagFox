@@ -1,22 +1,18 @@
 # TagFox tests
 
-Automated regression tests for the search and result-tabs logic in `renderer.js`. They launch the real app
+Automated regression tests for the search, results and refresh logic in `renderer.js`. They launch the real app
 under the Chrome DevTools Protocol (CDP) and drive it through a hidden test hook, so they exercise the
 actual renderer rather than a reimplementation.
 
-The results area is a set of scratch tabs (see [Result tabs](../README.md#result-tabs)). Only the active
-tab has DOM and is refreshed; inactive tabs are passive state snapshots re-searched on activation. The tests
-guard:
+The results area is one pane (see [Search concurrency](../README.md#search-concurrency)). The tests guard:
 
 - The single canonical results DOM (`tbody`, `resultsTable`, and so on) stays present and unique.
 - Load-more rows are stored on the active tab and rendered (the load-more desync bug).
-- A copy or delete in the active tab never mutates another tab's stored rows.
-- Tab lifecycle: open to the cap, refuse past it, close down to one (never zero), cycle with wraparound,
-  reorder, and spring-hover activation.
+- A deleted row stays hidden through a refresh.
 - Every visible results column divider can actually be grabbed with the mouse.
 - The Viewer splitter follows the pointer across the previews, stops where the layout stops it, and lets go.
 - Raising TagFox with the global toggle shortcut selects the whole query in the search box (Classic and Runner), while a plain window focus keeps the caret; typing then replaces it and an arrow key steps out of it.
-- The global Ctrl+Shift+Space tab opens (or reuses an empty-scope tab) with every filter reset and a 1 hour recency window, and leaves the scoped tab it came from alone.
+- The global Ctrl+Shift+Space resets the search in place, with every filter reset and a 1 hour recency window.
 - Previewing a markdown file never writes it back, and an edit whose file has moved on disk is refused.
 - Runner's tag filter keeps tagged files and drops untagged ones, and its tag editor renames files on disk.
 
@@ -31,9 +27,8 @@ guard:
 ## Running
 
 ```
-npm test                      # whole suite (smoke + tab-lifecycle + tab-isolation + load-more + column-resize + splitter-drag + refresh-visible + quiet-refresh + md-preview-no-write + menu-enter + recent-folders-filter + recent-tab + hotkey-raise-select + runner-layout + runner-keys + runner-syntax + runner-tags + runner-query-order + runner-shelf + runner-status + runner-go-to-path + runner-empty-list + machine-features + row-actions-keys + window-chrome + 3 fuzz seeds)
+npm test                      # whole suite: every test listed in run-all.cjs, in order
 npm run test:smoke            # readable walkthrough of the main flows
-npm run test:tabs             # tab lifecycle: open/close/cap/cycle/reorder/spring-hover
 npm run test:loadmore         # focused load-more / tab-state regression
 npm run test:fuzz             # randomized fuzz, default 60 iterations
 node test/fuzz.cjs 100 31337  # fuzz: <iterations> <seed>
@@ -74,16 +69,15 @@ instances alone.
 |------|--------|
 | `harness.cjs` | Shared library: launch Electron under CDP, the `#tagfoxtest` driver, `settle()`, and `structuralProblems()` (the invariants below). Not a test itself. |
 | `help-build.cjs` | No Electron. Builds a copy of the working `help.md` in a temp folder, once with LF and once with CRLF line endings, and checks that each build writes one line ending (the one `help.md` had) and says exactly what the working `help.html` says. So a start on a CRLF checkout leaves `help.html` unmodified in `git status`, and a `help.md` edited without rebuilding fails here. It fails on the build script from before 23 October 2026, which turned a CRLF blank line into an indented one. |
-| `smoke.cjs` | Startup, a 10x F5 refresh loop, type+refresh races, opening a 2nd/3rd tab and searching different scopes, cycling tabs, and closing the active tab. Checks the structural invariants after each step. |
-| `tab-lifecycle.cjs` | Open to the cap, refuse the 11th, cycle with wraparound, reorder by index, spring-hover activation, and close down to one (never zero). |
-| `crud-pane-isolation.cjs` | A delete in the active tab must leave another tab's stored rows untouched (cross-tab CRUD bleed). Guards the passive-inactive-tab rule. |
+| `smoke.cjs` | Startup, a 10x F5 refresh loop, type+refresh races, and searching two other scope folders, one of them while a search is running. Checks the structural invariants after each step. |
+| `delete-hides-row.cjs` | The renderer side of a delete (`removeGonePathsFromUiNow`, through the `tombstone` driver; nothing on disk is touched): the row drops out of the list at once and a refresh does not bring it back, checked by count and by path. The positive control is that the search had rows to start with. |
 | `loadmore-regression.cjs` | Loads two extra pages and checks the rows are stored on the active tab and rendered (the load-more desync bug). |
 | `column-resize.cjs` | Walks `elementFromPoint` across every visible header boundary, in flat and tree view, and requires the resize handle to be on top for most of a 15px window. Catches handles buried under the neighbouring sticky `th`, which leaves a divider half-dead and sends boundary clicks to that column's sort. |
 | `refresh-visible.cjs` | The header Refresh button exists and is wired. Every explicit refresh route (button, F5) writes a `Refreshed hh:mm:ss — N row(s), …` status. Guards the answer to "F5 sometimes does not refresh": a refresh that finds nothing new must still prove it ran. |
 | `quiet-refresh.cjs` | Auto-refresh is silent until something really changes: four ticks over an unchanged folder leave the row nodes, the scroll position and the status line alone (a tick used to leave "Searching…" there for good), and a file appearing on disk still gets through and repaints. The positive control matters more than the negative one here, because a tick that never ran looks exactly like a tick that found nothing. |
 | `md-preview-no-write.cjs` | Previewing a `.md`/`.txt` file must never write it back, opening the editor re-reads the file, and a write whose file has moved on disk is refused. The positive control is the half that matters: an edit made in the open editor, and one saved by closing it, must still reach disk, or a fix that simply stopped saving would pass. |
 | `menu-enter.cjs` | Ctrl+L opens the recent-folders menu, the arrows move through it without the results list also taking them, and Enter applies the focused folder. Sent as real key events over CDP, because a synthetic click would pass whether or not the global Enter handler swallowed the key. |
-| `recent-tab.cjs` | The renderer half of the global Ctrl+Shift+Space (`openRecentTab`, driven through the test hook): the tab is empty of query, scope folder, tags and every search option, carries a 1 week recency window that reaches the Everything query as `dm:`, an existing empty-scope tab is reused (from another tab, and in place after typing in it) instead of a third being opened, and the scoped tab it came from is unchanged. The OS-wide registration itself lives in `main.js` (`RECENT_TAB_ACCEL`) and is not pressable from a test without raising the window. |
+| `recent-tab.cjs` | The renderer half of the global Ctrl+Shift+Space in Classic (`openRecentTab`, driven through the test hook). The positive control is a busy search: a query, a scope folder, a 1 day window, three options on and Match path off. After the press the box and the scope folder are empty, every option is off but Match path, and the 1 hour window reaches the Everything query as `dm:`. Runner's half is in `runner-layout.cjs`. The OS-wide registration itself lives in `main.js` (`RECENT_TAB_ACCEL`) and is not pressable from a test without raising the window. |
 | `hotkey-raise-select.cjs` | The renderer half of the global toggle shortcut's raise (`onHotkeyRaised`, driven through the test hook, with the window `focus` event dispatched by hand and `document.hasFocus()` pinned to choose the order): with text in the box, a raise leaves the whole query selected whether main's message comes before the focus event, after its frame, or between the event and the frame; a plain window focus returns to the box and keeps the caret (so "always select on focus" fails); the flag is spent after one focus and expires if no focus event follows; a real key typed after a raise replaces the query; in Classic ArrowDown leaves the box with the text intact; in Runner Right and Left only collapse the selection (the folder is unchanged) and a second press enters the folder and goes up again, which is the positive control. It fails with the renderer's message handler removed. The OS-wide registration and the message itself live in `main.js` and are not pressable from a test. |
 | `restart-in-terminal.cjs` | TagFox started through `scripts/start.js` says so, fills the Settings **Running now** block, and on Restart comes back as a new process under the same wrapper. Then a TagFox carrying the wrapper's environment with no wrapper above it, the state Ctrl+F5 used to leave: it must not claim the terminal, and Restart must relaunch it rather than end it. Every wait on the relaunched one is bounded, and it is stopped by its profile afterwards, since it runs outside the test's process tree. |
 | `runner-layout.cjs` | The Runner layout, by real key events: an empty box lists only the current folder, a file created on disk appears (positive control), typing searches below the folder (and "Search this folder only" keeps it to the folder's own contents), name matches rank above path-only matches, a year-old whole-word name ranks above a just-modified inside-word one (so recency cannot outweigh the match), `.md` lists markdown files only with the newest first, `-word` excludes, Down keeps focus in the box, Right and Left move into a folder and back to its parent, `/` filters commands and Enter runs one, `/size` sorts largest first and its pair smallest first, each size shows as at most three figures in one column, fainter for a smaller unit, with the dates in line beside it, a deadline range and shown hide-until files show as chips whose × clears them, the `/` Due commands set them and from an empty box look below the folder, "Show only starred items" lists just the stars below the folder, Windows' Recent list lifts the older of two otherwise tied names (with the order checked without it first), the Restart button sits in Runner's search box and goes back to the header in Classic, Ctrl+Shift+Space resets Runner's one search in place with no new tab, only a tagged name (whose name on disk differs) and the time carry tooltips, `Ctrl`+`D` stars and unstars (and the favourites column shows a starred file as a file), hovering a row shows its buttons, a file in AppData\Local\Temp is listed by default below a file of the same name elsewhere, and the `/` command hides it while the plain file stays (so the hidden check cannot pass on a search that found nothing), and switching back restores Classic's own view. |
@@ -99,7 +93,7 @@ instances alone.
 | `machine-features.cjs` | A markdown row on this machine, where a gmist checkout exists, carries the local gmist pen (the positive control); started again with `TAGFOX_GMIST_FORCE_BUNDLED=1` and no bundled gmist, which is a recipient's machine, main reports no gmist and the row has no local pen while keeping its other buttons. Skips the second half loudly when the checkout carries a bundled gmist. |
 | `row-actions-keys.cjs` | The selected row's action buttons by keyboard, in Classic and in Runner, by real key events: Tab in the list focuses the row's first button and puts the strip on screen with the pointer elsewhere (Runner otherwise shows it only on hover); further Tabs step along and wrap, Shift+Tab steps back and wraps; the status line names the focused button; Esc returns to the list, closes the strip and leaves the box and folder alone; Down leaves the strip and moves the selection. The positive control is a press: Enter in Classic and Space in Runner on **Open parent folder** move the scope to the row's folder, so a strip that took the focus and pressed nothing fails. |
 | `window-chrome.cjs` | Settings "Hide the window's title bar", seeded into a fresh profile: the window buttons are drawn over the page, Runner's drag strip is the title bar's height while the 3px gradient stays 3px, nothing clickable sits under the window buttons in Runner, Classic or the expanded Viewer, the Classic header drags while its buttons click, the window buttons follow the light and dark theme, and with the setting off the window keeps its title bar (positive control). |
-| `fuzz.cjs` | Random bursts of actions (type, refresh, new/close/cycle tab, recency, view, scope, auto-refresh tick) with a structural check plus a consistency re-search after every burst. |
+| `fuzz.cjs` | Random bursts of actions (type, refresh, recency, view, scope, scheduled search, auto-refresh tick) with a structural check plus a consistency re-search after every burst. |
 | `file-dialog-handoff.cjs` | The renderer half of sending a row to another app's Open or Save dialog, in Runner by real key events, with main's `tagfox-file-dialog-target` message delivered through the test hook (a test cannot press the OS-wide shortcut or put a dialog in front) and the sends read back from the renderer's own log. With no dialog waiting there is no strip and Enter goes into a folder (the positive control); with an Open dialog waiting the strip names the app and the dialog, Enter on a file and on a folder sends that row while TagFox stays in its folder, a double-click sends, Ctrl+Enter sends the folder TagFox is showing, and main's "No Open or Save dialog is waiting" reaches the status line; a Save dialog's strip keeps its file name and leaves Save to Steve; Esc removes the strip, nothing more is sent and Enter goes into a folder again. |
 | `manual-file-dialog.cjs` | **By hand only, after asking Steve: it opens real dialogs on screen for about fifteen seconds.** The main half (`file-dialog-handoff.js`) against PowerShell's own Open and Save As dialogs, started by the test so their PIDs are known and no keystroke goes to any app. An Open dialog is recognised with its folder and an empty name, a folder sent to it is navigated to (its address bar names it afterwards), a file sent to it opens (the dialog closes and hands that path back, the positive control), and the closed dialog is then refused. A Save dialog is recognised with its file name, a folder fills in folder + name, and Save is not pressed: the dialog is still open seconds later with nothing handed back. A control inside a dialog is not taken for a dialog. Kills its PowerShells by PID. |
 | `hover-preview.cjs` | Settings "Hover preview", in Classic and in Runner, with a real PNG and real pointer moves: resting on a row's name opens nothing; resting on its icon opens the preview (the positive control); a repaint that takes that row away from under the resting pointer closes the open preview, and stops one still on its way; a key press closes it. A repaint has no mouseout for the row it replaces, which is what left previews stuck over the list. |
@@ -113,7 +107,7 @@ After every settle:
 - **id integrity:** each canonical results id (`tbody`, `resultsTable`, and so on) appears exactly once.
 - **settled:** no search depth, nothing in flight, no pending debounce (no deadlock).
 - **active-tab state in sync:** global `lastRows` equals the active tab's stored rows.
-- **tab count in range:** at least one tab, at most ten.
+- **an active tab:** there is at least one tab.
 - **render matches data:** when no recency / folders-only / files-only filter is hiding rows, the visible
   tbody is non-empty exactly when `lastRows` is non-empty.
 
@@ -129,13 +123,12 @@ exposes `window.__tagfoxTest` with:
 
 - search drivers: `runSearchNow`, `refreshNow`, `scheduleSearch`, `setQuery`, `setRecency`, `setView`,
   `setScope`, `loadMore`, `autoTick`, `configure`.
-- tab drivers: `newTab`, `closeTab(id)`, `activateTab(id)`, `cycleTab(dir)`, `reorderTab(from,to)`,
-  `springHoverTab(id)`, `tabIds()`.
+- global shortcut drivers: `openRecentTab`, `hotkeyRaised`.
 - test controls: `disableAutofill` (headless viewport makes auto-paging nondeterministic), `mutate`,
   `tombstone`.
 - Viewer markdown editor: `selectViewerFile(path)` (previews a file through the real props-panel path),
   `mdOpenEditor`, `mdCloseEditor`, `mdSetBuffer(text)`, `mdFlush`, and the `mdState()` inspector.
-- inspectors: `state()` (active tab, tab list + per-tab row counts, depth, in-flight, id integrity, status)
+- inspectors: `state()` (active tab, its row count, depth, in-flight, id integrity, status)
   and `diag()` (filter-stage counts and the current rows).
 
 The hook is the only test-specific code in the shipped app and adds no behaviour to normal runs.

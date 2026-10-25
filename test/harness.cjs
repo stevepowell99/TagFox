@@ -98,7 +98,7 @@ async function connect({ profile, maxResults = 60, scope = SCOPES.repo, disableA
   const port = await freePort();
   const userData = testProfileDir(profile);
   // Wipe the profile so every run starts fresh (deterministic startup: no tabsState/settings carried
-  // over from a prior run — otherwise e.g. persisted tabs would break the "1 tab at startup" assertion).
+  // over from a prior run).
   try { fs.rmSync(userData, { recursive: true, force: true }); } catch (_) {}
   for (const [name, text] of Object.entries(profileFiles)) {
     fs.mkdirSync(userData, { recursive: true });
@@ -178,7 +178,6 @@ function structuralProblems(s) {
   // recency / folders-only / files-only legitimately hide rows client-side; only assert render==data otherwise
   if (s.recency === 'all' && !s.foldersOnly && !s.filesOnly && (s.lastRows > 0) !== (s.tbodyBase > 0)) probs.push(`render!=data lastRows=${s.lastRows} tbody=${s.tbodyBase}`);
   if (s.tabCount < 1) probs.push('no tabs');
-  if (s.tabCount > 10) probs.push(`too many tabs: ${s.tabCount}`);
   return probs;
 }
 

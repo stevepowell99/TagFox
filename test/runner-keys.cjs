@@ -13,7 +13,7 @@
 //     the row's check; Right and Left still go into a folder and back;
 //   - Alt+P hides and shows the Viewer; ? in an empty box opens Help at Runner's keys, drawn from the table;
 //   - Alt+Home clears the text, the folder and every filter;
-//   - Ctrl+M sorts by date and again back to smart; Ctrl+Tab says tabs are Classic's;
+//   - Ctrl+M sorts by date and again back to smart;
 //   - F1 opens Help on Runner's own tab;
 //   - an AppData or ProgramData file ranks below an equally named file elsewhere;
 //   - Esc steps through the selection, the text and the folder, then hides TagFox.
@@ -284,12 +284,6 @@ async function main() {
     check(keysHelp.tab === 'runner' && keysHelp.rows > 20 && keysHelp.altP, `? opens Help at Runner's keys (${JSON.stringify(keysHelp)})`);
     await drv.ev(`bootstrap.Modal.getInstance(document.getElementById('helpModal'))?.hide(); 1`);
     await sleep(500);
-
-    // Classic-only keys are answered, not obeyed.
-    const tabsBefore = s.tabs;
-    await key('Tab', 'Tab', 9, 2);
-    s = await R();
-    check(s.tabs === tabsBefore && /Classic/.test(s.status), `Ctrl+Tab leaves tabs alone and says why ("${s.status.slice(0, 60)}")`);
 
     // Help opens on Runner's tab.
     await key('F1', 'F1', 112);

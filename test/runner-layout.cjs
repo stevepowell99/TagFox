@@ -592,15 +592,14 @@ async function main() {
     check(restartSeen.ok, `once code has changed it shows there and takes a click (${JSON.stringify(restartSeen)})`);
 
     // Ctrl+Shift+Space (main sends tagfox-open-recent-tab): Runner resets its one search in place to its
-    // own defaults, with no folder, no text and the last hour, and opens no tab.
+    // own defaults, with no folder, no text and the last hour.
     await drv.T('setQuery', 'zeta');
     await drv.settle('before recent');
-    const tabsBefore = (await R()).tabs;
     await drv.T('openRecentTab');
     await drv.settle('recent');
     s = await R();
-    check(s.scope === '' && s.query === '' && s.recency === '1h' && s.tabs === tabsBefore,
-      `Ctrl+Shift+Space empties the folder and the box and sets the last hour, with no new tab (scope "${s.scope}", box "${s.query}", ${s.recency}, ${s.tabs} tab(s))`);
+    check(s.scope === '' && s.query === '' && s.recency === '1h',
+      `Ctrl+Shift+Space empties the folder and the box and sets the last hour (scope "${s.scope}", box "${s.query}", ${s.recency})`);
     check(s.chips.includes('recency') && !s.chips.includes('system'), `it shows the hour as a chip and keeps Runner's defaults (chips ${s.chips})`);
     await drv.T('configure', { rootFolder: root });
     await drv.T('setRecency', 'all');

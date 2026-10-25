@@ -1,7 +1,7 @@
-// Randomized tab fuzz: a random sequence of user actions (type, refresh, new/close/cycle tab, recency,
-// view, scope, auto-refresh tick), settling and checking invariants after each burst:
+// Randomized fuzz: a random sequence of user actions (type, refresh, recency, view, scope, scheduled
+// search, auto-refresh tick), settling and checking invariants after each burst:
 //   - structural (harness.structuralProblems): id integrity, render==data, active-tab-state in sync,
-//     tab count in range, no deadlock
+//     no deadlock
 //   - consistency: re-running the same search gives the same count, UNLESS smart view changed the
 //     subfolders/content toggles between the two searches (smart auto narrow/widen is non-idempotent).
 // Run: node test/fuzz.cjs [iterations] [seed]
@@ -24,7 +24,7 @@ async function main() {
   let drv;
   try {
     drv = await connect({ profile: 'tagfox-test-fuzz', scope: SCOPE_LIST[0] });
-    const { T, state, diag, settle } = drv;
+    const { T, diag, settle } = drv;
     log('Fuzz', ITERS, 'iters, seed', SEED);
 
     await T('runSearchNow', 'identity');
@@ -35,9 +35,6 @@ async function main() {
     const actions = [
       () => T('setQuery', pick(QUERIES)),
       () => T('refreshNow'),
-      () => T('newTab'),
-      () => T('cycleTab', pick([1, -1])),
-      async () => { const st = await state(); if (st.tabCount > 1) await T('closeTab', st.activeTabId); },
       () => T('setRecency', pick(['all', '1y', '1w'])),
       () => T('setView', rnd() > 0.5, pick(['all', 'folders', 'files'])),
       () => T('setScope', pick(SCOPE_LIST)),

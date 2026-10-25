@@ -88,7 +88,6 @@ Meanwhile, tools like Google Drive train you to type a word and expect the right
 - 📦 **Shelf** — a visual staging area for files, like a kind of clipboard. Copy items onto the Shelf, navigate to another folder, paste them. The Shelf keeps them as you move around.
 - 🔄 **Bulk rename** — check several files (or highlight one), press `Ctrl`+`H`, use wildcards (`*` / `?`) on the **last path segment only**; live preview shows the first 200 rows but **Rename** still applies to the whole batch captured when the dialog opened. **Match case** follows the search row toggle.
 - 📏 **Layout** — drag the splitter between results and the Viewer (width saved).
-- 🗂️ **Result tabs** — open throwaway scratch tabs above the results (the `+` button, up to 10), each with its own search, scope and filters. Switch with a click, `Ctrl`+`Tab` / `Ctrl`+`Shift`+`Tab`, or by dragging a file onto a tab to spring it open. Drag tabs to reorder; middle-click or × to close. Tabs are kept for the session.
 - ☁️ **Mixed local + Google Docs** — local Office files preview inline; Google Workspace shortcuts (`.gdoc`, `.gsheet`, `.gslides`) open in a popup window. On Windows with Google Drive for Desktop, TagFox resolves the Doc URL from the shortcut file or from the `user.drive.id` virtual stream when the stub JSON cannot be read (including many `.shortcut-targets-by-id` paths). That path usually works for **streamed** (on-demand) files too, not only fully mirrored ones.
 - 🔗 **Google Drive shortcut folders** — Google Drive for Desktop stores shared-folder shortcuts under `.shortcut-targets-by-id\<long ID>`. TagFox auto-resolves the real folder name: the Name column shows 🔗 plus the actual name, and the breadcrumb and Path column collapse the ugly ID segments. Hover any collapsed path for the full raw path. The resolved names are cached across restarts.
 
@@ -233,7 +232,6 @@ Type to search. With the search box empty you see the current folder's own conte
 
 - The 💾 on the **saved searches** row saves your entire search state — query, folder, tags, filters, sort, and view mode.
 - **Drag** a numbered chip (not ×) to reorder; the **highlighted gap** is the drop target. `Ctrl`+`1`…`9` restores the search in that slot, or click the chip.
-- Favourite folders and saved searches are your **persistent** bookmarks (`Ctrl`+`1`…`9`); result tabs (see **✨ Features**) are for **throwaway** working views you open and close.
 
 <!-- help:tab {"id":"shelf","label":"📦 Shelf"} -->
 
@@ -331,8 +329,6 @@ Things that might trip you up:
 <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Home</kbd></td><td>Clear current folder, active tag filters, and recency (set to <strong>All</strong>)</td></tr>
 <tr><td><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>→</kbd></td><td>History back / forward</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>L</kbd></td><td>Recent folders list</td></tr>
-<tr><td><kbd>Ctrl</kbd>+<kbd>Tab</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd></td><td>Next / previous result tab</td></tr>
-<tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>W</kbd></td><td>New / close result tab</td></tr>
 </tbody></table></div>
 
 <h5 class="help-md-section-title">Selection &amp; file operations</h5>
