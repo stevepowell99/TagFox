@@ -5137,7 +5137,7 @@
       return false;
     }
 
-    /** Help's Runner tab: the keys, drawn from RUNNER_KEYS. */
+    /** Help's Keys tab (id `runner`): the keys, drawn from RUNNER_KEYS. */
     function renderRunnerKeysHelp() {
       const host = document.getElementById('runnerKeysTable');
       if (!host) return;
@@ -19281,24 +19281,15 @@
       if (!t.closest('button, [role="button"], input.btn-check, a.btn, label.btn')) return;
       scheduleRestoreFocusAfterControlClick();
     });
-    const HELP_TAB_IDS = [
-      'essentials',
-      'motivation',
-      'features',
-      'search',
-      'runner',
-      'files-folders',
-      'favourites',
-      'shelf',
-      'projects',
-      'gotchas',
-      'installation',
-      'shortcuts',
-    ];
-    /** Runner's keys are its own, so Help opens on them there; Classic reopens the tab last read. */
+    const HELP_TAB_IDS = ['essentials', 'search', 'files-folders', 'viewer', 'projects', 'runner', 'installation'];
+    /** A tab asked for by whatever opened Help (the Settings link asks for Setting up), used once. */
+    let helpTabOnNextOpen = '';
+    /** Runner opens Help on its keys (`runner`); Classic reopens the tab last read. */
     function restoreHelpModalTab() {
+      const once = helpTabOnNextOpen;
+      helpTabOnNextOpen = '';
       const raw = localStorage.getItem(LS.helpModalTab);
-      const id = isRunnerMode() ? 'runner' : HELP_TAB_IDS.includes(raw) ? raw : 'essentials';
+      const id = HELP_TAB_IDS.includes(once) ? once : isRunnerMode() ? 'runner' : HELP_TAB_IDS.includes(raw) ? raw : 'essentials';
       const btn = document.getElementById('help-tab-' + id);
       if (btn) bootstrap.Tab.getOrCreateInstance(btn).show();
     }
@@ -19332,11 +19323,7 @@
       document.getElementById('btnToggleSettings')?.click();
     });
     document.getElementById('btnEverythingHttpSetupHelp')?.addEventListener('click', () => {
-      try {
-        localStorage.setItem(LS.helpModalTab, 'installation');
-      } catch (_) {
-        /* ignore */
-      }
+      helpTabOnNextOpen = 'installation';
       const hm = document.getElementById('helpModal');
       if (hm) bootstrap.Modal.getOrCreateInstance(hm).show();
     });

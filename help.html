@@ -6,7 +6,6 @@
   Dev: Enable Everything HTTP → in repo: npm install && npm start → Settings: base URL (optional starting current folder).
 
   Hot reload: F5 = refresh search in app; View → Reload (click) = full window reload; Restart TagFox (Ctrl+F5), Toggle DevTools (Ctrl+Shift+I).
-  On Windows the menu bar is hidden by default; Alt toggles it.
   | Any app code (index.html, styles.css, tags.js, renderer.js, preload.js, main.js) | restart TagFox (Ctrl+F5) |
 
   Ship: npm run dist (electron-builder) → NSIS under dist/. Not code-signed; SmartScreen may warn recipients.
@@ -21,26 +20,16 @@
 
   Drag and drop: default row/Shelf drag uses TagFox’s in-page protocol (move/copy inside the app; Shift = copy). External apps need Alt+drag or the Shelf “OS drag” arm for native paths (CF_HDROP). Native drag blocks the UI thread, hence the split.
 
-  Hide special / Hide ~ (Advanced): client-side only — filteredRows() uses pathUnderHideSpecialSegments() and pathUnderTildeSegment() in renderer.js; Everything query unchanged (pagination still uses raw hit count per page).
+  Hide special / Hide ~: client-side only — filteredRows() uses pathUnderHideSpecialSegments() and pathUnderTildeSegment() in renderer.js; Everything query unchanged (pagination still uses raw hit count per page).
 
-  Active tag filters: sent to Everything as a regex clause so matches exist before results load. Tag bar ↻ runs a full-index xk… scan and prunes ghosts; normal searches do not.
+  Active tag filters: sent to Everything as a regex clause so matches exist before results load.
 
   Bulk rename preview: first 200 rows in the dialog only; Rename applies to the full batch captured at open. Wildcard Find uses same Match case as the search row.
 
-Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when no dialog is open and focus is not already in another text field. `F1` and `Ctrl+/` open help. `Esc` clears the query when it has text if no dialog or open dropdown needs `Esc` and focus is not in another text field (see Shortcuts table for fuller behaviour).
+  The Keys tab's table is drawn at open from RUNNER_KEYS (renderRunnerKeysHelp into #runnerKeysTable), so it cannot drift from the keys. Tab ids are read by
+  HELP_TAB_IDS and restoreHelpModalTab in renderer.js: `?` and F1 open `runner` (the Keys tab), the Settings link "Get Everything 1.5a" opens `installation`.
 
   Tab boundaries: see scripts/build-help.js — each pane is introduced by a single-line HTML comment whose body is help:tab plus JSON (id, label, exactly one "active":true, optional "format":"html" for raw HTML). Run npm run build:help after edits.
-
-  Collapsed-folder query exclusion (planned / Option A): Currently, collapsed tree folders are cosmetic — their children still count
-  against the results-per-page cap, so large collapsed subtrees eat the budget and force many "Load more" clicks. The fix: in
-  runSearch(), for each top-level path in collapsedFolderPaths, append !"C:\...\folder\" to the Everything search text. The trailing
-  backslash means "items under this folder", which excludes children but not the folder row itself — exactly what we need. Nested
-  collapsed folders only need the topmost ancestor excluded. "Load more" inherits the same searchText via resultsPagingCtx, so paging
-  automatically skips collapsed subtrees. Main complexity: unfolding a folder whose children were excluded requires a re-search (or
-  targeted sub-query) since the rows aren't in lastRows. Mitigation: on twisty expand, check if children exist in lastRows; if yes,
-  show them instantly (current cosmetic behaviour); if no, re-run runSearch(). The "N hidden" badge would change to a generic
-  "collapsed" indicator for server-excluded folders (exact count unknown without a separate query). See also: composeScopedEverythingSearch(),
-  folderScopeEverythingToken(), appendRecencyToEverythingQuery() for the query-building pipeline where the exclusion would slot in.
 -->
 <div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style="max-width: 56rem">
@@ -52,385 +41,310 @@ Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when
       <div class="modal-body p-0 d-flex help-modal-body">
         <ul class="nav nav-pills flex-column flex-shrink-0 help-side-nav py-2 border-end" id="helpModalTabs" role="tablist">
           <li class="nav-item" role="presentation">
-            <button class="nav-link active text-start" id="help-tab-essentials" data-bs-toggle="tab" data-bs-target="#help-pane-essentials" type="button" role="tab" data-help-tab="essentials">🚀 Get started</button>
+            <button class="nav-link active text-start" id="help-tab-essentials" data-bs-toggle="tab" data-bs-target="#help-pane-essentials" type="button" role="tab" data-help-tab="essentials">Get started</button>
           </li>
           <li class="nav-item" role="presentation">
-            <button class="nav-link text-start" id="help-tab-motivation" data-bs-toggle="tab" data-bs-target="#help-pane-motivation" type="button" role="tab" data-help-tab="motivation">💡 Why TagFox?</button>
+            <button class="nav-link text-start" id="help-tab-search" data-bs-toggle="tab" data-bs-target="#help-pane-search" type="button" role="tab" data-help-tab="search">Finding things</button>
           </li>
           <li class="nav-item" role="presentation">
-            <button class="nav-link text-start" id="help-tab-features" data-bs-toggle="tab" data-bs-target="#help-pane-features" type="button" role="tab" data-help-tab="features">✨ Features</button>
+            <button class="nav-link text-start" id="help-tab-files-folders" data-bs-toggle="tab" data-bs-target="#help-pane-files-folders" type="button" role="tab" data-help-tab="files-folders">Working with files</button>
           </li>
           <li class="nav-item" role="presentation">
-            <button class="nav-link text-start" id="help-tab-search" data-bs-toggle="tab" data-bs-target="#help-pane-search" type="button" role="tab" data-help-tab="search">🔍 Search &amp; views</button>
+            <button class="nav-link text-start" id="help-tab-viewer" data-bs-toggle="tab" data-bs-target="#help-pane-viewer" type="button" role="tab" data-help-tab="viewer">The Viewer</button>
           </li>
           <li class="nav-item" role="presentation">
-            <button class="nav-link text-start" id="help-tab-runner" data-bs-toggle="tab" data-bs-target="#help-pane-runner" type="button" role="tab" data-help-tab="runner">🏃 Runner</button>
+            <button class="nav-link text-start" id="help-tab-projects" data-bs-toggle="tab" data-bs-target="#help-pane-projects" type="button" role="tab" data-help-tab="projects">Tags and tasks</button>
           </li>
           <li class="nav-item" role="presentation">
-            <button class="nav-link text-start" id="help-tab-files-folders" data-bs-toggle="tab" data-bs-target="#help-pane-files-folders" type="button" role="tab" data-help-tab="files-folders">📁 Files &amp; folders</button>
+            <button class="nav-link text-start" id="help-tab-runner" data-bs-toggle="tab" data-bs-target="#help-pane-runner" type="button" role="tab" data-help-tab="runner">Keys</button>
           </li>
           <li class="nav-item" role="presentation">
-            <button class="nav-link text-start" id="help-tab-favourites" data-bs-toggle="tab" data-bs-target="#help-pane-favourites" type="button" role="tab" data-help-tab="favourites">⭐ Stars</button>
-          </li>
-          <li class="nav-item" role="presentation">
-            <button class="nav-link text-start" id="help-tab-shelf" data-bs-toggle="tab" data-bs-target="#help-pane-shelf" type="button" role="tab" data-help-tab="shelf">📦 Shelf</button>
-          </li>
-          <li class="nav-item" role="presentation">
-            <button class="nav-link text-start" id="help-tab-projects" data-bs-toggle="tab" data-bs-target="#help-pane-projects" type="button" role="tab" data-help-tab="projects">📋 Projects &amp; TODOs</button>
-          </li>
-          <li class="nav-item" role="presentation">
-            <button class="nav-link text-start" id="help-tab-gotchas" data-bs-toggle="tab" data-bs-target="#help-pane-gotchas" type="button" role="tab" data-help-tab="gotchas">⚠️ Gotchas</button>
-          </li>
-          <li class="nav-item" role="presentation">
-            <button class="nav-link text-start" id="help-tab-installation" data-bs-toggle="tab" data-bs-target="#help-pane-installation" type="button" role="tab" data-help-tab="installation">📦 Installation</button>
-          </li>
-          <li class="nav-item" role="presentation">
-            <button class="nav-link text-start" id="help-tab-shortcuts" data-bs-toggle="tab" data-bs-target="#help-pane-shortcuts" type="button" role="tab" data-help-tab="shortcuts">⌨️ Shortcuts</button>
+            <button class="nav-link text-start" id="help-tab-installation" data-bs-toggle="tab" data-bs-target="#help-pane-installation" type="button" role="tab" data-help-tab="installation">Setting up</button>
           </li>
         </ul>
         <div class="tab-content flex-grow-1 min-w-0 px-3 pb-3 overflow-y-auto help-tab-body">
           <div class="tab-pane fade show active" id="help-pane-essentials" role="tabpanel" aria-labelledby="help-tab-essentials">
             <div class="help-md">
-              <p>Welcome to TagFox — a fast, keyboard-friendly file manager powered by instant search.</p>
-              <ol>
-              <li><strong>🔌 First, make sure Everything Search is running.</strong> TagFox relies on <a href="https://www.voidtools.com/">Voidtools Everything</a> for its speed. See <strong>📦 Installation</strong> for setup. If results are empty, Everything probably isn&#39;t running.</li>
-              <li><strong>🧱 Optional scope (recommended on a new PC):</strong> open <strong>Settings</strong> and set <strong>one</strong> optional <strong>search scope folder</strong> (e.g. <strong>Set profile folder</strong>, or <strong>Set folder…</strong>). Everything then only returns paths under that root. The breadcrumb’s <strong>first</strong> segment is that folder (you cannot navigate above it). Your <strong>current folder</strong> can narrow further inside it, or stay empty to search the whole tree under the scope. <strong>Clear scope</strong> removes the ceiling (whole index, subject to the breadcrumb).</li>
-              <li><strong>📂 Pick a folder to work in.</strong> The breadcrumb bar shows your scope root (if set) and current folder — search, paste, and new files use the current folder when it is set, otherwise the scope root. Clear the current folder (×) to widen to the whole scope tree; <strong>Clear scope</strong> in Settings removes the ceiling entirely.</li>
-              <li><strong>👁️ Switch views to suit the task.</strong> Toggle between Flat/Tree/Smart, Subfolders on/off, and Files+Folders/Folders only with the buttons next to the search box (or keys <code>x</code> for Smart, <code>l</code> to cycle layout, <code>s</code>, <code>f</code>).</li>
-              <li><strong>🏷️ Tag your files and folders for easy organisation.</strong> Add tags like <code>draft</code>, <code>urgent</code>, or <code>2026</code> to any file or folder — then filter by tag to find exactly what you need. Tags are stored in the filename itself, so they travel with your files everywhere (Explorer, Google Drive, zip files). See <strong>🏷️ Tags</strong> for details.</li>
-              <li><strong>⭐ Star the files and folders you come back to.</strong> <code>Ctrl</code>+<code>D</code>, or the star at the end of a row, stars it. A star keeps it near the top of searches, and <code>Ctrl</code>+<code>Shift</code>+<code>1</code>…<code>9</code> opens the first nine. See <strong>⭐ Stars</strong>.</li>
-              <li><strong>👀 Preview files without leaving TagFox.</strong> The Viewer panel (right side) shows images, PDFs, Office docs, markdown, and more. For folders, it shows a folder readme doc you can edit in place. View and edit google files like gdocs, gslides without leaving TagFox.</li>
-              <li><strong>❓ Press <code>F1</code> or <code>Ctrl</code>+<code>/</code> anytime</strong> to reopen this help.</li>
-              </ol>
-
-            </div>
-          </div>
-          <div class="tab-pane fade" id="help-pane-motivation" role="tabpanel" aria-labelledby="help-tab-motivation">
-            <div class="help-md">
-              <h3>🦊 What TagFox does differently</h3>
-              <p>TagFox combines <strong>instant search</strong> (powered by Everything) with a <strong>folder tree view</strong> — so you see results <em>in context</em>. You can navigate folders, tag files, preview documents, and manage simple project specifications and tasks without ever opening File Explorer.</p>
-              <p><strong>Tags</strong> are short labels you attach to files and folders to organise your work. You can filter by tag to instantly find everything marked that way. Windows has no native equivalent, so TagFox fills that gap. TagFox stores tags in the filename itself (e.g. <code>Report xkTODO xxKEY.docx</code>), so they travel with the file: no database, no hidden metadata. They work in Explorer, Google Drive, zip exports, everywhere.</p>
-              <p>Tags come from a fixed vocabulary in three families: <code>xk</code> status (<code>TODO</code>, <code>BLOCKING</code>, <code>WAITING</code>, <code>LATER</code>), <code>xp</code> person (<code>GCC</code>, <code>STEVE</code>, <code>CLAUDE</code>), and <code>xx</code> label (<code>PUB</code>, <code>INFO</code>, <code>KEY</code>). Only these words are treated as tags, which keeps ordinary filenames from being mistaken for tags. Bodies are always uppercase and you do not type the prefix; type <code>todo</code> and TagFox writes <code>xkTODO</code>. To add a word to the vocabulary, edit <code>TAG_VOCAB</code> in <code>tags.js</code>.</p>
-              <p>Two more families hold dates, and they answer different questions. A <strong>deadline</strong> is <code>xd-</code> plus an ISO date, e.g. <code>xd-2026-07-15</code>: when the thing is due. A <strong>hide-until</strong> is <code>xh-</code> plus a date, e.g. <code>xh-2026-09-01</code>: the date before which you do not want to see the thing at all. A file can carry one of each, which is the common case for something you cannot start yet but must finish by a fixed day. The prefixes mark both apart from the many incidental dates in filenames, so you can search <code>xd-</code> for every deadline and <code>xh-</code> for everything deferred.</p>
-              <h3>🤔 The problems TagFox solves</h3>
-              <p>Searching the web feels instant. Searching your own hard drive? Painfully slow — unless you use an index tool like <strong>Voidtools Everything</strong>. But even Everything gives you a flat list of results without showing <em>where</em> things fit in your folder structure.</p>
-              <p>Meanwhile, tools like Google Drive train you to type a word and expect the right file. But you still get a flat list. When your projects have folders with similar names, you quickly lose track of what belongs where.</p>
-              <p class="text-muted mb-0">TagFox is deliberately simple: fast search, tags, previews, keyboard shortcuts, stars, and a shelf — not a full project-management suite.</p>
-            </div>
-          </div>
-          <div class="tab-pane fade" id="help-pane-features" role="tabpanel" aria-labelledby="help-tab-features">
-            <div class="help-md">
+              <h3>What TagFox does</h3>
+              <p>TagFox finds files and folders on your computer as you type, and lets you open, preview, move, rename and tag them without going through File Explorer. Most things can be done from the keyboard.</p>
+              <h3>Everything has to be running</h3>
+              <p>TagFox does not search the disk itself. It asks <a href="https://www.voidtools.com/">Everything</a>, a free search program from voidtools, which keeps an index of every file name on the computer. If TagFox finds nothing at all, Everything is probably not running: look for its icon in the system tray, or see <strong>Setting up</strong>.</p>
+              <h3>Bring TagFox up from anywhere</h3>
               <ul>
-              <li>⌨️ <strong>Keyboard-first</strong> — navigate, tag, rename, bulk-edit and search without touching the mouse. See <strong>⌨️ Shortcuts</strong>.</li>
-              <li>⭐ <strong>Stars</strong> — <code>Ctrl</code>+<code>D</code> stars a file or folder, which keeps it near the top of searches; <code>Ctrl</code>+<code>Shift</code>+<code>1</code>…<code>9</code> opens the first nine.</li>
-              <li>🔖 <strong>Saved searches</strong> — <code>/</code> then <strong>Save this search</strong> keeps the folder, the text and the filters; <code>Alt</code>+<code>1</code>…<code>9</code> runs the first nine.</li>
-              <li>🔍 <strong>Three view switches</strong> — Flat/Tree, Subfolders on/off, Files+folders/Folders only (combine freely). Plus recency buttons (1h, 1d, 1w, 1m, 1y) to filter “what changed recently”.</li>
-              <li>👁️ <strong>Fast previews</strong> — images, PDFs, Word, Excel, PowerPoint, text, JSON, markdown and more, right in the Viewer panel.</li>
-              <li>🏷️ <strong>Filename tags</strong> — add, remove and filter by <code>xk</code>/<code>xp</code>/<code>xx</code> tags. Tags scan your folder automatically; click them to filter results.</li>
-              <li>📋 <strong>New TODO</strong> — create a small markdown file tagged <code>xkTODO</code> in the folder the Viewer shows, or with the <code>/</code> command <strong>New TODO in this folder</strong> in the current one.</li>
-              <li>📝 <strong>Folder docs</strong> — Viewer loads the first of <code>-readme.md</code> → <code>-readme.txt</code> → <code>readme.md</code> → <code>readme.txt</code> → <code>claude.md</code> → <code>agents.md</code> → <code>about.md</code> → <code>about.txt</code> → <code>context.md</code> → <code>context.txt</code> → <code>index.md</code> → <code>index.txt</code> (details under <strong>📁 Files &amp; folders</strong>).</li>
-              <li>📦 <strong>Shelf</strong> — a visual staging area for files, like a kind of clipboard. Copy items onto the Shelf, navigate to another folder, paste them. The Shelf keeps them as you move around.</li>
-              <li>🔄 <strong>Bulk rename</strong> — check several files (or highlight one), press <code>Ctrl</code>+<code>H</code>, use wildcards (<code>*</code> / <code>?</code>) on the <strong>last path segment only</strong>; live preview shows the first 200 rows but <strong>Rename</strong> still applies to the whole batch captured when the dialog opened. <strong>Match case</strong> follows the search row toggle.</li>
-              <li>📏 <strong>Layout</strong> — drag the splitter between results and the Viewer (width saved).</li>
-              <li>☁️ <strong>Mixed local + Google Docs</strong> — local Office files preview inline; Google Workspace shortcuts (<code>.gdoc</code>, <code>.gsheet</code>, <code>.gslides</code>) open in a popup window. On Windows with Google Drive for Desktop, TagFox resolves the Doc URL from the shortcut file or from the <code>user.drive.id</code> virtual stream when the stub JSON cannot be read (including many <code>.shortcut-targets-by-id</code> paths). That path usually works for <strong>streamed</strong> (on-demand) files too, not only fully mirrored ones.</li>
-              <li>🔗 <strong>Google Drive shortcut folders</strong> — Google Drive for Desktop stores shared-folder shortcuts under <code>.shortcut-targets-by-id\&lt;long ID&gt;</code>. TagFox auto-resolves the real folder name: the Name column shows 🔗 plus the actual name, and the breadcrumb and Path column collapse the ugly ID segments. Hover any collapsed path for the full raw path. The resolved names are cached across restarts.</li>
+              <li><code>Ctrl</code>+<code>Alt</code>+<code>Space</code> shows TagFox from any program, and pressing it again hides it. You can choose another key in <strong>Settings</strong>, under <strong>Global hotkey &amp; Quick TODO</strong>: click <strong>Record…</strong> and press the keys you want.</li>
+              <li><code>Ctrl</code>+<code>Shift</code>+<code>Space</code>, from anywhere, shows everything that changed in the last hour, in every folder.</li>
+              <li><code>Alt</code>+<code>Shift</code>+<code>N</code>, from anywhere, opens the <strong>Quick TODO</strong> box, for noting a task as a file (see <strong>Tags and tasks</strong>).</li>
+              </ul>
+              <h3>A first search</h3>
+              <ul>
+              <li>Type a few letters of a name. The list changes as you type.</li>
+              <li><code>↑</code> and <code>↓</code> choose a row, and <code>Enter</code> opens it. On a folder, <code>Enter</code> takes you inside.</li>
+              <li><code>Esc</code> steps back one thing a press: it closes a menu, unchecks rows, clears the text, leaves the folder, and last of all hides TagFox.</li>
+              </ul>
+              <h3>What is on the screen</h3>
+              <ul>
+              <li>The <strong>search box</strong> is at the top. When you are inside a folder, the folder&#39;s name sits at the start of the box, and its path runs along a thin line above it.</li>
+              <li>The <strong>list</strong> shows what was found: each row&#39;s name, the folder it is in, its size and when it last changed.</li>
+              <li>The <strong>Viewer</strong>, on the right, previews whatever is selected (see <strong>The Viewer</strong>).</li>
+              <li>The <strong>Shelf</strong>, under the list, holds files while you find the folder they belong in (see <strong>Working with files</strong>).</li>
+              <li>A line at the bottom of the list shows a tip. A message, such as what an action did or why it failed, takes its place for a few seconds; point at it to keep it there.</li>
+              <li>Two faint buttons sit at the right of the search box. The first hides and shows the Viewer. The second, <strong>Options</strong>, lists the sort orders, filters and tags as buttons.</li>
+              </ul>
+              <h3>Help and keys</h3>
+              <ul>
+              <li><code>?</code>, with the search box empty, lists every key (the <strong>Keys</strong> tab here).</li>
+              <li><code>F1</code> opens this help, and <code>Ctrl</code>+<code>,</code> opens <strong>Settings</strong>.</li>
               </ul>
 
             </div>
           </div>
           <div class="tab-pane fade" id="help-pane-search" role="tabpanel" aria-labelledby="help-tab-search">
             <div class="help-md">
-              <h3>📂 Current folder</h3>
+              <h3>Typing</h3>
               <ul>
-              <li>The <strong>breadcrumb</strong> shows your <strong>scope folder</strong> (if set in Settings) as the first segment, then your <strong>current folder</strong> beneath it. Everything you search, create and paste uses the current folder when set; if only the scope is set, those actions use the scope root. Clear the current folder (×) to widen to the whole tree under the scope. <strong>Settings → Search scope folder</strong> sets or clears the hard ceiling. If the search box still has text when you change folder (double-click a folder row, the breadcrumb, a star, etc.), that filter stays on; the search row flashes briefly as a reminder.</li>
-              <li>The ✏️ <strong>pen button</strong> lets you type a path directly. Press <code>Enter</code> to apply, <code>Esc</code> to cancel.</li>
-              <li>The 🕐 <strong>clock button</strong> (or <code>Ctrl</code>+<code>L</code>) lists your last 300 <strong>recent folders</strong> (paths you have used), not full search snapshots. Type in its filter box to narrow them fuzzily (letters in order, any part of the path); whole words and longer runs of letters rank well above letters scattered across the path, and <code>Enter</code> opens the best match. Full search history is <code>Alt</code>+<code>←</code> / <code>→</code> (or the toolbar arrows).</li>
+              <li>With the search box empty you see the current folder&#39;s own contents. Once you type, the search covers that folder and every folder inside it.</li>
+              <li>When you are not inside a folder, the search covers everything Everything has indexed.</li>
+              <li>Your words are matched against the whole path, so <code>budget 2026</code> finds <code>2026\budget.xlsx</code> as well as <code>budget 2026.xlsx</code>. <code>Ctrl</code>+<code>U</code> matches names only; press it again to go back.</li>
+              <li><code>F5</code> searches again, if the list looks out of date. TagFox also searches again on its own every few seconds, and changes the list only when something has changed.</li>
               </ul>
-              <h3>🔍 Searching</h3>
+              <h3>Moving between folders</h3>
               <ul>
-              <li>Type in the search box — results update as you type. Press <code>Enter</code> to force a refresh.</li>
-              <li>Tip: <code>foo|bar</code> matches either word. <code>!foo</code> excludes files matching “foo”.</li>
-              <li>Next to the search row, <strong>Both</strong> / <strong>Folders only</strong> / <strong>Files only</strong> narrow what Everything returns (<code>folder:</code> / <code>file:</code> when narrowed). See <a href="https://www.voidtools.com/support/everything/searching/">Everything searching</a>.</li>
-              <li>Three toggles sit as standalone icons next to the search row: <strong>Match path</strong> (route icon, <code>p</code> / <code>Ctrl</code>+<code>P</code>), <strong>Hide special</strong> (eye-slash, <code>.</code> / <code>Ctrl</code>+<code>.</code>) and <strong>Hide ~</strong> (<code>~</code> glyph, <code>t</code> / <code>Ctrl</code>+<code>T</code>). The <strong>More match options</strong> button (font icon) holds the rest: match case, whole word (<code>w</code> / <code>Ctrl</code>+<code>W</code>), respect accents. <strong>Hide special</strong> removes rows whose path has a segment starting with <code>.</code> or <code>$</code>, or equals <code>desktop.ini</code> (<code>..</code> is ignored; <code>.shortcut-targets-by-id</code> is kept). <strong>Hide ~</strong> removes rows with any segment starting with <code>~</code> (e.g. profile junctions). Both are <strong>table only</strong>; Everything still fetches up to <strong>Results per page</strong> before filtering — if the list looks empty, raise that limit, use <strong>Load more</strong>, or narrow scope/query. When those rows are still shown (toggles off), <strong>Hide special</strong> matches fade more (lower opacity) than <strong>~</strong> matches.</li>
-              <li><strong>Tree</strong> / <strong>Smart</strong> / <strong>Flat</strong> (<code>l</code> cycles; <code>x</code> → Smart): Tree hides the Path column and groups by folder; Tree mode keeps path sort A→Z. Size/Modified/Name sorts switch to Flat (status bar note).</li>
+              <li><code>→</code>, or <code>Enter</code> on a folder, goes into the selected folder. <code>←</code> goes up to the parent, with the folder you left selected.</li>
+              <li><code>Backspace</code> in an empty search box leaves the folder, so you search everywhere. So does the × on the folder&#39;s name at the start of the box.</li>
+              <li>Click any name in the path above the search box to go there, or the › after it to choose one of the folders inside.</li>
+              <li><code>Shift</code>+<code>Enter</code> goes to the folder holding the selected row.</li>
+              <li>Paste a folder&#39;s path into the search box to go straight there, or a file&#39;s path to go to its folder with the file selected. A typed path goes there when you press <code>Enter</code>.</li>
+              <li>Point at the folder&#39;s name at the start of the search box for its buttons: show it in File Explorer, copy it, edit its tags, open a terminal there, copy its full path in quotes, and the full menu.</li>
+              <li><code>Alt</code>+<code>←</code> and <code>Alt</code>+<code>→</code> go back and forward through your earlier searches, as in a browser. <code>Alt</code>+<code>Home</code> starts again, with no text, no folder and every filter at its default.</li>
               </ul>
-              <h3>👁️ View toggles</h3>
-              <p>Three icon-pair switches next to the search box — combine them freely:</p>
+              <h3>Commands and options</h3>
               <ul>
-              <li><i class="fa-solid fa-wand-magic-sparkles fa-fw"></i> <strong>Smart</strong> (<code>x</code> jumps here; <code>l</code> cycles) — auto-adjusts subfolders and files/folders for manageable lists.</li>
-              <li><i class="fa-solid fa-list fa-fw"></i> / <i class="fa-solid fa-sitemap fa-fw"></i> <strong>Flat / Tree</strong> (<code>l</code> cycles all three layouts) — flat list with Path column, or tree layout grouped by folder.</li>
-              <li><i class="fa-solid fa-folder-tree fa-fw"></i> / <i class="fa-solid fa-folder fa-fw"></i> <strong>Subfolders on / off</strong> (<code>s</code>) — include items from subdirectories, or show only this folder.</li>
-              <li><i class="fa-solid fa-copy fa-fw"></i> / <i class="fa-solid fa-folder fa-fw"></i> <strong>Files+folders / Folders only / Files only</strong> (<code>f</code> cycles the three) — control what Everything returns for the list.</li>
+              <li>Type <code>/</code> in the search box for a list of commands: sort orders, filters, tags, match settings, <strong>Settings</strong> and more. Type a few letters to find one (<code>/size</code>, <code>/todo</code>), choose with <code>↑</code> and <code>↓</code>, and press <code>Enter</code>.</li>
+              <li><strong>Options</strong>, the second faint button at the right of the search box, or <code>Alt</code>+<code>O</code>, shows the same commands as buttons.</li>
+              <li>Every filter or setting that differs from the usual shows as a chip under the search box, such as <strong>Modified in the last day</strong> or <strong>Folders only</strong>. Click a chip&#39;s × to undo it. If the list is empty, the chips are the first place to look.</li>
+              <li><code>Ctrl</code>+<code>R</code> limits the list to what changed recently: the last hour, then a day, a week, a month, a year, and then any time again, a step a press.</li>
+              <li><strong>Folders only</strong> and <strong>Files only</strong>, under <code>/</code>, do what they say.</li>
+              <li><strong>Search this folder only</strong> keeps a search to the current folder&#39;s own contents, without the folders inside it.</li>
+              <li><strong>Show system files</strong> lists the files Windows and programs keep out of sight (names starting with <code>.</code> or <code>$</code>, and <code>desktop.ini</code>), which are left out at first.</li>
               </ul>
-              <h3>⏱️ Recency &amp; sorting</h3>
+              <h3>What you can type</h3>
               <ul>
-              <li>The <strong>recency buttons</strong> (1h, 1d, 1w, 1m, 1y, All) filter results to items modified recently — handy for “what did I change today?”.</li>
-              <li>Click any <strong>column header</strong> to sort by that column. Click again to reverse. Drag the edges between headers to resize columns — widths are saved.</li>
-              <li>With focus outside a text field, <code>z</code> / <code>m</code> / <code>n</code> sort by size / modified / name (like clicking those columns; repeat to flip). <code>t</code> opens tag edit like <code>Ctrl</code>+<code>T</code>.</li>
-              <li>On large scopes, Everything 1.5+ is recommended so files don’t get pushed entirely off the first “page” of results by folders (TagFox asks the index for mixed file/folder ordering when folders and files are shown together).</li>
-              </ul>
-              <h3>⏪ Search history</h3>
-              <ul>
-              <li>Use <code>Alt</code>+<code>←</code> / <code>→</code> (or the arrow buttons top-left) to step back and forward through your recent searches. Each step restores the full search — query, folder, Settings scope folder, tags, toggles, and sort.</li>
-              </ul>
-
-            </div>
-          </div>
-          <div class="tab-pane fade" id="help-pane-runner" role="tabpanel" aria-labelledby="help-tab-runner">
-            <div class="help-md">
-              <h3>🏃 What Runner is</h3>
-              <ul>
-              <li>Runner is TagFox&#39;s layout: one large search box with a ranked list below it and the Viewer on the right third. The Classic layout that the other tabs of this help describe is being retired and no longer shows.</li>
-              <li>Runner keeps its own search settings, so switching back and forth leaves Classic&#39;s view, filters and folder as they were.</li>
-              <li>Inside a folder, its path runs along a thin line above the search box. Click any folder in it to go there, or the › after a folder to pick one of the folders inside it. A long path shows its last few folders after <code>…</code>; point at the <code>…</code> for the whole path.</li>
-              <li>Each row shows the name, the folder it is in, the size and when it last changed. Point at the time for the full date, or at a name with tags in front of it for the name on disk.</li>
-              <li>Point at the folder&#39;s chip at the start of the search box for its buttons: show in Explorer, copy, tags, terminal, copy the quoted path, and the full menu.</li>
-              <li>Two faint buttons sit at the right of the search box. The first hides and shows the Viewer (<code>Alt</code>+<code>P</code>). The second, <strong>Options</strong> (<code>Alt</code>+<code>O</code>), lists every <code>/</code> command as a button.</li>
-              <li>Settings that differ from the defaults show as chips under the search box. The bar along the bottom of the list shows a tip, which changes every few minutes. A message (an error, what an action did, the F5 report) takes its place for a few seconds; point at it to keep it there.</li>
-              <li><strong>Settings → Hide the window&#39;s title bar</strong> gives the list the space Windows&#39; title bar and menu took, in either layout, from the next start. The minimise, maximise and close buttons stay at the top right; drag the window by the strip along the top.</li>
-              </ul>
-              <h3>⌨️ Keys</h3>
-              <p>Type to search. With the search box empty you see the current folder&#39;s own contents; once you type, the search covers everything below it, or only the folder&#39;s own contents while the <code>/</code> command <strong>Search this folder only</strong> is on (it shows as a chip). This list is drawn from the same table Runner&#39;s keys are read from, so it always matches them; <code>?</code> in an empty search box opens it.</p>
-              <div id="runnerKeysTable"></div>
-
-              <h3>🔎 What you can type</h3>
-              <ul>
-              <li>When nothing matches, a line where the rows would be says what was searched: the folder, the text and any filter that narrowed it. Inside a folder, <code>Enter</code> then searches everywhere for the same text.</li>
-              <li>A path goes there. Paste a folder&#39;s path (<code>C:\Users\Zoom\Downloads</code>, or Explorer&#39;s &quot;Copy as path&quot; with its quotes) and Runner opens that folder; paste a file&#39;s path and it opens the file&#39;s folder with the file selected. A typed path goes there when you press <code>Enter</code>, so until then it is searched for like any other text. A path that does not exist is just a search.</li>
-              <li>A leading <code>-word</code> leaves out anything matching that word.</li>
-              <li>A file type lists only that type: <code>.pdf</code>, or just <code>pdf</code> for the common document, image, audio and video types. Several (<code>.docx .pdf</code>) list any of them, and <code>-pdf</code> leaves a type out. A file type on its own lists the newest first; with other words, as in <code>budget xlsx</code>, the words decide the order. Words such as <code>map</code>, <code>log</code> and <code>key</code> stay words, so &quot;causal map&quot; is not a search for .map files.</li>
+              <li>A minus in front of a word leaves out anything that matches it: <code>report -draft</code>.</li>
+              <li>A file type lists only that type: <code>.pdf</code>, or just <code>pdf</code> for the common document, image, sound and video types. Several (<code>.docx .pdf</code>) list any of them, and <code>-pdf</code> leaves one out. A file type on its own lists the newest first.</li>
               <li><code>^word</code> matches only where a word starts: <code>^map</code> finds <code>map.json</code> and <code>old map.md</code> but not <code>roadmap.txt</code>. The <code>/</code> command <strong>Word starts only</strong> does the same for every word.</li>
-              <li>Everything&#39;s own syntax works as it does in Everything: <code>a|b</code>, <code>!word</code>, <code>&quot;exact phrase&quot;</code>, the <code>*</code> and <code>?</code> wildcards (which match the whole name), <code>ext:</code>, <code>dm:today</code>, <code>size:&gt;1mb</code>, <code>regex:</code>, <code>path:</code>, <code>parent:</code>, <code>nopath:</code>, <code>wfn:</code>, <code>case:</code>, <code>startwith:</code> and <code>&lt;grouping&gt;</code>. See <a href="https://www.voidtools.com/support/everything/searching/">Everything searching</a>.</li>
+              <li><code>Ctrl</code>+<code>B</code> matches whole words only, and <code>Ctrl</code>+<code>I</code> makes capital letters count.</li>
+              <li>Everything&#39;s own search language works too: <code>a|b</code> for either word, <code>&quot;exact phrase&quot;</code>, the <code>*</code> and <code>?</code> wildcards, <code>size:&gt;1mb</code>, <code>dm:today</code> and more. See <a href="https://www.voidtools.com/support/everything/searching/">Everything&#39;s searching guide</a>.</li>
+              <li>When nothing matches, a line in the list says what was searched: the folder, the text and any filter. Inside a folder, <code>Enter</code> then searches everywhere for the same text.</li>
               </ul>
-              <h3>🏷️ Tags</h3>
+              <h3>How the list is ordered</h3>
               <ul>
-              <li>A row shows its tags in front of its name, as in Classic; the × on one takes that tag off the file.</li>
-              <li><strong><code>Ctrl</code>+<code>T</code></strong> opens the tag editor on the selected row, or on every checked row (<code>Shift</code>+<code>↓</code> checks a run of them). Adding or removing a tag renames the file on disk straight away. The row&#39;s hover buttons and its menu open the same editor.</li>
-              <li>To list only the files carrying a tag, type <code>/</code> and the tag, for example <code>/todo</code>, and press <code>Enter</code>, or click the tag in the options panel (<strong>Alt+O</strong>). The filter shows as a chip under the search box, such as <strong>Tagged TODO</strong>, and its × removes it. Two tags list the files that carry both.</li>
-              <li>To leave a tag out, type <code>/not</code> and the tag (<code>/not claude</code>), or right-click the tag in the options panel, where it then shows as <code>¬CLAUDE</code>. The chip reads <strong>Not tagged CLAUDE</strong>, or <strong>Tagged TODO and not CLAUDE</strong> beside a tag you asked for. The same command or right-click again puts it back.</li>
-              <li>With the search box empty, a tag you ask for searches every folder below the current one, while a tag left out only thins the current folder&#39;s own list.</li>
-              <li>Typing the word itself (<code>todo</code>) is an ordinary search: it also finds <code>todo list.txt</code>. The tag filter lists only files tagged <code>xkTODO</code>.</li>
+              <li>Files whose <strong>name</strong> matches come before files that match only by the folder they are in. A whole word ranks above the start of a word, which ranks above a match in the middle of one.</li>
+              <li>After that, TagFox favours files changed recently, starred files and folders, things you open often in TagFox, and things Windows lists as recently opened in any program.</li>
+              <li>Files under <code>AppData</code> and <code>ProgramData</code> folders, Word&#39;s <code>~$</code> lock files and the like are listed lower down, unless you typed their name.</li>
+              <li><code>Ctrl</code>+<code>M</code> sorts by date and <code>Ctrl</code>+<code>N</code> by name; the same key again goes back to the usual order. <code>/size</code> puts the largest first, and <code>/smallest</code> the smallest.</li>
+              <li>A search that finds a very large number of matches ranks only the newest few hundred; a note at the right of the search box then says how many it ranked out of how many it found. Type more to narrow it down.</li>
               </ul>
-              <h3>📅 Deadlines and stars</h3>
+              <h3>Saved searches</h3>
               <ul>
-              <li>The <code>/</code> commands <strong>Overdue</strong>, <strong>Due today</strong>, <strong>Due this week</strong> and <strong>Due next week</strong> list only the files whose <code>xd-</code> deadline falls in that range, from every folder below the current one. Weeks run Monday to Sunday. The range shows as a chip; its × or the same command again clears it.</li>
-              <li>Files whose <code>xh-</code> hide-until date is still to come are left out. <strong>Show files hidden until a later date</strong> lists them as well.</li>
-              <li><strong>Show only starred items</strong> lists the starred files and folders below the current folder, or every star when there is no folder.</li>
-              </ul>
-              <h3>🔖 Saved searches</h3>
-              <ul>
-              <li>Type <code>/</code> and choose <strong>Save this search</strong>. TagFox keeps the current folder, the text in the box and every filter (tags, recency, the <code>/</code> match and Show settings), named after the text, or after the folder when the box is empty.</li>
-              <li>Each saved search is then a <code>/</code> command of its own: type <code>/</code> and a few letters of its name, and press <code>Enter</code>. <code>Alt</code>+<code>1</code>…<code>9</code> runs the first nine, in the order you saved them.</li>
-              <li>With a saved search on screen, the same command reads <strong>Forget this saved search</strong>.</li>
-              <li>Searches saved in the old Classic layout are still there, as the same commands.</li>
-              </ul>
-              <h3>📂 Another app&#39;s Open and Save dialogs</h3>
-              <ul>
-              <li>In an Open or Save dialog (Notepad&#39;s, a browser&#39;s upload, most of Office), press TagFox&#39;s toggle shortcut. TagFox comes up with a strip above the box saying where the next pick goes, such as <strong>Next pick goes to: Notepad · Open</strong>.</li>
-              <li>Find the file or folder as usual, then press <code>Enter</code> or double-click it. TagFox steps aside and the dialog takes it: in an Open dialog a file opens and a folder is shown; a Save dialog gets the folder and keeps the file name it already had, and you press <strong>Save</strong> yourself.</li>
-              <li><code>Ctrl</code>+<code>Enter</code>, or <strong>Send this folder</strong> on the strip, sends the folder TagFox is showing. <code>Esc</code> or the strip&#39;s × stops, and <code>Enter</code> opens rows again.</li>
-              <li>With any other window in front, the toggle shortcut works as it always does.</li>
-              </ul>
-              <h3>📊 How the list is ordered</h3>
-              <ul>
-              <li>The smart order puts rows whose <strong>name</strong> matches above rows that match only in the <strong>path</strong>. Within the name, a whole word ranks highest, then a match at the start of a word, then one at the end of a word, then one inside a word (<code>map</code> finds <code>old map</code>, <code>mapping</code>, <code>roadmap</code>, then <code>xmapx</code>). After that it favours recent changes, though never enough to lift a file that only contains the word above an older one named for it, starred items, things you open often, and files and folders in Windows&#39; own Recent list (opened lately in any app), the more so the more recently. It puts anything under an <code>AppData</code> or <code>ProgramData</code> folder lower down, unless you are in that folder or typed its name, and anything with a <code>~</code> in its path (Word&#39;s <code>~$</code> lock files, <code>~folders</code>) lower down too, unless you typed its whole name or a <code>~</code>. The <code>/</code> sort commands switch to date or name order, or to size with the largest or the smallest first (<code>/size</code>).</li>
-              <li>The defaults: <strong>Match path</strong> on, system files (<code>.</code> and <code>$</code> names, <code>desktop.ini</code>) left out, <code>~</code> paths listed but lower down, and the newest 25 matches in your own <code>AppData\Local\Temp</code> listed lower down too (the date, name and size orders leave Temp out). <strong>Hide ~ paths</strong> and <strong>Hide temp files</strong> leave them out altogether. The faint options button at the right of the search box (or <strong>Alt+O</strong>) and the <code>/</code> commands change each of them. Anything that differs from the defaults shows as a chip under the search box, and its × puts the default back.</li>
-              <li>Runner ranks the 300 newest matches of each search, plus the 300 newest whose name matches, the names that are exactly what you typed, and every starred item it can find. When a search finds more, a note at the right of the search box says how many it ranked out of how many it found (hover it for the whole sentence); type more to narrow it, or sort by date and scroll to page through them all.</li>
+              <li>Type <code>/</code> and choose <strong>Save this search</strong>. TagFox keeps the folder, the text in the box and every filter, and names the search after its text, or after the folder when the box is empty.</li>
+              <li>Each saved search becomes a <code>/</code> command of its own: type <code>/</code> and a few letters of its name. <code>Alt</code>+<code>1</code> to <code>Alt</code>+<code>9</code> run the first nine, in the order you saved them.</li>
+              <li>While a saved search is on screen, the same command reads <strong>Forget this saved search</strong>.</li>
               </ul>
 
             </div>
           </div>
           <div class="tab-pane fade" id="help-pane-files-folders" role="tabpanel" aria-labelledby="help-tab-files-folders">
             <div class="help-md">
-              <h3>🧭 Breadcrumb navigation</h3>
+              <h3>Opening</h3>
               <ul>
-              <li><p><strong>Paste image (Windows):</strong> with a <strong>current folder</strong> set and focus outside a text field, <strong>Ctrl</strong>+<strong>V</strong> pastes Explorer files as usual; if the clipboard has <strong>no file paths</strong> but has a <strong>screenshot or copied image</strong>, TagFox saves <strong><code>Clipboard image.png</code></strong> there (then <code>Clipboard image (1).png</code>, …) and refreshes results.</p>
-              </li>
-              <li><p>Click any segment of the breadcrumb to jump to that folder.</p>
-              </li>
-              <li><p>The small <strong>▾</strong> arrows between segments show sibling folders; the one after the last segment shows children. You can hover into nested menus to drill down quickly.</p>
-              </li>
-              <li><p><strong>K</strong> / <strong>J</strong> — previous or next sibling folder; ▲ (in the last breadcrumb segment) goes to the parent folder.</p>
-              </li>
+              <li><code>Enter</code>, or a double-click, opens the selected file in its usual program. On a folder it goes inside, here in TagFox.</li>
+              <li><code>Ctrl</code>+<code>Enter</code> shows the selected file in File Explorer. <code>Alt</code>+<code>Enter</code> opens its Windows <strong>Properties</strong>.</li>
+              <li><code>Ctrl</code>+<code>1</code> to <code>Ctrl</code>+<code>9</code> open one of the first nine rows; hold <code>Ctrl</code> to see their numbers.</li>
               </ul>
-              <h3>🏷️ Tags</h3>
+              <h3>A row&#39;s buttons and menu</h3>
               <ul>
-              <li>Tags appear as coloured chips in the tag bar (below the breadcrumb). <strong>Left-click</strong> a chip to filter by that tag (click again to clear). <strong>Right-click</strong> to exclude it — the chip turns red, struck-through and shown as <code>¬TAG</code>, meaning &quot;not this tag&quot;, so you can build filters like <code>TODO</code> and <code>¬CLAUDE</code> (TODOs that are not Claude&#39;s). The <strong>AND / OR</strong> switch combines all chips, mixing includes and excludes. Counts in parentheses reflect the current result list (after filters), capped by <strong>Max results</strong>.</li>
-              <li>The <strong>↻</strong> control at the end of the tag row re-runs the main search and rescans the whole index for <code>xk</code>/<code>xp</code>/<code>xx</code> tag tokens, pruning remembered/active tags that no longer appear — use if the bar looks stale or after bulk renames outside TagFox. Ordinary searches do not do that full scan.</li>
-              <li>To edit a file&#39;s tags: select the row and press <code>Ctrl</code>+<code>T</code>, or use the <strong>Tags</strong> button in the bulk bar. <strong>Add</strong> or removing a chip renames on disk immediately. When a <strong>current folder</strong> is set, renames must stay under that path.</li>
-              <li>Tags are stored as trailing prefixed tokens before the extension, e.g. <code>Notes xxINFO.md</code>. A token is a tag only when it is a vocabulary word with its family prefix (e.g. <code>xkTODO</code>, <code>xpGCC</code>, <code>xxPUB</code>); anything else is literal text.</li>
-              <li>Tag files, not folders. Renaming a folder to tag it is risky (it breaks shortcuts, saved paths and shared-folder names). To tag a folder, tag a readme inside it: any <code>.md</code> whose name contains <code>readme</code> is treated as the folder&#39;s doc, so <code>TreeAid readme xkTODO.md</code> both tags the folder and still shows as its folder doc. Never rename <code>CLAUDE.md</code> to tag it — that name is special and renaming it would hide it from Claude.</li>
-              <li><strong>Deadlines.</strong> Set a deadline with the date picker in the tag editor or the Quick TODO box; it is stored as <code>xd-2026-07-15</code>. The deadline buttons on the toolbar (Overdue, Today, This wk, Next wk) filter results to files whose deadline falls in that range; pick one (they are single-select), and the <strong>✕</strong> button clears it. Week ranges run Monday to Sunday, and This wk includes today.</li>
-              <li><strong>Hide until.</strong> The second date picker, beside the deadline one, sets a hide-until date, stored as <code>xh-2026-09-01</code>. A file carrying a hide-until date in the future is dropped from results, so it stops competing for your attention until the day comes, then reappears on its own. This is switched <strong>on by default</strong>: a hide you have to remember to turn on hides nothing. To see what is currently hidden, open the deadline panel and turn on <strong>Show hidden</strong>.<ul>
-              <li>A hide-until is not a status. <code>xkLATER</code> means someday, maybe never; a hide-until means definitely, just not yet, and here is when to ask again. Nor is it a deadline: put both on the same file when you cannot start before one date and must finish by another.</li>
-              <li>The hiding only happens inside TagFox. Everything, grep and Google Drive cannot read the token, so they will still return the file. That is the cost of keeping the whole state in the filename, and it errs the right way: a raw search is a deliberate act of looking.</li>
+              <li>Point at a row and its buttons appear beside the star at its right-hand end. They open the file (or show a folder in File Explorer), go to the parent folder, copy the file, edit its tags, open a terminal in its folder, copy its full path in quotes, send it to the Recycle Bin, and open the full menu.</li>
+              <li>Some files get extra buttons, where this computer can use them, such as one that opens a Word or Excel file in Google Docs or Sheets.</li>
+              <li>Right-click a row, or press <code>Shift</code>+<code>F10</code>, for its full menu: more ways to copy the path, open it in other programs, duplicate it, make a shortcut and more.</li>
+              <li><code>Tab</code> from the list steps along the selected row&#39;s buttons; <code>Enter</code> presses one, and <code>Esc</code> goes back to the list.</li>
               </ul>
-              </li>
-              </ul>
-              <h3>📄 Viewer panel</h3>
+              <h3>Choosing several rows</h3>
               <ul>
-              <li>Select a file to see it on the right: images, PDFs, Office files, markdown, text, audio and video. The top shows its name, then its tags, size and date, then the folder it is in; click the folder to copy the full path. A kind TagFox cannot show says so and offers <strong>Open</strong> and <strong>Show in folder</strong>.</li>
-              <li>A markdown or text file has <strong>Edit</strong>, which opens the editor. Changes save as you type, <strong>Saved</strong> shows beside the button, and <strong>Done</strong> closes the editor.</li>
-              <li>For folders, the Viewer has two tabs. <strong>Folder doc</strong> shows the first match it finds (case-insensitive basename): <code>-readme.md</code> → <code>-readme.txt</code> → <code>readme.md</code> → <code>readme.txt</code> → <code>claude.md</code> → <code>agents.md</code> → <code>about.md</code> → <code>about.txt</code> → <code>context.md</code> → <code>context.txt</code> → <code>index.md</code> → <code>index.txt</code>. <strong>Edit</strong> opens the editor (live preview); <strong>Save</strong> writes to disk, closes the editor, and refreshes the search. A folder with none of those says so: <strong>Write it</strong> opens the editor, and Save creates the file under the name beside the button (<code>-readme.md</code> unless you change it). <strong>Thumbnails</strong> shows the folder&#39;s pictures and documents as a grid. The <strong>Subfolders</strong> switch adds each subfolder&#39;s folder doc below the folder&#39;s own.</li>
-              <li><strong>New TODO</strong>, beside the tabs, opens the Quick TODO box for the folder on screen; type a title and save, and TagFox creates a file like <code>Buy milk xkTODO.md</code> in that folder.</li>
-              <li>The row <strong>⋯</strong> menu gives you options to open, reveal in Explorer, copy the path, and more.</li>
-              <li>Press <code>Shift</code>+<code>Space</code> to expand the Viewer to near-fullscreen. A PDF fits the side pane&#39;s width, and opens at 150% when expanded.</li>
-              <li>Google Workspace shortcuts (<code>.gdoc</code> / <code>.gsheet</code> / <code>.gslides</code>) offer <strong>Open in TagFox</strong>, an in-app window where you sign in to Google once, and <strong>Open in browser</strong>. TagFox needs the document&#39;s address, from the shortcut file or on Windows from the Drive stream <code>filename:user.drive.id</code>. Streamed-only files are usually fine; if not, use Open again, context “Search Google Drive…”, or hydrate the file in Drive.</li>
+              <li>Click a row to select it. <code>Ctrl</code>+click or <code>Shift</code>+click checks more than one, and their checkboxes appear.</li>
+              <li>From the keyboard, <code>Space</code> checks or unchecks the selected row, <code>Shift</code>+<code>↑</code> and <code>Shift</code>+<code>↓</code> check a run of rows, and <code>Ctrl</code>+<code>A</code> checks every row.</li>
+              <li>With two or more rows checked, a bar at the bottom of the list offers copy, Recycle Bin, tags and uncheck.</li>
               </ul>
-
-            </div>
-          </div>
-          <div class="tab-pane fade" id="help-pane-favourites" role="tabpanel" aria-labelledby="help-tab-favourites">
-            <div class="help-md">
-              <h3>⭐ Stars</h3>
+              <h3>Renaming, copying and deleting</h3>
               <ul>
-              <li><code>Ctrl</code>+<code>D</code>, or the star at the end of a row, stars the selected file or folder; the same again unstars it. TagFox keeps up to 30 stars.</li>
-              <li>A starred row sits near the top of every search that finds it.</li>
-              <li><code>Ctrl</code>+<code>Shift</code>+<code>1</code>…<code>9</code> opens the stars in the order you starred them: a folder becomes the current folder, and a file opens.</li>
-              <li>The <code>/</code> command <strong>Show only starred items</strong> lists the stars below the current folder, or every star when there is no folder.</li>
+              <li><code>F2</code> renames the selected file or folder. <code>Ctrl</code>+<code>H</code> renames all the checked files at once, using wildcards.</li>
+              <li><code>Ctrl</code>+<code>Shift</code>+<code>N</code> makes a new folder in the folder you are in.</li>
+              <li><code>Ctrl</code>+<code>C</code> and <code>Ctrl</code>+<code>X</code> copy or cut the selected files, to paste in File Explorer. <code>Ctrl</code>+<code>V</code> pastes files copied in File Explorer into the folder you are in. If you copied a picture or a screenshot instead, <code>Ctrl</code>+<code>V</code> saves it there as <code>Clipboard image.png</code>.</li>
+              <li><code>Ctrl</code>+<code>Shift</code>+<code>C</code> copies the selected files&#39; full paths as text.</li>
+              <li><code>Del</code> sends the checked rows to the Recycle Bin, after asking. TagFox never deletes anything for good, so <code>Shift</code>+<code>Del</code> recycles too.</li>
               </ul>
-
-            </div>
-          </div>
-          <div class="tab-pane fade" id="help-pane-shelf" role="tabpanel" aria-labelledby="help-tab-shelf">
-            <div class="help-md">
-              <h3>📦 What is the Shelf?</h3>
-              <p>The Shelf is the strip under the results list, one line high while it is empty. It&#39;s a <strong>staging area</strong> for files and folders you want to move or copy to another folder. It keeps them while you search and move around.</p>
-              <h3>🔄 How to use it</h3>
+              <h3>Dragging</h3>
               <ul>
-              <li>Drag rows from the list onto the Shelf. A drag moves them there; hold <code>Shift</code> to copy them instead.</li>
+              <li>Drag rows onto a folder row, or onto a folder&#39;s name in the path above the search box, to move them there. Hold <code>Shift</code> to copy instead.</li>
+              <li>Dropping onto a file&#39;s row puts them in the folder that file is in.</li>
+              <li>To drag something out of TagFox, into File Explorer, an email or another program, hold <code>Alt</code> as you start the drag.</li>
+              <li>You can also drag files from File Explorer into TagFox.</li>
+              </ul>
+              <h3>Stars</h3>
+              <ul>
+              <li><code>Ctrl</code>+<code>D</code>, or the star at the end of a row, stars the selected file or folder; the same again takes the star off. TagFox keeps up to 30 stars.</li>
+              <li>A starred item sits near the top of any search that finds it.</li>
+              <li><code>Ctrl</code>+<code>Shift</code>+<code>1</code> to <code>Ctrl</code>+<code>Shift</code>+<code>9</code> open your first nine stars, in the order you starred them: a folder opens here in TagFox, and a file opens in its program.</li>
+              <li>The <code>/</code> command <strong>Show only starred items</strong> lists the stars in the current folder and the folders inside it, or every star when you are not in a folder.</li>
+              </ul>
+              <h3>The Shelf</h3>
+              <p>The Shelf is the strip under the list. It holds files and folders while you go and find the place they belong.</p>
+              <ul>
+              <li>Drag rows from the list onto the Shelf, or drop files on it from File Explorer. A drag moves them onto the Shelf; hold <code>Shift</code> to copy them instead.</li>
               <li>Go to the folder they belong in, or search for it.</li>
-              <li>Drag a chip, or <strong>All</strong>, onto a folder row, or into the list when you are inside a folder. Again a drag moves and <code>Shift</code> copies.</li>
+              <li>Drag them off the Shelf onto a folder row, or into the list when you are inside a folder. Again a drag moves them and <code>Shift</code> copies.</li>
+              <li>The Shelf keeps what is on it until you take it off, so you can collect files from several folders first.</li>
+              <li>A chip&#39;s × (point at the chip to see it), and the bin button at the end of the Shelf, send things to the Recycle Bin. Moving a file onto the Shelf moved the original, so the Recycle Bin is where to get it back.</li>
+              <li>To drag a chip into another program, hold <code>Alt</code> as you start, or click the hand button at the start of the Shelf first.</li>
+              <li>For a single batch of files, <code>Ctrl</code>+<code>X</code> and then <code>Ctrl</code>+<code>V</code> in the folder they belong in do the same without the Shelf.</li>
               </ul>
-              <h3>💡 Tips</h3>
+              <h3>Another program&#39;s Open and Save dialogs</h3>
+              <p>TagFox can pick the file for a program that is asking you to open or save one.</p>
               <ul>
-              <li>A chip&#39;s × (it shows when you point at the chip) and the bin button send items to the <strong>Recycle Bin</strong>. A drag onto the Shelf moved the original, so that is where to get one back.</li>
-              <li>To drag something to another app, such as File Explorer or an email, hold <code>Alt</code> as you start the drag from a row or a chip, or click the hand button first. A drag without <code>Alt</code> stays inside TagFox.</li>
-              <li>The Shelf keeps its contents until you take them off, so you can collect files from several folders before dropping them.</li>
-              <li>For one batch of files, <code>Ctrl</code>+<code>X</code> and then <code>Ctrl</code>+<code>V</code> in the folder they belong in do the same without the Shelf.</li>
+              <li>With an Open or Save dialog on screen (Notepad&#39;s, a browser&#39;s upload, most of Office), press TagFox&#39;s shortcut (<code>Ctrl</code>+<code>Alt</code>+<code>Space</code>, unless you chose another). TagFox comes up with a strip above the search box saying where the next pick goes, such as <strong>Next pick goes to: Notepad · Open</strong>.</li>
+              <li>Find the file or folder as usual, then press <code>Enter</code> or double-click it. TagFox steps aside and the dialog takes it. In an Open dialog a file opens, and a folder is shown in the dialog. A Save dialog gets the folder and keeps the file name it already had, and you press <strong>Save</strong> yourself.</li>
+              <li><code>Ctrl</code>+<code>Enter</code>, or <strong>Send this folder</strong> on the strip, sends the folder TagFox is showing.</li>
+              <li><code>Esc</code>, or the × on the strip, stops sending to the dialog, and <code>Enter</code> opens rows again.</li>
+              </ul>
+
+            </div>
+          </div>
+          <div class="tab-pane fade" id="help-pane-viewer" role="tabpanel" aria-labelledby="help-tab-viewer">
+            <div class="help-md">
+              <h3>Previews</h3>
+              <ul>
+              <li>Select a file and the Viewer on the right shows it: pictures, PDFs, Word documents (<code>.docx</code>), web pages, text and markdown files, sound and video.</li>
+              <li>Its top line shows the file&#39;s name. Under that are its tags, its size, when it last changed and the folder it is in; click the folder to copy the file&#39;s full path.</li>
+              <li>A file the Viewer cannot show says so, and offers <strong>Open</strong> and <strong>Show in folder</strong>.</li>
+              </ul>
+              <h3>Showing and hiding it</h3>
+              <ul>
+              <li>The Viewer starts at a third of the window. Drag the gap between the list and the Viewer to make it wider or narrower, and TagFox remembers the width. Double-click the gap to put it back to a third.</li>
+              <li><code>Alt</code>+<code>P</code>, or the first faint button at the right of the search box, hides the Viewer and gives the list the whole width. The same again brings it back.</li>
+              <li><code>Shift</code>+<code>Space</code>, or the arrows button at the top right of the Viewer, makes it fill most of the window. The same again puts it back.</li>
+              </ul>
+              <h3>Text and markdown files</h3>
+              <ul>
+              <li>A text or markdown file has an <strong>Edit</strong> button, which opens an editor beside the preview; double-clicking the text does the same.</li>
+              <li>Your changes are saved as you type, and a note beside the button says when they were. <strong>Done</strong> closes the editor.</li>
+              <li>If something else changed the file since TagFox loaded it, TagFox does not save over it and says so. The reload button at the top of the Viewer loads the file again from disk.</li>
+              </ul>
+              <h3>Folders</h3>
+              <p>When you select a folder, the Viewer has two tabs.</p>
+              <ul>
+              <li><strong>Folder doc</strong> shows the folder&#39;s doc: a short note saying what the folder is for, kept in the folder as a file named <code>-readme.md</code>, <code>readme.md</code> or similar. <strong>Edit</strong> opens it in an editor, and <strong>Save</strong> writes it. A folder without one says so, and <strong>Write it</strong> starts one.</li>
+              <li><strong>Thumbnails</strong> shows the pictures and documents in the folder as a grid.</li>
+              <li>The <strong>Subfolders</strong> switch adds the docs, or the thumbnails, of the folders inside it.</li>
+              <li><strong>New TODO</strong> opens the Quick TODO box for this folder (see <strong>Tags and tasks</strong>).</li>
               </ul>
 
             </div>
           </div>
           <div class="tab-pane fade" id="help-pane-projects" role="tabpanel" aria-labelledby="help-tab-projects">
             <div class="help-md">
-              <p>TagFox lets you manage simple projects right on your filesystem — no separate app needed.</p>
+              <h3>Tags live in the file name</h3>
+              <p>A tag is a short code word in a file&#39;s name, such as <code>xkTODO</code> in <code>Report xkTODO.docx</code>. Because the tag is part of the name, it goes wherever the file goes: File Explorer, Google Drive, a zip file or an email attachment. TagFox shows the tags as labels in front of the name, and leaves them out of the name itself.</p>
+              <p>TagFox knows three kinds of tag, each with its own two-letter prefix:</p>
+              <div class="table-responsive">
+              <table class="table table-sm table-striped mb-0">
+              <thead>
+              <tr>
+              <th>Kind</th>
+              <th>Prefix</th>
+              <th>Words</th>
+              </tr>
+              </thead>
+              <tbody><tr>
+              <td>Status: what state the task is in</td>
+              <td><code>xk</code></td>
+              <td><code>TODO</code>, <code>BLOCKING</code>, <code>WAITING</code>, <code>LATER</code></td>
+              </tr>
+              <tr>
+              <td>Owner: whose it is</td>
+              <td><code>xp</code></td>
+              <td><code>STEVE</code>, <code>CLAUDE</code>, <code>GCC</code></td>
+              </tr>
+              <tr>
+              <td>Label: what kind of thing it is</td>
+              <td><code>xx</code></td>
+              <td><code>PUB</code>, <code>INFO</code>, <code>KEY</code></td>
+              </tr>
+              </tbody></table>
+              </div>
+              <p>A word only counts as a tag with its own prefix: <code>xkTODO</code> is a tag, while <code>todo</code> in <code>todo list.txt</code> is just part of the name.</p>
+              <h3>Adding and removing tags</h3>
               <ul>
-              <li>📋 <strong>New TODO</strong> — select a folder, press <strong>New TODO</strong> in the Viewer, type a title and save. TagFox creates a markdown file like <code>Buy milk xkTODO.md</code> in that folder; the <code>/</code> command <strong>New TODO in this folder</strong> does the same for the current folder. The <code>xkTODO</code> tag makes it easy to find later.</li>
-              <li>📝 <strong>Folder docs</strong> — write a short description of what a folder is for. Tag it <em>active</em>, <em>archived</em>, etc. to track project status. Filter by tag to see only active work.</li>
-              <li>🌲 <strong>Tree view + tags = lightweight project management.</strong> You can organise a whole project with markdown notes, tags, and folder docs — no proprietary database. Everything stays as normal files that work in Explorer, Drive, and zip exports.</li>
+              <li><code>Ctrl</code>+<code>T</code> opens the tag editor on the selected row, or on every checked row. Click a tag&#39;s button to add it or take it off. The file is renamed on disk straight away.</li>
+              <li>The tag button among a row&#39;s buttons, and <strong>Edit tags…</strong> in its menu, open the same editor.</li>
+              <li>The × on a tag in front of a row&#39;s name takes that tag off.</li>
+              <li>Tag files rather than folders where you can. Renaming a folder breaks shortcuts and saved paths that point into it. To tag a folder, tag its folder doc instead (see <strong>The Viewer</strong>).</li>
               </ul>
-              <p class="text-muted mb-0">💡 Tip: if renaming <strong>folders</strong> on synced Google Drive is unreliable, just tag <em>files</em> instead and add a folder doc (e.g. <code>-readme.md</code>) in the folder root.</p>
-            </div>
-          </div>
-          <div class="tab-pane fade" id="help-pane-gotchas" role="tabpanel" aria-labelledby="help-tab-gotchas">
-            <div class="help-md">
-              <p>Things that might trip you up:</p>
+              <h3>Finding tagged files</h3>
               <ul>
-              <li>☁️ <strong>Cloud “streaming” mode</strong> (Google Drive / OneDrive) — files look local but download on demand. Search and previews usually work, but renames, moves and deep paths can fail or behave oddly. If you switch to “full mirroring” in your sync app, things work more reliably.</li>
-              <li>📂 <strong>Tagging folders</strong> means renaming them on disk. Windows sometimes blocks renames if something has the folder open (e.g. a terminal, an editor). Tagging <em>files</em> is always reliable.</li>
-              <li>📄 <strong>Google Docs shortcuts</strong> (<code>.gdoc</code> etc.) show one name in Drive on the web and a different name locally after you tag them — this mismatch is expected.</li>
-              <li>📱 <strong>Opening Docs/Sheets/Slides from Drive:</strong> TagFox first reads the small JSON stub; if that fails (e.g. under <code>.shortcut-targets-by-id</code>), Windows + Google Drive for Desktop can still expose the cloud file id on the stream <code>yourfile.gdoc:user.drive.id</code>. That is metadata from the Drive client and normally works for <strong>streamed</strong> as well as <strong>mirrored</strong> files, without downloading the whole document. If the id is not ready (<code>local…</code> placeholder) or your install does not expose the stream, use normal <strong>Open</strong>, Search in Drive from the row menu, or open the file once in the browser.</li>
-              <li>👥 <strong>Shared Drive files</strong> from other people may not resolve in the popup if your account cannot read the stub or stream; permissions and client version still matter.</li>
-              <li>🔧 <strong>Use Everything 1.5a.</strong> TagFox relies on <code>sort-mix:</code> for mixed file/folder ordering. <code>1.4.x</code> may connect over HTTP, but it is not the supported setup.</li>
-              <li>⚡ <strong>Everything must be running.</strong> TagFox only talks to Everything&#39;s HTTP server — if Everything is closed, you&#39;ll get no results.</li>
+              <li>Type <code>/</code> and a tag, such as <code>/todo</code>, and press <code>Enter</code>, to list only the files carrying it. The filter shows as a chip, such as <strong>Tagged TODO</strong>, and its × removes it. Two tags list the files that carry both.</li>
+              <li><code>/not</code> and a tag, such as <code>/not later</code>, leaves that tag out. In <strong>Options</strong> (<code>Alt</code>+<code>O</code>), right-click a tag&#39;s button for the same.</li>
+              <li>Typing the word on its own, without <code>/</code>, is an ordinary search: <code>todo</code> also finds <code>todo list.txt</code>.</li>
+              </ul>
+              <h3>Deadlines</h3>
+              <ul>
+              <li>The tag editor has a <strong>Deadline</strong> date. Pick a date and press <strong>Add</strong>, and the file name gains a token such as <code>xd-2026-07-15</code>.</li>
+              <li>The <code>/</code> commands <strong>Overdue</strong>, <strong>Due today</strong>, <strong>Due this week</strong> and <strong>Due next week</strong> list only the files whose deadline falls then, from the current folder and every folder inside it. Weeks run from Monday to Sunday.</li>
+              </ul>
+              <h3>Hiding a file until a date</h3>
+              <ul>
+              <li>The tag editor&#39;s <strong>Hide until</strong> date adds a token such as <code>xh-2026-09-01</code>. TagFox leaves the file out of every list until that day, and then it comes back on its own. Use it for a task that cannot start yet.</li>
+              <li>The <code>/</code> command <strong>Show files hidden until a later date</strong> lists them anyway.</li>
+              <li>The hiding happens only in TagFox. File Explorer, Everything and Google Drive still show the file.</li>
+              </ul>
+              <h3>Writing a task down</h3>
+              <ul>
+              <li><strong>Quick TODO</strong> makes a markdown file whose name is the task, such as <code>Ring the bank xkTODO.md</code>. Type a title and press the save button.</li>
+              <li><code>Alt</code>+<code>Shift</code>+<code>N</code> opens it from anywhere in Windows. The file goes in the <strong>Quick TODO folder</strong>, which you choose in <strong>Settings</strong> under <strong>Global hotkey &amp; Quick TODO</strong>.</li>
+              <li><strong>New TODO</strong> in the Viewer, when a folder is selected, or the <code>/</code> command <strong>New TODO in this folder</strong>, opens the same box aimed at that folder.</li>
+              <li>The box&#39;s tag button chooses its tags, deadline and hide-until date, and its other button adds text to go inside the file. <strong>Open in list after save</strong> takes you to the new file.</li>
+              <li>When the task is done, delete the file, or change its tag.</li>
               </ul>
 
+            </div>
+          </div>
+          <div class="tab-pane fade" id="help-pane-runner" role="tabpanel" aria-labelledby="help-tab-runner">
+            <div class="help-md">
+              <p>Every key TagFox answers to. <code>?</code>, with the search box empty, opens this list.</p>
+              <div id="runnerKeysTable"></div>
             </div>
           </div>
           <div class="tab-pane fade" id="help-pane-installation" role="tabpanel" aria-labelledby="help-tab-installation">
             <div class="help-md">
+              <h3>Install Everything</h3>
               <ol>
-              <li><p><strong>Install Everything 1.5a.</strong> Download it here: <a href="https://www.voidtools.com/everything-1.5a" target="_blank" rel="noopener">Everything 1.5a downloads</a>. Then install the HTTP Server plugin for your build: <a href="https://www.voidtools.com/Everything-HTTP-Server-1.0.3.4.x64-Setup.exe" target="_blank" rel="noopener">x64 installer</a>, <a href="https://www.voidtools.com/Everything-HTTP-Server-1.0.3.4.x86-Setup.exe" target="_blank" rel="noopener">x86 installer</a>. Let Everything finish its first index.</p>
-              </li>
-              <li><p><strong>Turn on HTTP Server in Everything.</strong> Go to <strong>Tools → Options → HTTP Server</strong>, turn it on, and keep the default address <code>127.0.0.1</code> and port <code>8080</code> unless you want something else.</p>
-              </li>
-              <li><p><strong>Start TagFox and connect it.</strong></p>
-              <ul>
-              <li><strong>If you installed TagFox from a <code>.exe</code>:</strong> just launch TagFox.</li>
-              <li><strong>If you cloned the repo:</strong> in the TagFox folder run <code>npm install</code> then <code>npm start</code>.
-              In <strong>Settings</strong>, under <strong>Connection to Everything Search</strong>, use the same URL. Default: <code>http://127.0.0.1:8080</code>. If you set HTTP auth in Everything, enter the same username/password here. Optional: under <strong>Search only inside one folder</strong>, choose one main folder to keep searches narrower.</li>
-              </ul>
-              </li>
+              <li>Download and install <strong>Everything 1.5a</strong> from <a href="https://www.voidtools.com/everything-1.5a" target="_blank" rel="noopener">Everything 1.5a downloads</a>, and let it finish its first index.</li>
+              <li>Install the HTTP Server plugin for your version of Windows: the <a href="https://www.voidtools.com/Everything-HTTP-Server-1.0.3.4.x64-Setup.exe" target="_blank" rel="noopener">64-bit installer</a> for nearly every computer today, or the <a href="https://www.voidtools.com/Everything-HTTP-Server-1.0.3.4.x86-Setup.exe" target="_blank" rel="noopener">32-bit installer</a>.</li>
+              <li>In Everything, open <strong>Tools → Options → HTTP Server</strong>, turn it on, and keep the address <code>127.0.0.1</code> and port <code>8080</code> unless you have a reason to change them.</li>
               </ol>
+              <h3>Connect TagFox</h3>
+              <ul>
+              <li>Start TagFox. In <strong>Settings</strong>, under <strong>Connection to Everything Search</strong>, the address should be the same as Everything&#39;s: <code>http://127.0.0.1:8080</code> unless you changed it.</li>
+              <li>If you gave Everything&#39;s HTTP server a username and password, enter the same ones here.</li>
+              <li>Everything has to be running whenever you use TagFox. Its icon sits in the system tray.</li>
+              </ul>
+              <h3>Settings worth knowing</h3>
+              <ul>
+              <li><strong>Global hotkey &amp; Quick TODO</strong>: the key that shows and hides TagFox, the Quick TODO key, and the folder new Quick TODO files go in.</li>
+              <li><strong>Search only inside one folder</strong>: keeps every search inside one folder or drive, such as your Windows profile folder.</li>
+              <li><strong>Auto-refresh</strong>: how often TagFox looks for changes made outside it.</li>
+              <li><strong>Search results</strong>: highlight the matching letters, show thumbnails in place of file icons, and show a larger preview when the pointer rests on a file&#39;s icon.</li>
+              <li><strong>Hide the window&#39;s title bar</strong> gives the list more room, from the next start. Drag the window by the strip along its top.</li>
+              </ul>
 
-            </div>
-          </div>
-          <div class="tab-pane fade" id="help-pane-shortcuts" role="tabpanel" aria-labelledby="help-tab-shortcuts">
-            <div class="help-md">
-              <p class="mb-2 mt-3"><strong>These are the Classic layout's keys.</strong> The Runner layout has its own, listed on the 🏃 Runner tab.</p>
-
-              <p class="text-muted mb-2 mt-3">Most shortcuts are disabled while a dialog is open. Bare-letter shortcuts work only outside text fields. Checked rows are the bulk selection. Repeating sort keys toggles direction; in <strong>Tree</strong>, sort keys switch to <strong>Flat</strong> first. <kbd>Esc</kbd> clears the query; with an empty query in the search box, it clears the current folder.</p>
-
-              <h5 class="help-md-section-title">Search &amp; view</h5>
-              <div class="table-responsive">
-              <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
-              <tr><td><kbd>/</kbd> / <kbd>Ctrl</kbd>+<kbd>U</kbd></td><td>Focus / unfocus search</td></tr>
-              <tr><td><kbd>Esc</kbd></td><td>Close Viewer / flyouts, or clear query / current folder</td></tr>
-              <tr><td><kbd>F5</kbd></td><td>Refresh results (or the <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> button in the header, which works even when the keyboard focus has slipped off the page). The status line then reports the time it ran and whether anything changed.</td></tr>
-              <tr><td><kbd>i</kbd> / <kbd>Ctrl</kbd>+<kbd>I</kbd></td><td>Cycle layout</td></tr>
-              <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd></td><td>Reset to Smart view defaults (subfolders on, files + folders; not Flat), plus clear tag filters, recency <strong>All</strong>, whole word off</td></tr>
-              <tr><td><kbd>w</kbd> / <kbd>Ctrl</kbd>+<kbd>W</kbd></td><td>Toggle whole word</td></tr>
-              <tr><td><kbd>p</kbd> / <kbd>Ctrl</kbd>+<kbd>P</kbd></td><td>Toggle match path</td></tr>
-              <tr><td><kbd>.</kbd> / <kbd>Ctrl</kbd>+<kbd>.</kbd></td><td>Toggle hide special (dot / <kbd>$</kbd> paths)</td></tr>
-              <tr><td><kbd>t</kbd> / <kbd>Ctrl</kbd>+<kbd>T</kbd></td><td>Toggle hide ~ paths</td></tr>
-              <tr><td><kbd>s</kbd> / <kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Toggle subfolders</td></tr>
-              <tr><td><kbd>f</kbd> / <kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>Cycle content mode</td></tr>
-              <tr><td><kbd>r</kbd> / <kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>Cycle recency</td></tr>
-              <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd></td><td>Toggle recency between <strong>All</strong> and <strong>1h</strong> only</td></tr>
-              <tr><td><kbd>z</kbd> / <kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Sort by size</td></tr>
-              <tr><td><kbd>m</kbd> / <kbd>Ctrl</kbd>+<kbd>M</kbd></td><td>Sort by modified</td></tr>
-              <tr><td><kbd>n</kbd> / <kbd>Ctrl</kbd>+<kbd>N</kbd></td><td>Sort by name</td></tr>
-              </tbody></table></div>
-
-              <h5 class="help-md-section-title">Navigation</h5>
-              <div class="table-responsive">
-              <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
-              <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Move selection</td></tr>
-              <tr><td><kbd>j</kbd> / <kbd>Ctrl</kbd>+<kbd>J</kbd> and <kbd>k</kbd> / <kbd>Ctrl</kbd>+<kbd>K</kbd></td><td>Next / previous sibling folder</td></tr>
-              <tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>First / last row</td></tr>
-              <tr><td><kbd>Enter</kbd></td><td>Open / enter folder</td></tr>
-              <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Set current folder to selected row’s parent</td></tr>
-              <tr><td><kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd></td><td>From the list, step along the selected row’s buttons; <kbd>Enter</kbd> or <kbd>Space</kbd> presses one, <kbd>Esc</kbd> goes back to the list</td></tr>
-              <tr><td><kbd>→</kbd></td><td>Scope into selected folder</td></tr>
-              <tr><td><kbd>←</kbd></td><td>Scope toward parent</td></tr>
-              <tr><td><kbd>+</kbd> / <kbd>-</kbd></td><td>Expand / collapse tree folder</td></tr>
-              <tr><td><kbd>Alt</kbd>+<kbd>↑</kbd> or <kbd>Ctrl</kbd>+<kbd>↑</kbd></td><td>Parent of current folder</td></tr>
-              <tr><td><kbd>Ctrl</kbd>+<kbd>Home</kbd></td><td>Clear current folder: search everywhere</td></tr>
-              <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Home</kbd></td><td>Clear current folder, active tag filters, and recency (set to <strong>All</strong>)</td></tr>
-              <tr><td><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>→</kbd></td><td>History back / forward</td></tr>
-              <tr><td><kbd>Ctrl</kbd>+<kbd>L</kbd></td><td>Recent folders list</td></tr>
-              </tbody></table></div>
-
-              <h5 class="help-md-section-title">Selection &amp; file operations</h5>
-              <div class="table-responsive">
-              <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
-              <tr><td><kbd>Space</kbd></td><td>Toggle checked row</td></tr>
-              <tr><td><kbd>Shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd></td><td>Check range</td></tr>
-              <tr><td><kbd>Ctrl</kbd>+click a row</td><td>Toggle checked row</td></tr>
-              <tr><td><kbd>Shift</kbd>+click a row</td><td>Check range to clicked row</td></tr>
-              <tr><td><kbd>Ctrl</kbd>+<kbd>A</kbd></td><td>Check all visible rows</td></tr>
-              <tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>X</kbd> / <kbd>V</kbd></td><td>Copy / cut / paste checked files</td></tr>
-              <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd></td><td>Copy full path(s) as text</td></tr>
-              <tr><td><kbd>F2</kbd></td><td>Rename the selected item</td></tr>
-              <tr><td><kbd>Del</kbd></td><td>Delete checked items</td></tr>
-              <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></td><td>Create a new folder</td></tr>
-              <tr><td><kbd>Ctrl</kbd>+<kbd>T</kbd> or <kbd>t</kbd></td><td>Edit tags on checked items</td></tr>
-              <tr><td><kbd>Shift</kbd>+<kbd>T</kbd></td><td>Remove tags from checked items</td></tr>
-              <tr><td><kbd>Ctrl</kbd>+<kbd>H</kbd></td><td>Bulk rename with wildcards</td></tr>
-              </tbody></table></div>
-
-              <h5 class="help-md-section-title">Stars &amp; app</h5>
-              <div class="table-responsive">
-              <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
-              <tr><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>Star or unstar the selected row</td></tr>
-              <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>…<kbd>9</kbd></td><td>Open star 1–9, in the order starred</td></tr>
-              <tr><td><kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>9</kbd></td><td>Run saved search 1–9, in the order saved</td></tr>
-              <tr><td><kbd>Shift</kbd>+<kbd>Space</kbd></td><td>Toggle Viewer fullscreen</td></tr>
-              <tr><td><kbd>F1</kbd> or <kbd>Ctrl</kbd>+<kbd>/</kbd></td><td>Open this help</td></tr>
-              <tr><td><kbd>Ctrl</kbd>+<kbd>,</kbd></td><td>Open / close Settings</td></tr>
-              <tr><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd></td><td>Show / hide TagFox from anywhere (default; change in Settings). Showing it puts the cursor in the search box with its text selected: type to replace it, or press an arrow key to step out of it</td></tr>
-              </tbody></table></div>
             </div>
           </div>
         </div>

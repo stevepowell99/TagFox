@@ -302,7 +302,26 @@ async function main() {
     await key('F1', 'F1', 112);
     await sleep(500);
     const helpTab = await drv.ev(`document.querySelector('#helpModalTabs .nav-link.active')?.dataset.helpTab || ''`);
-    check(helpTab === 'runner', `F1 opens Help on the Runner tab (${helpTab})`);
+    check(helpTab === 'runner', `F1 opens Help on the Keys tab (${helpTab})`);
+    // Every tab shows text of its own (a broken help:tab marker leaves a pane empty).
+    const panes = await drv.ev(`(async () => {
+      const out = [];
+      for (const b of document.querySelectorAll('#helpModalTabs [data-help-tab]')) {
+        bootstrap.Tab.getOrCreateInstance(b).show();
+        await new Promise((r) => setTimeout(r, 200));
+        const pane = document.querySelector(b.dataset.bsTarget);
+        out.push({ id: b.dataset.helpTab, shown: !!pane && pane.classList.contains('active'), chars: pane ? pane.innerText.trim().length : 0 });
+      }
+      return out;
+    })()`);
+    check(panes.length >= 5 && panes.every((p) => p.shown && p.chars > 200), `every Help tab shows its own text (${panes.map((p) => p.id + ':' + p.chars).join(', ')})`);
+    await drv.ev(`bootstrap.Modal.getInstance(document.getElementById('helpModal'))?.hide(); 1`);
+    await sleep(500);
+    // The Settings link "Get Everything 1.5a" opens Help on Setting up, not on the keys.
+    await drv.ev(`document.getElementById('btnEverythingHttpSetupHelp').click(); 1`);
+    await sleep(500);
+    const setupTab = await drv.ev(`document.querySelector('#helpModalTabs .nav-link.active')?.dataset.helpTab || ''`);
+    check(setupTab === 'installation', `the Everything setup link opens Help on Setting up (${setupTab})`);
     await drv.ev(`bootstrap.Modal.getInstance(document.getElementById('helpModal'))?.hide(); 1`);
     await sleep(500);
 
