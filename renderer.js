@@ -4107,7 +4107,6 @@
       const sc = runnerSortColumnFor(runnerSort);
       st.sortColumn = sc.col;
       st.sortAsc = sc.asc;
-      st.resultsLayout = 'flat';
       applySearchState(st);
       selectAfterSearchKey = null;
       updateQueryPlaceholder();
