@@ -468,7 +468,7 @@
         </div>
       </div>
 
-      <!-- Breadcrumb: the current folder's path, each name a button, then recent folders. -->
+      <!-- Breadcrumb: the current folder's path, each name a button. -->
       <div class="d-flex flex-wrap align-items-center gap-1 scope-breadcrumb-row">
         <!-- no overflow-hidden here — clips scope-folder history .dropdown-menu -->
         <div id="breadcrumbShell" class="breadcrumb-center flex-grow-1 min-w-0 d-none">
@@ -478,23 +478,6 @@
                 id="breadcrumbBar"
                 class="flex-grow-1 min-w-0 d-none px-2 py-1 flex-wrap align-items-center gap-0"
               ></div>
-            </div>
-            <div class="d-flex align-items-center flex-shrink-0 gap-1 px-1 py-1 border-start tagfox-breadcrumb-shell-actions">
-              <div class="dropdown flex-shrink-0">
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0"
-                  style="width: 2rem; height: 2rem"
-                  id="btnScopeFolderHistory"
-                  data-bs-toggle="dropdown"
-                  aria-expanded="false"
-                  title="Recent folders (Ctrl+L)"
-                  aria-label="Recent folders"
-                >
-                  <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
-                </button>
-                <ul class="dropdown-menu dropdown-menu-end" id="scopeFolderHistoryMenu" style="max-height: min(70vh, 520px); overflow-y: auto"></ul>
-              </div>
             </div>
           </div>
         </div>

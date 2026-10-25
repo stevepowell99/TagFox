@@ -1355,12 +1355,6 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   background: #f8f9fa;
 }
 .breadcrumb-center { font-size: 0.8rem; }
-/* Edit/history: same surface as shell; RHS corners follow outer radius (inner flex can’t use overflow:hidden). */
-#breadcrumbShell .tagfox-breadcrumb-shell-actions {
-  background-color: var(--bs-body-bg);
-  border-top-right-radius: var(--tagfox-toolbar-shell-radius);
-  border-bottom-right-radius: var(--tagfox-toolbar-shell-radius);
-}
 /* Flex column: inner #resultsScroll owns vertical scroll. */
 .results-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 /* Did-you-know strip (Bootstrap subtle + border on the span). */
@@ -2117,7 +2111,6 @@ body.tagfox-runner .scope-breadcrumb-row {
   padding-bottom: 0;
 }
 body.tagfox-runner .scope-breadcrumb-row:has(#breadcrumbBar.d-none),
-body.tagfox-runner .tagfox-breadcrumb-shell-actions,
 body.tagfox-runner .scope-breadcrumb-row #tagfoxScopeBarRowActions,
 body.tagfox-runner #breadcrumbBar .folder-type-icon,
 body.tagfox-runner #breadcrumbBar .tagfox-runner-crumb-hidden {

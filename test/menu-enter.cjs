@@ -1,15 +1,17 @@
 // Enter on a keyboard-focused menu item must activate that item.
 //
-// Steve reported that Ctrl+L (recent folders) could be navigated with the arrows but Enter did nothing,
-// while a click on the same entry worked. The global keydown handler treats a bare Enter as "open the
-// selected result row" and yielded only to a hand-kept list of menus, which did not include this one, so
-// it swallowed the key before the focused button could be clicked. The handler now yields to any open
-// menu. The keys are sent as real CDP key events, because a synthetic .click() would pass either way.
+// Steve reported that a menu could be navigated with the arrows but Enter did nothing, while a click on the
+// same entry worked. The global keydown handler treats a bare Enter as "open the selected result row" and
+// yielded only to a hand-kept list of menus, which did not include that one, so it swallowed the key before
+// the focused button could be clicked. The handler now yields to any open menu. This drives the current
+// folder's subfolder menu (the breadcrumb's last ▾). The keys are sent as real CDP key events, because a
+// synthetic .click() would pass either way.
 //
 // Run: node test/menu-enter.cjs
 
-const path = require('path');
 const { connect, SCOPES, APP_DIR, structuralProblems, sleep } = require('./harness.cjs');
+
+const TOGGLE = `[...document.querySelectorAll('#breadcrumbBar .breadcrumb-dd-toggle')].pop()`;
 
 async function main() {
   const failures = [];
@@ -18,11 +20,6 @@ async function main() {
     drv = await connect({ profile: 'tagfox-test-menu-enter', scope: SCOPES.repo });
     console.log('Hook ready.');
     await drv.settle('startup');
-
-    const target = path.join(APP_DIR, 'test');
-    const decoy = path.join(APP_DIR, 'scripts');
-    // Newest first: the first item gets focus on the first ArrowDown, so ArrowDown twice lands on `target`.
-    await drv.ev(`localStorage.setItem('tagBrowserScopeFolderHist', ${JSON.stringify(JSON.stringify([decoy, target]))}); 1`);
 
     // Enter needs its text so Chromium raises the keypress that clicks a focused button, as a real key does.
     const key = async (k, code, vk, mods = 0) => {
@@ -35,19 +32,37 @@ async function main() {
     // frame would otherwise fire in the middle of this test. Send a harmless key first to flush it.
     await key('Shift', 'ShiftLeft', 16);
     await sleep(300);
-    await drv.ev(`document.activeElement && document.activeElement.blur(); 1`);
     // Moving the results selection pulls focus into #resultsWrap, so any visit there means an arrow meant for
     // the menu was also handled by the list (the first ↓ from the menu's toggle button used to be).
     await drv.ev(`window.__listFocus = 0; document.getElementById('resultsWrap').addEventListener('focusin', () => __listFocus++); 1`);
-    await key('l', 'KeyL', 76, 2); // Ctrl+L
-    const shown = await drv.ev(`document.getElementById('scopeFolderHistoryMenu').classList.contains('show')`);
-    console.log(`  ${shown ? 'PASS' : 'FAIL'} Ctrl+L opens the recent-folders menu`);
-    if (!shown) failures.push('Ctrl+L did not open #scopeFolderHistoryMenu');
+
+    // Open the current folder's subfolders from its focused toggle, as the keyboard would leave it.
+    const opened = await drv.ev(`(() => {
+      const t = ${TOGGLE};
+      if (!t) return false;
+      t.focus();
+      bootstrap.Dropdown.getOrCreateInstance(t).show();
+      return true;
+    })()`);
+    let items = 0;
+    for (let i = 0; i < 40 && opened; i++) {
+      items = await drv.ev(`${TOGGLE}.parentElement.querySelectorAll('.dropdown-menu.show button.dropdown-item').length`);
+      if (items >= 2) break;
+      await sleep(150);
+    }
+    console.log(`  ${items >= 2 ? 'PASS' : 'FAIL'} the subfolder menu opens with the folder's subfolders (${items})`);
+    if (items < 2) failures.push(`the subfolder menu of ${APP_DIR} showed ${items} folder(s), expected at least two`);
 
     await key('ArrowDown', 'ArrowDown', 40);
     await key('ArrowDown', 'ArrowDown', 40);
-    const focused = await drv.ev(`document.activeElement?.textContent || ''`);
-    if (focused !== target) failures.push(`arrows focused "${focused.trim()}", expected "${target}"`);
+    const focused = await drv.ev(`(() => {
+      const a = document.activeElement;
+      const li = a && a.closest('li');
+      return { inMenu: !!(a && a.classList.contains('dropdown-item') && ${TOGGLE}.parentElement.contains(a)), path: (li && li.dataset.breadcrumbFlyoutPath) || '', second: !!li && !!li.previousElementSibling };
+    })()`);
+    const arrowsOk = focused.inMenu && focused.second && !!focused.path;
+    console.log(`  ${arrowsOk ? 'PASS' : 'FAIL'} two arrows land on the second folder (${focused.path})`);
+    if (!arrowsOk) failures.push(`arrows left focus ${JSON.stringify(focused)}, expected the menu's second folder`);
     const listFocus = await drv.ev(`window.__listFocus`);
     console.log(`  ${listFocus ? 'FAIL' : 'PASS'} arrows stay in the menu (results list took focus ${listFocus} time(s))`);
     if (listFocus) failures.push(`the results list took focus ${listFocus} time(s) while arrowing through the menu`);
@@ -55,10 +70,11 @@ async function main() {
     await key('Enter', 'Enter', 13);
     await drv.settle('after Enter');
     const scope = await drv.ev(`document.getElementById('rootFolder').value`);
-    const open = await drv.ev(`document.getElementById('scopeFolderHistoryMenu').classList.contains('show')`);
-    const ok = scope.replace(/[\\/]+$/, '').toLowerCase() === target.toLowerCase() && !open;
+    const open = await drv.ev(`!!document.querySelector('#breadcrumbBar .dropdown-menu.show')`);
+    const norm = (p) => String(p || '').replace(/[\\/]+$/, '').toLowerCase();
+    const ok = !!focused.path && norm(scope) === norm(focused.path) && !open;
     console.log(`  ${ok ? 'PASS' : 'FAIL'} Enter on the focused entry applies it: scope "${scope}", menu ${open ? 'still open' : 'closed'}`);
-    if (!ok) failures.push(`Enter left scope "${scope}" (menu ${open ? 'open' : 'closed'}), expected "${target}"`);
+    if (!ok) failures.push(`Enter left scope "${scope}" (menu ${open ? 'open' : 'closed'}), expected "${focused.path}"`);
 
     const probs = structuralProblems(await drv.state());
     if (probs.length) failures.push('structural: ' + probs.join('; '));
@@ -69,7 +85,7 @@ async function main() {
   }
 
   console.log('\n========== MENU ENTER RESULT ==========');
-  if (!failures.length) console.log('PASS: Enter activates the keyboard-focused recent-folders entry');
+  if (!failures.length) console.log('PASS: Enter activates the keyboard-focused entry of an open menu');
   else {
     console.log('FAIL:');
     for (const f of failures) console.log('  - ' + f);

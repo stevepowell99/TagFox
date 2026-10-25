@@ -22,7 +22,6 @@ const runs = [
   { name: 'quiet auto-refresh', args: ['quiet-refresh.cjs'] },
   { name: 'markdown preview never writes', args: ['md-preview-no-write.cjs'] },
   { name: 'menu Enter activates item', args: ['menu-enter.cjs'] },
-  { name: 'recent folders filter', args: ['recent-folders-filter.cjs'] },
   { name: 'recent tab (global hotkey)', args: ['recent-tab.cjs'] },
   { name: 'hotkey raise selects the query', args: ['hotkey-raise-select.cjs'] },
   { name: 'zoom restore', args: ['zoom-restore.cjs'] },

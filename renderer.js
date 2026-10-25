@@ -31,7 +31,6 @@
       favFolders: 'tagBrowserFavFolders',
       folderFocusStats: 'tagBrowserFolderFocusStats',
       fileFocusStats: 'tagBrowserFileFocusStats',
-      scopeFolderHistory: 'tagBrowserScopeFolderHist',
       searchScopeCeilings: 'tagBrowserSearchScopeCeilings',
       searchScopeMax: 'tagBrowserSearchScopeMax',
       tagStore: 'tagBrowserTagStore',
@@ -2581,10 +2580,7 @@
     async function applySearchScopeAndRefresh(folderAbsPath) {
       setSearchScopeFolder(clampFolderPathToSearchMax(folderAbsPath));
       const scopeNorm = normalizeFolderPathForEverything(document.getElementById('rootFolder').value.trim());
-      if (scopeNorm) {
-        rememberScopeFolderHistory(scopeNorm);
-        bumpFolderFocusVisit(scopeNorm);
-      }
+      if (scopeNorm) bumpFolderFocusVisit(scopeNorm);
       saveSettings();
       renderScopeBreadcrumb();
       await runSearchNow();
@@ -4529,9 +4525,7 @@
       { group: 'TagFox', keys: ['F1'], does: 'Help', when: (c) => c.plain && c.key === 'F1', run: () => 'classic' },
       { group: 'TagFox', keys: ['Ctrl+,'], does: 'Settings', when: (c) => c.ctrl(','), run: () => 'classic' },
 
-      /* Classic keys for parts Runner does not show: answered, or (Ctrl+L, whose recent folders Runner leaves
-         to the smart order's use boost) kept from opening a menu nobody can see. */
-      { when: (c) => c.ctrl('l'), run: () => {} },
+      /* A Classic key for a part Runner does not show, answered. */
       {
         when: (c) => c.ctrl('s'),
         run: () => setStatusMain('In Runner an empty search box shows the folder itself and typing searches everything below it.'),
@@ -5801,7 +5795,6 @@
       saveFolderFocusStats(o);
     }
 
-    const SCOPE_FOLDER_HISTORY_MAX = 300;
 
     /**
      * Fuzzy score of query against a path or label, or null when some token is not a subsequence of it.
@@ -5866,113 +5859,6 @@
         total += best;
       }
       return total;
-    }
-
-    function loadScopeFolderHistory() {
-      try {
-        const raw = localStorage.getItem(LS.scopeFolderHistory);
-        const arr = raw ? JSON.parse(raw) : [];
-        return Array.isArray(arr) ? arr.filter((x) => typeof x === 'string' && String(x).trim()) : [];
-      } catch {
-        return [];
-      }
-    }
-
-    function saveScopeFolderHistory(paths) {
-      localStorage.setItem(LS.scopeFolderHistory, JSON.stringify(paths.slice(0, SCOPE_FOLDER_HISTORY_MAX)));
-    }
-
-    /** Push normalized scope to front of local recent list (dedupe, case-insensitive). */
-    function rememberScopeFolderHistory(normalizedPath) {
-      const p = normalizeFolderPathForEverything(String(normalizedPath || '').trim());
-      if (!p) return;
-      const low = p.toLowerCase();
-      const rest = loadScopeFolderHistory().filter((x) => String(x).toLowerCase() !== low);
-      saveScopeFolderHistory([p, ...rest]);
-    }
-
-    function renderScopeFolderHistoryMenu() {
-      const ul = document.getElementById('scopeFolderHistoryMenu');
-      if (!ul) return;
-      ul.innerHTML = '';
-      const paths = loadScopeFolderHistory();
-      if (!paths.length) {
-        const li = document.createElement('li');
-        const sp = document.createElement('span');
-        sp.className = 'dropdown-item-text text-muted small px-3 py-2';
-        sp.textContent = 'No recent folders yet';
-        li.appendChild(sp);
-        ul.appendChild(li);
-        return;
-      }
-      const histBtn = document.getElementById('btnScopeFolderHistory');
-      const filterLi = document.createElement('li');
-      filterLi.className = 'px-2 pb-1 sticky-top';
-      filterLi.style.background = 'var(--bs-dropdown-bg)';
-      const filter = document.createElement('input');
-      filter.type = 'text';
-      filter.id = 'scopeFolderHistoryFilter';
-      filter.className = 'form-control form-control-sm';
-      filter.placeholder = 'Filter recent folders (fuzzy)';
-      filter.autocomplete = 'off';
-      filter.spellcheck = false;
-      filterLi.appendChild(filter);
-      ul.appendChild(filterLi);
-
-      const fillItems = () => {
-        ul.querySelectorAll('li.tagfox-hist-item').forEach((el) => el.remove());
-        const q = filter.value.trim();
-        let shown = paths;
-        if (q) {
-          // Sort is stable, so equal scores keep recency order.
-          shown = paths
-            .map((fp) => ({ fp, score: fuzzyPathScore(q, fp) }))
-            .filter((x) => x.score != null)
-            .sort((a, b) => b.score - a.score)
-            .map((x) => x.fp);
-        }
-        if (!shown.length) {
-          const li = document.createElement('li');
-          li.className = 'tagfox-hist-item';
-          const sp = document.createElement('span');
-          sp.className = 'dropdown-item-text text-muted small px-3 py-2';
-          sp.textContent = `No folders match "${q}"`;
-          li.appendChild(sp);
-          ul.appendChild(li);
-          return;
-        }
-        for (const fp of shown) {
-          const li = document.createElement('li');
-          li.className = 'tagfox-hist-item';
-          const b = document.createElement('button');
-          b.type = 'button';
-          b.className = 'dropdown-item small text-start text-wrap text-break';
-          b.textContent = fp;
-          b.title = fp;
-          b.addEventListener('click', () => {
-            if (histBtn) bootstrap.Dropdown.getOrCreateInstance(histBtn).hide();
-            void applySearchScopeAndRefresh(fp);
-          });
-          li.appendChild(b);
-          ul.appendChild(li);
-        }
-        refreshTagFoxChromeTooltips(ul);
-      };
-      filter.addEventListener('input', fillItems);
-      // Bootstrap ignores arrows inside an input, so ↓ hands focus to the first entry (its own nav takes over) and
-      // Enter applies the best match.
-      filter.addEventListener('keydown', (e) => {
-        if (e.key === 'ArrowDown') {
-          const first = ul.querySelector('.tagfox-hist-item .dropdown-item');
-          if (first) first.focus();
-          e.preventDefault();
-        } else if (e.key === 'Enter') {
-          const first = ul.querySelector('.tagfox-hist-item .dropdown-item');
-          if (first) first.click();
-          e.preventDefault();
-        }
-      });
-      fillItems();
     }
 
     /** Open a favourite: a file opens, a folder becomes the current folder. Stars hold files as well as folders,
@@ -6559,10 +6445,9 @@
       if (!maxNorm && !scopeRaw) {
         el.classList.add('d-none');
         el.classList.remove('d-flex', 'align-items-center', 'flex-wrap', 'gap-0');
-        /* Keep shell visible so recent folders (inside .tagfox-breadcrumb-shell-actions) stay usable. */
         if (shell) {
-          shell.classList.remove('d-none');
-          shell.classList.add('d-flex');
+          shell.classList.add('d-none');
+          shell.classList.remove('d-flex');
         }
         /* Empty scope: park row actions after shell (same as static HTML; breadcrumb strip stays hidden). */
         if (scopeBreadcrumbRow && scopeRowActs) scopeBreadcrumbRow.appendChild(scopeRowActs);
@@ -15758,7 +15643,7 @@
       return (isTypingTarget(el) || isInMarkdownEditSurface(el)) && !(el && el.id === 'query');
     }
 
-    /** Any dropdown menu, the toggle of an open one, or a breadcrumb flyout owns ↑/↓/←/→ + Enter: skip global table/scope nav, or Enter opens the selected result row instead of the focused item (Ctrl+L recent folders did), the first ↓ from the toggle also moves the results selection, and ←/→ would drill the flyout chain. */
+    /** Any dropdown menu, the toggle of an open one, or a breadcrumb flyout owns ↑/↓/←/→ + Enter: skip global table/scope nav, or Enter opens the selected result row instead of the focused item, the first ↓ from the toggle also moves the results selection, and ←/→ would drill the flyout chain. */
     function isMenuKeyboardNavTarget(el) {
       if (!el || !el.closest) return false;
       if (el.matches('[data-bs-toggle="dropdown"][aria-expanded="true"]')) return true;
@@ -16662,15 +16547,6 @@
         void runUndo();
         return;
       }
-      if (modC && (e.key === 'l' || e.key === 'L')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        const hb = document.getElementById('btnScopeFolderHistory');
-        if (!hb) return;
-        bootstrap.Dropdown.getOrCreateInstance(hb).show();
-        return;
-      }
       if (modC && !e.shiftKey && (e.key === 't' || e.key === 'T')) {
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
@@ -17143,22 +17019,6 @@
           window.tagBrowser.tagPrefsWriteSync(tagPrefsSnapshotForDisk());
         } catch (_) {}
       }
-    });
-    {
-      const rf = document.getElementById('rootFolder').value.trim();
-      if (rf) rememberScopeFolderHistory(normalizeFolderPathForEverything(rf));
-    }
-    document.getElementById('btnScopeFolderHistory').addEventListener('show.bs.dropdown', () => {
-      // The menu is right-aligned to the button, so it may only grow leftwards as far as the window allows; long paths wrap instead.
-      const ul = document.getElementById('scopeFolderHistoryMenu');
-      const room = Math.max(240, Math.floor(document.getElementById('btnScopeFolderHistory').getBoundingClientRect().right - 8));
-      ul.style.maxWidth = room + 'px';
-      ul.style.minWidth = Math.min(416, room) + 'px';
-      renderScopeFolderHistoryMenu();
-    });
-    document.getElementById('btnScopeFolderHistory').addEventListener('shown.bs.dropdown', () => {
-      const f = document.getElementById('scopeFolderHistoryFilter');
-      if (f) f.focus();
     });
     renderScopeBreadcrumb();
     bindResultsTableDragDrop();
