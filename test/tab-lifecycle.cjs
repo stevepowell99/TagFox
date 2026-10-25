@@ -12,7 +12,7 @@ async function main() {
   const log = (...a) => console.log(...a);
   let drv;
   try {
-    drv = await connect({ port: 9331, profile: 'tagfox-test-tab-lifecycle', scope: SCOPES.repo });
+    drv = await connect({ profile: 'tagfox-test-tab-lifecycle', scope: SCOPES.repo });
     const { T, ev, state, settle } = drv;
     log('Hook ready.');
 

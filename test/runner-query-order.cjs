@@ -36,7 +36,7 @@ async function main() {
 
   let drv;
   try {
-    drv = await connect({ port: 9371, profile: 'tagfox-test-runner-query-order', scope: root });
+    drv = await connect({ profile: 'tagfox-test-runner-query-order', scope: root });
     console.log('Hook ready.');
     await drv.settle('startup');
     /* The query as Everything answers it for Runner (Match path on), so each sent text can be checked for rows. */

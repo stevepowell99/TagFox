@@ -30,7 +30,7 @@ srv.listen(0, '127.0.0.1', async () => {
   const port = srv.address().port;
   const sent = '/probe?file=abc&p=Causal%20Map/x.md';
   const url = `http://127.0.0.1:${port}${sent}`;
-  const drv = await connect({ port: 9323, profile: 'tagfox-test-browser', scope: SCOPES.repo });
+  const drv = await connect({ profile: 'tagfox-test-browser', scope: SCOPES.repo });
   await drv.settle('startup');
   await sleep(200);
   const r = await drv.ev(`window.tagBrowser.openUrlDefaultBrowser(${JSON.stringify({ url })})`);

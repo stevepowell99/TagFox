@@ -19,7 +19,7 @@ async function main() {
   };
   let drv;
   try {
-    drv = await connect({ port: 9352, profile: 'tagfox-test-recent-tab', scope: SCOPES.repo });
+    drv = await connect({ profile: 'tagfox-test-recent-tab', scope: SCOPES.repo });
     const { ev, T, settle } = drv;
     await settle('startup');
 

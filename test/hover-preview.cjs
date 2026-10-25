@@ -71,7 +71,7 @@ async function main() {
   fs.writeFileSync(path.join(root, 'hovernote.txt'), 'note\n');
   let drv;
   try {
-    drv = await connect({ port: 9327, profile: 'tagfox-test-hover', scope: root });
+    drv = await connect({ profile: 'tagfox-test-hover', scope: root });
     console.log('Hook ready.');
     await drv.ev(`(() => { const c = document.getElementById('optHoverPreview'); c.checked = true; c.dispatchEvent(new Event('change')); return 1; })()`);
 

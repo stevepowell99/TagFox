@@ -9,7 +9,7 @@ async function main() {
   const log = (...a) => console.log(...a);
   let drv;
   try {
-    drv = await connect({ port: 9301, profile: 'tagfox-test-smoke', scope: SCOPES.repo });
+    drv = await connect({ profile: 'tagfox-test-smoke', scope: SCOPES.repo });
     const { T, ev, settle } = drv;
     log('Hook ready.');
 

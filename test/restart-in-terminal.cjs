@@ -9,15 +9,13 @@
 // with a code nobody is waiting for.
 const { spawn } = require('child_process');
 const path = require('path');
-const os = require('os');
 const fs = require('fs');
-const { APP_DIR, sleep } = require('./harness.cjs');
+const { APP_DIR, sleep, freePort, testProfileDir } = require('./harness.cjs');
 const { killTestElectron } = require('./test-processes.cjs');
 
-const PORT = 9347;
-const ORPHAN_PORT = 9348;
-let port = PORT;
-const userData = path.join(os.tmpdir(), 'tagfox-test-restart');
+// The CDP port each TagFox here listens on, from the OS (see harness.cjs); a restart keeps its arguments.
+let port = 0;
+const userData = testProfileDir('tagfox-test-restart');
 const ELECTRON = path.join(APP_DIR, 'node_modules', 'electron', 'dist', 'electron.exe');
 
 async function pageWs() {
@@ -75,7 +73,8 @@ async function evaluateOnce(expr) {
 
 (async () => {
   try { fs.rmSync(userData, { recursive: true, force: true }); } catch (_) {}
-  const wrapper = spawn(process.execPath, [path.join(APP_DIR, 'scripts', 'start.js'), `--remote-debugging-port=${PORT}`, `--user-data-dir=${userData}`], {
+  port = await freePort();
+  const wrapper = spawn(process.execPath, [path.join(APP_DIR, 'scripts', 'start.js'), `--remote-debugging-port=${port}`, `--user-data-dir=${userData}`], {
     cwd: APP_DIR,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, TAGFOX_TEST_HIDDEN: '1' },
@@ -120,9 +119,9 @@ async function evaluateOnce(expr) {
   // relaunches it outside this test's process tree, so cleanup goes by its profile, not by the tree, and
   // the wait for the relaunch is bounded: on 23 October 2026 an unanswered page held this test for the
   // suite's whole five minutes and the relaunched TagFox was left open on Steve's screen.
-  port = ORPHAN_PORT;
+  port = await freePort();
   const orphanProfile = `${userData}-orphan`;
-  const orphan = spawn(ELECTRON, [APP_DIR, `--remote-debugging-port=${ORPHAN_PORT}`, `--user-data-dir=${orphanProfile}`], {
+  const orphan = spawn(ELECTRON, [APP_DIR, `--remote-debugging-port=${port}`, `--user-data-dir=${orphanProfile}`], {
     cwd: APP_DIR,
     stdio: 'ignore',
     env: { ...process.env, TAGFOX_TEST_HIDDEN: '1', TAGFOX_START_WRAPPER: '75', TAGFOX_START_WRAPPER_PID: String(wrapper.pid) },

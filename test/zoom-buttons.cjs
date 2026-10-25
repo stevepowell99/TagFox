@@ -16,7 +16,7 @@ async function main() {
   const failures = [];
   let drv;
   try {
-    drv = await connect({ port: 9316, profile: 'tagfox-test-zoom', scope: SCOPES.repo });
+    drv = await connect({ profile: 'tagfox-test-zoom', scope: SCOPES.repo });
     console.log('Hook ready.');
     await drv.settle('startup');
 

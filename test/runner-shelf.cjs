@@ -43,7 +43,7 @@ async function main() {
 
   let drv;
   try {
-    drv = await connect({ port: 9374, profile: 'tagfox-test-runner-shelf', scope: root });
+    drv = await connect({ profile: 'tagfox-test-runner-shelf', scope: root });
     console.log('Hook ready.');
     await drv.settle('startup');
     await drv.T('setRunnerMode', true);

@@ -47,7 +47,7 @@ async function main() {
     fs.mkdirSync(TMP, { recursive: true });
     fs.writeFileSync(PROBE, A);
 
-    drv = await connect({ port: 9361, profile: 'tagfox-test-md-preview', scope: SCOPES.repo });
+    drv = await connect({ profile: 'tagfox-test-md-preview', scope: SCOPES.repo });
     const { T } = drv;
     console.log('Hook ready.');
     await drv.settle('startup');

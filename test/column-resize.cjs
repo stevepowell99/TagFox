@@ -66,7 +66,7 @@ async function main() {
   const failures = [];
   let drv;
   try {
-    drv = await connect({ port: 9309, profile: 'tagfox-test-colresize', scope: SCOPES.repo });
+    drv = await connect({ profile: 'tagfox-test-colresize', scope: SCOPES.repo });
     console.log('Hook ready.');
     await checkView(drv, 'flat view', true, failures);
     await checkView(drv, 'tree view', false, failures);

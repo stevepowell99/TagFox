@@ -22,6 +22,18 @@ const SCOPES = {
   test: path.join(APP_DIR, 'test'),
 };
 
+// Each checkout (C:\dev\TagFox and every worktree) runs its own suite, often at the same time, so a test's
+// profile folder carries a tag for its checkout and its CDP port comes from the OS: two checkouts never share
+// a profile, which connect() wipes at launch, or a port, which each would otherwise drive the other through.
+const CHECKOUT_TAG = require('crypto').createHash('sha1').update(APP_DIR.toLowerCase()).digest('hex').slice(0, 6);
+const testProfileDir = (name) => path.join(os.tmpdir(), `${name}-${CHECKOUT_TAG}`);
+const freePort = () =>
+  new Promise((resolve, reject) => {
+    const srv = require('net').createServer();
+    srv.on('error', reject);
+    srv.listen(0, '127.0.0.1', () => { const { port } = srv.address(); srv.close(() => resolve(port)); });
+  });
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const HOOK_WAIT_MS = 45000;
 const HOOK_SLOW_MS = 5000;
@@ -78,12 +90,13 @@ function makeCdp(wsUrl) {
 }
 
 // Launch Electron (isolated profile + remote debugging), load the app with the #tagfoxtest hook, and
-// return a driver. Each test passes a unique port + profile so runs do not collide.
+// return a driver. Each test passes a unique profile name, so its runs do not collide with another test's.
 // profileFiles: { name: text } written into the fresh profile before launch, for settings main reads at startup.
-async function connect({ port, profile, maxResults = 60, scope = SCOPES.repo, disableAutofill = true, profileFiles = {} } = {}) {
-  if (!port || !profile) throw new Error('connect needs { port, profile }');
+async function connect({ profile, maxResults = 60, scope = SCOPES.repo, disableAutofill = true, profileFiles = {} } = {}) {
+  if (!profile) throw new Error('connect needs { profile }');
   const baseUrl = await resolveEverythingUrl();
-  const userData = path.join(os.tmpdir(), profile);
+  const port = await freePort();
+  const userData = testProfileDir(profile);
   // Wipe the profile so every run starts fresh (deterministic startup: no tabsState/settings carried
   // over from a prior run — otherwise e.g. persisted tabs would break the "1 tab at startup" assertion).
   try { fs.rmSync(userData, { recursive: true, force: true }); } catch (_) {}
@@ -169,4 +182,4 @@ function structuralProblems(s) {
   return probs;
 }
 
-module.exports = { connect, structuralProblems, SCOPES, APP_DIR, sleep };
+module.exports = { connect, structuralProblems, SCOPES, APP_DIR, sleep, freePort, testProfileDir };

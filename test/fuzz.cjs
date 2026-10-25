@@ -23,7 +23,7 @@ async function main() {
   const log = (...a) => console.log(...a);
   let drv;
   try {
-    drv = await connect({ port: 9302, profile: 'tagfox-test-fuzz', scope: SCOPE_LIST[0] });
+    drv = await connect({ profile: 'tagfox-test-fuzz', scope: SCOPE_LIST[0] });
     const { T, state, diag, settle } = drv;
     log('Fuzz', ITERS, 'iters, seed', SEED);
 

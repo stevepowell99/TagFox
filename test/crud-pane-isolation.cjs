@@ -14,7 +14,7 @@ async function main() {
   const log = (...a) => console.log(...a);
   let drv;
   try {
-    drv = await connect({ port: 9321, profile: 'tagfox-test-crud-isolation', scope: SCOPES.repo });
+    drv = await connect({ profile: 'tagfox-test-crud-isolation', scope: SCOPES.repo });
     const { T, diag, settle } = drv;
     log('Hook ready.');
 

@@ -24,7 +24,7 @@ async function main() {
 
   let drv;
   try {
-    drv = await connect({ port: 9318, profile: 'tagfox-test-runner-syntax', scope: root });
+    drv = await connect({ profile: 'tagfox-test-runner-syntax', scope: root });
     console.log('Hook ready.');
     await drv.settle('startup');
     await drv.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16 });

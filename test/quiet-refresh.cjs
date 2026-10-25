@@ -69,7 +69,7 @@ async function main() {
 
   let drv;
   try {
-    drv = await connect({ port: 9351, profile: 'tagfox-test-quiet-refresh' });
+    drv = await connect({ profile: 'tagfox-test-quiet-refresh' });
     const { ev, T, settle, baseUrl } = drv;
 
     const seeded = await waitForIndex(baseUrl, STEM + '-a', SEED_FILES);

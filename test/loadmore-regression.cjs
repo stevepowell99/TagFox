@@ -13,7 +13,7 @@ async function main() {
   let drv;
   try {
     // small page cap + a file-heavy scope so a second page exists (hasMore)
-    drv = await connect({ port: 9303, profile: 'tagfox-test-loadmore', scope: SCOPES.vendor, maxResults: 20 });
+    drv = await connect({ profile: 'tagfox-test-loadmore', scope: SCOPES.vendor, maxResults: 20 });
     const { T, settle } = drv;
 
     await T('setView', true, 'files');

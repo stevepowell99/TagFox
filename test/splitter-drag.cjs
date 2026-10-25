@@ -86,7 +86,7 @@ async function main() {
   const failures = [];
   let drv;
   try {
-    drv = await connect({ port: 9311, profile: 'tagfox-test-splitter', scope: SCOPES.repo });
+    drv = await connect({ profile: 'tagfox-test-splitter', scope: SCOPES.repo });
     console.log('Hook ready.');
     await drv.settle('startup');
     await sleep(200);

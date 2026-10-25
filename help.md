@@ -143,7 +143,7 @@ Three icon-pair switches next to the search box — combine them freely:
 
 ### ⌨️ Keys
 
-Type to search. With the box empty you see the current folder's own contents; once you type, the search covers everything below it. This list is drawn from the same table Runner's keys are read from, so it always matches them; `?` in an empty box opens it.
+Type to search. With the box empty you see the current folder's own contents; once you type, the search covers everything below it, or only the folder's own contents while the `/` command **Search this folder only** is on (it shows as a chip). This list is drawn from the same table Runner's keys are read from, so it always matches them; `?` in an empty box opens it.
 
 <div id="runnerKeysTable"></div>
 

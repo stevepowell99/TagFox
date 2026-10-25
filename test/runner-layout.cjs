@@ -1,6 +1,7 @@
 // The Runner layout: Settings "Toggle key opens: Runner" turns the same renderer into one large search box
 // with a ranked flat list. This drives it with real key events over CDP and checks:
-//   - an empty box lists only the current folder's own contents, and typing searches below it;
+//   - an empty box lists only the current folder's own contents, and typing searches below it, unless
+//     "Search this folder only" is on, which keeps the same search to the folder's own contents;
 //   - a file created on disk appears (positive control: an empty list would pass the rest);
 //   - Right on a folder makes it the current folder and clears the box; Left goes back up and
 //     selects the folder it came from;
@@ -115,7 +116,7 @@ async function main() {
   let drv;
   let tempFile = null;
   try {
-    drv = await connect({ port: 9316, profile: 'tagfox-test-runner', scope: root });
+    drv = await connect({ profile: 'tagfox-test-runner', scope: root });
     console.log('Hook ready.');
     await drv.settle('startup');
     const classicLayout = await drv.ev(`document.querySelector('input[name="rvViewMode"]:checked')?.value`);
@@ -180,6 +181,19 @@ async function main() {
     const iFold = s.rows.findIndex((r) => norm(r) === norm(alpha));
     check(iInner > iNote && iInner > iFold && iNote >= 0 && iFold >= 0, `name matches rank above a path-only match (folder ${iFold}, note ${iNote}, inner ${iInner})`);
     check(norm(s.selected) === norm(s.rows[0]), 'the top row is selected after typing');
+
+    // "Search this folder only": the same search keeps the folder's own matches and drops the one below.
+    await drv.T('runCommand', 'this-folder');
+    await drv.settle('/this folder only');
+    s = await R();
+    check(
+      s.chips.includes('this-folder') && !s.subfolders && has(s.rows, path.join(root, 'alphafold-note.md')) && has(s.rows, alpha) && !has(s.rows, path.join(alpha, 'inner.txt')),
+      `"Search this folder only" keeps the folder's own matches and drops the subfolder's (chips ${s.chips}: ${s.rows.map((r) => path.basename(r))})`
+    );
+    await drv.T('runCommand', 'this-folder');
+    await drv.settle('/this folder only off');
+    s = await R();
+    check(!s.chips.includes('this-folder') && s.subfolders && has(s.rows, path.join(alpha, 'inner.txt')), `the same command again searches below the folder (chips ${s.chips})`);
 
     // Matches at the start and end of a word rank above matches inside one.
     await drv.T('setQuery', 'map');

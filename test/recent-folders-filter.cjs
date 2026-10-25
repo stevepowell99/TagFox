@@ -16,7 +16,7 @@ async function main() {
   const failures = [];
   let drv;
   try {
-    drv = await connect({ port: 9315, profile: 'tagfox-test-recent-filter', scope: SCOPES.repo });
+    drv = await connect({ profile: 'tagfox-test-recent-filter', scope: SCOPES.repo });
     await drv.settle('startup');
 
     const target = path.join(APP_DIR, '_tmp', 'quokka-' + process.pid);

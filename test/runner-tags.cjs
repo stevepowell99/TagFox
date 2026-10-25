@@ -39,7 +39,7 @@ async function main() {
 
   let drv;
   try {
-    drv = await connect({ port: 9342, profile: 'tagfox-test-runner-tags', scope: root });
+    drv = await connect({ profile: 'tagfox-test-runner-tags', scope: root });
     console.log('Hook ready.');
     await drv.settle('startup');
     const key = async (k, code, vk, mods = 0, text) => {

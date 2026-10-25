@@ -76,6 +76,7 @@
       runnerSort: 'tagBrowserRunnerSort',
       runnerHideTemp: 'tagBrowserRunnerHideTemp',
       runnerStarredOnly: 'tagBrowserRunnerStarredOnly',
+      runnerThisFolderOnly: 'tagBrowserRunnerThisFolderOnly',
       runnerViewerOff: 'tagBrowserRunnerViewerOff',
       runnerWordStarts: 'tagBrowserRunnerWordStarts',
       /* Set once Runner's old hide-~ default has been carried over to showing ~ paths ranked down. */
@@ -4232,6 +4233,19 @@
       void runSearchNow('identity');
     }
 
+    /** This folder only: typing (or a tag, a deadline range, Starred only) searches the current folder's own
+        contents rather than everything below it. No folder means the whole index either way. */
+    function runnerThisFolderOnlyOn() {
+      return isRunnerMode() && localStorage.getItem(LS.runnerThisFolderOnly) === '1';
+    }
+
+    function runnerToggleThisFolderOnly() {
+      if (runnerThisFolderOnlyOn()) localStorage.removeItem(LS.runnerThisFolderOnly);
+      else localStorage.setItem(LS.runnerThisFolderOnly, '1');
+      selectAfterSearchKey = null;
+      void runSearchNow('identity');
+    }
+
     /** A deadline command: that range, or off when it is already the one set. */
     function runnerToggleDeadline(range) {
       setDeadlineRange(activeDeadlineRange === range ? '' : range);
@@ -4405,6 +4419,7 @@
       { id: 'temp', group: 'Show', label: 'Hide temp files (AppData\\Local\\Temp; listed lower when shown)', isOn: () => runnerHideTempOn(), run: () => runnerToggleTemp() },
       { id: 'folders', group: 'Show', label: 'Folders only', isOn: () => isFoldersOnly(), run: () => runnerSetContent(isFoldersOnly() ? 'all' : 'folders') },
       { id: 'files', group: 'Show', label: 'Files only', isOn: () => isFilesOnly(), run: () => runnerSetContent(isFilesOnly() ? 'all' : 'files') },
+      { id: 'this-folder', group: 'Match', label: 'Search this folder only (not its subfolders)', isOn: () => runnerThisFolderOnlyOn(), run: () => runnerToggleThisFolderOnly() },
       { id: 'path', group: 'Match', label: 'Match path (off: names only)', isOn: () => !!document.getElementById('optPath')?.checked, run: () => runnerToggleMatchPath() },
       { id: 'word', group: 'Match', label: 'Whole words only', isOn: () => runnerOptOn('optWholeWord'), run: () => toggleSearchOptCheckbox('optWholeWord') },
       { id: 'case', group: 'Match', label: 'Match case', isOn: () => runnerOptOn('optCase'), run: () => toggleSearchOptCheckbox('optCase') },
@@ -4481,6 +4496,7 @@
       { id: 'word', icon: 'fa-spell-check', on: () => runnerOptOn('optWholeWord'), label: () => 'Whole words only', reset: () => toggleSearchOptCheckbox('optWholeWord') },
       { id: 'case', icon: 'fa-font', on: () => runnerOptOn('optCase'), label: () => 'Match case', reset: () => toggleSearchOptCheckbox('optCase') },
       { id: 'word-starts', icon: 'fa-i-cursor', on: () => runnerWordStartsOnly(), label: () => 'Word starts only', reset: () => runnerToggleWordStarts() },
+      { id: 'this-folder', icon: 'fa-folder', on: () => runnerThisFolderOnlyOn(), label: () => 'This folder only', reset: () => runnerToggleThisFolderOnly() },
       { id: 'accents', icon: 'fa-language', on: () => runnerOptOn('optDiacritics'), label: () => 'Accents must match', reset: () => toggleSearchOptCheckbox('optDiacritics') },
       {
         id: 'tags',
@@ -4600,6 +4616,7 @@
       localStorage.removeItem(LS.runnerHideTemp);
       localStorage.removeItem(LS.runnerWordStarts);
       localStorage.removeItem(LS.runnerStarredOnly);
+      localStorage.removeItem(LS.runnerThisFolderOnly);
       activeTagKeys.clear();
       excludedTagKeys.clear();
       persistActiveTagFilter();
@@ -17535,11 +17552,12 @@
       if (isRunnerMode()) {
         runnerResetRenderWindowIfNewList();
         /* Runner: a plain flat list. An empty box lists the current folder's own contents; typing, a tag to
-           look for, a deadline range or Starred only searches below it. A not-tag alone names nothing to look
-           for, so it only thins that list. */
+           look for, a deadline range or Starred only searches below it, unless This folder only is on. A not-tag
+           alone names nothing to look for, so it only thins that list. */
         const q = (document.getElementById('query')?.value || '').trim();
         const wantsTag = [...activeTagKeys].some((k) => !excludedTagKeys.has(k));
-        applyResultsViewRadiosToDom('flat', !!(q || wantsTag || deadlineFilterActive() || runnerStarredOnlyOn()), resultsContentMode());
+        const below = !!(q || wantsTag || deadlineFilterActive() || runnerStarredOnlyOn()) && !runnerThisFolderOnlyOn();
+        applyResultsViewRadiosToDom('flat', below, resultsContentMode());
         syncViewRadioActiveFromDom();
       } else {
         const smart = isSmartView();
