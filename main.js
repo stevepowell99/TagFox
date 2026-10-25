@@ -81,8 +81,10 @@ try {
 } catch (_) {}
 
 /* Main-process perf probe: append to a temp log we can read after a repro, to localize freezes the
-   renderer sees only as a slow IPC reply. Best-effort; never throws into a hot path. */
-const MAIN_PERF_LOG = path.join(os.tmpdir(), 'tagfox-mainperf.log');
+   renderer sees only as a slow IPC reply. Best-effort; never throws into a hot path. A test instance
+   writes to its own file, so the main log holds only the TagFox Steve uses: tests type, search and load
+   Everything far harder than he does, and mixed in they made his timings unreadable (October 2026). */
+const MAIN_PERF_LOG = path.join(os.tmpdir(), process.env.TAGFOX_TEST_HIDDEN === '1' ? 'tagfox-mainperf-test.log' : 'tagfox-mainperf.log');
 function mainPerfLog(line) {
   try {
     fssync.appendFileSync(MAIN_PERF_LOG, new Date().toISOString() + ' ' + line + '\n');
@@ -5349,114 +5351,72 @@ ipcMain.handle('resolve-google-drive-file-id', async (_event, { fullPath } = {})
 });
 
 /**
- * Windows shell Recent: newest .lnk files in %AppData%\...\Recent, resolved to their targets in one PS run.
- * pathType is the PowerShell Test-Path filter: 'Container' for folders, 'Leaf' for files. label is for
- * error messages. Returns { ok, error, items } where items is [{ path, mtimeMs }] deduped by lowercased path.
+ * Windows shell Recent: the newest .lnk files in %AppData%\...\Recent, resolved to their targets, which are
+ * then split into folders and files. Returns { ok, error, items } where items is [{ path, mtimeMs }], the
+ * shortcut's own time, deduped by lowercased path. Electron's shell.readShortcutLink resolves the 28 newest in
+ * about 90ms and agrees with WScript.Shell's TargetPath on every one (STEVE-DELL, October 2026), against 0.7-1s
+ * for the PowerShell run it replaced, which Runner's ranking boost paid once a minute. One scan serves both
+ * kinds, cached briefly because the Classic favourites column re-renders often.
  */
-/* Resolving .lnk targets shells out to PowerShell (~1.5s startup), and the fav column re-renders often, so
-   cache the result briefly: cuts repeated spawns to one per TTL per kind. Keyed by pathType. */
-const recentLnkScanCache = new Map();
+let recentLnkScanCache = null;
 const RECENT_LNK_SCAN_TTL_MS = 60 * 1000;
 
-async function scanWindowsRecentLnkTargets(pathType, label) {
-  const cached = recentLnkScanCache.get(pathType);
-  if (cached && Date.now() - cached.at < RECENT_LNK_SCAN_TTL_MS) return cached.result;
-  const cacheOk = (result) => {
-    if (result.ok) recentLnkScanCache.set(pathType, { at: Date.now(), result });
-    return result;
-  };
-  const recentDir = path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Recent');
-  let names;
-  try {
-    names = await fs.readdir(recentDir);
-  } catch (e) {
-    return { ok: false, error: String(e.message || e), items: [] };
-  }
-  const lnks = names.filter((n) => n.toLowerCase().endsWith('.lnk'));
-  const withStat = await Promise.all(
-    lnks.map(async (n) => {
-      const full = path.join(recentDir, n);
-      try {
-        const st = await fs.stat(full);
-        return { full, mtimeMs: st.mtimeMs };
-      } catch {
-        return null;
-      }
-    })
-  );
-  const valid = withStat.filter(Boolean).sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 28);
-  if (!valid.length) return cacheOk({ ok: true, error: null, items: [] });
-  const jsonIn = path.join(os.tmpdir(), `tagfox-winrecent-${pathType}-${process.pid}-${Date.now()}.json`);
-  const ps1Body = `param([Parameter(Mandatory)][string]$JsonPath)
-$ErrorActionPreference = 'Stop'
-$raw = Get-Content -LiteralPath $JsonPath -Raw -Encoding UTF8
-$j = $raw | ConvertFrom-Json
-$items = $j.items
-if (-not $items) { Write-Output '[]'; exit 0 }
-if ($items -isnot [System.Array]) { $items = @($items) }
-$sh = New-Object -ComObject WScript.Shell
-$out = @()
-foreach ($it in $items) {
-  $f = [string]$it.full
-  $mt = [double]$it.mtimeMs
-  if (-not $f -or -not (Test-Path -LiteralPath $f)) { continue }
-  try {
-    $s = $sh.CreateShortcut($f)
-    $t = [string]$s.TargetPath
-    if ([string]::IsNullOrWhiteSpace($t)) { continue }
-    $t = $t.Trim()
-    if (Test-Path -LiteralPath $t -PathType ${pathType}) {
-      $out += @{ path = $t; mtimeMs = $mt }
-    }
-  } catch {}
-}
-if ($out.Count -lt 1) { Write-Output '[]' } else { $out | ConvertTo-Json -Compress -Depth 4 }
-`;
-  try {
-    await fs.writeFile(jsonIn, JSON.stringify({ items: valid }), 'utf8');
-    const r = await runPowershellScriptFileAsync(ps1Body, [jsonIn], `Recent ${label} script failed`);
-    if (!r.ok) return { ok: false, error: r.error, items: [] };
-    let arr;
+async function scanWindowsRecentLnkTargets(wantFolders) {
+  if (!recentLnkScanCache || Date.now() - recentLnkScanCache.at >= RECENT_LNK_SCAN_TTL_MS) {
+    const recentDir = path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Recent');
+    let names;
     try {
-      arr = JSON.parse(r.stdout.trim());
-    } catch {
-      return { ok: false, error: `Invalid JSON from recent ${label} script`, items: [] };
+      names = await fs.readdir(recentDir);
+    } catch (e) {
+      return { ok: false, error: String(e.message || e), items: [] };
     }
-    if (!Array.isArray(arr)) {
-      if (arr && typeof arr === 'object' && arr.path != null) arr = [arr];
-      else arr = [];
-    }
-    const items = [];
+    const withStat = await Promise.all(
+      names
+        .filter((n) => n.toLowerCase().endsWith('.lnk'))
+        .map(async (n) => {
+          const full = path.join(recentDir, n);
+          try {
+            return { full, mtimeMs: (await fs.stat(full)).mtimeMs };
+          } catch {
+            return null;
+          }
+        })
+    );
+    const newest = withStat.filter(Boolean).sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 28);
+    const folders = [];
+    const files = [];
     const seen = new Set();
-    for (const row of arr) {
-      if (!row || typeof row !== 'object') continue;
-      const p = path.normalize(String(row.path || '').trim());
-      if (!p) continue;
+    for (const lnk of newest) {
+      let target = '';
+      try {
+        target = String(shell.readShortcutLink(lnk.full).target || '').trim();
+      } catch (_) {}
+      if (!target) continue;
+      const p = path.normalize(target);
       const low = p.toLowerCase();
       if (seen.has(low)) continue;
       seen.add(low);
-      const mtimeMs = typeof row.mtimeMs === 'number' ? row.mtimeMs : 0;
-      items.push({ path: p, mtimeMs });
+      let st = null;
+      try {
+        st = await fs.stat(p);
+      } catch (_) {}
+      if (!st) continue;
+      (st.isDirectory() ? folders : files).push({ path: p, mtimeMs: lnk.mtimeMs });
     }
-    return cacheOk({ ok: true, error: null, items });
-  } catch (e) {
-    return { ok: false, error: String(e.message || e), items: [] };
-  } finally {
-    try {
-      fssync.unlinkSync(jsonIn);
-    } catch (_) {}
+    recentLnkScanCache = { at: Date.now(), folders, files };
   }
+  return { ok: true, error: null, items: wantFolders ? recentLnkScanCache.folders : recentLnkScanCache.files };
 }
 
 ipcMain.handle('windows-recent-folders', async () => {
   if (process.platform !== 'win32') return { ok: true, folders: [] };
-  const r = await scanWindowsRecentLnkTargets('Container', 'folders');
+  const r = await scanWindowsRecentLnkTargets(true);
   return { ok: r.ok, error: r.error, folders: r.items };
 });
 
 ipcMain.handle('windows-recent-files', async () => {
   if (process.platform !== 'win32') return { ok: true, files: [] };
-  const r = await scanWindowsRecentLnkTargets('Leaf', 'files');
+  const r = await scanWindowsRecentLnkTargets(false);
   return { ok: r.ok, error: r.error, files: r.items };
 });
 

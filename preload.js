@@ -155,6 +155,6 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   setPageZoomChangedHandler: (fn) => {
     onPageZoomChanged = typeof fn === 'function' ? fn : null;
   },
-  /** Renderer-side jank lines into the main perf log (%TEMP%\tagfox-mainperf.log); rate-capped in main. */
+  /** Renderer-side jank lines into the main perf log (%TEMP%\tagfox-mainperf.log, or -test.log for a test instance); rate-capped in main. */
   perfLog: (line) => ipcRenderer.send('tagfox-perf-log', String(line || '')),
 });
