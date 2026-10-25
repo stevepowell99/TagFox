@@ -63,7 +63,7 @@ async function main() {
   fs.mkdirSync(DIR, { recursive: true });
   let drv;
   try {
-    drv = await connect({ runner: true, profile: 'tagfox-test-fuzz', scope: SCOPE_LIST[0] });
+    drv = await connect({ profile: 'tagfox-test-fuzz', scope: SCOPE_LIST[0] });
     const { T, ev, diag, settle, state } = drv;
     log('Fuzz', ITERS, 'iters, seed', SEED);
     // An interval of 0 (connect() switches the timer off) makes every tick return before it looks at anything.

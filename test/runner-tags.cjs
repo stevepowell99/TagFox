@@ -99,8 +99,6 @@ async function main() {
     };
 
     await key('Shift', 'ShiftLeft', 16); // a hidden window runs no frames until its first input
-    await drv.T('setRunnerMode', true);
-    await drv.settle('runner on');
     await drv.T('configure', { rootFolder: root });
     // Everything indexes new files within a second or so; wait until it lists them all.
     let all = [];

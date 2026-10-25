@@ -60,8 +60,6 @@ async function main() {
     const { ev, T } = drv;
     await drv.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16 });
     await drv.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16 });
-    await T('setRunnerMode', true);
-    await drv.settle('runner');
     await T('configure', { rootFolder: root });
     const norm = (p) => String(p || '').replace(/[\\/]+$/, '').toLowerCase();
     const waitForRow = async (p, label) => {

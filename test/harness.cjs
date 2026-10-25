@@ -101,10 +101,10 @@ function makeCdp(wsUrl) {
 // autoRefresh: leave the 5-second auto-refresh timer running. Off by default: a tick is a whole search arriving
 // at a moment no test chose, which shifted a count in runner-query-order one run in five, and a stranded test
 // instance ticking for an hour once loaded Everything for the whole machine. Tests drive ticks with autoTick.
-// runner: switch to the Runner layout, then go into the scope folder with a search, as a folder pick does.
-// Runner starts from its own saved state, whose scope is the whole machine, and setting the folder without a
-// search leaves the breadcrumb and the list on the old one.
-async function connect({ profile, maxResults = 60, scope = SCOPES.repo, disableAutofill = true, profileFiles = {}, autoRefresh = false, runner = false } = {}) {
+// scope: the folder connect() goes into with a search before it returns, as a folder pick does. Runner starts
+// from its own state, whose scope is the whole machine, and a folder set without a search leaves the
+// breadcrumb and the list on the old one.
+async function connect({ profile, maxResults = 60, scope = SCOPES.repo, disableAutofill = true, profileFiles = {}, autoRefresh = false } = {}) {
   if (!profile) throw new Error('connect needs { profile }');
   const baseUrl = await resolveEverythingUrl();
   const port = await freePort();
@@ -197,11 +197,8 @@ async function connect({ profile, maxResults = 60, scope = SCOPES.repo, disableA
     }
     throw new Error(`[${label}] did not settle within ${maxMs}ms (last flowRunning=${last && last.searchFlowRunning}, inFlight=${last && last.searchInFlight})`);
   };
-  if (runner) {
-    await T('setRunnerMode', true);
-    await T('setScope', scope);
-    await settle('runner on');
-  }
+  await T('setScope', scope);
+  await settle('scope');
 
   let closed = false;
   const close = () => { closed = true; try { cdp.close(); } catch (_) {} try { child.kill('SIGKILL'); } catch (_) {} };

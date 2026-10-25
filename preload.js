@@ -45,8 +45,6 @@ ipcRenderer.on('tagfox-app-restart-imminent', (_e, payload) => {
 });
 
 contextBridge.exposeInMainWorld('tagBrowser', {
-  /** An automated test's instance (the harness sets TAGFOX_TEST_HIDDEN), known from the first page load. */
-  isTestInstance: process.env.TAGFOX_TEST_HIDDEN === '1',
   search: (payload) => ipcRenderer.invoke('everything-search', payload),
   openPath: (fullPath) => ipcRenderer.invoke('open-path', fullPath),
   showInFolder: (fullPath) => ipcRenderer.invoke('show-in-folder', fullPath),

@@ -86,7 +86,7 @@ async function main() {
   let drv;
   const start = logSize();
   try {
-    drv = await connect({ runner: true, profile: 'tagfox-test-page-health' });
+    drv = await connect({ profile: 'tagfox-test-page-health' });
     console.log('Hook ready.');
     check(await waitFor(async () => /page loaded index\.html/.test(logSince(start)), 5000), 'a page load is logged');
 

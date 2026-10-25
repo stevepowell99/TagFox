@@ -159,7 +159,6 @@ The hook is the only test-specific code in the shipped app and adds no behaviour
 
 Require `./harness.cjs`, call `connect({ profile })` for a driver, drive via `T('method', ...args)`,
 `await settle('label')`, and assert with `structuralProblems(s)`. Use a unique `profile` per file; the port
-is picked free. `connect({ runner: true })` switches to the Runner layout and goes into the scope folder with
-a search, as a folder pick does, before it returns; a test instance otherwise opens a fresh profile in
-Classic. `connect({ profileFiles: { name: text } })` writes files into the fresh profile before launch, for
+is picked free. A test instance opens in Runner, and `connect({ scope })` goes into the scope folder with a
+search, as a folder pick does, before it returns. `connect({ profileFiles: { name: text } })` writes files into the fresh profile before launch, for
 settings main reads at startup (`window-chrome.cjs` seeds `tagfox-window-chrome.json`). Add new drivers or inspectors to the `#tagfoxtest` hook in `renderer.js` if you need more control.

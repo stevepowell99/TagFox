@@ -14,7 +14,7 @@ async function main() {
     // Runner asks for at least RUNNER_RANK.fetchCap (300) rows a page, so the query is a file type found
     // thousands of times under the repo (node_modules included), which leaves a second page (hasMore). Typing
     // is what makes Runner search below the folder: an empty box lists only the folder's own contents.
-    drv = await connect({ runner: true, profile: 'tagfox-test-loadmore', scope: SCOPES.repo, autoRefresh: true });
+    drv = await connect({ profile: 'tagfox-test-loadmore', scope: SCOPES.repo, autoRefresh: true });
     const { T, settle } = drv;
 
     await T('setQuery', '.js');

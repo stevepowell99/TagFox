@@ -30,7 +30,7 @@ async function main() {
   fs.writeFileSync(path.join(folder, 'inside.txt'), 'x\n');
   let drv;
   try {
-    drv = await connect({ runner: true, profile: 'tagfox-test-hotkey-raise-select', scope: SCOPES.repo });
+    drv = await connect({ profile: 'tagfox-test-hotkey-raise-select', scope: SCOPES.repo });
     const { ev, T, settle, send } = drv;
     await settle('startup');
     const key = async (k, code, vk, text) => {

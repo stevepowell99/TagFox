@@ -56,7 +56,6 @@
       viewerDocSplitPct: 'tagBrowserViewerDocSplitPct',
       viewerDocSplitPctTheater: 'tagBrowserViewerDocSplitPctTheater',
       /* Runner layout: which layout the toggle key opens, and each layout's search state while the other is up. */
-      toggleOpens: 'tagBrowserToggleOpens',
       runnerState: 'tagBrowserRunnerState',
       runnerClassicStash: 'tagBrowserRunnerClassicStash',
       runnerSort: 'tagBrowserRunnerSort',
@@ -2719,7 +2718,6 @@
       }
       runnerModeOn = on;
       selectAfterSearchKey = null;
-      localStorage.setItem(LS.toggleOpens, on ? 'runner' : 'classic');
       document.body.classList.toggle('tagfox-runner', on);
       placeStatusLineForLayout(on);
       closeRunnerCmdList(false);
@@ -2757,21 +2755,6 @@
       const bar = document.getElementById('tagfoxNavbarStatus');
       const shelf = document.getElementById('appShelf');
       placeForLayout(bar, on, shelf && shelf.parentElement, shelf);
-    }
-
-    /** Switch layouts (the test hook only: Runner is the one layout on screen) and re-run the search. */
-    async function setRunnerMode(on) {
-      if (!!on === runnerModeOn) return;
-      applyRunnerModeSync(on);
-      updateQueryPlaceholder();
-      persistActiveTagFilter();
-      saveSettings();
-      syncSortPathClass();
-      renderScopeBreadcrumb();
-      applyPaneWidths();
-      await runSearchNow('identity');
-      focusQueryBox(false);
-      syncTitleBarOverlayColors();
     }
 
     /** A typed file type: `.pdf` or `*.pdf`, or `-.tmp` to leave one out. */
@@ -16505,17 +16488,12 @@
     installRendererPerfProbe();
     renderTable();
     bindRunnerChromeOnce();
-    /* Runner is the only layout on screen (Steve, 24 October 2026). Classic's code stays until it is deleted
-       in stages, and a test instance still opens a fresh profile in Classic, so the Classic tests keep
-       guarding that code while it is there. Test instances are told by the preload, not by the #tagfoxtest
-       hash: the harness first loads the page without the hash, and a Runner start then would save Runner
-       into the profile before the hook load reads it. */
-    if (!window.tagBrowser?.isTestInstance || localStorage.getItem(LS.toggleOpens) === 'runner') {
-      applyRunnerModeSync(true, { startup: true });
-      updateQueryPlaceholder();
-      syncSortPathClass();
-      renderScopeBreadcrumb();
-    }
+    /* Runner is the only layout (Steve, 24 October 2026), for a test instance as for every other start.
+       Classic's code that is left is deleted in stages. */
+    applyRunnerModeSync(true, { startup: true });
+    updateQueryPlaceholder();
+    syncSortPathClass();
+    renderScopeBreadcrumb();
     scheduleSearch();
     startDidYouKnowTips();
     void renderShelf().then(() => refreshTagFoxChromeTooltips(document.body));
@@ -16625,7 +16603,6 @@
         }),
         disableAutofill: () => { maybeAutoFillResultsUntilScrollable = () => {}; },
         /* Runner layout. */
-        setRunnerMode: (on) => setRunnerMode(!!on),
         setRunnerSort: (sort) => setRunnerSort(String(sort)),
         setDeadlineRange: (range) => setDeadlineRange(String(range || '')),
         setShowHiddenUntil: (on) => setShowHiddenUntil(!!on),

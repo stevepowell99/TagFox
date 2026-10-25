@@ -91,8 +91,6 @@ async function main() {
     };
 
     await key('Shift', 'ShiftLeft', 16); // a hidden window runs no frames until its first input
-    await drv.T('setRunnerMode', true);
-    await drv.settle('runner on');
     await go(root);
     await waitRows((s) => s.rows.some((r) => norm(r) === norm(race)), 'indexed');
 

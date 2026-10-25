@@ -21,7 +21,7 @@ async function main() {
   };
   let drv;
   try {
-    drv = await connect({ runner: true, profile: 'tagfox-test-recent-changes', scope: SCOPES.repo });
+    drv = await connect({ profile: 'tagfox-test-recent-changes', scope: SCOPES.repo });
     const { ev, T, settle } = drv;
     const read = async () => {
       const s = await T('runnerState');

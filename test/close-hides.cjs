@@ -53,8 +53,6 @@ async function main() {
     drv = await connect({ profile: 'tagfox-test-close-hides' });
     console.log('Hook ready.');
     await drv.settle('startup');
-    await drv.T('setRunnerMode', true);
-    await drv.settle('runner');
 
     const wins = browserWindowsOf(drv.pid);
     check(wins.length === 1, `set up: the test TagFox has one browser window (${wins.length})`);

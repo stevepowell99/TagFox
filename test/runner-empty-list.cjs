@@ -30,8 +30,6 @@ async function main() {
     drv = await connect({ profile: 'tagfox-test-runner-empty-list', scope: docs });
     console.log('Hook ready.');
     await drv.settle('startup');
-    await drv.T('setRunnerMode', true);
-    await drv.settle('runner');
     /* Runner starts from its own saved state, which has no folder. */
     await drv.T('configure', { rootFolder: docs });
 

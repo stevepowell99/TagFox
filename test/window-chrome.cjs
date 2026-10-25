@@ -24,7 +24,6 @@ async function main() {
   let drv;
   try {
     drv = await connect({
-      runner: true,
       profile: 'tagfox-test-window-chrome',
       profileFiles: { 'tagfox-window-chrome.json': JSON.stringify({ hideTitleBar: true }) },
     });
@@ -90,7 +89,7 @@ async function main() {
 
     // Positive control: the same checks' premise is false on a framed window. Its own port and profile, so
     // it cannot reach the instance just closed while that one is still going down.
-    drv = await connect({ runner: true, profile: 'tagfox-test-window-chrome-framed' });
+    drv = await connect({ profile: 'tagfox-test-window-chrome-framed' });
     console.log('Hook ready (title bar shown).');
     const framed = await drv.ev(`({ frameless: document.body.classList.contains('tagfox-frameless'), wco: !!(navigator.windowControlsOverlay && navigator.windowControlsOverlay.visible) })`);
     check(!framed.frameless && !framed.wco, `with the setting off the window keeps its title bar (${JSON.stringify(framed)})`);

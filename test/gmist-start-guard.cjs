@@ -60,7 +60,7 @@ async function main() {
   let drv;
   const held = [];
   try {
-    drv = await connect({ runner: true, profile: 'tagfox-test-gmist-guard', scope: SCOPES.repo });
+    drv = await connect({ profile: 'tagfox-test-gmist-guard', scope: SCOPES.repo });
     console.log('Hook ready.');
     await drv.settle('startup');
 

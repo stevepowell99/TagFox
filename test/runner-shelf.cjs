@@ -46,8 +46,6 @@ async function main() {
     drv = await connect({ profile: 'tagfox-test-runner-shelf', scope: root });
     console.log('Hook ready.');
     await drv.settle('startup');
-    await drv.T('setRunnerMode', true);
-    await drv.settle('runner');
     const shelfDir = path.join(drv.userData, 'TagBrowserShelf');
     await drv.T('renderShelf');
 

@@ -29,8 +29,6 @@ async function main() {
     await drv.settle('startup');
     await drv.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16 });
     await drv.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16 });
-    await drv.T('setRunnerMode', true);
-    await drv.settle('runner on');
     await drv.T('configure', { rootFolder: root });
     const names = async (q) => {
       await drv.T('setQuery', q);

@@ -93,8 +93,6 @@ async function main() {
     drv = await connect({ profile: 'tagfox-test-splitter', scope: SCOPES.repo });
     console.log('Hook ready.');
     await drv.settle('startup');
-    await drv.T('setRunnerMode', true);
-    await drv.settle('runner on');
     await sleep(200);
 
     const d = await drv.ev(DRAG);

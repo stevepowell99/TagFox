@@ -42,8 +42,6 @@ async function main() {
     console.log('Hook ready.');
     await drv.settle('startup');
     const { ev, T } = drv;
-    await T('setRunnerMode', true);
-    await drv.settle('runner');
     await ev(`(localStorage.removeItem('tagBrowserFavSearches'), 1)`);
     const norm = (p) => String(p || '').replace(/[\\/]+$/, '').toLowerCase();
     const R = () => T('runnerState');

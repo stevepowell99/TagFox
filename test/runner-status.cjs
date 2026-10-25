@@ -31,8 +31,6 @@ async function main() {
     drv = await connect({ profile: 'tagfox-test-runner-status', scope: root });
     console.log('Hook ready.');
     await drv.settle('startup');
-    await drv.T('setRunnerMode', true);
-    await drv.settle('runner');
     await drv.T('renderShelf');
 
     const key = async (k, code, vk, mods = 0, text) => {

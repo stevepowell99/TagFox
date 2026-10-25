@@ -23,8 +23,6 @@ async function main() {
     drv = await connect({ profile: 'tagfox-test-refresh', scope: SCOPES.repo });
     console.log('Hook ready.');
     await drv.settle('startup');
-    await drv.T('setRunnerMode', true);
-    await drv.settle('runner');
 
     // 1. The options panel carries Refresh, and nothing covers it where the mouse would land.
     await drv.ev(`document.getElementById('btnRunnerOpts').click(); 1`);

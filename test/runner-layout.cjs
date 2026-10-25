@@ -139,17 +139,8 @@ async function main() {
     };
 
     await key('Shift', 'ShiftLeft', 16); // a hidden window runs no frames until its first input
-    // Runner used to hide ~ paths by default: a saved Runner state that still says so is carried over to
-    // showing them, once, and the carried value is saved.
-    await drv.ev(`(localStorage.setItem('tagBrowserRunnerState', JSON.stringify({ optHideTilde: true })), 1)`);
-    await drv.T('setRunnerMode', true);
-    await drv.settle('runner on');
-    const carried = await drv.ev(`JSON.stringify({ live: document.getElementById('optHideTilde').checked, saved: JSON.parse(localStorage.getItem('tagBrowserRunnerState')).optHideTilde })`);
-    check(carried === '{"live":false,"saved":false}', `an old saved hide-~ is carried over to showing ~ paths (${carried})`);
     let s = await R();
     check(s.on && s.bodyClass, `Runner is on`);
-    // Runner keeps its own search state, so its current folder is set here rather than inherited from Classic.
-    await drv.T('configure', { rootFolder: root });
 
     // Empty box: the folder's own contents only.
     check(await waitForRow(path.join(root, 'alphafold-note.md'), 'browse'), 'empty box lists the current folder');
@@ -589,6 +580,22 @@ async function main() {
       return { ok: r.width > 0 && r.left >= box.left && r.right <= box.right && !!hit && b.contains(hit), w: Math.round(r.width) };
     })()`);
     check(restartSeen.ok, `once code has changed it shows there and takes a click (${JSON.stringify(restartSeen)})`);
+
+    // Runner used to hide ~ paths by default: a saved Runner state that still says so is carried over to
+    // showing them, once, at the next start, and the carried value is saved. So the old state is seeded and
+    // the page loaded again, and the carry runs where it runs for Steve, in the start-up apply. It comes last
+    // because the reload drops what connect() set on the page.
+    await drv.ev(`(localStorage.setItem('tagBrowserRunnerState', JSON.stringify({ optHideTilde: true })), localStorage.removeItem('tagBrowserRunnerTildeShownMoved'), location.reload(), 1)`);
+    let hook = false;
+    for (let i = 0; i < 100 && !hook; i++) {
+      await sleep(150);
+      try { hook = await drv.ev(`typeof window.__tagfoxTest === 'object' && !!window.__tagfoxTest`); } catch (_) {}
+    }
+    if (!hook) throw new Error('the test hook never came back after the reload');
+    await drv.T('autoStop');
+    await drv.settle('restarted');
+    const carried = await drv.ev(`JSON.stringify({ live: document.getElementById('optHideTilde').checked, saved: JSON.parse(localStorage.getItem('tagBrowserRunnerState')).optHideTilde })`);
+    check(carried === '{"live":false,"saved":false}', `an old saved hide-~ is carried over to showing ~ paths (${carried})`);
   } catch (e) {
     failures.push('threw: ' + (e && e.stack ? e.stack : e));
     console.error(e);

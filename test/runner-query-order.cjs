@@ -75,8 +75,6 @@ async function main() {
 
     await drv.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16 });
     await drv.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16 });
-    await drv.T('setRunnerMode', true);
-    await drv.settle('runner on');
     await drv.T('configure', { rootFolder: root });
     await drv.T('setQuery', stem);
     check(await waitForRow(tagged, 'indexed') && (await waitForRow(wordOnly, 'indexed 2')), 'Everything lists the test files');

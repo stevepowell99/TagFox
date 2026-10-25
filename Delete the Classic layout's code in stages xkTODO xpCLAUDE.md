@@ -1,6 +1,6 @@
 # Delete the Classic layout's code in stages
 
-Steve decided on 24 October 2026 to keep only Runner: hide Classic first, then delete its code in stages. Classic is hidden (no layout switch, every real start in Runner; the test hook still opens a fresh profile in Classic so its tests guard the code until it goes). This file is the inventory to delete against.
+Steve decided on 24 October 2026 to keep only Runner: hide Classic first, then delete its code in stages. Classic is hidden: there is no layout switch, and every start, a test instance's included, opens in Runner. This file is the inventory to delete against.
 
 - **Each stage** deletes one area (for example Classic's match-option toolbar), its CSS and HTML, and the tests that cover only it, and keeps every piece Runner depends on (listed below). Run the full suite after each stage.
 - **Steve decided on 25 October 2026** what Runner gains before Classic's code goes: the deadline filters as `/` Due commands; a "Show only starred items" command instead of a visible star list; and Windows Recent as a ranking boost rather than a list. A "Search this folder only" command keeps typing to the current folder's own contents. All four are in Runner now. The Shelf shows in Runner (`2d8c22b`), and so does the Restart button, in the search box. Saved searches are back in Runner too (Steve, 25 October 2026): `/` commands ("Save this search", then one per saved search) and `Alt`+`1`…`9`, reading the same `LS.favSearches` list Classic saved, so stage two took only Classic's bar.
@@ -46,20 +46,20 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 - **Viewer:** `#propsAside` and everything in it.
 - **Favourites store (the stars):** `loadFavouriteFolders`, `saveFavouriteFolders`, `toggleStarPath`, `openFavouritePath` (Ctrl+Shift+1..9, which asks IPC `path-kinds` whether a star is a file or a folder); `fuzzyPathScore` (used by Runner's `/` list) lives in the favourites code. IPC `windows-recent-folders`/`-files` and `scanWindowsRecentLnkTargets` in `main.js` feed Runner's ranking boost and are not Classic's.
 - **History and undo:** `searchHist`, `goSearchHistory`, `runUndo`.
-- **Clicked hidden controls:** `#helpModal`, `#settingsPanel`, `#selToggleOpens`; `#statusMain` and `setStatusMain`.
+- **Clicked hidden controls:** `#helpModal`, `#settingsPanel`; `#statusMain` and `setStatusMain`.
 - **Keys:** Runner's key table hands several keys to Classic's handler (Ctrl+R, Alt+←/→, F5, Space, Ctrl+A, Ctrl+Shift+1..9, Shift+Space, F2, Ctrl+Shift+N, Ctrl+H, F1, Ctrl+,, and Esc once Runner's own steps are done: the full-screen Viewer, Quick TODO, the breadcrumb flyouts), and some work in Runner only by falling through to it: Ctrl+/ (Help), Ctrl+W, Ctrl+., Ctrl+J/K, Ctrl+Shift+R, Ctrl+Z, Ctrl+↑ / Alt+↑, Ctrl+Shift+Home, ↑ and ↓ (Shift too) outside the search box, and →, Enter and Del with the focus on neither the box nor the list. Ctrl+C, Ctrl+X, Ctrl+V and Ctrl+Shift+C have Runner entries, but from an open menu they reach Classic's copies.
 
 ## Tests
 
-- **Runner:** every test in the suite that opens a window runs in Runner. The `runner-*` tests, `close-hides`, `file-dialog-handoff`, `refresh-visible`, `splitter-drag` and `viewer-runner` switch with `setRunnerMode(true)`; the rest pass the harness's `runner` option. None switches back to Classic. `manual-browser-open`, run by hand, stays in Classic, since it only opens a browser tab from main.
-- **Classic code that no test reaches:** the Shelf's rotated strip and its inline width (`syncShelfAsideWidth` past its Runner return), the status line's place in Classic's markup (`placeStatusLineForLayout(false)`) and the switch back to Classic (`applyRunnerModeSync(false)`, which saves Runner's state and restores `LS.runnerClassicStash`). Their checks went when every test moved to Runner, so a stage that deletes them has nothing to rewrite.
+- **Runner:** a test instance opens in Runner from its first load, as every start does, so every test that opens a window runs in Runner without switching.
+- **Classic code that nothing reaches:** the Shelf's rotated strip and its inline width (`syncShelfAsideWidth` past its Runner return), the status line's place in Classic's markup (`placeStatusLineForLayout(false)`) and the switch back to Classic (the `on === false` half of `applyRunnerModeSync`, which saves Runner's state and restores `LS.runnerClassicStash`). The one call left is `applyRunnerModeSync(true, { startup: true })` at startup, so a stage that deletes them has neither a caller nor a test to rewrite.
 - **No layout:** `restart-in-terminal`, `help-build` and `tags-dates` do not go through the harness's `connect`.
 - `test/README.md` omits tags-dates and repro-crash.
 
 ## Stages named so far
 
-- **Test instances open in Runner:** a test instance opens in Runner from its first load, and the harness's `runner` option and the tests' own `setRunnerMode(true)` calls go.
 - **Move the rest of Classic's key handler into `RUNNER_KEYS`:** the keys in the Keys bullet above.
+- **The `isRunnerMode()` tests:** 49 in `renderer.js`. It reads `runnerModeOn`, which startup sets and nothing clears, so a Classic branch can run only in code that runs before `applyRunnerModeSync(true, { startup: true })`; say which those are before deleting a branch.
 - **`runSearch`'s `eventKind`** reaches only the search debug log (`runSearch.start`), through `scheduleSearch` and `runSearchNow`, so the argument can go from every call site.
 
 ## Decisions before any deletion

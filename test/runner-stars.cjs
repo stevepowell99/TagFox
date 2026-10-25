@@ -33,8 +33,6 @@ async function main() {
     drv = await connect({ profile: 'tagfox-test-runner-stars', scope: start });
     console.log('Hook ready.');
     await drv.settle('startup');
-    await drv.T('setRunnerMode', true);
-    await drv.settle('runner');
 
     const R = () => drv.T('runnerState');
     const same = (a, b) => path.resolve(String(a || '')).toLowerCase() === path.resolve(String(b || '')).toLowerCase();
