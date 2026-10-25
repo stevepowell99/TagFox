@@ -12332,40 +12332,11 @@
       btn.classList.toggle('tagfox-advanced-filled', open || anyAdvancedSwitchOn());
     }
 
-    /** Recency segmented control (toolbar row, RHS); target for zero-row pulse when a bucket other than All is active. */
-    function recencyFilterGroupEl() {
-      return document.querySelector('.tagfox-search-opts-rhs [aria-label="Recency"]');
-    }
-
-    /** View toggle labels for zero-row pulse hint. */
-    function resultsViewPulseLabels() {
-      return {
-        showSubfolders: document.querySelector('label[for="optRvSubsOff"]'),
-        foldersOnly: document.querySelector('label[for="optRvDirsOnly"]'),
-        filesOnly: document.querySelector('label[for="optRvFilesOnly"]'),
-      };
-    }
-
     function clearEmptyResultsPulseHintClasses() {
       const qWrap = document.getElementById('queryInputGroup');
       qWrap?.classList.remove('pulse-hint', 'pulse-hint--sparse');
       qWrap?.style.removeProperty('--empty-pulse-frac');
       document.getElementById('query')?.classList.remove('pulse-hint', 'pulse-hint--sparse');
-      const recencyGrp = recencyFilterGroupEl();
-      recencyGrp?.classList.remove('pulse-hint', 'pulse-hint--sparse');
-      recencyGrp?.style.removeProperty('--empty-pulse-frac');
-      const advBtn = document.getElementById('btnToggleSearchOptsAdvanced');
-      advBtn?.classList.remove('pulse-hint', 'pulse-hint--sparse');
-      advBtn?.style.removeProperty('--empty-pulse-frac');
-      [document.querySelector('label[for="optHideSpecial"]'), document.querySelector('label[for="optHideTilde"]')].forEach((el) => {
-        el?.classList.remove('pulse-hint', 'pulse-hint--sparse');
-        el?.style.removeProperty('--empty-pulse-frac');
-      });
-      const rvLbl = resultsViewPulseLabels();
-      [rvLbl.showSubfolders, rvLbl.foldersOnly, rvLbl.filesOnly].forEach((el) => {
-        el?.classList.remove('pulse-hint', 'pulse-hint--sparse');
-        el?.style.removeProperty('--empty-pulse-frac');
-      });
     }
 
     /** Restart 20s decay (--empty-pulse-frac scales 1–9 row hint; mode empty = zero-row full strength). */
@@ -12394,10 +12365,8 @@
     }
 
     /**
-     * Visible rows 0: full pulse on filters (non-empty query, the search options).
-     * Visible 0 + recency ≠ All: also pulse the Recency control (client or Everything dm: filter may hide all rows).
-     * Visible 0 + this-folder-only or subfolders-only layout: pulse that layout’s toolbar label (modes can hide all rows).
-     * Visible 1–9: same targets, weaker pulse; strength (10−n)/10 → 0 at 10 rows (recency + layout labels not pulsed here).
+     * Text in the box and fewer than ten rows on screen: the search box pulses, at full strength for none
+     * and weaker as the count rises ((10−n)/10, gone at 10 rows).
      * opts.forceRestart: replay animation after search (row count may change with same fingerprint).
      */
     function updateEmptyResultsPulseHints(visibleRowCount, opts) {
@@ -12410,21 +12379,8 @@
 
       const q = document.getElementById('query');
       const qWrap = document.getElementById('queryInputGroup');
-      const recencyGrp = recencyFilterGroupEl();
       const recencyMode = recencyFilterMode();
-      const advBtn = document.getElementById('btnToggleSearchOptsAdvanced');
-      const qNonEmpty = !!(q && q.value && q.value.trim());
-      const wantQ = inBand && qNonEmpty;
-      const wantRecency = isEmpty && recencyMode !== 'all';
-      const wantAdv = inBand && anyAdvancedSwitchOn();
-      const hideSpecialBtn = document.querySelector('label[for="optHideSpecial"]');
-      const hideTildeBtn = document.querySelector('label[for="optHideTilde"]');
-      const wantHideSpecial = isEmpty && !!document.getElementById('optHideSpecial')?.checked;
-      const wantHideTilde = isEmpty && !!document.getElementById('optHideTilde')?.checked;
-      const rvLbl = resultsViewPulseLabels();
-      const wantRvFoldersOnly = isEmpty && isFoldersOnly();
-      const wantRvFilesOnly = isEmpty && isFilesOnly();
-      const wantRvShowSub = isEmpty && !isShowSubfolders();
+      const wantQ = inBand && !!(q && q.value && q.value.trim());
 
       if (!inBand) {
         pulseHintFingerprint = '';
@@ -12447,17 +12403,9 @@
         (isShowSubfolders() ? 'S' : '') +
         resultsContentMode()[0];
       const fpChanged = forceRestart || fp !== pulseHintFingerprint;
-      if (fpChanged) pulseHintFingerprint = fp;
-
       if (fpChanged) {
+        pulseHintFingerprint = fp;
         restartPulseHint(qWrap, wantQ, mode, sparseFrac);
-        restartPulseHint(recencyGrp, wantRecency, mode, sparseFrac);
-        restartPulseHint(advBtn, wantAdv, mode, sparseFrac);
-        restartPulseHint(hideSpecialBtn, wantHideSpecial, mode, sparseFrac);
-        restartPulseHint(hideTildeBtn, wantHideTilde, mode, sparseFrac);
-        restartPulseHint(rvLbl.foldersOnly, wantRvFoldersOnly, mode, sparseFrac);
-        restartPulseHint(rvLbl.filesOnly, wantRvFilesOnly, mode, sparseFrac);
-        restartPulseHint(rvLbl.showSubfolders, wantRvShowSub, mode, sparseFrac);
         return;
       }
 
@@ -12465,28 +12413,6 @@
       qWrap?.classList.toggle('pulse-hint--sparse', wantQ && mode === 'sparse');
       if (wantQ && mode === 'sparse') qWrap?.style.setProperty('--empty-pulse-frac', String(sparseFrac));
       else if (!wantQ || mode === 'empty') qWrap?.style.removeProperty('--empty-pulse-frac');
-
-      recencyGrp?.classList.toggle('pulse-hint', wantRecency);
-      recencyGrp?.classList.toggle('pulse-hint--sparse', wantRecency && mode === 'sparse');
-      if (wantRecency && mode === 'sparse') recencyGrp?.style.setProperty('--empty-pulse-frac', String(sparseFrac));
-      else if (!wantRecency || mode === 'empty') recencyGrp?.style.removeProperty('--empty-pulse-frac');
-
-      advBtn?.classList.toggle('pulse-hint', wantAdv);
-      advBtn?.classList.toggle('pulse-hint--sparse', wantAdv && mode === 'sparse');
-      if (wantAdv && mode === 'sparse') advBtn?.style.setProperty('--empty-pulse-frac', String(sparseFrac));
-      else if (!wantAdv || mode === 'empty') advBtn?.style.removeProperty('--empty-pulse-frac');
-
-      const toggleRvPulse = (el, want) => {
-        el?.classList.toggle('pulse-hint', want);
-        el?.classList.toggle('pulse-hint--sparse', want && mode === 'sparse');
-        if (want && mode === 'sparse') el?.style.setProperty('--empty-pulse-frac', String(sparseFrac));
-        else if (!want || mode === 'empty') el?.style.removeProperty('--empty-pulse-frac');
-      };
-      toggleRvPulse(hideSpecialBtn, wantHideSpecial);
-      toggleRvPulse(hideTildeBtn, wantHideTilde);
-      toggleRvPulse(rvLbl.foldersOnly, wantRvFoldersOnly);
-      toggleRvPulse(rvLbl.filesOnly, wantRvFilesOnly);
-      toggleRvPulse(rvLbl.showSubfolders, wantRvShowSub);
     }
 
     /** After a successful Everything response: replay hint when visible row count is under 10. */

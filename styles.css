@@ -863,61 +863,6 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   z-index: 2;
 }
 /* Empty-results hints: strong pulses at first, then die down to static (no glow) over 20s. */
-@keyframes empty-hint-btn-decay {
-  0% {
-    box-shadow:
-      0 0 0 3px rgba(var(--bs-primary-rgb), 0.75),
-      0 0 18px rgba(var(--bs-primary-rgb), 0.45);
-  }
-  2.5% {
-    box-shadow:
-      0 0 0 12px rgba(var(--bs-primary-rgb), 0.35),
-      0 0 36px 8px rgba(var(--bs-primary-rgb), 0.7);
-  }
-  5% {
-    box-shadow:
-      0 0 0 3px rgba(var(--bs-primary-rgb), 0.75),
-      0 0 18px rgba(var(--bs-primary-rgb), 0.45);
-  }
-  7.5% {
-    box-shadow:
-      0 0 0 11px rgba(var(--bs-primary-rgb), 0.32),
-      0 0 32px 6px rgba(var(--bs-primary-rgb), 0.6);
-  }
-  10% {
-    box-shadow:
-      0 0 0 3px rgba(var(--bs-primary-rgb), 0.65),
-      0 0 16px rgba(var(--bs-primary-rgb), 0.4);
-  }
-  15% {
-    box-shadow:
-      0 0 0 9px rgba(var(--bs-primary-rgb), 0.26),
-      0 0 26px rgba(var(--bs-primary-rgb), 0.48);
-  }
-  22% {
-    box-shadow:
-      0 0 0 3px rgba(var(--bs-primary-rgb), 0.52),
-      0 0 14px rgba(var(--bs-primary-rgb), 0.32);
-  }
-  35% {
-    box-shadow:
-      0 0 0 6px rgba(var(--bs-primary-rgb), 0.18),
-      0 0 20px rgba(var(--bs-primary-rgb), 0.28);
-  }
-  55% {
-    box-shadow:
-      0 0 0 2px rgba(var(--bs-primary-rgb), 0.28),
-      0 0 12px rgba(var(--bs-primary-rgb), 0.18);
-  }
-  75% {
-    box-shadow:
-      0 0 0 1px rgba(var(--bs-primary-rgb), 0.14),
-      0 0 7px rgba(var(--bs-primary-rgb), 0.09);
-  }
-  100% {
-    box-shadow: none;
-  }
-}
 @keyframes empty-hint-query-decay {
   0% {
     border-color: rgba(var(--bs-primary-rgb), 0.85);
@@ -1008,28 +953,7 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
     box-shadow: none;
   }
 }
-@keyframes empty-hint-btn-decay-sparse {
-  0% {
-    box-shadow:
-      0 0 0 2px rgba(var(--bs-primary-rgb), calc(var(--empty-pulse-frac, 0.5) * 0.16)),
-      0 0 10px rgba(var(--bs-primary-rgb), calc(var(--empty-pulse-frac, 0.5) * 0.1));
-  }
-  22% {
-    box-shadow:
-      0 0 0 5px rgba(var(--bs-primary-rgb), calc(var(--empty-pulse-frac, 0.5) * 0.09)),
-      0 0 16px rgba(var(--bs-primary-rgb), calc(var(--empty-pulse-frac, 0.5) * 0.14));
-  }
-  100% {
-    box-shadow: none;
-  }
-}
-/* Whole search row (clear + field) — same decay as other hints; must run when the query field has focus too (empty results). */
-.pulse-hint:not(#queryInputGroup) {
-  animation: empty-hint-btn-decay 20s ease-in-out forwards;
-}
-.pulse-hint.pulse-hint--sparse:not(#queryInputGroup) {
-  animation: empty-hint-btn-decay-sparse 20s ease-in-out forwards;
-}
+/* The search box (clear + field); must run when the query field has focus too. */
 #queryInputGroup.pulse-hint {
   animation: empty-hint-query-decay 20s ease-in-out forwards;
 }

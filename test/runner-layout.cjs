@@ -8,6 +8,7 @@
 //   - the smart order puts name matches above rows that match only in the path;
 //   - recency never outweighs the match: a year-old whole-word name ranks above today's inside-word one;
 //   - a leading -word excludes;
+//   - text that finds nothing makes the search box pulse, and the empty box does not;
 //   - / opens the command list, Enter runs the command, and the box gets its text back;
 //   - a row's size shows muted in a column of its own, /size sorts largest first and the other size
 //     command smallest first, a smaller unit is fainter, and a cell has a tooltip only where it says more
@@ -257,6 +258,15 @@ async function main() {
     await drv.settle('exclude');
     s = await R();
     check(!has(s.rows, path.join(root, 'alphafold-note.md')) && has(s.rows, alpha), 'a leading -word excludes');
+
+    // Text that finds nothing makes the search box pulse; the empty box, which lists the folder, does not.
+    const boxPulses = () => drv.ev(`document.getElementById('queryInputGroup').classList.contains('pulse-hint')`);
+    await drv.T('setQuery', 'qzxnomatch' + Date.now());
+    await drv.settle('no match');
+    const pulsedOnNone = (await R()).rows.length === 0 && (await boxPulses());
+    await drv.T('setQuery', '');
+    await drv.settle('cleared for pulse');
+    check(pulsedOnNone && !(await boxPulses()), `text that finds nothing makes the box pulse, and clearing it stops (${pulsedOnNone})`);
 
     // Right into the selected folder: select it by arrowing from the box.
     await drv.T('setQuery', '');
