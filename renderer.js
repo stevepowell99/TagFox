@@ -31,8 +31,6 @@
       showSubfolders: 'tagBrowserShowSubfolders',
       hideFiles: 'tagBrowserHideFiles',
       propsWidthPx: 'tagBrowserPropsW',
-      favFoldersColPx: 'tagBrowserFavFoldersW',
-      favFoldersCollapsed: 'tagBrowserFavFoldersCollapsed',
       tableCols: 'tagBrowserTableColsV2',
       favFolders: 'tagBrowserFavFolders',
       folderFocusStats: 'tagBrowserFolderFocusStats',
@@ -234,11 +232,6 @@
     const RESULTS_PANE_MIN_PX = 320;
     let viewerDocSplitPct = 50;
     let viewerDocSplitPctTheater = 50;
-    /** Favourites column width when expanded (px). Collapsed rail peek reuses this saved full width. */
-    const FAV_COL_MIN = 120;
-    const FAV_COL_MAX = 600;
-    let favFoldersColPx = 220;
-    let favFoldersCollapsed = false;
     /** Percent weights: chk, name, path, actions, size, modified (sum 100). Type column removed — 6 cols. */
     const COL_PERCENT_DEFAULT = [4, 42, 24, 14, 6, 10];
     /** Drag resize: don’t shrink Actions below this (% of table) at Path|Actions or Actions|Size. */
@@ -250,8 +243,6 @@
     let lastRows = [];
     /** HTML5 drag payload for moving rows onto folder rows in the results table. */
     const TAG_BROWSER_PATHS_DRAG_TYPE = 'application/x-tagbrowser-paths';
-    /** Single folder row drag: lets the favourites bar insert by gap instead of moving on disk. */
-    const TAG_BROWSER_FAV_FOLDER_DRAG_TYPE = 'application/x-tagbrowser-fav-folder';
     /** startDrag path: OS sets no custom MIME on dragover; stash until dragend. Not used for normal HTML5 drags. */
     let tagBrowserActiveNativeDragPaths = null;
     let tagBrowserActiveNativeDragPathsAt = 0;
@@ -273,15 +264,6 @@
         return [...dt.types].includes(TAG_BROWSER_PATHS_DRAG_TYPE);
       } catch {
         return false;
-      }
-    }
-
-    function getDataTransferFavouriteFolder(dt) {
-      try {
-        const raw = dt.getData(TAG_BROWSER_FAV_FOLDER_DRAG_TYPE);
-        return normalizeFolderPathForEverything(String(raw || '').trim());
-      } catch {
-        return '';
       }
     }
 
@@ -349,7 +331,6 @@
     function clearInternalPathDragDropTargetHints() {
       document.querySelectorAll('.tagfox-results-row--drag-source').forEach((n) => n.classList.remove('tagfox-results-row--drag-source'));
       document.body.classList.remove('tagfox-internal-path-drag');
-      clearAllFavBarDropGaps();
     }
     /** Last tag scan: Everything r=1 + `[ \\]x[kpxd]` so we only index `xk/xp/xx/xd` tag tokens. */
     let tagDiscoveryRows = [];
@@ -420,8 +401,6 @@
     let searchHistIdx = 0;
     let searchHistDebounceTimer = null;
     let searchHistNavigating = false;
-    /** True only while the LHS favourites splitter is actively being dragged. */
-    let favFoldersSplitDragging = false;
     const DID_YOU_KNOW_ROTATE_MS = 4 * 60 * 1000;
     /** Fade the tip out this long after it updates; the next rotation shows it again. */
     const DID_YOU_KNOW_FADE_MS = 60 * 1000;
@@ -431,8 +410,6 @@
     let didYouKnowLastTipKey = '';
     let didYouKnowTimerId = null;
     let didYouKnowFadeTimerId = null;
-    /** Favourites strip mid-drag: 'folder' | 'search' | null — HTML5 reorder only within the same bar. */
-    let favListDragKind = null;
     /** When empty-results hints restart (query / tag / recursive changed while still empty). */
     let pulseHintFingerprint = '';
     /** Heavy preview = big read / CPU (see isHeavyBinaryPreview). Light = folder readme, md, text, … */
@@ -2607,7 +2584,7 @@
       const results = document.querySelector('.results-viewer-wrap');
       if (!aside || !results) return PROPS_PANE_MAX_PX;
       /* The two panes share whatever those two widths add up to, wherever the divider sits, so read
-         them rather than the parent: the parent also holds the favourites column and the splitter. */
+         them rather than the parent: the parent also holds the splitter. */
       const shared = results.getBoundingClientRect().width + aside.getBoundingClientRect().width;
       const room = Math.round(shared - RESULTS_PANE_MIN_PX);
       return Math.max(PROPS_PANE_MIN_PX, Math.min(PROPS_PANE_MAX_PX, room));
@@ -2643,148 +2620,6 @@
       document.querySelectorAll('.viewer-doc-split-divider').forEach((el) => {
         el.setAttribute('aria-orientation', vertical ? 'vertical' : 'horizontal');
       });
-    }
-
-    function applyFavFoldersColumnWidth() {
-      const col = document.getElementById('favFoldersColumn');
-      const btn = document.getElementById('btnToggleFavFoldersCollapse');
-      if (!col) return;
-      col.style.setProperty('--tagfox-fav-expanded-w', favFoldersColPx + 'px');
-      col.classList.toggle('tagfox-fav-column--collapsed', favFoldersCollapsed);
-      col.title = favFoldersCollapsed ? 'Favourites — Peek Mode' : 'Favourites — Fixed Mode';
-      if (!btn) return;
-      btn.title = favFoldersCollapsed
-        ? 'Peek Mode — click to switch to Fixed Mode'
-        : 'Fixed Mode — click to switch to Peek Mode';
-      btn.setAttribute(
-        'aria-label',
-        favFoldersCollapsed
-          ? 'Favourites sidebar in Peek Mode — switch to Fixed Mode'
-          : 'Favourites sidebar in Fixed Mode — switch to Peek Mode'
-      );
-      btn.setAttribute('aria-expanded', favFoldersCollapsed ? 'false' : 'true');
-      btn.setAttribute('aria-pressed', favFoldersCollapsed ? 'true' : 'false');
-    }
-
-    function loadFavFoldersColFromStorage() {
-      const w = parseInt(localStorage.getItem(LS.favFoldersColPx) || '', 10);
-      if (Number.isFinite(w) && w >= FAV_COL_MIN && w <= FAV_COL_MAX) favFoldersColPx = w;
-      favFoldersCollapsed = localStorage.getItem(LS.favFoldersCollapsed) === '1';
-      applyFavFoldersColumnWidth();
-    }
-
-    function persistFavFoldersCol() {
-      localStorage.setItem(LS.favFoldersColPx, String(favFoldersColPx));
-      localStorage.setItem(LS.favFoldersCollapsed, favFoldersCollapsed ? '1' : '0');
-    }
-
-    function toggleFavFoldersCollapsed() {
-      const col = document.getElementById('favFoldersColumn');
-      favFoldersCollapsed = !favFoldersCollapsed;
-      if (col) col.classList.toggle('tagfox-fav-column--peek-suppressed', favFoldersCollapsed);
-      if (favFoldersCollapsed) closeFavColumnHoverUi();
-      if (!favFoldersCollapsed) favFoldersColPx = Math.max(FAV_COL_MIN, favFoldersColPx);
-      applyFavFoldersColumnWidth();
-      persistFavFoldersCol();
-    }
-
-    function closeFavColumnHoverUi() {
-      /* If keyboard focus is inside an open subfolder menu or flyout the user is navigating it; a stray
-         pointermove (including the synthetic one the browser fires when scrollIntoView scrolls content
-         under a stationary cursor) must not tear the list down mid-navigation. */
-      const ae = document.activeElement;
-      if (ae && ae.closest && ae.closest('#favFoldersColumn .dropdown-menu, ul.breadcrumb-folder-flyout')) return;
-      hideBreadcrumbSubfolderFlyout();
-      document
-        .querySelectorAll('#favFoldersColumn [data-bs-toggle="dropdown"]')
-        .forEach((btn) => bootstrap.Dropdown.getInstance(btn)?.hide());
-      const a = document.activeElement;
-      if (
-        a &&
-        a !== document.body &&
-        a.blur &&
-        (a.closest?.('#favFoldersColumn') || a.closest?.('ul.breadcrumb-folder-flyout'))
-      ) {
-        a.blur();
-      }
-    }
-
-    /** Collapsed rail uses CSS :hover for peek; HTML5 drag suppresses hover, so toggle an explicit class. */
-    function setFavColumnDragPeek(on) {
-      const col = document.getElementById('favFoldersColumn');
-      if (!col) return;
-      const want = !!on && !!favFoldersCollapsed;
-      if (col.classList.contains('tagfox-fav-column--drag-peek') === want) return;
-      col.classList.toggle('tagfox-fav-column--drag-peek', want);
-      if (!want) closeFavColumnHoverUi();
-      if (isSearchDebugOn()) searchDebugLog('folderPathDrop.favRailPeek', { on: want, collapsed: !!favFoldersCollapsed });
-    }
-
-    /** Splitter hover in collapsed mode should keep the rail open so the user can resize it. */
-    function setFavColumnSplitPeek(on) {
-      const col = document.getElementById('favFoldersColumn');
-      if (!col) return;
-      const want = !!on && !!favFoldersCollapsed;
-      if (col.classList.contains('tagfox-fav-column--split-peek') === want) return;
-      col.classList.toggle('tagfox-fav-column--split-peek', want);
-      if (!want) closeFavColumnHoverUi();
-    }
-
-    /** Body-rooted subfolder flyouts are outside #favFoldersColumn, so :hover peek drops; mirror drag-peek while open. */
-    function syncFavColumnFlyoutPeek() {
-      const col = document.getElementById('favFoldersColumn');
-      if (!col) return;
-      const fly0 = breadcrumbSubfolderFlyoutChain[0];
-      const anchoredInFav =
-        !!favFoldersCollapsed &&
-        fly0 &&
-        fly0.classList.contains('is-open') &&
-        fly0._anchorLi &&
-        fly0._anchorLi.isConnected &&
-        fly0._anchorLi.closest('#favFoldersColumn');
-      if (col.classList.contains('tagfox-fav-column--flyout-peek') === !!anchoredInFav) return;
-      col.classList.toggle('tagfox-fav-column--flyout-peek', !!anchoredInFav);
-    }
-
-    /** Hover zone that should keep the collapsed LHS rail open. */
-    function isFavColumnHoverZonePoint(clientX, clientY) {
-      try {
-        const hit = document.elementFromPoint(clientX, clientY);
-        if (!hit || !hit.closest) return false;
-        return !!(
-          hit.closest('#favFoldersColumn') ||
-          hit.closest('#splitFavFolders') ||
-          hit.closest('#favFoldersColumn .dropdown-menu.show') ||
-          hit.closest('ul.breadcrumb-folder-flyout.is-open')
-        );
-      } catch {
-        return false;
-      }
-    }
-
-    function bindFavColumnCollapsedHoverExit() {
-      /* pointermove fires continuously; closeFavColumnHoverUi walks every chip (laggy with many favourites).
-         Run the cleanup once per excursion into the rail zone, then stay idle until the pointer enters again. */
-      let exitCleanupPending = false;
-      document.addEventListener(
-        'pointermove',
-        (ev) => {
-          if (!favFoldersCollapsed) return;
-          if (favFoldersSplitDragging) return;
-          const t = ev.target;
-          if (!t || !t.closest) return;
-          if (t.closest('#favFoldersColumn, #splitFavFolders, ul.breadcrumb-folder-flyout.is-open')) {
-            exitCleanupPending = true;
-            return;
-          }
-          if (!exitCleanupPending) return;
-          exitCleanupPending = false;
-          const col = document.getElementById('favFoldersColumn');
-          if (col) col.classList.remove('tagfox-fav-column--peek-suppressed');
-          closeFavColumnHoverUi();
-        },
-        true
-      );
     }
 
     function isPropsTheaterOn() {
@@ -2946,57 +2781,6 @@
           document.addEventListener('mouseup', up);
         });
       });
-    }
-
-    /** Draggable right edge of favourite-folders column (same handle style as viewer splitter). */
-    function bindFavFoldersSplitter() {
-      const split = document.getElementById('splitFavFolders');
-      if (!split) return;
-      split.addEventListener('mouseenter', () => setFavColumnSplitPeek(true));
-      split.addEventListener('mouseleave', () => {
-        if (!favFoldersSplitDragging) setFavColumnSplitPeek(false);
-      });
-      split.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        favFoldersSplitDragging = true;
-        setFavColumnSplitPeek(true);
-        const startedCollapsed = !!favFoldersCollapsed;
-        favFoldersColPx = Math.max(FAV_COL_MIN, favFoldersColPx);
-        applyFavFoldersColumnWidth();
-        const removeShield = addSplitDragShield('col-resize');
-        const startX = e.clientX;
-        const startW = favFoldersColPx;
-        let raf = 0;
-        function flush() {
-          raf = 0;
-          applyFavFoldersColumnWidth();
-        }
-        function move(ev) {
-          /* Column is left of the handle: drag handle right = wider favourites column. */
-          favFoldersColPx = Math.min(FAV_COL_MAX, Math.max(FAV_COL_MIN, startW + (ev.clientX - startX)));
-          if (!raf) raf = requestAnimationFrame(flush);
-        }
-        function up(ev) {
-          document.removeEventListener('mousemove', move);
-          document.removeEventListener('mouseup', up);
-          removeShield();
-          if (raf) cancelAnimationFrame(raf);
-          favFoldersSplitDragging = false;
-          favFoldersCollapsed = startedCollapsed;
-          favFoldersColPx = Math.max(FAV_COL_MIN, favFoldersColPx);
-          flush();
-          setFavColumnSplitPeek(startedCollapsed && isFavColumnHoverZonePoint(ev.clientX, ev.clientY));
-          persistFavFoldersCol();
-        }
-        document.addEventListener('mousemove', move);
-        document.addEventListener('mouseup', up);
-      });
-    }
-
-    function bindFavFoldersCollapseButton() {
-      const btn = document.getElementById('btnToggleFavFoldersCollapse');
-      if (!btn) return;
-      btn.addEventListener('click', () => toggleFavFoldersCollapsed());
     }
 
     function loadColWidthsFromStorage() {
@@ -3191,7 +2975,6 @@
       await runSearchNow();
       commitSearchHistoryNow();
       pulseSearchBoxAfterScopeFolderChange();
-      void renderRecentFoldersBar();
     }
 
     function cloneResultsPagingCtx(ctx) {
@@ -3975,7 +3758,7 @@
       if (selectedFullPath) void runnerNavigate(() => keyboardScopeParentOfSelection(), selectedFullPath);
     }
 
-    /** Stars are the favourites list, so Classic's favourites column and Runner's stars are one list. */
+    /** Stars are the favourites list: Ctrl+Shift+1..9 opens them in order, and Starred only lists them. */
     function toggleStarPath(fpRaw) {
       const fp = normalizeFolderPathForEverything(String(fpRaw || '').trim());
       if (!fp) return;
@@ -4000,7 +3783,6 @@
         }
         setStatusMain('Starred ' + name + '.');
       }
-      renderFavFoldersBar();
       renderTable();
     }
 
@@ -4052,7 +3834,7 @@
     }
 
     /** Starred only: Runner lists the stars themselves (under the current folder, if any), which is its
-        star list, since it has no favourites column (Steve, October 2026). */
+        star list (Steve, October 2026). */
     function runnerStarredOnlyOn() {
       return isRunnerMode() && localStorage.getItem(LS.runnerStarredOnly) === '1';
     }
@@ -6475,13 +6257,11 @@
 
     /** Favourites (Runner's stars are the same list) are capped here. */
     const FAV_FOLDERS_MAX = 30;
-    /** path key -> 'file' | 'folder' | 'missing' for favourites; see classifyFavouritePathsThenRerender. */
-    const favPathKindCache = new Map();
     function saveFavouriteFolders(paths) {
       lsSetJson(LS.favFolders, paths.slice(0, FAV_FOLDERS_MAX));
     }
 
-    /** Per-path focus counts + last visit (normalized lowercased keys) for the Recent bars. */
+    /** Per-path focus counts + last visit (normalized lowercased keys), which Runner's ranking reads. */
     function loadFocusStats(lsKey) {
       const o = lsGetJson(lsKey, {});
       if (!o || typeof o !== 'object') return {};
@@ -6499,7 +6279,7 @@
       return out;
     }
 
-    /** Per-folder focus counts + last visit for the Recent bar. */
+    /** Per-folder focus counts + last visit. */
     function loadFolderFocusStats() {
       return loadFocusStats(LS.folderFocusStats);
     }
@@ -6508,7 +6288,7 @@
       lsSetJson(LS.folderFocusStats, o);
     }
 
-    /** Per-file open counts + last open for the Recent files bar. */
+    /** Per-file open counts + last open. */
     function loadFileFocusStats() {
       return loadFocusStats(LS.fileFocusStats);
     }
@@ -6534,7 +6314,6 @@
         for (const k of keys.slice(250)) delete o[k];
       }
       saveFileFocusStats(o);
-      void renderRecentFilesBar();
     }
 
     function bumpFolderFocusVisit(norm) {
@@ -6553,52 +6332,6 @@
         for (const k of keys.slice(200)) delete o[k];
       }
       saveFolderFocusStats(o);
-    }
-
-    /** Move item from fromIdx to gap gapIdx (0…length): insert before that slot; keeps keyboard order in sync. */
-    function reorderFavListByGap(list, fromIdx, gapIdx) {
-      const n = list.length;
-      if (fromIdx < 0 || fromIdx >= n) return list.slice();
-      if (!Number.isFinite(gapIdx) || gapIdx < 0 || gapIdx > n) return list.slice();
-      const next = list.slice();
-      const [item] = next.splice(fromIdx, 1);
-      let ins = gapIdx;
-      if (fromIdx < gapIdx) ins = gapIdx - 1;
-      if (ins < 0 || ins > next.length) return list.slice();
-      next.splice(ins, 0, item);
-      return next;
-    }
-
-    /** Save one folder into favourites at gap 0…n; if already saved, move that existing slot. */
-    function upsertFavouriteFolderAtGap(folderPathRaw, gapIdx) {
-      const folderPath = normalizeFolderPathForEverything(String(folderPathRaw || '').trim());
-      if (!folderPath) return { changed: false, existed: false };
-      const prev = loadFavouriteFolders()
-        .map((p) => normalizeFolderPathForEverything(String(p || '').trim()))
-        .filter(Boolean);
-      const key = folderPath.toLowerCase();
-      const existed = prev.some((p) => p.toLowerCase() === key);
-      /* Full: refuse, since saving would silently drop the last favourite. */
-      if (!existed && prev.length >= FAV_FOLDERS_MAX) return { changed: false, existed, full: true };
-      const n = prev.length;
-      const safeGapIdx = Number.isFinite(gapIdx) ? Math.max(0, Math.min(gapIdx, n)) : n;
-      let removedBeforeGap = 0;
-      const next = [];
-      for (let i = 0; i < prev.length; i++) {
-        if (prev[i].toLowerCase() === key) {
-          if (i < safeGapIdx) removedBeforeGap += 1;
-          continue;
-        }
-        next.push(prev[i]);
-      }
-      const ins = Math.max(0, Math.min(safeGapIdx - removedBeforeGap, next.length));
-      next.splice(ins, 0, folderPath);
-      const changed =
-        next.length !== prev.length || next.some((p, i) => pathNormKey(p) !== pathNormKey(prev[i] || ''));
-      if (!changed) return { changed: false, existed };
-      saveFavouriteFolders(next);
-      renderFavFoldersBar();
-      return { changed: true, existed };
     }
 
     const SCOPE_FOLDER_HISTORY_MAX = 300;
@@ -6775,602 +6508,16 @@
       fillItems();
     }
 
-    /** The x on a favourites chip (folder or file). */
-    function favChipRemoveEl(fp) {
-      const rm = document.createElement('span');
-      rm.className = 'fav-folder-chip-remove';
-      rm.setAttribute('role', 'button');
-      rm.tabIndex = 0;
-      rm.setAttribute('data-fav-no-drag', '1');
-      rm.setAttribute('aria-label', 'Remove favourite');
-      rm.title = 'Remove favourite';
-      rm.innerHTML = '<i class="fa-solid fa-xmark fa-sm" aria-hidden="true"></i>';
-      const removeThisFav = () => {
-        const next = loadFavouriteFolders().filter((p) => p.toLowerCase() !== fp.toLowerCase());
-        saveFavouriteFolders(next);
-        renderFavFoldersBar();
-      };
-      rm.addEventListener('click', (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        removeThisFav();
-      });
-      rm.addEventListener('keydown', (e) => {
-        if (e.key !== 'Enter' && e.key !== ' ') return;
-        e.preventDefault();
-        e.stopPropagation();
-        removeThisFav();
-      });
-      return rm;
-    }
-
-    /**
-     * LHS column: folder chip + ▾ + same subfolder flyouts as breadcrumb; drop target via data-drop-path on .fav-folder-chip-go.
-     * opts.recent: no ×, no reorder slot; opts.removable + favIdx: favourites bar only.
-     */
-    function buildFavColumnFolderChipRowEl(fp, opts) {
-      opts = opts || {};
-      const parentNorm = normalizeFolderPathForEverything(fp);
-      const row = document.createElement('span');
-      row.className = 'd-flex align-items-stretch w-100 tagfox-fav-chip-row';
-      if (Number.isFinite(opts.favIdx)) row.dataset.favIdx = String(opts.favIdx);
-      const grp = document.createElement('div');
-      grp.className = 'btn-group btn-group-sm fav-folder-chip-group';
-      const go = document.createElement('span');
-      go.setAttribute('role', 'button');
-      go.tabIndex = 0;
-      go.draggable = false;
-      go.className = 'btn btn-sm fav-folder-chip-go d-inline-flex align-items-center flex-wrap gap-1 text-start';
-      const n = String(fp || '').replace(/[/\\]+$/, '');
-      const base = T.baseName(n) || n;
-      const parsed = T.parseSegmentTags(base);
-      const pretty = parsed.pretty || base;
-      const lead = document.createElement('span');
-      lead.className = 'd-inline-flex align-items-center gap-1 fav-folder-chip-lead';
-      lead.appendChild(folderIconEl());
-      const nm = document.createElement('span');
-      nm.className = 'fav-folder-chip-name';
-      nm.textContent = pretty;
-      lead.appendChild(nm);
-      go.appendChild(lead);
-      if (opts.removable) go.appendChild(favChipRemoveEl(fp));
-      for (const tag of parsed.tags) {
-        const b = document.createElement('span');
-        b.className = 'badge';
-        b.style.backgroundColor = tagColorCss(tag);
-        b.style.color = '#212529';
-        b.textContent = tag;
-        go.appendChild(b);
-      }
-      if (opts.recent) {
-        go.title = fp;
-        go.setAttribute('aria-label', 'Open recent folder ' + fp);
-      } else {
-        const idx = opts.favIdx | 0;
-        const slot = idx + 1;
-        go.title =
-          'Drag to reorder (up/down).' + (idx < 9 ? ' Shortcut: Ctrl+Shift+' + slot + '.' : '');
-        go.setAttribute(
-          'aria-label',
-          'Open favourite folder ' +
-            slot +
-            (idx < 9 ? ' (keyboard Ctrl+Shift+' + slot + ')' : '') +
-            '. ' +
-            fp
-        );
-      }
-      go.addEventListener('click', () => void applySearchScopeAndRefresh(fp));
-      go.addEventListener('keydown', (ev) => {
-        if (ev.key !== 'Enter' && ev.key !== ' ') return;
-        ev.preventDefault();
-        void applySearchScopeAndRefresh(fp);
-      });
-      go.dataset.dropPath = parentNorm;
-      const ddWrap = document.createElement('div');
-      ddWrap.className = 'dropdown';
-      const ddBtn = document.createElement('button');
-      ddBtn.type = 'button';
-      ddBtn.className = 'btn btn-sm dropdown-toggle fav-folder-chip-chevron tagfox-scope-chevron';
-      ddBtn.setAttribute('data-bs-toggle', 'dropdown');
-      ddBtn.setAttribute('data-fav-no-drag', '1');
-      ddBtn.setAttribute('aria-expanded', 'false');
-      ddBtn.setAttribute(
-        'aria-label',
-        opts.recent ? 'Subfolders of this recent folder' : 'Subfolders of this favourite'
-      );
-      ddBtn.innerHTML = '<span class="visually-hidden">Subfolders</span>' + breadcrumbDropdownChevronHtml();
-      const menu = document.createElement('ul');
-      const hl = breadcrumbHighlightChildPathNorm(parentNorm);
-      /* Click-to-open, NOT hover-open: these fav/recent chips point at arbitrary (often Google Drive) folders,
-         and hover-open fired listChildFolders -> fs.readdir on each one a 150ms dwell landed on. On a Drive
-         mirror that makes the Drive filesystem driver hydrate the folder, stalling the whole machine while the
-         mouse just rests on or moves down the favourites list. The ▾ still opens the subfolder list on click. */
-      bindSubfolderDropdownWithFlyouts(ddBtn, menu, ddWrap, parentNorm, hl || '', false, {
-        favColumnSubmenu: true,
-        menuAlignStart: false,
-      });
-      grp.appendChild(go);
-      ddWrap.appendChild(ddBtn);
-      ddWrap.appendChild(menu);
-      grp.appendChild(ddWrap);
-      row.appendChild(grp);
-      return row;
-    }
-
-    /** LHS column: file chip + ▾ (parent folder submenus); opens file with default app / Workspace.
-        opts.removable + favIdx: a starred file in the favourites bar; otherwise a Recent files chip. */
-    function buildFavColumnFileChipRowEl(fp, opts) {
-      opts = opts || {};
-      const fileNorm = normalizeFolderPathForEverything(String(fp || '').trim());
-      const parentNorm = normalizeFolderPathForEverything(T.parentDir(fileNorm));
-      const row = document.createElement('span');
-      row.className = 'd-flex align-items-stretch w-100 tagfox-fav-chip-row';
-      if (Number.isFinite(opts.favIdx)) row.dataset.favIdx = String(opts.favIdx);
-      const grp = document.createElement('div');
-      grp.className = 'btn-group btn-group-sm fav-folder-chip-group';
-      const go = document.createElement('span');
-      go.setAttribute('role', 'button');
-      go.tabIndex = 0;
-      go.draggable = false;
-      go.className = 'btn btn-sm fav-folder-chip-go d-inline-flex align-items-center flex-wrap gap-1 text-start';
-      const n = String(fileNorm || '').replace(/[/\\]+$/, '');
-      const base = T.baseName(n) || n;
-      const parsed = T.parseSegmentTags(base);
-      const pretty = parsed.pretty || base;
-      const lead = document.createElement('span');
-      lead.className = 'd-inline-flex align-items-center gap-1 fav-folder-chip-lead';
-      lead.appendChild(fileIconEl(fileExtFromPretty(parsed.pretty)));
-      const nm = document.createElement('span');
-      nm.className = 'fav-folder-chip-name';
-      nm.textContent = pretty;
-      lead.appendChild(nm);
-      go.appendChild(lead);
-      if (opts.removable) go.appendChild(favChipRemoveEl(fp));
-      for (const tag of parsed.tags) {
-        const b = document.createElement('span');
-        b.className = 'badge';
-        b.style.backgroundColor = tagColorCss(tag);
-        b.style.color = '#212529';
-        b.textContent = tag;
-        go.appendChild(b);
-      }
-      go.title = fileNorm;
-      go.setAttribute('aria-label', (opts.removable ? 'Open starred file ' : 'Open recent file ') + fileNorm);
-      go.addEventListener('click', () => void openFileDefaultOrGoogleWorkspace(fileNorm));
-      go.addEventListener('keydown', (ev) => {
-        if (ev.key !== 'Enter' && ev.key !== ' ') return;
-        ev.preventDefault();
-        void openFileDefaultOrGoogleWorkspace(fileNorm);
-      });
-      go.dataset.dropPath = parentNorm;
-      const ddWrap = document.createElement('div');
-      ddWrap.className = 'dropdown';
-      const ddBtn = document.createElement('button');
-      ddBtn.type = 'button';
-      ddBtn.className = 'btn btn-sm dropdown-toggle fav-folder-chip-chevron tagfox-scope-chevron';
-      ddBtn.setAttribute('data-bs-toggle', 'dropdown');
-      ddBtn.setAttribute('data-fav-no-drag', '1');
-      ddBtn.setAttribute('aria-expanded', 'false');
-      ddBtn.setAttribute('aria-label', 'Subfolders of folder containing this file');
-      ddBtn.innerHTML = '<span class="visually-hidden">Subfolders</span>' + breadcrumbDropdownChevronHtml();
-      const menu = document.createElement('ul');
-      const hl = breadcrumbHighlightChildPathNorm(parentNorm);
-      /* Click-to-open, NOT hover-open: these fav/recent chips point at arbitrary (often Google Drive) folders,
-         and hover-open fired listChildFolders -> fs.readdir on each one a 150ms dwell landed on. On a Drive
-         mirror that makes the Drive filesystem driver hydrate the folder, stalling the whole machine while the
-         mouse just rests on or moves down the favourites list. The ▾ still opens the subfolder list on click. */
-      bindSubfolderDropdownWithFlyouts(ddBtn, menu, ddWrap, parentNorm, hl || '', false, {
-        favColumnSubmenu: true,
-        menuAlignStart: false,
-      });
-      grp.appendChild(go);
-      ddWrap.appendChild(ddBtn);
-      ddWrap.appendChild(menu);
-      grp.appendChild(ddWrap);
-      row.appendChild(grp);
-      return row;
-    }
-
-    function renderFavFoldersBar() {
-      const el = document.getElementById('favFoldersBar');
-      if (!el) return;
-      el.innerHTML = '';
-      const paths = loadFavouriteFolders();
-      if (!paths.length) {
-        el.innerHTML = '<span class="text-muted small fst-italic px-2">Click <i class="fa-solid fa-floppy-disk"></i> to save the current folder</span>';
-        void renderRecentFoldersBar();
-        void renderRecentFilesBar();
-        return;
-      }
-      for (let idx = 0; idx < paths.length; idx++) {
-        const o = { favIdx: idx, removable: true };
-        el.appendChild(
-          favPathKindCache.get(pathNormKey(paths[idx])) === 'file'
-            ? buildFavColumnFileChipRowEl(paths[idx], o)
-            : buildFavColumnFolderChipRowEl(paths[idx], o)
-        );
-      }
-      refreshTagFoxChromeTooltips(el);
-      void classifyFavouritePathsThenRerender(paths);
-      void renderRecentFoldersBar();
-      void renderRecentFilesBar();
-    }
-
-    /** Favourites hold folders and, since Runner's stars, files. Each path's kind is read from disk once (favPathKindCache). */
-    async function classifyFavouritePathsThenRerender(paths) {
-      const unknown = paths.filter((p) => !favPathKindCache.has(pathNormKey(p)));
-      if (!unknown.length || !window.tagBrowser || typeof window.tagBrowser.pathKinds !== 'function') return;
-      let r = null;
+    /** Open a favourite: a file opens, a folder becomes the current folder. Stars hold files as well as folders,
+        so the disk says which. */
+    async function openFavouritePath(p) {
+      let kind = 'folder';
       try {
-        r = await window.tagBrowser.pathKinds(unknown);
+        const r = await window.tagBrowser.pathKinds([p]);
+        kind = (r && r.kinds && r.kinds[p]) || kind;
       } catch (_) {}
-      if (!r || !r.ok || !r.kinds) return;
-      let anyFile = false;
-      for (const p of unknown) {
-        const k = r.kinds[p] || 'missing';
-        favPathKindCache.set(pathNormKey(p), k);
-        if (k === 'file') anyFile = true;
-      }
-      if (anyFile) renderFavFoldersBar();
-    }
-
-    /** Open a favourite: a file opens, a folder becomes the current folder. */
-    function openFavouritePath(p) {
-      if (favPathKindCache.get(pathNormKey(p)) === 'file') void openFileDefaultOrGoogleWorkspace(p);
-      else void applySearchScopeAndRefresh(p);
-    }
-
-    /** Recent bar (under favourites): merged TagFox visit stats + Windows shell Recent; excludes favourite paths. */
-    async function renderRecentFoldersBar() {
-      const el = document.getElementById('favRecentFoldersBar');
-      if (!el) return;
-      el.innerHTML = '';
-      const favSet = new Set(loadFavouriteFolders().map((p) => String(p).toLowerCase()));
-      const stats = loadFolderFocusStats();
-      let winFolders = [];
-      try {
-        if (window.tagBrowser && typeof window.tagBrowser.windowsRecentFolders === 'function') {
-          const r = await perfTimeAsync('windowsRecentFolders', {}, () => window.tagBrowser.windowsRecentFolders());
-          if (r && r.ok && Array.isArray(r.folders)) winFolders = r.folders;
-        }
-      } catch (_) {}
-      const byKey = new Map();
-      for (const k of Object.keys(stats)) {
-        const ent = stats[k];
-        if (!ent || !ent.path) continue;
-        const norm = normalizeFolderPathForEverything(String(ent.path));
-        if (!norm) continue;
-        const low = norm.toLowerCase();
-        if (favSet.has(low)) continue;
-        byKey.set(low, {
-          path: norm,
-          visits: ent.visits || 0,
-          lastTs: ent.lastTs || 0,
-          winMtimeMs: 0,
-        });
-      }
-      for (const w of winFolders) {
-        const raw = w && w.path ? String(w.path) : '';
-        if (!raw) continue;
-        const norm = normalizeFolderPathForEverything(raw);
-        if (!norm) continue;
-        const low = norm.toLowerCase();
-        if (favSet.has(low)) continue;
-        const mt = typeof w.mtimeMs === 'number' ? w.mtimeMs : 0;
-        if (byKey.has(low)) {
-          const o = byKey.get(low);
-          o.winMtimeMs = Math.max(o.winMtimeMs || 0, mt);
-          o.lastTs = Math.max(o.lastTs || 0, mt);
-        } else {
-          byKey.set(low, { path: norm, visits: 0, lastTs: mt, winMtimeMs: mt });
-        }
-      }
-      const now = Date.now();
-      const ranked = [];
-      for (const v of byKey.values()) {
-        const lastTs = Math.max(v.lastTs || 0, v.winMtimeMs || 0);
-        const ageMs = Math.max(0, now - lastTs);
-        const week = 7 * 24 * 3600000;
-        const recency = Math.exp(-ageMs / week);
-        const freq = Math.log(1 + (v.visits || 0));
-        const score = freq * 2.2 + recency * 3.5;
-        ranked.push({ ...v, lastTs, score });
-      }
-      ranked.sort((a, b) => b.score - a.score);
-      const top = ranked.slice(0, 20);
-      if (!top.length) {
-        el.innerHTML =
-          '<span class="text-muted small fst-italic px-2">Open folders here to build this list</span>';
-        return;
-      }
-      for (const row of top) {
-        el.appendChild(buildFavColumnFolderChipRowEl(row.path, { recent: true }));
-      }
-      refreshTagFoxChromeTooltips(el);
-    }
-
-    /** Recent files: merged TagFox open counts + Windows shell Recent file targets. */
-    async function renderRecentFilesBar() {
-      const el = document.getElementById('favRecentFilesBar');
-      if (!el) return;
-      el.innerHTML = '';
-      const stats = loadFileFocusStats();
-      let winFiles = [];
-      try {
-        if (window.tagBrowser && typeof window.tagBrowser.windowsRecentFiles === 'function') {
-          const r = await perfTimeAsync('windowsRecentFiles', {}, () => window.tagBrowser.windowsRecentFiles());
-          if (r && r.ok && Array.isArray(r.files)) winFiles = r.files;
-        }
-      } catch (_) {}
-      const byKey = new Map();
-      for (const k of Object.keys(stats)) {
-        const ent = stats[k];
-        if (!ent || !ent.path) continue;
-        const norm = normalizeFolderPathForEverything(String(ent.path));
-        if (!norm) continue;
-        const low = norm.toLowerCase();
-        byKey.set(low, {
-          path: norm,
-          visits: ent.visits || 0,
-          lastTs: ent.lastTs || 0,
-          winMtimeMs: 0,
-        });
-      }
-      for (const w of winFiles) {
-        const raw = w && w.path ? String(w.path) : '';
-        if (!raw) continue;
-        const norm = normalizeFolderPathForEverything(raw);
-        if (!norm) continue;
-        const low = norm.toLowerCase();
-        const mt = typeof w.mtimeMs === 'number' ? w.mtimeMs : 0;
-        if (byKey.has(low)) {
-          const o = byKey.get(low);
-          o.winMtimeMs = Math.max(o.winMtimeMs || 0, mt);
-          o.lastTs = Math.max(o.lastTs || 0, mt);
-        } else {
-          byKey.set(low, { path: norm, visits: 0, lastTs: mt, winMtimeMs: mt });
-        }
-      }
-      const now = Date.now();
-      const ranked = [];
-      for (const v of byKey.values()) {
-        const lastTs = Math.max(v.lastTs || 0, v.winMtimeMs || 0);
-        const ageMs = Math.max(0, now - lastTs);
-        const week = 7 * 24 * 3600000;
-        const recency = Math.exp(-ageMs / week);
-        const freq = Math.log(1 + (v.visits || 0));
-        const score = freq * 2.2 + recency * 3.5;
-        ranked.push({ ...v, lastTs, score });
-      }
-      ranked.sort((a, b) => b.score - a.score);
-      const top = ranked.slice(0, 20);
-      if (!top.length) {
-        el.innerHTML =
-          '<span class="text-muted small fst-italic px-2">Open files here to build this list</span>';
-        return;
-      }
-      for (const row of top) {
-        el.appendChild(buildFavColumnFileChipRowEl(row.path));
-      }
-      refreshTagFoxChromeTooltips(el);
-    }
-
-    /** Narrow flex slots between chips — injected while dragging; highlight = drop target (not the pills). */
-    function createFavDropGapEl(gapIdx) {
-      const s = document.createElement('span');
-      s.className = 'tagfox-fav-drop-gap';
-      s.dataset.favGapIdx = String(gapIdx);
-      s.setAttribute('aria-hidden', 'true');
-      return s;
-    }
-
-    function injectFavBarDropGaps(barEl) {
-      if (!barEl || barEl.dataset.tagfoxGapsInjected === '1') return;
-      const chips = [...barEl.querySelectorAll(':scope > .tagfox-fav-chip-row')];
-      barEl.dataset.tagfoxGapsInjected = '1';
-      barEl.classList.add('tagfox-fav-bar--dnd');
-      if (!chips.length) {
-        barEl.appendChild(createFavDropGapEl(0));
-        return;
-      }
-      barEl.insertBefore(createFavDropGapEl(0), chips[0]);
-      for (let i = 0; i < chips.length; i++) {
-        const chip = chips[i];
-        const gap = createFavDropGapEl(i + 1);
-        if (chip.nextSibling) barEl.insertBefore(gap, chip.nextSibling);
-        else barEl.appendChild(gap);
-      }
-      searchDebugLog('favBar.dnd.injectGaps', {
-        bar: barEl.id,
-        chipRows: chips.length,
-        gapSlots: barEl.querySelectorAll('.tagfox-fav-drop-gap').length,
-      });
-    }
-
-    function clearFavBarDropGaps(barEl) {
-      if (!barEl) return;
-      barEl.querySelectorAll('.tagfox-fav-drop-gap').forEach((n) => n.remove());
-      delete barEl.dataset.tagfoxGapsInjected;
-      barEl.classList.remove('tagfox-fav-bar--dnd');
-      barEl.querySelectorAll('.tagfox-fav-drop-gap--active').forEach((n) => n.classList.remove('tagfox-fav-drop-gap--active'));
-    }
-
-    function clearAllFavBarDropGaps() {
-      clearFavBarDropGaps(document.getElementById('favFoldersBar'));
-    }
-
-    function setActiveFavDropGap(barEl, gapIdx) {
-      if (!barEl) return;
-      if (!Number.isFinite(gapIdx)) {
-        barEl.querySelectorAll('.tagfox-fav-drop-gap--active').forEach((el) => el.classList.remove('tagfox-fav-drop-gap--active'));
-        return;
-      }
-      barEl.querySelectorAll('.tagfox-fav-drop-gap').forEach((el) => {
-        el.classList.toggle('tagfox-fav-drop-gap--active', +el.dataset.favGapIdx === gapIdx);
-      });
-    }
-
-    /** Which gap is closest to the pointer (fallback when not over a chip row). */
-    function nearestFavGapIndex(barEl, clientX, clientY) {
-      const gaps = [...barEl.querySelectorAll('.tagfox-fav-drop-gap')];
-      if (!gaps.length) return 0;
-      let best = +gaps[0].dataset.favGapIdx || 0;
-      let bestD = Infinity;
-      for (const g of gaps) {
-        const r = g.getBoundingClientRect();
-        const cx = (r.left + r.right) / 2;
-        const cy = (r.top + r.bottom) / 2;
-        const d = (clientX - cx) * (clientX - cx) + (clientY - cy) * (clientY - cy);
-        if (d < bestD) {
-          bestD = d;
-          best = +g.dataset.favGapIdx;
-        }
-      }
-      return best;
-    }
-
-    /** Gap index 0…n for reorder: explicit gap hit, else left/right half of chip row (fixes “drop at end” vs nearest-centre). */
-    function favGapIndexFromBarPointer(barEl, clientX, clientY, e) {
-      const raw = e && e.target;
-      const t = raw && raw.nodeType === 3 ? raw.parentElement : raw;
-      const vertical = barEl && barEl.classList && barEl.classList.contains('tagfox-fav-bar--vertical');
-      if (t) {
-        const gEl = t.closest && t.closest('.tagfox-fav-drop-gap');
-        if (gEl && barEl.contains(gEl)) return +gEl.dataset.favGapIdx;
-        const row = t.closest && t.closest('.tagfox-fav-chip-row');
-        if (row && barEl.contains(row)) {
-          const idx = +row.dataset.favIdx;
-          if (Number.isFinite(idx) && idx >= 0) {
-            const gapA = barEl.querySelector('.tagfox-fav-drop-gap[data-fav-gap-idx="' + idx + '"]');
-            const gapB = barEl.querySelector('.tagfox-fav-drop-gap[data-fav-gap-idx="' + (idx + 1) + '"]');
-            if (vertical) {
-              /* Vertical bar: gap idx is above chip idx, gap idx+1 below — split by horizontal midline between gaps. */
-              if (gapA && gapB) {
-                const ra = gapA.getBoundingClientRect();
-                const rb = gapB.getBoundingClientRect();
-                const midY = (ra.bottom + rb.top) / 2;
-                return clientY < midY ? idx : idx + 1;
-              }
-              const goEl = row.querySelector('.fav-folder-chip-go, .fav-search-chip-go');
-              const r = (goEl && goEl.getBoundingClientRect()) || row.getBoundingClientRect();
-              return clientY < r.top + r.height / 2 ? idx : idx + 1;
-            }
-            /* Horizontal bar: midpoint between gap left of chip and gap right of chip. */
-            if (gapA && gapB) {
-              const mid = (gapA.getBoundingClientRect().right + gapB.getBoundingClientRect().left) / 2;
-              return clientX < mid ? idx : idx + 1;
-            }
-            const goEl = row.querySelector('.fav-folder-chip-go, .fav-search-chip-go');
-            const r = (goEl && goEl.getBoundingClientRect()) || row.getBoundingClientRect();
-            return clientX < r.left + r.width / 2 ? idx : idx + 1;
-          }
-        }
-      }
-      return nearestFavGapIndex(barEl, clientX, clientY);
-    }
-
-    let suppressNextFavGoClick = false;
-    let favFolderPointerState = null;
-    /** Favourite folders (LHS column): pointer-driven reorder — HTML5 drag/drop fails in Electron here. */
-    function bindFavFoldersPointerReorderOnce() {
-      const barEl = document.getElementById('favFoldersBar');
-      if (!barEl || barEl.dataset.tagfoxFavPointerBound === '1') return;
-      barEl.dataset.tagfoxFavPointerBound = '1';
-      const DRAG_THR2 = 5 * 5;
-
-      function onPointerMove(e) {
-        const state = favFolderPointerState;
-        if (!state) return;
-        const dx = e.clientX - state.startX;
-        const dy = e.clientY - state.startY;
-        if (!state.active) {
-          if (dx * dx + dy * dy < DRAG_THR2) return;
-          state.active = true;
-          favListDragKind = 'folder';
-          injectFavBarDropGaps(barEl);
-          state.row.classList.add('tagfox-fav-chip-row--dragging');
-        }
-        e.preventDefault();
-        const gapIdx = favGapIndexFromBarPointer(barEl, e.clientX, e.clientY, e);
-        setActiveFavDropGap(barEl, gapIdx);
-        state.lastGapIdx = gapIdx;
-      }
-
-      function onPointerUp(e) {
-        const state = favFolderPointerState;
-        favFolderPointerState = null;
-        document.removeEventListener('pointermove', onPointerMove);
-        document.removeEventListener('pointerup', onPointerUp);
-        document.removeEventListener('pointercancel', onPointerUp);
-        if (!state) return;
-        if (!state.active) return;
-        const fromIdx = state.fromIdx;
-        state.row.classList.remove('tagfox-fav-chip-row--dragging');
-        clearFavBarDropGaps(barEl);
-        favListDragKind = null;
-        const gapIdx = Number.isFinite(state.lastGapIdx)
-          ? state.lastGapIdx
-          : favGapIndexFromBarPointer(barEl, e.clientX, e.clientY, e);
-        if (!Number.isFinite(gapIdx)) return;
-        const list = loadFavouriteFolders();
-        if (fromIdx < 0 || fromIdx >= list.length) return;
-        const next = reorderFavListByGap(list, fromIdx, gapIdx);
-        let unchanged = list.length === next.length;
-        if (unchanged) {
-          for (let i = 0; i < list.length; i++) {
-            if (list[i] !== next[i]) {
-              unchanged = false;
-              break;
-            }
-          }
-        }
-        if (unchanged) return;
-        suppressNextFavGoClick = true;
-        saveFavouriteFolders(next);
-        renderFavFoldersBar();
-        const st = document.getElementById('statusMain');
-        if (st) setStatusMain('Favourite folders reordered.');
-      }
-
-      barEl.addEventListener(
-        'pointerdown',
-        (e) => {
-          if (e.button !== 0) return;
-          if (document.querySelector('.modal.show')) return;
-          if (e.target.closest && e.target.closest('[data-fav-no-drag="1"]')) return;
-          const go = e.target.closest && e.target.closest('.fav-folder-chip-go');
-          if (!go || !barEl.contains(go)) return;
-          const row = go.closest('.tagfox-fav-chip-row');
-          if (!row) return;
-          const fromIdx = +row.dataset.favIdx;
-          if (!Number.isFinite(fromIdx)) return;
-          favFolderPointerState = {
-            fromIdx,
-            row,
-            startX: e.clientX,
-            startY: e.clientY,
-            active: false,
-            lastGapIdx: null,
-          };
-          document.addEventListener('pointermove', onPointerMove);
-          document.addEventListener('pointerup', onPointerUp);
-          document.addEventListener('pointercancel', onPointerUp);
-        },
-        true
-      );
-
-      barEl.addEventListener(
-        'click',
-        (e) => {
-          if (!suppressNextFavGoClick) return;
-          const go = e.target.closest && e.target.closest('.fav-folder-chip-go');
-          if (!go || !barEl.contains(go)) return;
-          e.preventDefault();
-          e.stopPropagation();
-          suppressNextFavGoClick = false;
-        },
-        true
-      );
+      if (kind === 'file') await openFileDefaultOrGoogleWorkspace(p);
+      else await applySearchScopeAndRefresh(p);
     }
 
     /** Search box hint: last segment of scope (pretty title), or entire-index wording when scope empty. */
@@ -7471,8 +6618,8 @@
     }
 
     /** Scope bars that can host folder-drop pills and subfolder ▾ toggles. */
-    const SCOPE_FOLDER_DROP_BAR_IDS = ['breadcrumbBar', 'favFoldersBar', 'favRecentFoldersBar', 'favRecentFilesBar'];
-    /** Breadcrumb / fav / recent ▾ toggles — derived from the same bar list to keep hover/drag logic in sync. */
+    const SCOPE_FOLDER_DROP_BAR_IDS = ['breadcrumbBar'];
+    /** Their ▾ toggles — derived from the same bar list to keep hover/drag logic in sync. */
     const SCOPE_FOLDER_SUBMENU_DD_TOGGLE_SEL = SCOPE_FOLDER_DROP_BAR_IDS.map((id) => `#${id} [data-bs-toggle="dropdown"]`).join(', ');
 
     /** Open one scope ▾ and close the others (Bootstrap). Used by hover and by dragover — DnD does not fire mouseenter. */
@@ -7526,19 +6673,7 @@
       document.addEventListener(
         'dragover',
         (e) => {
-          if (favListDragKind === 'folder' && !dataTransferHasTagBrowserOrFiles(e.dataTransfer)) return;
-          if (!dataTransferHasTagBrowserOrFiles(e.dataTransfer)) {
-            setFavColumnDragPeek(false);
-            return;
-          }
-          const favCol = document.getElementById('favFoldersColumn');
-          const overFavCol =
-            !!favCol &&
-            e.clientX >= favCol.getBoundingClientRect().left &&
-            e.clientX <= favCol.getBoundingClientRect().right &&
-            e.clientY >= favCol.getBoundingClientRect().top &&
-            e.clientY <= favCol.getBoundingClientRect().bottom;
-          setFavColumnDragPeek(overFavCol);
+          if (!dataTransferHasTagBrowserOrFiles(e.dataTransfer)) return;
           const resolved = resolveScopeDropdownFromDragEvent(e);
           const now = Date.now();
           const debugOk = isSearchDebugOn() && now - lastDdDebugAt > 320;
@@ -7599,62 +6734,15 @@
       });
     }
 
-    /** LHS fav column: subfolder list opens to the right of ▾; clamp to viewport. */
-    function positionFavSubfolderDropdownMenu(ddBtn, menu) {
-      if (!ddBtn || !menu) return;
-      const r = ddBtn.getBoundingClientRect();
-      menu.style.position = 'fixed';
-      menu.style.margin = '0';
-      menu.style.transform = 'none';
-      menu.style.maxWidth = 'min(26rem, calc(100vw - 2rem))';
-      menu.style.width = 'max-content';
-      menu.style.top = r.top + 'px';
-      menu.style.zIndex = '1060';
-      menu.style.right = 'auto';
-      let left = r.right + 4;
-      menu.style.left = left + 'px';
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          const mw = menu.offsetWidth || 0;
-          let L = r.right + 4;
-          if (L + mw > window.innerWidth - 8) L = Math.max(8, window.innerWidth - mw - 8);
-          menu.style.left = L + 'px';
-          menu.classList.add('tagfox-fav-dd-placed');
-        });
-      });
-    }
-
     /**
      * Trailing-▾ pattern: list direct subfolders of parentPathRaw + chained ul.breadcrumb-folder-flyout (same IPC as breadcrumb).
-     * highlightPathNorm: optional path segment hint along current scope. hoverOpen: hover-opens-menu on ddWrap (breadcrumb + favourites; fav wraps only ▾ + menu so Go isn’t hijacked).
+     * highlightPathNorm: optional path segment hint along current scope. hoverOpen: hover-opens-menu on ddWrap.
      */
-    function bindSubfolderDropdownWithFlyouts(ddBtn, menu, ddWrap, parentPathRaw, highlightPathNorm, hoverOpen, opts) {
-      opts = opts || {};
+    function bindSubfolderDropdownWithFlyouts(ddBtn, menu, ddWrap, parentPathRaw, highlightPathNorm, hoverOpen) {
       const parentForList = normalizeFolderPathForEverything(parentPathRaw);
-      menu.className =
-        'dropdown-menu py-1 small shadow' + (opts.menuAlignStart === false ? '' : ' dropdown-menu-start');
-      if (opts.favColumnSubmenu) {
-        ddWrap.setAttribute('data-bs-display', 'static');
-        ddBtn.removeAttribute('data-bs-placement');
-        ddBtn.addEventListener('shown.bs.dropdown', function favSubmenuPlace() {
-          requestAnimationFrame(() => requestAnimationFrame(() => positionFavSubfolderDropdownMenu(ddBtn, menu)));
-        });
-        ddBtn.addEventListener('hidden.bs.dropdown', function favSubmenuClearPlace() {
-          menu.classList.remove('tagfox-fav-dd-placed');
-          menu.style.position = '';
-          menu.style.left = '';
-          menu.style.top = '';
-          menu.style.margin = '';
-          menu.style.transform = '';
-          menu.style.zIndex = '';
-          menu.style.maxWidth = '';
-          menu.style.width = '';
-          menu.style.right = '';
-        });
-      } else {
-        ddWrap.removeAttribute('data-bs-display');
-        ddBtn.removeAttribute('data-bs-placement');
-      }
+      menu.className = 'dropdown-menu py-1 small shadow dropdown-menu-start';
+      ddWrap.removeAttribute('data-bs-display');
+      ddBtn.removeAttribute('data-bs-placement');
       menu.style.maxHeight = 'min(50vh, 280px)';
       menu.style.overflow = 'auto';
       menu.addEventListener('scroll', () => repositionBreadcrumbFlyoutChain());
@@ -7708,13 +6796,6 @@
           if (r && isSearchDebugOn() && (r.serverMs > 200 || r.readdirMs > 200))
             searchDebugLog('listChildFolders.server', { serverMs: r.serverMs, readdirMs: r.readdirMs });
           menu.innerHTML = '';
-          function repositionFavMenuIfNeeded() {
-            if (opts.favColumnSubmenu) {
-              requestAnimationFrame(() =>
-                requestAnimationFrame(() => positionFavSubfolderDropdownMenu(ddBtn, menu))
-              );
-            }
-          }
           if (!r || !r.ok) {
             const li0 = document.createElement('li');
             li0.innerHTML =
@@ -7722,7 +6803,6 @@
               (r && r.error ? String(r.error) : 'Could not list folders') +
               '</span>';
             menu.appendChild(li0);
-            repositionFavMenuIfNeeded();
             return;
           }
           const folders = r.folders || [];
@@ -7730,13 +6810,11 @@
             const li0 = document.createElement('li');
             li0.innerHTML = '<span class="dropdown-item-text text-muted">(no subfolders)</span>';
             menu.appendChild(li0);
-            repositionFavMenuIfNeeded();
             return;
           }
           const listOpts = { onMouseLeaveRow: scheduleHideBreadcrumbSubfolderFlyout };
           if (highlightPathNorm) listOpts.highlightPathNorm = highlightPathNorm;
           appendBreadcrumbFolderListItems(menu, folders, ddBtn, 0, listOpts);
-          repositionFavMenuIfNeeded();
         })();
       });
       if (hoverOpen && ddWrap) bindBreadcrumbDropdownHover(ddWrap, ddBtn);
@@ -7767,7 +6845,6 @@
         fly.innerHTML = '';
         fly._anchorLi = null;
       }
-      syncFavColumnFlyoutPeek();
     }
 
     function breadcrumbSubfolderFlyoutsAreOpen() {
@@ -7818,15 +6895,7 @@
         const fr = fly.getBoundingClientRect();
         let left = r.right + 2;
         let top = r.top;
-        const anchorInFavCol =
-          li.closest &&
-          (li.closest('#favFoldersBar') || li.closest('#favRecentFoldersBar') || li.closest('#favRecentFilesBar'));
-        /* LHS fav / Recent: keep chained panels opening to the right; only clamp (don’t flip left of row). */
-        if (anchorInFavCol) {
-          if (left + fr.width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - fr.width - 8);
-        } else if (left + fr.width > window.innerWidth - 8) {
-          left = Math.max(8, r.left - fr.width - 2);
-        }
+        if (left + fr.width > window.innerWidth - 8) left = Math.max(8, r.left - fr.width - 2);
         if (top + fr.height > window.innerHeight - 8) top = Math.max(8, window.innerHeight - fr.height - 8);
         fly.style.left = left + 'px';
         fly.style.top = top + 'px';
@@ -7984,60 +7053,56 @@
 
     /** @returns {Promise<void>} */
     async function openBreadcrumbSubfolderFlyoutForPath(parentPath, anchorLi, subBtnToggle, depth) {
-      try {
-        if (depth > BREADCRUMB_FLYOUT_MAX_DEPTH) return;
-        /* Idempotent: same row already opened at this depth → skip (avoids double-load when mouseenter focuses
-           the button and synchronously triggers focusin, both calling this opener). */
-        const existing = breadcrumbSubfolderFlyoutChain[depth];
-        if (existing && existing.classList.contains('is-open') && existing._anchorLi === anchorLi) return;
-        closeBreadcrumbFlyoutsDeeperThan(depth);
-        const fly = ensureBreadcrumbFlyoutAtDepth(depth);
-        if (!fly) return;
-        fly._anchorLi = anchorLi;
-        fly._subBtnToggle = subBtnToggle;
-        fly._loadGen = (fly._loadGen | 0) + 1;
-        const loadGen = fly._loadGen;
-        fly.innerHTML =
-          '<li><span class="dropdown-item-text text-muted">' +
-          (window.tagBrowser.listChildFolders ? 'Loading…' : 'Not available') +
-          '</span></li>';
-        fly.classList.add('is-open');
-        positionBreadcrumbFlyoutAtDepth(depth);
-        if (!window.tagBrowser.listChildFolders) return;
-        const r = await window.tagBrowser.listChildFolders({ parentPath });
-        if (fly._loadGen !== loadGen || fly._anchorLi !== anchorLi) return;
-        if (!subBtnToggle.isConnected) {
-          hideBreadcrumbSubfolderFlyout();
-          return;
-        }
-        if (subBtnToggle.getAttribute('aria-expanded') !== 'true') {
-          hideBreadcrumbSubfolderFlyout();
-          return;
-        }
-        fly.innerHTML = '';
-        fly._subBtnToggle = subBtnToggle;
-        if (!r || !r.ok) {
-          const li0 = document.createElement('li');
-          li0.innerHTML =
-            '<span class="dropdown-item-text text-danger small">' +
-            (r && r.error ? String(r.error) : 'Could not list folders') +
-            '</span>';
-          fly.appendChild(li0);
-          positionBreadcrumbFlyoutAtDepth(depth);
-          return;
-        }
-        const folders = r.folders || [];
-        if (!folders.length) {
-          const li0 = document.createElement('li');
-          li0.innerHTML = '<span class="dropdown-item-text text-muted">(no subfolders)</span>';
-          fly.appendChild(li0);
-          positionBreadcrumbFlyoutAtDepth(depth);
-          return;
-        }
-        populateBreadcrumbSubfolderFlyoutAtDepth(fly, folders, subBtnToggle, depth, parentPath);
-      } finally {
-        syncFavColumnFlyoutPeek();
+      if (depth > BREADCRUMB_FLYOUT_MAX_DEPTH) return;
+      /* Idempotent: same row already opened at this depth → skip (avoids double-load when mouseenter focuses
+         the button and synchronously triggers focusin, both calling this opener). */
+      const existing = breadcrumbSubfolderFlyoutChain[depth];
+      if (existing && existing.classList.contains('is-open') && existing._anchorLi === anchorLi) return;
+      closeBreadcrumbFlyoutsDeeperThan(depth);
+      const fly = ensureBreadcrumbFlyoutAtDepth(depth);
+      if (!fly) return;
+      fly._anchorLi = anchorLi;
+      fly._subBtnToggle = subBtnToggle;
+      fly._loadGen = (fly._loadGen | 0) + 1;
+      const loadGen = fly._loadGen;
+      fly.innerHTML =
+        '<li><span class="dropdown-item-text text-muted">' +
+        (window.tagBrowser.listChildFolders ? 'Loading…' : 'Not available') +
+        '</span></li>';
+      fly.classList.add('is-open');
+      positionBreadcrumbFlyoutAtDepth(depth);
+      if (!window.tagBrowser.listChildFolders) return;
+      const r = await window.tagBrowser.listChildFolders({ parentPath });
+      if (fly._loadGen !== loadGen || fly._anchorLi !== anchorLi) return;
+      if (!subBtnToggle.isConnected) {
+        hideBreadcrumbSubfolderFlyout();
+        return;
       }
+      if (subBtnToggle.getAttribute('aria-expanded') !== 'true') {
+        hideBreadcrumbSubfolderFlyout();
+        return;
+      }
+      fly.innerHTML = '';
+      fly._subBtnToggle = subBtnToggle;
+      if (!r || !r.ok) {
+        const li0 = document.createElement('li');
+        li0.innerHTML =
+          '<span class="dropdown-item-text text-danger small">' +
+          (r && r.error ? String(r.error) : 'Could not list folders') +
+          '</span>';
+        fly.appendChild(li0);
+        positionBreadcrumbFlyoutAtDepth(depth);
+        return;
+      }
+      const folders = r.folders || [];
+      if (!folders.length) {
+        const li0 = document.createElement('li');
+        li0.innerHTML = '<span class="dropdown-item-text text-muted">(no subfolders)</span>';
+        fly.appendChild(li0);
+        positionBreadcrumbFlyoutAtDepth(depth);
+        return;
+      }
+      populateBreadcrumbSubfolderFlyoutAtDepth(fly, folders, subBtnToggle, depth, parentPath);
     }
 
     /** Highlight drive/volume row when current scope path is under that root. */
@@ -12079,116 +11144,46 @@
       }
     }
 
-    /** Breadcrumb + favourite folder pills: drop rows/Shelf/files to move (Shift = copy) into that folder. */
+    /** Breadcrumb: drop rows/Shelf/files on a folder segment to move (Shift = copy) into that folder. */
     let folderPathDropTargetBarsBound = false;
     function bindFolderPathDropTargetBarsOnce() {
       if (folderPathDropTargetBarsBound) return;
       folderPathDropTargetBarsBound = true;
+      const bar = document.getElementById('breadcrumbBar');
+      if (!bar || bar.dataset.folderPathDropBound === '1') return;
+      bar.dataset.folderPathDropBound = '1';
 
-      const barIds = ['breadcrumbBar', 'favFoldersBar', 'favRecentFoldersBar', 'favRecentFilesBar'];
-      for (const id of barIds) {
-        const bar = document.getElementById(id);
-        if (!bar || bar.dataset.folderPathDropBound === '1') continue;
-        bar.dataset.folderPathDropBound = '1';
-
-        function clearBarPathDragOver() {
-          bar.querySelectorAll('[data-drop-path].results-drag-over').forEach((n) => n.classList.remove('results-drag-over'));
-        }
-
-        const isFavFoldersBar = bar.id === 'favFoldersBar';
-
-        bar.addEventListener('dragover', (e) => {
-          const favFolderInsertPath = isFavFoldersBar ? getDataTransferFavouriteFolder(e.dataTransfer) : '';
-          if (favFolderInsertPath) {
-            if (bar.dataset.tagfoxGapsInjected !== '1') injectFavBarDropGaps(bar);
-            const hasFavRows = !!bar.querySelector(':scope > .tagfox-fav-chip-row');
-            /* Gaps are narrow; “between pills” usually hits the chip row, not .tagfox-fav-drop-gap — use pointer vs main pill only. */
-            let overPillGo = null;
-            if (e.target.closest) {
-              const g = e.target.closest('.fav-folder-chip-go');
-              if (g && bar.contains(g)) overPillGo = g;
-            }
-            if (hasFavRows && overPillGo) {
-              clearFavBarDropGaps(bar);
-              /* fall through: highlight pill for move/copy into that folder */
-            } else {
-              e.preventDefault();
-              e.dataTransfer.dropEffect = 'copy';
-              clearBarPathDragOver();
-              const gapIdx = favGapIndexFromBarPointer(bar, e.clientX, e.clientY, e);
-              setActiveFavDropGap(bar, gapIdx);
-              return;
-            }
-          }
-          if (isFavFoldersBar) clearFavBarDropGaps(bar);
-          /* Reorder-only drag has no x-tagbrowser-paths / files — don't let a stuck favListDragKind block row→folder drops. */
-          if (
-            isFavFoldersBar &&
-            favListDragKind === 'folder' &&
-            !dataTransferHasTagBrowserOrFiles(e.dataTransfer)
-          ) {
-            clearBarPathDragOver();
-            return;
-          }
-          if (!dataTransferHasTagBrowserOrFiles(e.dataTransfer)) {
-            clearBarPathDragOver();
-            return;
-          }
-          const node = e.target.closest('[data-drop-path]');
-          if (!node || !bar.contains(node)) {
-            clearBarPathDragOver();
-            return;
-          }
-          e.preventDefault();
-          e.dataTransfer.dropEffect = e.shiftKey ? 'copy' : 'move';
-          clearBarPathDragOver();
-          node.classList.add('results-drag-over');
-        });
-
-        bar.addEventListener('drop', async (e) => {
-          const favFolderInsertPath = isFavFoldersBar ? getDataTransferFavouriteFolder(e.dataTransfer) : '';
-          if (favFolderInsertPath) {
-            const hasFavRows = !!bar.querySelector(':scope > .tagfox-fav-chip-row');
-            let overPillGo = null;
-            if (e.target.closest) {
-              const g = e.target.closest('.fav-folder-chip-go');
-              if (g && bar.contains(g)) overPillGo = g;
-            }
-            if (!hasFavRows || !overPillGo) {
-              e.preventDefault();
-              e.stopPropagation();
-              clearBarPathDragOver();
-              const gapIdx = favGapIndexFromBarPointer(bar, e.clientX, e.clientY, e);
-              clearFavBarDropGaps(bar);
-              if (!Number.isFinite(gapIdx)) return;
-              const r = upsertFavouriteFolderAtGap(favFolderInsertPath, gapIdx);
-              if (r.full) setStatusMain('Favourites are full (' + FAV_FOLDERS_MAX + '). Remove one first.');
-              if (!r.changed) return;
-              setStatusMain(r.existed ? 'Favourite folders reordered.' : 'Favourite folder saved.');
-              return;
-            }
-            clearFavBarDropGaps(bar);
-          }
-          if (isFavFoldersBar) clearFavBarDropGaps(bar);
-          if (
-            isFavFoldersBar &&
-            favListDragKind === 'folder' &&
-            !dataTransferHasTagBrowserOrFiles(e.dataTransfer)
-          ) {
-            clearBarPathDragOver();
-            return;
-          }
-          clearBarPathDragOver();
-          const node = e.target.closest('[data-drop-path]');
-          if (!node || !bar.contains(node)) return;
-          const paths = collectPathsForShelfDrop(e.dataTransfer);
-          if (!paths.length) return;
-          e.preventDefault();
-          e.stopPropagation();
-          const ok = await applyInternalPathsDrop(node.dataset.dropPath, paths, e.shiftKey ? 'copy' : 'move');
-          if (ok) pulseFolderDropTarget(node);
-        });
+      function clearBarPathDragOver() {
+        bar.querySelectorAll('[data-drop-path].results-drag-over').forEach((n) => n.classList.remove('results-drag-over'));
       }
+
+      bar.addEventListener('dragover', (e) => {
+        if (!dataTransferHasTagBrowserOrFiles(e.dataTransfer)) {
+          clearBarPathDragOver();
+          return;
+        }
+        const node = e.target.closest('[data-drop-path]');
+        if (!node || !bar.contains(node)) {
+          clearBarPathDragOver();
+          return;
+        }
+        e.preventDefault();
+        e.dataTransfer.dropEffect = e.shiftKey ? 'copy' : 'move';
+        clearBarPathDragOver();
+        node.classList.add('results-drag-over');
+      });
+
+      bar.addEventListener('drop', async (e) => {
+        clearBarPathDragOver();
+        const node = e.target.closest('[data-drop-path]');
+        if (!node || !bar.contains(node)) return;
+        const paths = collectPathsForShelfDrop(e.dataTransfer);
+        if (!paths.length) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const ok = await applyInternalPathsDrop(node.dataset.dropPath, paths, e.shiftKey ? 'copy' : 'move');
+        if (ok) pulseFolderDropTarget(node);
+      });
     }
 
     /** Internal row drag + Explorer file drops onto Shelf: move by default, Shift+copy (same as row/breadcrumb drops). */
@@ -15946,11 +14941,6 @@
           }
           if (tagBrowserNextOsFileDrag) tagBrowserNextOsFileDrag = false;
           setDataTransferTagBrowserHtml5Paths(e.dataTransfer, paths);
-          const favFolderDragPath =
-            rowIsFolder(row) && paths.length === 1 && pathNormKey(paths[0]) === pathNormKey(fp)
-              ? normalizeFolderPathForEverything(fp)
-              : '';
-          if (favFolderDragPath) e.dataTransfer.setData(TAG_BROWSER_FAV_FOLDER_DRAG_TYPE, favFolderDragPath);
           tr.classList.add('tagfox-results-row--drag-source');
           setInternalPathDragDropTargetHints(true);
         });
@@ -17478,28 +16468,6 @@
       },
       true
     );
-
-    document.getElementById('btnSaveFavouriteFolder').addEventListener('click', () => {
-      const status = document.getElementById('statusMain');
-      const p = currentScopeFolderPath();
-      if (!p) {
-        setStatusMain('No folder to save — set the current folder in Settings, or click a folder row.');
-        return;
-      }
-      const list = loadFavouriteFolders();
-      if (list.some((x) => x.toLowerCase() === p.toLowerCase())) {
-        setStatusMain('Already in favourites.');
-        return;
-      }
-      if (list.length >= FAV_FOLDERS_MAX) {
-        setStatusMain('Favourites are full (' + FAV_FOLDERS_MAX + '). Remove one first.');
-        return;
-      }
-      list.push(p);
-      saveFavouriteFolders(list);
-      renderFavFoldersBar();
-      setStatusMain('Favourite saved.');
-    });
 
     document.getElementById('btnReadmeFolderDocTags').addEventListener('click', () => openTagModalFolderDocDraft());
     document.getElementById('readmeFolderDocStemInput').addEventListener('input', () => folderDocOnFilenameUiChanged());
@@ -19543,7 +18511,7 @@
         void goSearchHistory(1);
         return;
       }
-      /* Ctrl+Shift+1…9 / ⌘+Shift+1…9: favourite folder by bar order (1-based); Ctrl+Shift+N stays “new folder”. */
+      /* Ctrl+Shift+1…9 / ⌘+Shift+1…9: the Nth star (1-based); Ctrl+Shift+N stays “new folder”. */
       if (modC && e.shiftKey && /^Digit[1-9]$/.test(e.code)) {
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
@@ -19551,7 +18519,7 @@
         const idx = Number(e.code.charAt(5)) - 1;
         if (!list[idx]) return;
         e.preventDefault();
-        openFavouritePath(list[idx]);
+        void openFavouritePath(list[idx]);
         return;
       }
       if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === ' ' || e.code === 'Space')) {
@@ -19804,12 +18772,9 @@
           el.classList.remove('results-scope-drop-over')
         );
         document
-          .querySelectorAll(
-            '#breadcrumbBar [data-drop-path].results-drag-over, #favFoldersBar [data-drop-path].results-drag-over, #favRecentFoldersBar [data-drop-path].results-drag-over, #favRecentFilesBar [data-drop-path].results-drag-over'
-          )
+          .querySelectorAll('#breadcrumbBar [data-drop-path].results-drag-over')
           .forEach((n) => n.classList.remove('results-drag-over'));
         document.getElementById('appShelf')?.classList.remove('shelf-aside-drag-over');
-        setFavColumnDragPeek(false);
         clearInternalPathDragDropTargetHints();
         /* Defer clearing native paths: sync clear on dragend ran before dragover/drop (capture listener) and blocked drops. */
         const pathsRef = tagBrowserActiveNativeDragPaths;
@@ -20049,11 +19014,7 @@
         if (
           t &&
           t.closest &&
-          (t.closest('ul.breadcrumb-folder-flyout') ||
-            t.closest('#breadcrumbBar .dropdown-menu') ||
-            t.closest('#favFoldersBar .dropdown-menu') ||
-            t.closest('#favRecentFoldersBar .dropdown-menu') ||
-            t.closest('#favRecentFilesBar .dropdown-menu'))
+          (t.closest('ul.breadcrumb-folder-flyout') || t.closest('#breadcrumbBar .dropdown-menu'))
         )
           return;
         hideBreadcrumbSubfolderFlyout();
@@ -20119,9 +19080,7 @@
         tagfoxHideAllBootstrapTooltips();
         hideBreadcrumbSubfolderFlyout();
         document
-          .querySelectorAll(
-            '#breadcrumbBar [data-bs-toggle="dropdown"], #favFoldersBar [data-bs-toggle="dropdown"], #favRecentFoldersBar [data-bs-toggle="dropdown"], #favRecentFilesBar [data-bs-toggle="dropdown"]'
-          )
+          .querySelectorAll('#breadcrumbBar [data-bs-toggle="dropdown"]')
           .forEach((btn) => {
             const inst = bootstrap.Dropdown.getInstance(btn);
             if (inst) inst.hide();
@@ -20168,7 +19127,6 @@
     });
     loadPaneWidthsFromStorage();
     loadViewerDocSplitFromStorage();
-    loadFavFoldersColFromStorage();
     loadColWidthsFromStorage();
     applyResultsTablePathColumnVisibility();
     if (treeViewDefaultsFreshProfile) {
@@ -20281,19 +19239,14 @@
     seedSearchHistoryFromCurrent();
     bindVerticalSplitters();
     bindViewerDocSplitters();
-    bindFavFoldersSplitter();
-    bindFavFoldersCollapseButton();
-    bindFavColumnCollapsedHoverExit();
     document.getElementById('propsTheaterBackdrop').addEventListener('click', () => setPropsTheaterMode(false));
     document.getElementById('btnPropsTheaterToggle').addEventListener('click', () => togglePropsTheaterMode());
     syncViewerDocDividerOrientation();
     updateSortHeaders();
-    bindFavFoldersPointerReorderOnce();
     bindFolderPathDropTargetBarsOnce();
     bindScopeFolderDropdownDragCaptureOnce();
     installLongTaskMonitor();
     installRendererPerfProbe();
-    renderFavFoldersBar();
     renderTagBar();
     renderTable();
     bindRunnerChromeOnce();

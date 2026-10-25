@@ -7,7 +7,7 @@ Steve decided on 24 October 2026 to keep only Runner: hide Classic first, then d
 
 Read-only survey by a subagent at main `74c8ac1`; line numbers are approximate. Since then Runner has gained chips for the deadline and hide-until filters (the hazard the survey found).
 
-**Summary.** Runner would lose Smart view, Tree view, the favourites column, Windows Recent, the deadline filters and the tag bar's counts. Classic cannot be cut out cleanly, because Runner keeps its state in Classic's hidden controls. Classic is about a fifth of `renderer.js` (4,000 to 4,500 of 20,759 lines) and about a quarter of `styles.css` and `index.html`.
+**Summary.** Runner would lose Smart view, Tree view and the tag bar's counts. Classic cannot be cut out cleanly, because Runner keeps its state in Classic's hidden controls.
 
 ## What only Classic does
 
@@ -29,13 +29,6 @@ Read-only survey by a subagent at main `74c8ac1`; line numbers are approximate. 
 | Column resizing | `.th-resize` | None | `startTableColResize`, `applyTableColWidths` |
 | Status line with hit count and filter hints | standing line | None: Runner shows no count except "N of M ranked" | `formatResultsStatusMainHtml`, `hiddenDueToStatusHtml` |
 | Empty-result pulse hints | toolbar pulses | Partial: only the box pulses | `updateEmptyResultsPulseHints` |
-
-### Favourites and recents
-
-| Feature | Runner? | Code |
-|---|---|---|
-| Favourites column (up to 30): fixed or peek rail, splitter, ▾ subfolder menus, drag to reorder, drop files on a pill to move or copy, save current folder | Partial: the store is shared (Ctrl+D stars, Ctrl+Shift+1..9 opens the Nth star, stars rank higher, "Show only starred items" lists them), but there is no reorder and no way to star the current folder | `renderFavFoldersBar` and friends (~1,160 lines in all) |
-| Windows Recent folders and files | A ranking boost (`RUNNER_RANK.windowsRecent`), no list | `renderRecentFoldersBar`, `renderRecentFilesBar` go; IPC `windows-recent-folders`/`-files` and `scanWindowsRecentLnkTargets` in `main.js` stay for the boost |
 
 ### Shelf
 
@@ -62,7 +55,7 @@ History back/forward (Runner: Alt+←/→), Undo (Ctrl+Z), Restart (Runner: the 
 - **Tags:** the filter state and functions, `appendTagFiltersToEverythingQuery`, `renderTagBar` (runs on every search into the hidden bar), the tag store and modal, and the rename, new-folder, paste-target, bulk-rename and recycle modals.
 - **Results table:** `renderTableImpl` (including Classic's row buttons), `#bulkBar`, `loadMoreResults`, `rowActionStripHandleKeydown`.
 - **Viewer:** `#propsAside` and everything in it.
-- **Favourites store:** `loadFavouriteFolders`, `saveFavouriteFolders`, `openFavouritePath`, IPC `path-kinds`; `fuzzyPathScore` (used by Runner's `/` list) lives in the favourites code.
+- **Favourites store (the stars):** `loadFavouriteFolders`, `saveFavouriteFolders`, `toggleStarPath`, `openFavouritePath` (Ctrl+Shift+1..9, which asks IPC `path-kinds` whether a star is a file or a folder); `fuzzyPathScore` (used by Runner's `/` list) lives in the favourites code. IPC `windows-recent-folders`/`-files` and `scanWindowsRecentLnkTargets` in `main.js` feed Runner's ranking boost and are not Classic's.
 - **Tab state:** `tabs`, `saveActiveTabStateFromUi` (called by `setRunnerMode`), `persistTabsToStorage`, the load-more persist and startup tab init. Collapsing it is a stage of its own (below).
 - **History and undo:** `searchHist`, `goSearchHistory`, `runUndo`.
 - **Clicked hidden controls:** `#btnToggleDarkMode`, `#btnToggleSettings`, `#helpModal`, `#settingsPanel`, `#selToggleOpens`; `#statusMain` and `setStatusMain`.
@@ -78,7 +71,7 @@ History back/forward (Runner: Alt+←/→), Undo (Ctrl+Z), Restart (Runner: the 
 ## Tests
 
 - **Classic only:** `smoke`, `fuzz`, `column-resize`, `splitter-drag`, `menu-enter`, `recent-folders-filter`, `recent-tab`, `zoom-buttons`, `refresh-visible` (header button half).
-- **Runner only:** the five `runner-*` tests, several with Classic round-trip checks that would need rewriting.
+- **Runner only:** the `runner-*` tests and `viewer-runner`, several with Classic round-trip checks that would need rewriting.
 - **Both:** `hotkey-raise-select`, `hover-preview`, `row-actions-keys`, `window-chrome`.
 - **Layout-neutral but run in Classic:** `md-preview-no-write`, `quiet-refresh`, `loadmore-regression`, `delete-hides-row`, `restart-in-terminal`, `gmist-start-guard`, `help-build`, `tags-dates`.
 - `test/README.md` omits tags-dates, zoom-buttons, repro-crash, recent-folders-filter, gmist-start-guard and hover-preview.

@@ -16,7 +16,7 @@
 //     commands set them, and from an empty box a deadline range looks below the folder;
 //   - "Show only starred items" lists just the stars under the folder, wherever they are below it;
 //   - Windows' Recent list boosts the ranking (with a positive control that the order differs without it);
-//   - Ctrl+D stars and unstars the selected row in the favourites list, where a starred file is a file chip;
+//   - Ctrl+D stars and unstars the selected row in the favourites list;
 //   - hovering a row shows its action buttons, anchored in the row;
 //   - AppData\Local\Temp is listed by default, below a file of the same name elsewhere, and the / command
 //     hides it;
@@ -468,13 +468,6 @@ async function main() {
     check(s.stars.some((p) => norm(p) === norm(sel)), 'Ctrl+D stars the selected row in the favourites list');
     const starOn = await drv.ev(`!!document.querySelector('#tbody tr.table-active .results-row-star--on')`);
     check(starOn, 'the starred row shows a filled star');
-    // One favourites list: Classic's favourites column shows a starred file as a file chip, not a folder.
-    let chip = null;
-    for (let i = 0; i < 10 && !chip; i++) {
-      await sleep(150);
-      chip = await drv.ev(`(() => { const g = Array.from(document.querySelectorAll('#favFoldersBar [aria-label]')).find((x) => x.getAttribute('aria-label').toLowerCase() === ${JSON.stringify('open starred file ' + String(sel).toLowerCase())}); return g ? g.getAttribute('aria-label') : null; })()`);
-    }
-    check(!!chip, `the favourites column lists the starred file as a file (${chip})`);
     await key('d', 'KeyD', 68, 2);
     s = await R();
     check(!s.stars.some((p) => norm(p) === norm(sel)), 'Ctrl+D again unstars it');

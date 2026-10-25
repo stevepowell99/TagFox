@@ -52,7 +52,7 @@ Welcome to TagFox — a fast, keyboard-friendly file manager powered by instant 
 3. **📂 Pick a folder to work in.** The breadcrumb bar shows your scope root (if set) and current folder — search, paste, and new files use the current folder when it is set, otherwise the scope root. Clear the current folder (×) to widen to the whole scope tree; **Clear scope** in Settings removes the ceiling entirely.
 4. **👁️ Switch views to suit the task.** Toggle between Flat/Tree/Smart, Subfolders on/off, and Files+Folders/Folders only with the buttons next to the search box (or keys `x` for Smart, `l` to cycle layout, `s`, `f`).
 5. **🏷️ Tag your files and folders for easy organisation.** Add tags like `draft`, `urgent`, or `2026` to any file or folder — then filter by tag to find exactly what you need. Tags are stored in the filename itself, so they travel with your files everywhere (Explorer, Google Drive, zip files). See **🏷️ Tags** for details.
-6. **⭐ Save favourite folders and searches.** Click 💾 to bookmark a folder or an entire search. Jump back with a click or `Ctrl`+`1`…`9`. See **⭐ Favourites**.
+6. **⭐ Star the files and folders you come back to.** `Ctrl`+`D`, or the star at the end of a row, stars it. A star keeps it near the top of searches, and `Ctrl`+`Shift`+`1`…`9` opens the first nine. See **⭐ Stars**.
 7. **👀 Preview files without leaving TagFox.** The Viewer panel (right side) shows images, PDFs, Office docs, markdown, and more. For folders, it shows a folder readme doc you can edit in place. View and edit google files like gdocs, gslides without leaving TagFox.
 8. **❓ Press `F1` or `Ctrl`+`/` anytime** to reopen this help.
 
@@ -74,12 +74,12 @@ Searching the web feels instant. Searching your own hard drive? Painfully slow �
 
 Meanwhile, tools like Google Drive train you to type a word and expect the right file. But you still get a flat list. When your projects have folders with similar names, you quickly lose track of what belongs where.
 
-<p class="text-muted mb-0">TagFox is deliberately simple: fast search, tags, previews, keyboard shortcuts, favourites, and a shelf — not a full project-management suite.</p>
+<p class="text-muted mb-0">TagFox is deliberately simple: fast search, tags, previews, keyboard shortcuts, stars, and a shelf — not a full project-management suite.</p>
 
 <!-- help:tab {"id":"features","label":"✨ Features"} -->
 
 - ⌨️ **Keyboard-first** — navigate, tag, rename, bulk-edit and search without touching the mouse. See **⌨️ Shortcuts**.
-- ⭐ **Favourite folders** — drag chips to reorder; `Ctrl`+`Shift`+`1`…`9` (or click).
+- ⭐ **Stars** — `Ctrl`+`D` stars a file or folder, which keeps it near the top of searches; `Ctrl`+`Shift`+`1`…`9` opens the first nine.
 - 🔍 **Three view switches** — Flat/Tree, Subfolders on/off, Files+folders/Folders only (combine freely). Plus recency buttons (1h, 1d, 1w, 1m, 1y) to filter “what changed recently”.
 - 👁️ **Fast previews** — images, PDFs, Word, Excel, PowerPoint, text, JSON, markdown and more, right in the Viewer panel.
 - 🏷️ **Filename tags** — add, remove and filter by `xk`/`xp`/`xx` tags. Tags scan your folder automatically; click them to filter results.
@@ -96,7 +96,7 @@ Meanwhile, tools like Google Drive train you to type a word and expect the right
 
 ### 📂 Current folder
 
-- The **breadcrumb** under the favourites row shows your **scope folder** (if set in Settings) as the first segment, then your **current folder** beneath it. Everything you search, create and paste uses the current folder when set; if only the scope is set, those actions use the scope root. Clear the current folder (×) to widen to the whole tree under the scope. **Settings → Search scope folder** sets or clears the hard ceiling. If the search box still has text when you change folder (double-click a folder row, breadcrumb, favourites, etc.), that filter stays on; the search row flashes briefly as a reminder.
+- The **breadcrumb** shows your **scope folder** (if set in Settings) as the first segment, then your **current folder** beneath it. Everything you search, create and paste uses the current folder when set; if only the scope is set, those actions use the scope root. Clear the current folder (×) to widen to the whole tree under the scope. **Settings → Search scope folder** sets or clears the hard ceiling. If the search box still has text when you change folder (double-click a folder row, the breadcrumb, a star, etc.), that filter stays on; the search row flashes briefly as a reminder.
 - The ✏️ **pen button** lets you type a path directly. Press `Enter` to apply, `Esc` to cancel.
 - The 🕐 **clock button** (or `Ctrl`+`L`) lists your last 300 **recent folders** (paths you have used), not full search snapshots. Type in its filter box to narrow them fuzzily (letters in order, any part of the path); whole words and longer runs of letters rank well above letters scattered across the path, and `Enter` opens the best match. Full search history is `Alt`+`←` / `→` (or the toolbar arrows).
 
@@ -215,18 +215,14 @@ Type to search. With the search box empty you see the current folder's own conte
 - Press `Shift`+`Space` to expand the Viewer to near-fullscreen. A PDF fits the side pane's width, and opens at 150% when expanded.
 - Google Workspace shortcuts (`.gdoc` / `.gsheet` / `.gslides`) offer **Open in TagFox**, an in-app window where you sign in to Google once, and **Open in browser**. TagFox needs the document's address, from the shortcut file or on Windows from the Drive stream `filename:user.drive.id`. Streamed-only files are usually fine; if not, use Open again, context “Search Google Drive…”, or hydrate the file in Drive.
 
-<!-- help:tab {"id":"favourites","label":"⭐ Favourites"} -->
+<!-- help:tab {"id":"favourites","label":"⭐ Stars"} -->
 
-### 📂 Favourite folders
+### ⭐ Stars
 
-- The **left-hand folder sidebar** is the whole column on the left. It contains **Favourite folders** at the top, then **Recent folders** and **Recent files** below.
-- The 💾 **save button** saves the current folder into the **Favourite folders** part of that sidebar. Click a folder pill to jump there; × removes it. Files starred in the Runner layout appear here too, as file pills: click one to open the file.
-- Each folder row has a main pill plus a ▾ button. Click the main pill to go there; use ▾ to browse subfolders without leaving your current place first.
-- The sidebar has two display modes:
-  - **Fixed Mode**: the column stays open at its normal saved width, so long names are truncated to fit.
-  - **Peek Mode**: the column collapses to a thin strip. Hover it to peek it open temporarily, or click the rail button to return to Fixed Mode.
-- In **Peek Mode**, the sidebar also peeks open while you drag files onto it. That lets you reach the folder pills and their ▾ menus during a drag, and while it is peeked open the full names are shown instead of being truncated.
-- **Drag** a favourite folder pill (grab anywhere except the subfolder ▾ control or ×) to reorder. While dragging, the **gaps** between pills widen and the **active gap** highlights — drop there (not on a pill). `Ctrl`+`Shift`+`1`…`9` follows *top-to-bottom* order.
+- `Ctrl`+`D`, or the star at the end of a row, stars the selected file or folder; the same again unstars it. TagFox keeps up to 30 stars.
+- A starred row sits near the top of every search that finds it.
+- `Ctrl`+`Shift`+`1`…`9` opens the stars in the order you starred them: a folder becomes the current folder, and a file opens.
+- The `/` command **Show only starred items** lists the stars below the current folder, or every star when there is no folder.
 
 <!-- help:tab {"id":"shelf","label":"📦 Shelf"} -->
 
@@ -344,10 +340,11 @@ Things that might trip you up:
 <tr><td><kbd>Ctrl</kbd>+<kbd>H</kbd></td><td>Bulk rename with wildcards</td></tr>
 </tbody></table></div>
 
-<h5 class="help-md-section-title">Favourites &amp; app</h5>
+<h5 class="help-md-section-title">Stars &amp; app</h5>
 <div class="table-responsive">
 <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
-<tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>…<kbd>9</kbd></td><td>Favourite folder 1-9</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>Star or unstar the selected row</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>…<kbd>9</kbd></td><td>Open star 1–9, in the order starred</td></tr>
 <tr><td><kbd>Shift</kbd>+<kbd>Space</kbd></td><td>Toggle Viewer fullscreen</td></tr>
 <tr><td><kbd>F1</kbd> or <kbd>Ctrl</kbd>+<kbd>/</kbd></td><td>Open this help</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>,</kbd></td><td>Open / close Settings</td></tr>

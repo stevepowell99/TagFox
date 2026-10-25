@@ -766,33 +766,6 @@ function runPowershellScriptFile(ps1Body, args = [], failMsgPrefix = 'PowerShell
   }
 }
 
-/** Async sibling: same contract as runPowershellScriptFile but never blocks the main event loop (spawnSync
-    stalls everything for the whole PowerShell run; use this on hot paths like the fav-column Recent scan). */
-function runPowershellScriptFileAsync(ps1Body, args = [], failMsgPrefix = 'PowerShell script failed') {
-  return new Promise((resolve) => {
-    const psExe = windowsPowerShellExe();
-    const tmpPs1 = path.join(os.tmpdir(), `tagbrowser-ps-${process.pid}-${Date.now()}.ps1`);
-    const finish = (res) => {
-      try { fssync.unlinkSync(tmpPs1); } catch (_) {}
-      resolve(res);
-    };
-    let stdout = '';
-    let stderr = '';
-    try {
-      fssync.writeFileSync(tmpPs1, ps1Body, 'utf8');
-      const child = spawn(psExe, [...PS_FILE_FLAGS, tmpPs1, ...args], { windowsHide: true });
-      child.stdout.setEncoding('utf8');
-      child.stderr.setEncoding('utf8');
-      child.stdout.on('data', (d) => { stdout += d; });
-      child.stderr.on('data', (d) => { stderr += d; });
-      child.on('error', (e) => finish({ ok: false, status: null, stdout: '', stderr: '', error: String(e.message || e) }));
-      child.on('close', (status) => finish(shapePowershellResult(status, stdout, stderr, failMsgPrefix)));
-    } catch (e) {
-      finish({ ok: false, status: null, stdout: '', stderr: '', error: String(e.message || e) });
-    }
-  });
-}
-
 /** Run a one-arg PowerShell script for its success/failure only: null on success, else an error string. */
 function runPowershellScriptFileWithArg(ps1Body, argForScript, failMsgPrefix) {
   return runPowershellScriptFile(ps1Body, [argForScript], failMsgPrefix).error;
@@ -5410,7 +5383,7 @@ ipcMain.handle('resolve-google-drive-file-id', async (_event, { fullPath } = {})
  * shortcut's own time, deduped by lowercased path. Electron's shell.readShortcutLink resolves the 28 newest in
  * about 90ms and agrees with WScript.Shell's TargetPath on every one (STEVE-DELL, October 2026), against 0.7-1s
  * for the PowerShell run it replaced, which Runner's ranking boost paid once a minute. One scan serves both
- * kinds, cached briefly because the Classic favourites column re-renders often.
+ * kinds, cached for a minute, since Runner asks for files and folders together.
  */
 let recentLnkScanCache = null;
 const RECENT_LNK_SCAN_TTL_MS = 60 * 1000;

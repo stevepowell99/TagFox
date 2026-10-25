@@ -623,99 +623,6 @@ body > .offcanvas-backdrop.show {
   min-height: 0;
   padding: 0.5rem 1rem;
 }
-/* LHS favourite folders: width set in JS (localStorage); heart + save + chip stacks */
-.tagfox-fav-column {
-  position: relative;
-  z-index: 1090;
-  width: var(--tagfox-fav-expanded-w, 220px);
-  min-width: 0;
-  overflow: hidden;
-  padding: 0.5rem 0.35rem;
-  background-color: var(--bs-body-bg);
-  transition: width 0.225s ease, padding 0.225s ease;
-}
-.tagfox-fav-column-inner {
-  min-width: 0;
-}
-/* Collapsed state: keep the rail-toggle button visible; heart/save/body return on hover/focus.
-   Peek overlay: the collapsed rail (and its hover-peek expansion) floats over the results as an absolute
-   overlay instead of widening the flex row. Previously the width animation pushed the results pane and
-   reflowed the whole (expensive) results table on every animation frame, which made peek-on-hover crawl.
-   Going absolute means the table never reflows; the next-sibling splitter reserves the 28px rail footprint
-   so the results pane does not shift. Fixed (pinned-open) mode is untouched. */
-.tagfox-fav-column.tagfox-fav-column--collapsed {
-  width: 28px;
-  padding: 0.25rem 0.1rem;
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  height: auto;
-}
-.tagfox-fav-column.tagfox-fav-column--collapsed + #splitFavFolders {
-  margin-left: 28px;
-}
-.tagfox-fav-column.tagfox-fav-column--collapsed .tagfox-fav-column-inner {
-  display: none !important;
-}
-/* Rail hover/focus peek: reopen to the last saved full width (capped by viewport), not a separate fixed peek width. */
-.tagfox-fav-column.tagfox-fav-column--collapsed:not(.tagfox-fav-column--peek-suppressed):hover,
-.tagfox-fav-column.tagfox-fav-column--collapsed:not(.tagfox-fav-column--peek-suppressed):focus-within,
-.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--drag-peek,
-.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--split-peek,
-.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--flyout-peek {
-  width: min(var(--tagfox-fav-expanded-w, 220px), calc(100vw - 3rem));
-  padding: 0.5rem 0.35rem;
-  box-shadow: 0.5rem 0 1.25rem rgba(0, 0, 0, 0.3);
-}
-.tagfox-fav-column-head {
-  min-width: 0;
-}
-.tagfox-fav-head-btn {
-  flex: 0 0 2rem;
-  min-width: 2rem;
-}
-/* Keep justify-content-between (from HTML): single visible control stays left like full mode — no center jump */
-.tagfox-fav-column.tagfox-fav-column--collapsed .tagfox-fav-column-head {
-  margin-bottom: 0 !important;
-}
-.tagfox-fav-column.tagfox-fav-column--collapsed .tagfox-toolbar-lead,
-.tagfox-fav-column.tagfox-fav-column--collapsed #btnSaveFavouriteFolder {
-  display: none !important;
-}
-.tagfox-fav-column.tagfox-fav-column--collapsed:not(.tagfox-fav-column--peek-suppressed):hover .tagfox-toolbar-lead,
-.tagfox-fav-column.tagfox-fav-column--collapsed:not(.tagfox-fav-column--peek-suppressed):hover #btnSaveFavouriteFolder,
-.tagfox-fav-column.tagfox-fav-column--collapsed:not(.tagfox-fav-column--peek-suppressed):focus-within .tagfox-toolbar-lead,
-.tagfox-fav-column.tagfox-fav-column--collapsed:not(.tagfox-fav-column--peek-suppressed):focus-within #btnSaveFavouriteFolder,
-.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--drag-peek .tagfox-toolbar-lead,
-.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--drag-peek #btnSaveFavouriteFolder,
-.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--split-peek .tagfox-toolbar-lead,
-.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--split-peek #btnSaveFavouriteFolder,
-.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--flyout-peek .tagfox-toolbar-lead,
-.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--flyout-peek #btnSaveFavouriteFolder,
-.tagfox-fav-column.tagfox-fav-column--collapsed:not(.tagfox-fav-column--peek-suppressed):hover .tagfox-fav-column-inner,
-.tagfox-fav-column.tagfox-fav-column--collapsed:not(.tagfox-fav-column--peek-suppressed):focus-within .tagfox-fav-column-inner,
-.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--drag-peek .tagfox-fav-column-inner,
-.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--split-peek .tagfox-fav-column-inner,
-.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--flyout-peek .tagfox-fav-column-inner {
-  display: flex !important;
-}
-.tagfox-fav-column.tagfox-fav-column--collapsed .tagfox-fav-head-btn[aria-pressed="true"] {
-  background-color: rgba(var(--bs-primary-rgb), 0.12);
-  border-color: rgba(var(--bs-primary-rgb), 0.45);
-  color: var(--bs-emphasis-color);
-  box-shadow: inset 0 0 0 1px rgba(var(--bs-primary-rgb), 0.1);
-}
-/* Rail toggle: icon = current mode (full column vs narrow strip); fa-table-columns is free-solid */
-#btnToggleFavFoldersCollapse .tagfox-fav-rail-icon--narrow {
-  display: none;
-}
-#favFoldersColumn.tagfox-fav-column--collapsed #btnToggleFavFoldersCollapse .tagfox-fav-rail-icon--full {
-  display: none;
-}
-#favFoldersColumn.tagfox-fav-column--collapsed #btnToggleFavFoldersCollapse .tagfox-fav-rail-icon--narrow {
-  display: inline;
-}
 /* Fixed-width first column so favourite icons, clears, and tag icon stack; content after lines up. */
 .tagfox-toolbar-lead {
   flex: 0 0 2rem;
@@ -838,59 +745,6 @@ body > .offcanvas-backdrop.show {
   border-right: 1px solid var(--bs-border-color);
   box-shadow: none;
 }
-/* Favourite folder / saved-search chips: drag row to reorder (Ctrl+Shift+1…9 / Ctrl+1…9 follow bar order). */
-.tagfox-fav-chip-row {
-  cursor: grab;
-  user-select: none;
-}
-.tagfox-fav-chip-row:active {
-  cursor: grabbing;
-}
-.tagfox-fav-chip-row.tagfox-fav-chip-row--dragging {
-  opacity: 0.55;
-}
-/* While dragging: strip Bootstrap gap so spacer “slots” sit between chips; highlight slots only (not pills). */
-#favFoldersBar.tagfox-fav-bar--vertical.tagfox-fav-bar--dnd {
-  gap: 0 !important;
-  row-gap: 0 !important;
-}
-.tagfox-fav-drop-gap {
-  flex: 0 0 14px;
-  width: 14px;
-  min-width: 14px;
-  max-width: 14px;
-  align-self: stretch;
-  min-height: 2rem;
-  border-radius: 4px;
-  box-sizing: border-box;
-  background: transparent;
-  pointer-events: auto;
-}
-/* Vertical fav column: full-width horizontal gap strips between chip rows */
-#favFoldersBar.tagfox-fav-bar--vertical .tagfox-fav-drop-gap {
-  flex: 0 0 14px;
-  width: 100%;
-  min-width: 0;
-  max-width: none;
-  min-height: 14px;
-  height: 14px;
-  max-height: 14px;
-  align-self: stretch;
-}
-#favFoldersBar.tagfox-fav-bar--vertical.tagfox-fav-bar--dnd > .tagfox-fav-drop-gap:last-child {
-  flex: 1 1 14px;
-  max-height: none;
-  min-height: 14px;
-}
-/* After last chip: grow so “drop at end” hits gap n, not dead flex space past a 14px slot */
-#favFoldersBar.tagfox-fav-bar--vertical.tagfox-fav-bar--dnd > .tagfox-fav-drop-gap:last-child {
-  flex: 1 1 14px;
-  max-width: none;
-}
-.tagfox-fav-drop-gap.tagfox-fav-drop-gap--active {
-  background: rgba(var(--bs-primary-rgb), 0.35);
-  box-shadow: inset 0 0 0 2px var(--tb-accent);
-}
 .props-panel { flex-shrink: 0; min-height: 0; min-width: 200px; max-width: 90vw; }
 /* Results + Viewer wrapper: row on desktop, stacks to column on narrow screens (see @media below). */
 .results-viewer-wrap {
@@ -996,21 +850,12 @@ body.tagfox-internal-path-drag #breadcrumbBar [data-drop-path] {
   outline-offset: 2px;
   border-radius: 0.2rem;
 }
-/* Favourites gap-insert drag: show the gap slots, not the pills' folder-drop outlines. */
-body.tagfox-internal-path-drag #favFoldersBar.tagfox-fav-bar--dnd [data-drop-path],
-body.tagfox-internal-path-drag #favFoldersBar.tagfox-fav-bar--dnd [data-drop-path].results-drag-over {
-  outline: none;
-  box-shadow: none;
-}
 body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   outline: 2px dashed rgba(var(--bs-primary-rgb), 0.4);
   outline-offset: -2px;
   box-shadow: inset 0 0 0 1px rgba(var(--bs-primary-rgb), 0.2);
 }
-#breadcrumbBar [data-drop-path].results-drag-over,
-#favFoldersBar [data-drop-path].results-drag-over,
-#favRecentFoldersBar [data-drop-path].results-drag-over,
-#favRecentFilesBar [data-drop-path].results-drag-over {
+#breadcrumbBar [data-drop-path].results-drag-over {
   outline: 2px dashed var(--bs-primary);
   outline-offset: 2px;
   border-radius: 0.2rem;
@@ -1031,10 +876,7 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
       0 0 0 rgba(var(--bs-success-rgb), 0);
   }
 }
-#breadcrumbBar [data-drop-path].folder-drop-success,
-#favFoldersBar [data-drop-path].folder-drop-success,
-#favRecentFoldersBar [data-drop-path].folder-drop-success,
-#favRecentFilesBar [data-drop-path].folder-drop-success {
+#breadcrumbBar [data-drop-path].folder-drop-success {
   border-radius: 0.2rem;
   animation: folder-drop-success-flash 0.75s ease-out 1;
 }
@@ -1984,54 +1826,12 @@ body.tagfox-table-col-resize-active * {
 /*
   Stacking (low → high): .tagfox-app-header 1038; .tagfox-search-toolbar-row 1040;
   .scope-breadcrumb-row 1043 (above search row menus only — must stay below .tag-toolbar-row so Advanced panel overlaps breadcrumb);
-  .tag-toolbar-row 1045 (+ .tagfox-advanced-wrap 1041); .tagfox-fav-column 1090;
+  .tag-toolbar-row 1045 (+ .tagfox-advanced-wrap 1041);
   #quickTodoPop 1098; body ul.breadcrumb-folder-flyout 1092–1099 (renderer.js; below .modal-backdrop 1100);
   .modal-backdrop 1100; .modal 1110; #propsTheater* 1990+; body > .tooltip 50000 (above all app flyouts).
 */
 #quickTodoPop {
   z-index: 1098;
-}
-/* Favourite folder chips: horizontal pills stacked vertically in the left column; pills span full column width. */
-#favFoldersBar.tagfox-fav-bar--vertical {
-  min-width: 0;
-  width: 100%;
-  row-gap: 0.45rem;
-}
-/* Many favourites: scroll this block only; Recent gets the rest of the column below. */
-.tagfox-fav-bar-scroll--favourites {
-  max-height: min(42vh, 55%);
-  overflow-y: visible;
-  /* Avoid scrollbar appearing/disappearing on hover/reflow — stops Recent panel below from shifting sideways. */
-  scrollbar-gutter: stable;
-}
-.tagfox-fav-recent-block {
-  min-height: 3.5rem;
-}
-/* Split vertical space evenly between Recent folders and Recent files. */
-.tagfox-fav-recent-split {
-  flex: 1 1 0;
-  min-height: 0;
-}
-.tagfox-fav-recent-half {
-  flex: 1 1 0;
-  min-height: 0;
-}
-/* Recent list: same stable gutter so column width stays constant when vertical overflow toggles. */
-.tagfox-fav-recent-block .tagfox-fav-bar-scroll {
-  scrollbar-gutter: stable;
-}
-#favFoldersBar.tagfox-fav-bar--vertical .tagfox-fav-chip-row,
-#favRecentFoldersBar.tagfox-fav-bar--vertical .tagfox-fav-chip-row,
-#favRecentFilesBar.tagfox-fav-bar--vertical .tagfox-fav-chip-row {
-  width: 100%;
-  max-width: 100%;
-}
-/* Recent strip: same chip + ▾ geometry as favourites (renderer buildFavColumnFolderChipRowEl). */
-#favRecentFoldersBar.tagfox-fav-bar--vertical,
-#favRecentFilesBar.tagfox-fav-bar--vertical {
-  min-width: 0;
-  width: 100%;
-  row-gap: 0.45rem;
 }
 .scope-breadcrumb-row {
   position: relative;
@@ -2121,7 +1921,6 @@ body.tagfox-table-col-resize-active * {
 /* Modal open: drop back so backdrop + dimmer cover the bar (was stacking “above” the overlay). */
 body.modal-open .tagfox-app-header,
 body.modal-open .tagfox-app-statusbar,
-body.modal-open .tagfox-fav-column,
 body.modal-open .scope-breadcrumb-row,
 body.modal-open .tagfox-search-toolbar-row,
 body.modal-open .tag-toolbar-row {
@@ -2161,184 +1960,10 @@ ul.breadcrumb-folder-flyout li.breadcrumb-folder-on-scope-path > button.dropdown
 }
 /* Folder flyouts: size to the longest label, but keep a viewport cap. */
 #breadcrumbBar .dropdown-menu .dropdown-item,
-ul.breadcrumb-folder-flyout .dropdown-item,
-#favFoldersBar .fav-folder-chip-group .dropdown-menu .dropdown-item,
-#favRecentFoldersBar .fav-folder-chip-group .dropdown-menu .dropdown-item,
-#favRecentFilesBar .fav-folder-chip-group .dropdown-menu .dropdown-item,
-#favFoldersBar .fav-folder-chip-group .dropdown-menu .dropdown-item-text,
-#favRecentFoldersBar .fav-folder-chip-group .dropdown-menu .dropdown-item-text,
-#favRecentFilesBar .fav-folder-chip-group .dropdown-menu .dropdown-item-text {
+ul.breadcrumb-folder-flyout .dropdown-item {
   width: auto;
   min-width: 100%;
   white-space: nowrap;
-}
-/* Favourite chips: stacking via .tagfox-fav-column (above breadcrumb row). */
-/* Favourite “pill”: almost-white fill + dark grey text (distinct from breadcrumb link / primary). */
-#favFoldersBar .fav-folder-chip-group,
-#favRecentFoldersBar .fav-folder-chip-group,
-#favRecentFilesBar .fav-folder-chip-group {
-  --fav-chip-fg: #3f3f46;
-  --fav-chip-bg: #fafafa;
-  --fav-chip-border: #e4e4e7;
-  width: 100%;
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  gap: 0; /* BS .btn-group has no gap; keep explicit for nested flex. */
-}
-/* Go grows; ▾ stays content-sized (full-width row in vertical column). */
-#favFoldersBar .fav-folder-chip-group > .fav-folder-chip-go,
-#favRecentFoldersBar .fav-folder-chip-group > .fav-folder-chip-go,
-#favRecentFilesBar .fav-folder-chip-group > .fav-folder-chip-go {
-  flex: 1 1 0;
-  min-width: 0;
-  color: var(--fav-chip-fg);
-  background-color: var(--fav-chip-bg);
-  border-color: var(--fav-chip-border);
-  font-weight: 500;
-  /* Global .btn is pill-shaped; left cap only so ▾ segment completes the pill. */
-  border-radius: 999px 0 0 999px;
-  position: relative;
-}
-/* Fixed-width column: keep chip names on one line and ellipsize, but leave tags / × visible. */
-#favFoldersBar .fav-folder-chip-go .fav-folder-chip-lead,
-#favRecentFoldersBar .fav-folder-chip-go .fav-folder-chip-lead,
-#favRecentFilesBar .fav-folder-chip-go .fav-folder-chip-lead {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-#favFoldersBar .fav-folder-chip-go .fav-folder-chip-name,
-#favRecentFoldersBar .fav-folder-chip-go .fav-folder-chip-name,
-#favRecentFilesBar .fav-folder-chip-go .fav-folder-chip-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* Peek-open rail: show full names instead of truncating. */
-.tagfox-fav-column.tagfox-fav-column--collapsed:not(.tagfox-fav-column--peek-suppressed):hover .fav-folder-chip-go .fav-folder-chip-name,
-.tagfox-fav-column.tagfox-fav-column--collapsed:not(.tagfox-fav-column--peek-suppressed):focus-within .fav-folder-chip-go .fav-folder-chip-name,
-.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--drag-peek .fav-folder-chip-go .fav-folder-chip-name,
-.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--split-peek .fav-folder-chip-go .fav-folder-chip-name,
-.tagfox-fav-column.tagfox-fav-column--collapsed.tagfox-fav-column--flyout-peek .fav-folder-chip-go .fav-folder-chip-name {
-  overflow: visible;
-  text-overflow: clip;
-  white-space: normal;
-}
-/* Nested .dropdown — stretch to btn-group row height; ▾ fills RHS (inline-flex alone stays content-short). */
-#favFoldersBar .fav-folder-chip-group > .dropdown,
-#favRecentFoldersBar .fav-folder-chip-group > .dropdown,
-#favRecentFilesBar .fav-folder-chip-group > .dropdown {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  align-self: stretch;
-  flex: 0 0 auto;
-  flex-shrink: 0;
-  margin-left: calc(-1 * var(--bs-border-width));
-  min-height: 100%;
-}
-#favFoldersBar .fav-folder-chip-group > .dropdown > .fav-folder-chip-chevron.tagfox-scope-chevron,
-#favRecentFoldersBar .fav-folder-chip-group > .dropdown > .fav-folder-chip-chevron.tagfox-scope-chevron,
-#favRecentFilesBar .fav-folder-chip-group > .dropdown > .fav-folder-chip-chevron.tagfox-scope-chevron {
-  flex: 1 1 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: 100%;
-  box-sizing: border-box;
-}
-#favFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:hover,
-#favRecentFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:hover,
-#favRecentFilesBar .fav-folder-chip-group > .fav-folder-chip-go:hover {
-  color: #27272a;
-  background-color: #f4f4f5;
-  border-color: #d4d4d8;
-}
-#favFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:active,
-#favRecentFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:active,
-#favRecentFilesBar .fav-folder-chip-group > .fav-folder-chip-go:active {
-  color: #18181b;
-  background-color: #e4e4e7;
-  border-color: #a1a1aa;
-}
-/* Inline remove — sits after folder name inside .fav-folder-chip-go (not a nested <button>). */
-#favFoldersBar .fav-folder-chip-remove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: 0.1rem;
-  padding: 0 0.15rem;
-  border-radius: 0.25rem;
-  color: var(--fav-chip-fg);
-  opacity: 0.72;
-  cursor: pointer;
-  flex-shrink: 0;
-  line-height: 1;
-}
-#favFoldersBar .fav-folder-chip-remove:hover {
-  opacity: 1;
-  color: #18181b;
-  background-color: rgba(0, 0, 0, 0.07);
-}
-#favFoldersBar .fav-folder-chip-remove:focus-visible {
-  outline: 2px solid rgba(var(--bs-primary-rgb), 0.45);
-  outline-offset: 1px;
-  position: relative;
-  z-index: 1;
-}
-#favFoldersBar .fav-folder-chip-group .dropdown-menu,
-#favRecentFoldersBar .fav-folder-chip-group .dropdown-menu,
-#favRecentFilesBar .fav-folder-chip-group .dropdown-menu {
-  z-index: 1060;
-  max-width: min(26rem, calc(100vw - 2rem));
-  width: max-content;
-}
-/* Until renderer.js fixes position:fixed, BS static/absolute menu can paint in-flow and flash “Loading…” left into the go cap. */
-#favFoldersBar .fav-folder-chip-group .dropdown .dropdown-menu.show:not(.tagfox-fav-dd-placed),
-#favRecentFoldersBar .fav-folder-chip-group .dropdown .dropdown-menu.show:not(.tagfox-fav-dd-placed),
-#favRecentFilesBar .fav-folder-chip-group .dropdown .dropdown-menu.show:not(.tagfox-fav-dd-placed) {
-  opacity: 0 !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-}
-#favFoldersBar .fav-folder-chip-chevron,
-#favRecentFoldersBar .fav-folder-chip-chevron,
-#favRecentFilesBar .fav-folder-chip-chevron {
-  color: var(--fav-chip-fg);
-  background-color: var(--fav-chip-bg);
-  border-color: var(--fav-chip-border);
-  border-radius: 0 999px 999px 0;
-  position: relative;
-}
-#favFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:focus,
-#favFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:focus-visible,
-#favFoldersBar .fav-folder-chip-chevron:focus,
-#favFoldersBar .fav-folder-chip-chevron:focus-visible,
-#favRecentFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:focus,
-#favRecentFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:focus-visible,
-#favRecentFoldersBar .fav-folder-chip-chevron:focus,
-#favRecentFoldersBar .fav-folder-chip-chevron:focus-visible,
-#favRecentFilesBar .fav-folder-chip-group > .fav-folder-chip-go:focus,
-#favRecentFilesBar .fav-folder-chip-group > .fav-folder-chip-go:focus-visible,
-#favRecentFilesBar .fav-folder-chip-chevron:focus,
-#favRecentFilesBar .fav-folder-chip-chevron:focus-visible {
-  z-index: 1;
-}
-#favFoldersBar .fav-folder-chip-chevron:hover,
-#favRecentFoldersBar .fav-folder-chip-chevron:hover,
-#favRecentFilesBar .fav-folder-chip-chevron:hover {
-  color: #27272a;
-  background-color: #f4f4f5;
-  border-color: #d4d4d8;
-}
-#favFoldersBar .fav-folder-chip-chevron:active,
-#favRecentFoldersBar .fav-folder-chip-chevron:active,
-#favRecentFilesBar .fav-folder-chip-chevron:active {
-  color: #18181b;
-  background-color: #e4e4e7;
-  border-color: #a1a1aa;
 }
 .tag-toolbar-row {
   position: relative;
@@ -2601,25 +2226,6 @@ body > .tooltip {
 [data-bs-theme="dark"] #htmlPreviewFrame { background: #27272a; }
 [data-bs-theme="dark"] ::-webkit-scrollbar-thumb { background: #52525b; }
 [data-bs-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #71717a; }
-[data-bs-theme="dark"] #favFoldersBar .fav-folder-chip-group,
-[data-bs-theme="dark"] #favRecentFoldersBar .fav-folder-chip-group,
-[data-bs-theme="dark"] #favRecentFilesBar .fav-folder-chip-group {
-  --fav-chip-fg: #d4d4d8;
-  --fav-chip-bg: #27272a;
-  --fav-chip-border: #3f3f46;
-}
-[data-bs-theme="dark"] #favFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:hover,
-[data-bs-theme="dark"] #favFoldersBar .fav-folder-chip-chevron:hover,
-[data-bs-theme="dark"] #favRecentFoldersBar .fav-folder-chip-group > .fav-folder-chip-go:hover,
-[data-bs-theme="dark"] #favRecentFoldersBar .fav-folder-chip-chevron:hover,
-[data-bs-theme="dark"] #favRecentFilesBar .fav-folder-chip-group > .fav-folder-chip-go:hover,
-[data-bs-theme="dark"] #favRecentFilesBar .fav-folder-chip-chevron:hover {
-  color: #e4e4e7; background-color: #3f3f46; border-color: #52525b;
-}
-[data-bs-theme="dark"] #favFoldersBar .fav-folder-chip-remove:hover {
-  color: #fafafa;
-  background-color: rgba(255, 255, 255, 0.1);
-}
 [data-bs-theme="dark"] ul.breadcrumb-folder-flyout {
   background-color: #27272a;
   border-color: #3f3f46;
@@ -2649,8 +2255,6 @@ body:not(.tagfox-runner) .tagfox-runner-only {
   display: none !important;
 }
 body.tagfox-runner .tagfox-app-header,
-body.tagfox-runner #favFoldersColumn,
-body.tagfox-runner #splitFavFolders,
 body.tagfox-runner .tag-toolbar-row,
 body.tagfox-runner .tagfox-status-view-opts,
 body.tagfox-runner #splitProps,
