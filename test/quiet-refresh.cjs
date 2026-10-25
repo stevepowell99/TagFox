@@ -98,10 +98,14 @@ async function main() {
     /* A mark on the line: a quiet tick must leave it there. */
     const STATUS_MARK = 'written before the ticks';
     await ev(`document.getElementById('statusMain').textContent = ${JSON.stringify(STATUS_MARK)}; 1`);
+    const seqBefore = (await drv.state()).searchRunSeq;
     for (let i = 0; i < 4; i++) {
       await T('autoTick');
       await sleep(400);
     }
+    /* A tick that returned before searching would pass every check below, so first make sure they searched. */
+    const seqAfter = (await drv.state()).searchRunSeq;
+    check('the quiet ticks ran searches', seqAfter >= seqBefore + 4, `search runs ${seqBefore} -> ${seqAfter}`);
     const quiet = JSON.parse(await ev(SNAP));
     check('four quiet ticks rebuilt nothing', quiet.stamped === start.rows, JSON.stringify(quiet));
     check('the scroll position survived the quiet ticks', quiet.scrollTop === start.scrollTop, 'scrollTop=' + quiet.scrollTop);

@@ -51,15 +51,14 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 
 ## Tests
 
-- **Classic only:** `fuzz`.
-- **Runner only:** the `runner-*` tests, `viewer-runner` and `splitter-drag`, several with Classic round-trip checks that would need rewriting. Through the harness's `runner` option, also `delete-hides-row`, `gmist-start-guard`, `loadmore-regression`, `machine-features`, `md-preview-no-write`, `menu-enter`, `page-health`, `quiet-refresh`, `recent-changes`, `smoke` and `zoom-restore`.
+- **Runner only:** the `runner-*` tests, `viewer-runner` and `splitter-drag`, several with Classic round-trip checks that would need rewriting. Through the harness's `runner` option, also `delete-hides-row`, `fuzz`, `gmist-start-guard`, `loadmore-regression`, `machine-features`, `md-preview-no-write`, `menu-enter`, `page-health`, `quiet-refresh`, `recent-changes`, `smoke` and `zoom-restore`.
 - **Both:** `hotkey-raise-select`, `hover-preview`, `row-actions-keys`, `window-chrome`.
 - **No layout:** `restart-in-terminal`, `help-build` and `tags-dates` do not go through the harness's `connect`.
 - `test/README.md` omits tags-dates, repro-crash, gmist-start-guard and hover-preview.
 
 ## Stages named so far
 
-- **Test instances open in Runner:** `fuzz` moves to Runner, with counters that prove it still exercises typing, refresh ticks, load-more and the file operations; then the Classic halves of the Both tests and the round trips in the `runner-*` tests go; then a test instance opens in Runner from its first load and the harness's `runner` option goes.
+- **Test instances open in Runner:** the Classic halves of the Both tests and the round trips in the `runner-*` tests go; then a test instance opens in Runner from its first load and the harness's `runner` option goes.
 - **Move the rest of Classic's key handler into `RUNNER_KEYS`:** the keys in the Keys bullet above. `hotkey-raise-select` and `row-actions-keys` press keys in Classic, so they move to Runner in the same stage.
 - **`runSearch`'s `eventKind`** reaches only the search debug log (`runSearch.start`), through `scheduleSearch` and `runSearchNow`, so the argument can go from every call site.
 
