@@ -15,7 +15,7 @@ const { connect, APP_DIR, sleep } = require('./harness.cjs');
    and RECENT_TAB_ACCEL) and modifiers held during a drag. */
 const KEYS_OUTSIDE_TABLE = ['Ctrl+Alt+Space', 'Ctrl+Shift+Space', 'Alt', 'Shift'];
 /* The command each `/` text in a tip must offer first. */
-const SLASH_EXPECT = { '/todo': 'tag-todo', '/not todo': 'not-todo', '/size': 'sort-size', '/smallest': 'sort-size-asc' };
+const SLASH_EXPECT = { '/todo': 'tag-todo', '/not todo': 'not-todo', '/size': 'sort-size', '/smallest': 'sort-size-asc', '/save': 'save-search' };
 
 async function main() {
   const failures = [];

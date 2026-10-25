@@ -18,6 +18,7 @@
     { score: 5, tip: [K('Enter'), ' opens the selected file. On a folder, it takes you inside.'] },
     { score: 5, tip: [K('Alt+P'), ' shows or hides the preview on the right, and ', K('Shift+Space'), ' makes it fill the screen.'] },
     { score: 5, tip: [K('Ctrl+D'), ' stars a file or folder, which brings it higher up the list. ', K('Ctrl+Shift+1…9'), ' opens your first nine stars.'] },
+    { score: 4, tip: ['Run the same search often? ', C('/save'), ' keeps it, folder and filters included, and ', K('Alt+1…9'), ' runs your first nine saved searches.'] },
     { score: 5, tip: [K('Ctrl+T'), ' tags the selected file. Tags are kept in the file name, as in ', C('Report xkTODO.docx'), ', so they go wherever the file goes.'] },
     { score: 5, tip: ['Moving files? Drag them onto the Shelf at the bottom, find the folder they belong in, then drag them from the Shelf onto it. Hold ', K('Shift'), ' to copy instead.'] },
     { score: 4, tip: ['Paste a folder or file path into the search box to jump straight there. If you type one, press ', K('Enter'), '.'] },

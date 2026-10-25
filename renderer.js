@@ -71,6 +71,8 @@
       runnerState: 'tagBrowserRunnerState',
       runnerClassicStash: 'tagBrowserRunnerClassicStash',
       runnerSort: 'tagBrowserRunnerSort',
+      /* Saved searches, run as / commands and Alt+1…9. Classic's list under the same key, so its entries carry on. */
+      favSearches: 'tagBrowserFavSearches',
       runnerHideTemp: 'tagBrowserRunnerHideTemp',
       runnerStarredOnly: 'tagBrowserRunnerStarredOnly',
       runnerThisFolderOnly: 'tagBrowserRunnerThisFolderOnly',
@@ -4066,6 +4068,198 @@
       return !!document.getElementById(id)?.checked;
     }
 
+    /* Saved searches (LS.favSearches): the folder, the text and every filter, run from a / command or
+       Alt+1…9. The list is the one Classic saved, so its entries carry on. Of a Classic entry Runner uses
+       the folder, text, wanted and not-wanted tags, AND or OR, Folders or Files only, recency and the match
+       and Show options; it leaves out the view (smart, tree or flat), Subfolders (Runner decides that from
+       the box), the column sort, the Advanced panel and the search scope ceiling. A search saved in Runner
+       also carries Runner's own filters (`runnerFilters`), and a Classic entry gets each one's default. */
+    const SAVED_SEARCHES_MAX = 30;
+    function loadSavedSearches() {
+      const arr = lsGetJson(LS.favSearches, []);
+      return Array.isArray(arr) ? arr.filter((x) => x && typeof x === 'object' && !Array.isArray(x)) : [];
+    }
+    function storeSavedSearches(list) {
+      lsSetJson(LS.favSearches, list.slice(0, SAVED_SEARCHES_MAX));
+    }
+
+    /** The part of a saved entry (Classic's or Runner's) that Runner applies, in one spelling. */
+    function savedSearchCore(s) {
+      const d = runnerDefaultSearchState();
+      const lower = (x) => String(x).trim().toLowerCase();
+      const tags = Array.isArray(s.activeTagKeys) ? s.activeTagKeys : s.activeTagKey ? [s.activeTagKey] : [];
+      const want = [...new Set(tags.map(lower).filter(Boolean))].sort();
+      const not = [...new Set((Array.isArray(s.excludedTagKeys) ? s.excludedTagKeys : []).map(lower))].filter((k) => want.includes(k)).sort();
+      const opt = (k) => (typeof s[k] === 'boolean' ? s[k] : d[k]);
+      return {
+        query: s.query != null ? String(s.query) : '',
+        rootFolder: s.rootFolder != null ? String(s.rootFolder) : '',
+        activeTagKeys: want,
+        excludedTagKeys: not,
+        tagFilterCombineOr: !!s.tagFilterCombineOr,
+        resultsContent: ['all', 'folders', 'files'].includes(s.resultsContent) ? s.resultsContent : s.hideFiles ? 'folders' : 'all',
+        optCase: opt('optCase'),
+        optWholeWord: opt('optWholeWord'),
+        optPath: opt('optPath'),
+        optDiacritics: opt('optDiacritics'),
+        optHideSpecial: opt('optHideSpecial'),
+        optHideTilde: opt('optHideTilde'),
+        recencyFilter: ['all', '1h', '1d', '1w', '1m', '1y'].includes(s.recencyFilter) ? s.recencyFilter : 'all',
+      };
+    }
+
+    /** Runner's own filters as they are now, and as a saved entry has them (each default when it has none). */
+    function runnerFiltersNow() {
+      return {
+        sort: runnerSort,
+        thisFolderOnly: localStorage.getItem(LS.runnerThisFolderOnly) === '1',
+        starredOnly: localStorage.getItem(LS.runnerStarredOnly) === '1',
+        wordStarts: runnerWordStartsOnly(),
+        hideTemp: runnerHideTempOn(),
+        deadline: activeDeadlineRange || '',
+        showHiddenUntil: !!showHiddenUntil,
+      };
+    }
+    function savedSearchFilters(s) {
+      const f = s && s.runnerFilters && typeof s.runnerFilters === 'object' ? s.runnerFilters : {};
+      return {
+        sort: RUNNER_SORTS.includes(f.sort) ? f.sort : 'smart',
+        thisFolderOnly: !!f.thisFolderOnly,
+        starredOnly: !!f.starredOnly,
+        wordStarts: !!f.wordStarts,
+        hideTemp: !!f.hideTemp,
+        deadline: DEADLINE_RANGE_IDS.includes(f.deadline) ? f.deadline : '',
+        showHiddenUntil: !!f.showHiddenUntil,
+      };
+    }
+
+    /** One key per distinct search, so the same search saved from Classic and from Runner compares equal. */
+    function savedSearchKey(s) {
+      const core = savedSearchCore(s);
+      core.query = core.query.trim();
+      core.rootFolder = core.rootFolder.trim() ? pathNormKey(normalizeFolderPathForEverything(core.rootFolder.trim())) : '';
+      return JSON.stringify({ core, filters: savedSearchFilters(s) });
+    }
+    function currentSearchAsSaved() {
+      const s = serializeSearchState();
+      /* While the / list is open the box holds "text /filter"; the search on screen is the stashed text. */
+      if (runnerCmdListIsOpen()) s.query = runnerCmdStash;
+      return { ...s, runnerFilters: runnerFiltersNow() };
+    }
+    function savedSearchIndexOfCurrent() {
+      const key = savedSearchKey(currentSearchAsSaved());
+      return loadSavedSearches().findIndex((s) => savedSearchKey(s) === key);
+    }
+
+    /** Named after the text, or after the folder when there is no text; tags and the folder say which one it is. */
+    function savedSearchName(s) {
+      if (s.name && String(s.name).trim()) return String(s.name).trim();
+      const core = savedSearchCore(s);
+      const folder = core.rootFolder.trim();
+      return core.query.trim() || (folder ? T.baseName(folder.replace(/[\\/]+$/, '')) || folder : 'Everything');
+    }
+    function savedSearchDetail(s) {
+      const core = savedSearchCore(s);
+      const folder = core.rootFolder.trim();
+      const parts = [];
+      if (core.query.trim() && folder) parts.push('in ' + (T.baseName(folder.replace(/[\\/]+$/, '')) || folder));
+      const word = (k) => (T.isDateTag(k) ? k : k.toUpperCase());
+      const wanted = core.activeTagKeys.filter((k) => !core.excludedTagKeys.includes(k)).map(word);
+      const notWanted = core.excludedTagKeys.map((k) => 'not ' + word(k));
+      if (wanted.length || notWanted.length) parts.push((wanted.length ? 'tagged ' : '') + [...wanted, ...notWanted].join(core.tagFilterCombineOr ? ' or ' : ' and '));
+      if (core.recencyFilter !== 'all') parts.push('last ' + (RUNNER_RECENCY_WORDS[core.recencyFilter] || core.recencyFilter));
+      return parts.join(', ');
+    }
+
+    function saveOrForgetCurrentSearch() {
+      const list = loadSavedSearches();
+      const idx = savedSearchIndexOfCurrent();
+      if (idx >= 0) {
+        const [gone] = list.splice(idx, 1);
+        storeSavedSearches(list);
+        setStatusMain('Forgot the saved search “' + savedSearchName(gone) + '”.');
+        return;
+      }
+      if (list.length >= SAVED_SEARCHES_MAX) {
+        setStatusMain('There are already ' + SAVED_SEARCHES_MAX + ' saved searches; forget one first.');
+        return;
+      }
+      const entry = currentSearchAsSaved();
+      const keep = savedSearchCore(entry);
+      const saved = { ...keep, runnerFilters: entry.runnerFilters };
+      saved.name = savedSearchName(saved);
+      list.push(saved);
+      storeSavedSearches(list);
+      const n = list.length;
+      setStatusMain('Saved as “' + saved.name + '”' + (n <= 9 ? ', Alt+' + n + ' runs it' : '') + '. Type / and its name to find it.');
+    }
+
+    /** Run saved search n (1-based): its folder, text and filters, then one search; it goes into Back and Forward. */
+    async function runSavedSearch(n) {
+      const s = loadSavedSearches()[n - 1];
+      if (!s) {
+        setStatusMain(n <= 9 ? 'No saved search ' + n + '. / then “Save this search” saves one.' : 'No such saved search.');
+        return;
+      }
+      const f = savedSearchFilters(s);
+      const flag = (key, on) => (on ? localStorage.setItem(key, '1') : localStorage.removeItem(key));
+      runnerSort = f.sort;
+      localStorage.setItem(LS.runnerSort, f.sort);
+      flag(LS.runnerThisFolderOnly, f.thisFolderOnly);
+      flag(LS.runnerStarredOnly, f.starredOnly);
+      flag(LS.runnerWordStarts, f.wordStarts);
+      flag(LS.runnerHideTemp, f.hideTemp);
+      activeDeadlineRange = f.deadline;
+      persistDeadlineFilter();
+      syncDeadlineFilterUi();
+      showHiddenUntil = f.showHiddenUntil;
+      flag(LS_SHOW_HIDDEN, showHiddenUntil);
+      syncHideUntilUi();
+      const st = searchStateWithoutCeiling({ ...runnerDefaultSearchState(), ...savedSearchCore(s) });
+      const sc = runnerSortColumnFor(runnerSort);
+      st.sortColumn = sc.col;
+      st.sortAsc = sc.asc;
+      st.resultsLayout = 'flat';
+      applySearchState(st);
+      selectAfterSearchKey = null;
+      updateQueryPlaceholder();
+      persistActiveTagFilter();
+      saveSettings();
+      updateSortHeaders();
+      renderScopeBreadcrumb();
+      renderTagBar();
+      renderRunnerScopeChip();
+      await runSearchNow();
+      commitSearchHistoryNow();
+      setStatusMain('Saved search “' + savedSearchName(s) + '”.');
+    }
+
+    /** The / list and the options panel: RUNNER_COMMANDS, then the saved searches. Built on each call, so the
+        save command reads Forget while the search on screen is a saved one. */
+    function runnerCommands() {
+      const saved = loadSavedSearches();
+      const current = savedSearchIndexOfCurrent();
+      return [
+        ...RUNNER_COMMANDS,
+        {
+          id: 'save-search',
+          group: 'Saved searches',
+          label: current >= 0 ? 'Forget this saved search' : 'Save this search (folder, text and filters)',
+          run: () => saveOrForgetCurrentSearch(),
+        },
+        ...saved.map((s, i) => {
+          const detail = savedSearchDetail(s);
+          return {
+            id: 'saved-search-' + (i + 1),
+            group: 'Saved searches',
+            label: 'Saved search: ' + savedSearchName(s) + (detail ? ' (' + detail + ')' : '') + (i < 9 ? ' · Alt+' + (i + 1) : ''),
+            isOn: () => i === current,
+            run: () => void runSavedSearch(i + 1),
+          };
+        }),
+      ];
+    }
+
     const RUNNER_RECENCY_WORDS = { '1h': 'hour', '1d': 'day', '1w': 'week', '1m': 'month', '1y': 'year' };
 
     /** Every setting that differs from Runner's default shows as a chip under the box, and its x puts the
@@ -4329,7 +4523,7 @@
 
     /** The options panel's items: every command but the excludes, which there are a right-click on the tag's button. */
     function runnerPanelCommands() {
-      return RUNNER_COMMANDS.filter((cmd) => !cmd.notTag);
+      return runnerCommands().filter((cmd) => !cmd.notTag);
     }
 
     let runnerOptsPanelOpen = false;
@@ -4416,7 +4610,7 @@
       if (!el || !q) return;
       const v = String(q.value || '');
       const filter = v.startsWith(runnerCmdPrefix) ? v.slice(runnerCmdPrefix.length).trim() : '';
-      runnerCmdMatches = RUNNER_COMMANDS
+      runnerCmdMatches = runnerCommands()
         .map((cmd, i) => ({ cmd, i, s: filter ? fuzzyPathScore(filter, cmd.label) : 0 }))
         .filter((m) => m.s !== null)
         .sort((a, b) => b.s - a.s || a.i - b.i)
@@ -4639,6 +4833,7 @@
       { group: 'Search', keys: ['Ctrl+N'], does: 'Sort by name; again for the smart order', when: (c) => c.ctrl('n'), run: () => setRunnerSort(runnerSort === 'name' ? 'smart' : 'name') },
       { group: 'Search', keys: ['Alt+Home'], does: 'Start again: no text, no folder, every filter at its default', when: (c) => c.alt && !c.mod && c.key === 'Home', run: () => runnerStartAgain() },
       { group: 'Search', keys: ['Alt+←', 'Alt+→'], does: 'Back and forward through earlier searches', when: (c) => c.alt && !c.mod && (c.key === 'ArrowLeft' || c.key === 'ArrowRight'), run: () => 'classic' },
+      { group: 'Search', keys: ['Alt+1…9'], does: 'Saved search 1 to 9: its folder, text and filters. / then “Save this search” saves the one on screen', when: (c) => c.alt && !c.mod && !c.shift && /^Digit[1-9]$/.test(c.code), run: (c) => void runSavedSearch(Number(c.code.slice(5))) },
       { group: 'Search', keys: ['F5'], does: 'Search again', when: (c) => c.plain && c.key === 'F5', run: () => 'classic' },
 
       /* Move */
@@ -4987,7 +5182,7 @@
         if (!b) return;
         e.preventDefault();
         e.stopPropagation();
-        runRunnerCommand(RUNNER_COMMANDS.find((c) => c.id === b.dataset.cmdId));
+        runRunnerCommand(runnerCommands().find((c) => c.id === b.dataset.cmdId));
       });
       /* Right-click on a tag's button: not tagged, as on Classic's tag bar. */
       document.getElementById('runnerOptsPanel')?.addEventListener('contextmenu', (e) => {
@@ -4995,7 +5190,7 @@
         if (!b) return;
         e.preventDefault();
         e.stopPropagation();
-        runRunnerCommand(RUNNER_COMMANDS.find((c) => c.id === 'not-' + b.dataset.cmdId.slice('tag-'.length)));
+        runRunnerCommand(runnerCommands().find((c) => c.id === 'not-' + b.dataset.cmdId.slice('tag-'.length)));
       });
       /* mousedown, so the box keeps focus and the item runs before anything closes the list */
       document.getElementById('runnerCmdList')?.addEventListener('mousedown', (e) => {
@@ -19407,7 +19602,7 @@
         setRunnerSort: (sort) => setRunnerSort(String(sort)),
         setDeadlineRange: (range) => setDeadlineRange(String(range || '')),
         setShowHiddenUntil: (on) => setShowHiddenUntil(!!on),
-        runCommand: (id) => runRunnerCommand(RUNNER_COMMANDS.find((c) => c.id === String(id))),
+        runCommand: (id) => runRunnerCommand(runnerCommands().find((c) => c.id === String(id))),
         /* Stand-in for Windows' Recent list, opened just now, so a test can see the boost without the real one. */
         setWindowsRecent: (paths) => {
           runnerWindowsRecent = new Map((paths || []).map((p) => [pathNormKey(p), { path: String(p), at: Date.now() }]));

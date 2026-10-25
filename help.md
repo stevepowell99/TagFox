@@ -80,6 +80,7 @@ Meanwhile, tools like Google Drive train you to type a word and expect the right
 
 - ⌨️ **Keyboard-first** — navigate, tag, rename, bulk-edit and search without touching the mouse. See **⌨️ Shortcuts**.
 - ⭐ **Stars** — `Ctrl`+`D` stars a file or folder, which keeps it near the top of searches; `Ctrl`+`Shift`+`1`…`9` opens the first nine.
+- 🔖 **Saved searches** — `/` then **Save this search** keeps the folder, the text and the filters; `Alt`+`1`…`9` runs the first nine.
 - 🔍 **Three view switches** — Flat/Tree, Subfolders on/off, Files+folders/Folders only (combine freely). Plus recency buttons (1h, 1d, 1w, 1m, 1y) to filter “what changed recently”.
 - 👁️ **Fast previews** — images, PDFs, Word, Excel, PowerPoint, text, JSON, markdown and more, right in the Viewer panel.
 - 🏷️ **Filename tags** — add, remove and filter by `xk`/`xp`/`xx` tags. Tags scan your folder automatically; click them to filter results.
@@ -170,6 +171,13 @@ Type to search. With the search box empty you see the current folder's own conte
 - The `/` commands **Overdue**, **Due today**, **Due this week** and **Due next week** list only the files whose `xd-` deadline falls in that range, from every folder below the current one. Weeks run Monday to Sunday. The range shows as a chip; its × or the same command again clears it.
 - Files whose `xh-` hide-until date is still to come are left out. **Show files hidden until a later date** lists them as well.
 - **Show only starred items** lists the starred files and folders below the current folder, or every star when there is no folder.
+
+### 🔖 Saved searches
+
+- Type `/` and choose **Save this search**. TagFox keeps the current folder, the text in the box and every filter (tags, recency, the `/` match and Show settings), named after the text, or after the folder when the box is empty.
+- Each saved search is then a `/` command of its own: type `/` and a few letters of its name, and press `Enter`. `Alt`+`1`…`9` runs the first nine, in the order you saved them.
+- With a saved search on screen, the same command reads **Forget this saved search**.
+- Searches saved in the old Classic layout are still there, as the same commands.
 
 ### 📂 Another app's Open and Save dialogs
 
@@ -346,6 +354,7 @@ Things that might trip you up:
 <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
 <tr><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>Star or unstar the selected row</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>…<kbd>9</kbd></td><td>Open star 1–9, in the order starred</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>9</kbd></td><td>Run saved search 1–9, in the order saved</td></tr>
 <tr><td><kbd>Shift</kbd>+<kbd>Space</kbd></td><td>Toggle Viewer fullscreen</td></tr>
 <tr><td><kbd>F1</kbd> or <kbd>Ctrl</kbd>+<kbd>/</kbd></td><td>Open this help</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>,</kbd></td><td>Open / close Settings</td></tr>

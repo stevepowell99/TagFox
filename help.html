@@ -123,6 +123,7 @@ Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when
               <ul>
               <li>⌨️ <strong>Keyboard-first</strong> — navigate, tag, rename, bulk-edit and search without touching the mouse. See <strong>⌨️ Shortcuts</strong>.</li>
               <li>⭐ <strong>Stars</strong> — <code>Ctrl</code>+<code>D</code> stars a file or folder, which keeps it near the top of searches; <code>Ctrl</code>+<code>Shift</code>+<code>1</code>…<code>9</code> opens the first nine.</li>
+              <li>🔖 <strong>Saved searches</strong> — <code>/</code> then <strong>Save this search</strong> keeps the folder, the text and the filters; <code>Alt</code>+<code>1</code>…<code>9</code> runs the first nine.</li>
               <li>🔍 <strong>Three view switches</strong> — Flat/Tree, Subfolders on/off, Files+folders/Folders only (combine freely). Plus recency buttons (1h, 1d, 1w, 1m, 1y) to filter “what changed recently”.</li>
               <li>👁️ <strong>Fast previews</strong> — images, PDFs, Word, Excel, PowerPoint, text, JSON, markdown and more, right in the Viewer panel.</li>
               <li>🏷️ <strong>Filename tags</strong> — add, remove and filter by <code>xk</code>/<code>xp</code>/<code>xx</code> tags. Tags scan your folder automatically; click them to filter results.</li>
@@ -215,6 +216,13 @@ Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when
               <li>The <code>/</code> commands <strong>Overdue</strong>, <strong>Due today</strong>, <strong>Due this week</strong> and <strong>Due next week</strong> list only the files whose <code>xd-</code> deadline falls in that range, from every folder below the current one. Weeks run Monday to Sunday. The range shows as a chip; its × or the same command again clears it.</li>
               <li>Files whose <code>xh-</code> hide-until date is still to come are left out. <strong>Show files hidden until a later date</strong> lists them as well.</li>
               <li><strong>Show only starred items</strong> lists the starred files and folders below the current folder, or every star when there is no folder.</li>
+              </ul>
+              <h3>🔖 Saved searches</h3>
+              <ul>
+              <li>Type <code>/</code> and choose <strong>Save this search</strong>. TagFox keeps the current folder, the text in the box and every filter (tags, recency, the <code>/</code> match and Show settings), named after the text, or after the folder when the box is empty.</li>
+              <li>Each saved search is then a <code>/</code> command of its own: type <code>/</code> and a few letters of its name, and press <code>Enter</code>. <code>Alt</code>+<code>1</code>…<code>9</code> runs the first nine, in the order you saved them.</li>
+              <li>With a saved search on screen, the same command reads <strong>Forget this saved search</strong>.</li>
+              <li>Searches saved in the old Classic layout are still there, as the same commands.</li>
               </ul>
               <h3>📂 Another app&#39;s Open and Save dialogs</h3>
               <ul>
@@ -417,6 +425,7 @@ Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when
               <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
               <tr><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>Star or unstar the selected row</td></tr>
               <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>…<kbd>9</kbd></td><td>Open star 1–9, in the order starred</td></tr>
+              <tr><td><kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>9</kbd></td><td>Run saved search 1–9, in the order saved</td></tr>
               <tr><td><kbd>Shift</kbd>+<kbd>Space</kbd></td><td>Toggle Viewer fullscreen</td></tr>
               <tr><td><kbd>F1</kbd> or <kbd>Ctrl</kbd>+<kbd>/</kbd></td><td>Open this help</td></tr>
               <tr><td><kbd>Ctrl</kbd>+<kbd>,</kbd></td><td>Open / close Settings</td></tr>
