@@ -3223,7 +3223,7 @@
       localStorage.setItem(LS.runnerSort, sort);
       selectAfterSearchKey = null;
       saveSettings();
-      void runSearchNow('identity');
+      void runSearchNow();
     }
 
     function runnerSetOpt(id, on) {
@@ -3234,13 +3234,13 @@
     function runnerToggleSystemFiles() {
       runnerSetOpt('optHideSpecial', !isHideSpecialPaths());
       saveSettings();
-      void runSearchNow('identity');
+      void runSearchNow();
     }
 
     function runnerToggleTilde() {
       runnerSetOpt('optHideTilde', !isHideTildePaths());
       saveSettings();
-      void runSearchNow('identity');
+      void runSearchNow();
     }
 
     /* Every Runner query leaves AppData\Local\Temp out, and Temp hits come from one query of their own
@@ -3267,7 +3267,7 @@
       if (runnerStarredOnlyOn()) localStorage.removeItem(LS.runnerStarredOnly);
       else localStorage.setItem(LS.runnerStarredOnly, '1');
       selectAfterSearchKey = null;
-      void runSearchNow('identity');
+      void runSearchNow();
     }
 
     /** This folder only: typing (or a tag, a deadline range, Starred only) searches the current folder's own
@@ -3280,7 +3280,7 @@
       if (runnerThisFolderOnlyOn()) localStorage.removeItem(LS.runnerThisFolderOnly);
       else localStorage.setItem(LS.runnerThisFolderOnly, '1');
       selectAfterSearchKey = null;
-      void runSearchNow('identity');
+      void runSearchNow();
     }
 
     /** A deadline command: that range, or off when it is already the one set. */
@@ -3330,13 +3330,13 @@
     function runnerToggleWordStarts() {
       if (runnerWordStartsOnly()) localStorage.removeItem(LS.runnerWordStarts);
       else localStorage.setItem(LS.runnerWordStarts, '1');
-      void runSearchNow('identity');
+      void runSearchNow();
     }
 
     function runnerToggleTemp() {
       if (runnerHideTempOn()) localStorage.removeItem(LS.runnerHideTemp);
       else localStorage.setItem(LS.runnerHideTemp, '1');
-      void runSearchNow('identity');
+      void runSearchNow();
     }
 
     /** Ctrl+V in Runner's box: files or an image on the clipboard go into the current folder, as Classic's
@@ -3391,18 +3391,18 @@
       applyResultsViewRadiosToDom(isShowSubfolders(), cm);
       syncViewRadioActiveFromDom();
       saveSettings();
-      void runSearchNow('identity');
+      void runSearchNow();
     }
 
     function runnerToggleMatchPath() {
       runnerSetOpt('optPath', !document.getElementById('optPath')?.checked);
       saveSettings();
-      void runSearchNow('identity');
+      void runSearchNow();
     }
 
     function runnerSetRecency(mode) {
       setRecencyFilterMode(mode);
-      void runSearchNow('identity');
+      void runSearchNow();
     }
 
     /** A tag command: Classic's include (or exclude) toggle, then the search. */
@@ -3410,7 +3410,7 @@
       (exclude ? toggleTagFilterExclude : toggleTagFilterInclude)(word.toLowerCase(), word);
       persistActiveTagFilter();
       saveSettings();
-      void runSearchNow('identity');
+      void runSearchNow();
     }
 
     /** Ctrl+T: Classic's tag editor, on the checked rows, else the selected one. */
@@ -3764,7 +3764,7 @@
           excludedTagKeys.clear();
           persistActiveTagFilter();
           saveSettings();
-          void runSearchNow('identity');
+          void runSearchNow();
         },
       },
       {
@@ -3920,7 +3920,7 @@
       showHiddenUntil = false;
       localStorage.removeItem(LS_SHOW_HIDDEN);
       saveSettings();
-      void runSearchNow('identity');
+      void runSearchNow();
     }
 
     function runnerCmdButton(cmd, active) {
@@ -4698,11 +4698,11 @@
       window.addEventListener('focus', () => refreshRunnerWindowsRecent());
     }
 
-    function scheduleSearch(eventKind = 'identity') {
+    function scheduleSearch() {
       if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
       searchDebounceTimer = setTimeout(() => {
         searchDebounceTimer = null;
-        void runSearchNow(eventKind);
+        void runSearchNow();
       }, 300);
     }
 
@@ -4774,7 +4774,7 @@
       suppressViewerResyncForTimerSearch = true;
       quietAutoRefreshRender = true;
       try {
-        await runSearchNow('refresh');
+        await runSearchNow();
       } finally {
         suppressViewerResyncForTimerSearch = false;
         quietAutoRefreshRender = false;
@@ -4805,7 +4805,7 @@
     /* One search flow at a time, so two F5 or auto-refresh ticks cannot interleave: every call waits on
        searchMutex. F5, auto-refresh and disk mutation all search the one results pane, so there is no
        background flow against a second pane, which is where the old dual-pane races and bleed lived. */
-    async function runSearchNow(eventKind = 'identity', opts) {
+    async function runSearchNow(opts) {
       const myRequest = ++searchRequestSeq;
       let releaseMutex = null;
       const prev = searchMutex;
@@ -4837,7 +4837,7 @@
           clearTimeout(searchDebounceTimer);
           searchDebounceTimer = null;
         }
-        await runSearch(eventKind, opts);
+        await runSearch(opts);
       } finally {
         searchFlowRunning = false;
         releaseMutex();
@@ -4860,7 +4860,7 @@
       for (const delayMs of delays) {
         diskMutationRefreshTimeouts.push(
           setTimeout(() => {
-            void runSearchNow('refresh');
+            void runSearchNow();
           }, delayMs)
         );
       }
@@ -4891,7 +4891,7 @@
         return;
       }
       clearAndScheduleSearchRetries(payload);
-      void runSearchNow('refresh');
+      void runSearchNow();
     }
 
     function tagModalIsFolderDocDraft() {
@@ -5117,7 +5117,7 @@
         tagRenamePendingPairs = null;
       }
       clearAndScheduleSearchRetries();
-      await runSearchNow('refresh');
+      await runSearchNow();
       refreshTagModalDatalist();
     }
 
@@ -8419,7 +8419,7 @@
       setViewerDocEditorOpen('readme', false);
       folderChildCountCache.clear();
       clearAndScheduleSearchRetries();
-      void runSearchNow('refresh');
+      void runSearchNow();
     }
 
     /** Folder doc cancel: discard in-editor changes and reload the current folder doc. */
@@ -8794,7 +8794,7 @@
               syncReadmePreviewChrome({ pulse: false });
               folderChildCountCache.clear();
               // Nested doc save: one refresh only — retries stack 3 extra full searches and hammer huge parent scopes.
-              void runSearchNow('refresh');
+              void runSearchNow();
             })();
             return;
           }
@@ -9476,7 +9476,7 @@
     }
 
     /**
-     * Send recency to Everything as dm:>=… so max-results applies inside the time window (fixes path sort taking 200 “old” hits then client-filtering to a handful).
+     * Send recency to Everything as dm:>=… so max-results applies inside the time window rather than before it.
      * Recency means a file's own modified time, so folders are excluded (file:) unless Folders only is on:
      * Windows bumps a folder's modified time when a child is created, deleted or renamed, never when one is edited,
      * so a folder hit in a recency window reports creation, not modification.
@@ -13394,7 +13394,7 @@
       return out;
     }
 
-    /** One Everything HTTP page (offset + count); may retry with flipped ascending for path / date_modified sorts. */
+    /** One Everything HTTP page (offset + count); may retry with flipped ascending for a newest-first date sort. */
     async function everythingSearchWithDirectionFallback({
       runId,
       baseUrl,
@@ -13407,8 +13407,7 @@
       seedOptions,
     }) {
       const pickRows = (res) => (res && Array.isArray(res.rows) ? res.rows : []);
-      const directionCanMisbehave = (opts) =>
-        (opts.sort === 'path' && opts.ascending === true) || (opts.sort === 'date_modified' && opts.ascending === false);
+      const directionCanMisbehave = (opts) => opts.sort === 'date_modified' && opts.ascending === false;
       const countLooksWrongForDirection = (rowsLen) =>
         cap > 40 && rowsLen >= 0 && rowsLen < Math.max(3, Math.floor(cap * 0.2));
       const shouldSwitchDirection = (baseRowsLen, altRowsLen) => altRowsLen >= Math.max(baseRowsLen + 5, baseRowsLen * 2);
@@ -13884,7 +13883,7 @@
     }
 
     /** One search, run by runSearchNow while it holds searchMutex. */
-    async function runSearch(eventKind = 'identity', opts = {}) {
+    async function runSearch(opts = {}) {
       searchInFlight = true;
       const runId = ++searchRunSeq;
       resultsPagingCtx = null;
@@ -13925,7 +13924,6 @@
       };
       searchDebugLog('runSearch.start', {
         runId,
-        eventKind,
         showSubfolders: showSub,
         contentMode: resultsContentMode(),
         foldersOnly: fo,
@@ -14252,7 +14250,7 @@
     }
     function bindResultsViewRadiosChanged() {
       saveSettings();
-      void runSearchNow('identity');
+      void runSearchNow();
       commitSearchHistoryNow();
     }
     function wireViewTrioClickCycle(ids) {
@@ -14780,7 +14778,7 @@
     }
     if (typeof window.tagBrowser.setPlainF5SearchRefreshHandler === 'function') {
       window.tagBrowser.setPlainF5SearchRefreshHandler(() => {
-        searchDebugLog('searchRefresh.f5.renderer', { step: 'beforeRunSearchNow', eventKind: 'refresh' });
+        searchDebugLog('searchRefresh.f5.renderer', { step: 'beforeRunSearchNow' });
         void refreshResultsFromUi();
       });
     }
@@ -14995,7 +14993,7 @@
         options panel. The search reports the clock time and what changed, so a refresh that finds nothing new
         still shows it ran. */
     async function refreshResultsFromUi() {
-      await runSearchNow('refresh', { uiHint: 'f5' });
+      await runSearchNow({ uiHint: 'f5' });
     }
 
     /** After programmatic list selection: move keyboard focus off stray buttons onto the results region. */
@@ -15874,12 +15872,12 @@
         return el ? el.querySelectorAll('tr').length : -1;
       };
       window.__tagfoxTest = {
-        runSearchNow: (kind, opts) => runSearchNow(kind, opts),
+        runSearchNow: (opts) => runSearchNow(opts),
         /* Asks for one search per text in a single task, as fast typing does on a slow day, and returns at once. */
         startSearches: (texts) => {
           for (const t of texts || []) {
             document.getElementById('query').value = String(t);
-            void runSearchNow('identity');
+            void runSearchNow();
           }
           return true;
         },
@@ -15890,14 +15888,14 @@
           runnerSearchCounters.extraSent = 0;
         },
         refreshNow: () => refreshResultsFromUi(),
-        scheduleSearch: (kind) => scheduleSearch(kind),
+        scheduleSearch: () => scheduleSearch(),
         setQuery: (q) => {
           const el = document.getElementById('query');
           if (el) { el.value = String(q == null ? '' : q); el.dispatchEvent(new Event('input', { bubbles: true })); }
         },
-        setRecency: (mode) => { setRecencyFilterMode(mode); void runSearchNow('identity'); },
-        setView: (subsOn, content) => { applyResultsViewRadiosToDom(!!subsOn, content || 'all'); syncViewRadioActiveFromDom(); void runSearchNow('identity'); },
-        setScope: (root) => { const e = document.getElementById('rootFolder'); if (e) e.value = String(root || ''); void runSearchNow('identity'); },
+        setRecency: (mode) => { setRecencyFilterMode(mode); void runSearchNow(); },
+        setView: (subsOn, content) => { applyResultsViewRadiosToDom(!!subsOn, content || 'all'); syncViewRadioActiveFromDom(); void runSearchNow(); },
+        setScope: (root) => { const e = document.getElementById('rootFolder'); if (e) e.value = String(root || ''); void runSearchNow(); },
         autoTick: () => maybeAutoRefreshSearchTick(),
         loadMore: () => loadMoreResults(),
         /* What main's tagfox-open-recent-changes and tagfox-hotkey-raised messages call; a test cannot press the

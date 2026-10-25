@@ -103,7 +103,7 @@ async function main() {
     } while (Date.now() < statusEnd);
     check(g.statusOn, `the drop brings the status line up ("${g.statusText}")`);
     check(statusAbove(), `and it shows above the Shelf, not over it (status ${g.status && Math.round(g.status.top)}-${g.status && Math.round(g.status.bottom)}, shelf from ${g.shelf && Math.round(g.shelf.top)}, window ${g.winH})`);
-    await drv.T('runSearchNow', 'identity');
+    await drv.T('runSearchNow');
     g = await geo();
     check(g.statusOn && /Copied to Shelf/.test(g.statusText), `a search while it is up leaves the message readable ("${g.statusText}", shown ${g.statusOn})`);
     await drv.T('renderShelf');

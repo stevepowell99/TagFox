@@ -63,7 +63,7 @@ async function main() {
     const focusBox = () => drv.ev(`(() => { const q = document.getElementById('query'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); return 1; })()`);
     const names = async (q) => {
       await drv.T('setQuery', q);
-      await drv.T('runSearchNow', 'identity');
+      await drv.T('runSearchNow');
       await drv.settle('query ' + q);
       return (await R()).rows.map((r) => path.basename(r));
     };

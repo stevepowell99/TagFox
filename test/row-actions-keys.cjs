@@ -65,7 +65,7 @@ async function main() {
       await drv.T('configure', { rootFolder: root });
       await drv.T('setQuery', tag);
       for (let i = 0; i < 20; i++) {
-        await drv.T('runSearchNow', 'identity');
+        await drv.T('runSearchNow');
         await drv.settle('go');
         if ((await R()).rows.length >= 2) return;
         await sleep(400);
@@ -147,7 +147,7 @@ async function main() {
     await key(' ', 'Space', 32, 0, ' ');
     s = await R();
     check(s.checked === 0, `set up: Space unchecks it (${s.checked} checked)`);
-    await drv.T('runSearchNow', 'identity');
+    await drv.T('runSearchNow');
     await drv.settle('refresh');
     s = await R();
     check(s.checked === 0, `a refresh of the same list leaves it unchecked (${s.checked} checked)`);

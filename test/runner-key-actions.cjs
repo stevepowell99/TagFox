@@ -76,7 +76,7 @@ async function main() {
       await drv.T('configure', { rootFolder: folder });
       await drv.T('setQuery', '');
       for (let i = 0; i < 20; i++) {
-        await drv.T('runSearchNow', 'identity');
+        await drv.T('runSearchNow');
         await drv.settle('go');
         const s = await R();
         if (!selectName) return s;

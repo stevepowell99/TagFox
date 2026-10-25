@@ -76,12 +76,12 @@ async function main() {
     const go = async (folder, query = '') => {
       await drv.T('configure', { rootFolder: folder });
       await drv.T('setQuery', query);
-      await drv.T('runSearchNow', 'identity');
+      await drv.T('runSearchNow');
       await drv.settle('go ' + path.basename(folder) + ' ' + query);
     };
     const waitRows = async (pred, label) => {
       for (let i = 0; i < 20; i++) {
-        await drv.T('runSearchNow', 'identity');
+        await drv.T('runSearchNow');
         await drv.settle(label);
         const s = await R();
         if (pred(s)) return s;
@@ -172,7 +172,7 @@ async function main() {
     check(!(await R()).scope, 'a fresh Backspace in the empty box drops the folder');
 
     await drv.T('configure', { rootFolder: many });
-    await drv.T('runSearchNow', 'identity');
+    await drv.T('runSearchNow');
     await drv.settle('many');
 
     // Ctrl held alone numbers the rows; Ctrl+2 opens the second (all folders here, so nothing launches).

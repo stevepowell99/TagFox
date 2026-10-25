@@ -92,7 +92,7 @@ async function main() {
     })()`);
     const waitRow = async (label) => {
       for (let i = 0; i < 40; i++) {
-        await drv.T('runSearchNow', 'refresh');
+        await drv.T('runSearchNow');
         await drv.settle(label);
         const r = await rects();
         if (r) return r;
@@ -104,7 +104,7 @@ async function main() {
     // A repaint that puts another row under the resting pointer: the image row is filtered out.
     const repaintWithoutImage = async (label) => {
       await drv.T('setQuery', 'hovernote');
-      await drv.T('runSearchNow', 'refresh', { uiHint: 'f5' });
+      await drv.T('runSearchNow', { uiHint: 'f5' });
       await drv.settle(label);
     };
 

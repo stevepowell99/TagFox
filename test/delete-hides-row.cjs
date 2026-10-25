@@ -16,7 +16,7 @@ async function main() {
     const { T, diag, settle } = drv;
     log('Hook ready.');
 
-    await T('runSearchNow', 'identity');
+    await T('runSearchNow');
     let s = await settle('search');
     const before = s.lastRows;
     const victim = (await diag()).rows?.[0]?.path;

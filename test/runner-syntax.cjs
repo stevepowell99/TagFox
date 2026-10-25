@@ -32,7 +32,7 @@ async function main() {
     await drv.T('configure', { rootFolder: root });
     const names = async (q) => {
       await drv.T('setQuery', q);
-      await drv.T('runSearchNow', 'identity');
+      await drv.T('runSearchNow');
       await drv.settle(q);
       const s = await drv.T('runnerState');
       return s.rows.map((r) => path.relative(root, r).replace(/\\/g, '/')).sort();

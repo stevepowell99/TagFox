@@ -61,7 +61,7 @@ async function main() {
       });
     const R = () => drv.T('runnerState');
     const search = async (label) => {
-      await drv.T('runSearchNow', 'identity');
+      await drv.T('runSearchNow');
       await drv.settle(label);
       return R();
     };

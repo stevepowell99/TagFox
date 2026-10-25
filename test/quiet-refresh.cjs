@@ -76,7 +76,7 @@ async function main() {
     if (seeded < SEED_FILES) throw new Error('Everything indexed only ' + seeded + ' of ' + SEED_FILES + ' seed files');
 
     await T('setQuery', STEM);
-    await T('runSearchNow', 'identity');
+    await T('runSearchNow');
     await settle('query');
     await T('autoStart', 3);
 

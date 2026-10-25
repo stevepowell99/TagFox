@@ -64,7 +64,7 @@ async function main() {
     const norm = (p) => String(p || '').replace(/[\\/]+$/, '').toLowerCase();
     const waitForRow = async (p, label) => {
       for (let i = 0; i < 20; i++) {
-        await T('runSearchNow', 'identity');
+        await T('runSearchNow');
         await drv.settle(label);
         if ((await T('runnerState')).rows.some((r) => norm(r) === norm(p))) return true;
         await sleep(400);

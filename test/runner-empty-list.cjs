@@ -38,7 +38,7 @@ async function main() {
       drv.ev(`(() => { const el = document.getElementById('runnerEmptyNote'); return { shown: !!el && !el.classList.contains('d-none') && el.offsetHeight > 0, text: el ? el.textContent : '' }; })()`);
     const search = async (q) => {
       await drv.T('setQuery', q);
-      await drv.T('runSearchNow', 'identity');
+      await drv.T('runSearchNow');
       await drv.settle('query ' + q);
       await sleep(300);
     };

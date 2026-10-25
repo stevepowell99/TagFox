@@ -29,7 +29,7 @@ async function main() {
       if (!features) await sleep(100);
     }
     for (let i = 0; i < 20; i++) {
-      await drv.T('runSearchNow', 'identity');
+      await drv.T('runSearchNow');
       await drv.settle('row');
       const labels = await drv.ev(`(() => {
         const tr = [...document.querySelectorAll('#tbody tr')].find((t) => (t.dataset.rowPath || '').toLowerCase() === ${JSON.stringify(md.toLowerCase())});

@@ -70,7 +70,7 @@ async function main() {
     };
 
     await T('setQuery', 'readme');
-    await T('runSearchNow', 'identity');
+    await T('runSearchNow');
     await settle('rows for readme');
 
     // Negative control: a plain window focus (alt-tab, a click into the window) keeps the caret.
@@ -133,7 +133,7 @@ async function main() {
       for (let i = 0; i < 25; i++) {
         await T('configure', { rootFolder: root });
         await T('setQuery', word);
-        await T('runSearchNow', 'identity');
+        await T('runSearchNow');
         await settle('folder');
         st = await T('runnerState');
         if (st.rows.some((r) => norm(r) === norm(folder))) break;

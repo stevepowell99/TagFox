@@ -50,7 +50,7 @@ async function main() {
     const CTRL = 2;
     const waitForRow = async (p) => {
       for (let i = 0; i < 20; i++) {
-        await T('runSearchNow', 'identity');
+        await T('runSearchNow');
         await drv.settle('rows');
         if ((await R()).rows.some((r) => norm(r) === norm(p))) return true;
         await sleep(400);

@@ -42,7 +42,7 @@ async function main() {
       setShowHiddenUntil(true);
       return 1;
     })()`);
-    await T('runSearchNow', 'identity');
+    await T('runSearchNow');
     await settle('busy');
     const before = await read();
     const missing = ALL_CHIPS.filter((c) => !before.chips.includes(c));

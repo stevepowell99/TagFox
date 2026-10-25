@@ -131,7 +131,7 @@ async function main() {
     // Everything indexes new files within a second or so; wait for a row rather than a fixed sleep.
     const waitForRow = async (p, label) => {
       for (let i = 0; i < 20; i++) {
-        await drv.T('runSearchNow', 'identity');
+        await drv.T('runSearchNow');
         await drv.settle(label);
         if (has((await R()).rows, p)) return true;
         await sleep(400);
@@ -233,7 +233,7 @@ async function main() {
     await drv.T('setQuery', '.md');
     let typeOk = false;
     for (let i = 0; i < 20 && !typeOk; i++) {
-      await drv.T('runSearchNow', 'identity');
+      await drv.T('runSearchNow');
       await drv.settle('type');
       s = await R();
       typeOk = has(s.rows, olderMd) && has(s.rows, path.join(root, 'alphafold-note.md'));
@@ -318,7 +318,7 @@ async function main() {
     await drv.T('setQuery', 'sizecheck');
     let sizesSeen = false;
     for (let i = 0; i < 20 && !sizesSeen; i++) {
-      await drv.T('runSearchNow', 'identity');
+      await drv.T('runSearchNow');
       await drv.settle('sizecheck');
       const rowsNow = (await R()).rows;
       sizesSeen = sizeFiles.every((p) => has(rowsNow, p));
@@ -386,7 +386,7 @@ async function main() {
     // and keeps the sort.
     await drv.T('commitHistory');
     await drv.T('setQuery', 'sizecheck history');
-    await drv.T('runSearchNow', 'identity');
+    await drv.T('runSearchNow');
     await drv.settle('another search');
     await drv.T('commitHistory');
     await drv.T('setRunnerSort', 'name');
@@ -407,7 +407,7 @@ async function main() {
     await drv.T('setQuery', 'chipcheck');
     let chipRows = false;
     for (let i = 0; i < 20 && !chipRows; i++) {
-      await drv.T('runSearchNow', 'identity');
+      await drv.T('runSearchNow');
       await drv.settle('chipcheck');
       const rowsNow = (await R()).rows;
       chipRows = has(rowsNow, dueFile) && has(rowsNow, plainFile);
@@ -469,7 +469,7 @@ async function main() {
     s = await R();
     check(JSON.stringify(wrOrder()) === JSON.stringify(['wrcheck two.txt', 'wrcheck one.txt']), `without it the newer name leads (positive control: ${wrOrder()})`);
     await drv.T('setWindowsRecent', [wrOne]);
-    await drv.T('runSearchNow', 'identity');
+    await drv.T('runSearchNow');
     await drv.settle('wrcheck boosted');
     s = await R();
     check(JSON.stringify(wrOrder()) === JSON.stringify(['wrcheck one.txt', 'wrcheck two.txt']), `in Windows' Recent list the older name leads (${wrOrder()})`);
@@ -546,7 +546,7 @@ async function main() {
       const iTwin = s.rows.findIndex((r) => norm(r) === norm(plainTwin));
       check(bothIn && iTwin >= 0 && iTwin < iTemp, `by default a file in AppData\\Local\\Temp is listed, below the same name elsewhere (plain ${iTwin}, Temp ${iTemp})`);
       await runCmd('temp');
-      await drv.T('runSearchNow', 'identity');
+      await drv.T('runSearchNow');
       await drv.settle('temp hidden');
       s = await R();
       check(!has(s.rows, tempFile) && has(s.rows, plainTwin) && s.query === tempName, `the / temp command hides it and keeps the plain file (${s.rows.length} rows)`);

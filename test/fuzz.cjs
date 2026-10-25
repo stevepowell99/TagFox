@@ -78,7 +78,7 @@ async function main() {
       return on;
     };
 
-    await T('runSearchNow', 'identity');
+    await T('runSearchNow');
     let s = await settle('baseline');
     let probs = structuralProblems(s);
     if (probs.length) failures.push(`[baseline] ${probs.join(' | ')}`);
@@ -150,7 +150,7 @@ async function main() {
       ['recency', 1, () => T('setRecency', pick(['all', '1y', '1w']))],
       ['view', 1, () => T('setView', rnd() > 0.5, pick(['all', 'folders', 'files']))],
       ['scope', 1, () => T('setScope', pick(SCOPE_LIST))],
-      ['schedule', 1, () => T('scheduleSearch', 'identity')],
+      ['schedule', 1, () => T('scheduleSearch')],
       ['tick', 2, tick],
       ['load more', 3, loadMore],
       ['make file', 2, makeFile],
@@ -182,7 +182,7 @@ async function main() {
       const diskQuiet = lastDiskChange < burstStart - DISK_SETTLE_MS;
       if (!probs.length && searched && diskQuiet && !(await ev(GROWN))) {
         const count1 = s.lastRows; const d1 = await diag();
-        await T('runSearchNow', 'identity');
+        await T('runSearchNow');
         const s2 = await settle(label + ' [recheck]'); const d2 = await diag();
         const viewSame = d1.showSubfolders === d2.showSubfolders && d1.foldersOnly === d2.foldersOnly && d1.filesOnly === d2.filesOnly && d1.recencyMode === d2.recencyMode;
         if (s2.lastRows !== count1 && viewSame) { log(`  FAIL ${label} :: STALE ${count1} -> ${s2.lastRows}`); failures.push(`[${label}] stale: ${count1} -> ${s2.lastRows}`); }
@@ -200,7 +200,7 @@ async function main() {
       await T('setQuery', '');
       if (!made.length) await makeFile();
       for (let i = 0; i < 12; i++) {
-        await T('runSearchNow', 'identity');
+        await T('runSearchNow');
         await settle('cover: own folder');
         const on = await noteListed();
         if (made.some((f) => on.has(norm(f)))) return;
@@ -211,7 +211,7 @@ async function main() {
       stepAside: () => typeFast('main'),
       grew: async () => { await longList('js'); await settle('cover: long list'); await loadMore(); },
       tickSkippedGrown: async () => { await longList('js'); await settle('cover: long list'); await loadMore(); },
-      tickRan: async () => { await T('runSearchNow', 'identity'); await settle('cover: first page'); await tick(); },
+      tickRan: async () => { await T('runSearchNow'); await settle('cover: first page'); await tick(); },
       madeListed: madeFileListed,
       deletedOffList: async () => { await madeFileListed(); await deleteFile(true); },
     };

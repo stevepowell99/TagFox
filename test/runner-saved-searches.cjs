@@ -82,7 +82,7 @@ async function main() {
     };
     const waitRows = async (want, label) => {
       for (let i = 0; i < 20; i++) {
-        await T('runSearchNow', 'identity');
+        await T('runSearchNow');
         await drv.settle(label);
         const rows = (await R()).rows;
         if (want.every((p) => has(rows, p))) return rows;

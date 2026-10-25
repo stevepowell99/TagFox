@@ -58,7 +58,7 @@ async function main() {
     const reset = async () => {
       await drv.T('setQuery', '');
       await drv.T('configure', { rootFolder: start });
-      await drv.T('runSearchNow', 'identity');
+      await drv.T('runSearchNow');
       await drv.settle('reset');
     };
     const paste = async (text) => {

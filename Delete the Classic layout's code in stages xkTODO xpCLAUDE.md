@@ -56,7 +56,6 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 
 ## Stages named so far
 
-- **`runSearch`'s `eventKind`** reaches only the search debug log (`runSearch.start`), through `scheduleSearch` and `runSearchNow`, so the argument can go from every call site.
 - **The layout switch in CSS:** every page carries `body.tagfox-runner`, so its 171 uses in `styles.css` add nothing, and `body:not(.tagfox-runner) .tagfox-runner-only` (with the `tagfox-runner-only` class, nine uses in `index.html` and three in `renderer.js`) matches nothing. Dropping the prefix lowers each rule's specificity, and Classic's base rules still sit under the Runner rules that override them, so check each area by comparing every element's box and computed style before and after, in each state it can be in (empty, full, light, dark, hover, drag-over).
 
 ## Decisions before any deletion

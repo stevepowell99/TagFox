@@ -23,7 +23,7 @@ async function main() {
       return s;
     };
 
-    await step('startup', async () => { await T('runSearchNow', 'identity'); });
+    await step('startup', async () => { await T('runSearchNow'); });
     await step('refresh loop (10x F5)', async () => { for (let i = 0; i < 10; i++) { await T('refreshNow'); await new Promise((r) => setTimeout(r, 40)); } });
     await step('type + refresh race', async () => { for (const q of ['m', 'ma', 'main']) { await T('setQuery', q); await T('refreshNow'); await new Promise((r) => setTimeout(r, 60)); } await T('setQuery', ''); });
     await step('search a different scope', async () => { await T('setQuery', 'js'); await T('setScope', SCOPES.vendor); await T('setQuery', ''); });
