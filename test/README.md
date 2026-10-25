@@ -49,6 +49,10 @@ TagFox registers Ctrl+Space first owns it, so a test instance started while Stev
 Ctrl+Space with a blank profile. Normal app runs are unaffected: `main.js` only skips `show()`, the reloader
 and the hotkeys when that variable is set.
 
+`connect()` switches the 5-second auto-refresh timer off once the hook is up, unless a test passes
+`autoRefresh: true`, because a tick is a whole search arriving at a moment no test chose. Tests that need a
+tick call `autoTick` and get one when they ask.
+
 The hook normally appears about a second after launch, but a machine busy with other Electron starts has
 taken over 12s, so `connect()` waits up to 45s and prints `(slow start: …)` for any start over 5s. A start
 that never produces the hook fails with the page's URL and load state and the tail of Electron's stderr, so

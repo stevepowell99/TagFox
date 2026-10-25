@@ -92,7 +92,10 @@ function makeCdp(wsUrl) {
 // Launch Electron (isolated profile + remote debugging), load the app with the #tagfoxtest hook, and
 // return a driver. Each test passes a unique profile name, so its runs do not collide with another test's.
 // profileFiles: { name: text } written into the fresh profile before launch, for settings main reads at startup.
-async function connect({ profile, maxResults = 60, scope = SCOPES.repo, disableAutofill = true, profileFiles = {} } = {}) {
+// autoRefresh: leave the 5-second auto-refresh timer running. Off by default: a tick is a whole search arriving
+// at a moment no test chose, which shifted a count in runner-query-order one run in five, and a stranded test
+// instance ticking for an hour once loaded Everything for the whole machine. Tests drive ticks with autoTick.
+async function connect({ profile, maxResults = 60, scope = SCOPES.repo, disableAutofill = true, profileFiles = {}, autoRefresh = false } = {}) {
   if (!profile) throw new Error('connect needs { profile }');
   const baseUrl = await resolveEverythingUrl();
   const port = await freePort();
@@ -148,6 +151,7 @@ async function connect({ profile, maxResults = 60, scope = SCOPES.repo, disableA
 
   if (disableAutofill) await T('disableAutofill'); // headless viewport makes autofill page count nondeterministic
   await T('configure', { baseUrl, rootFolder: scope, maxResults });
+  if (!autoRefresh) await T('autoStop');
 
   // Settle: quiescent when no search depth, nothing in flight, and no pending debounce timer.
   const settle = async (label, maxMs = 15000) => {
