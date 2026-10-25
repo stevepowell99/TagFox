@@ -94,19 +94,6 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
     min-width: 0;
   }
 }
-/* Status filter / hidden / smart-note chips: theme indigo; wand = Smart; hide reasons use clock / eye-slash (not gear). */
-.tagfox-status-hidden-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  background-color: var(--bs-primary-bg-subtle);
-  color: var(--bs-primary-text-emphasis);
-  border-radius: 0.25rem;
-  padding: 0.05rem 0.35rem;
-  white-space: nowrap;
-  max-width: 100%;
-}
-
 /* Gaps between control groups (view mode on .tagfox-search-toolbar-row; recency + Advanced on tag row). */
 .tagfox-search-opts-rhs {
   column-gap: 0.65rem;

@@ -22,10 +22,9 @@
 //     hides it;
 //   - there is no standing status line: a search leaves the bar hidden, F5's report brings it up and it goes
 //     again, and a partly ranked list says so in the box;
-//   - the Restart button, which lives in Classic's hidden header, sits in Runner's search box and takes a click;
+//   - the Restart button sits in the search box and takes a click;
 //   - Ctrl+Shift+Space resets Runner's one search in place (no folder, no text, the last hour), with no new tab;
-//   - switching back to Classic, which only the test hook can still do, restores Classic's own view settings
-//     and puts the Restart button back in the header.
+//   - switching back to Classic, which only the test hook can still do, restores Classic's own view settings.
 //
 // Run: node test/runner-layout.cjs
 
@@ -603,7 +602,6 @@ async function main() {
     s = await R();
     const view = await drv.ev(`(document.getElementById('optRvSubsOn').checked ? 'subfolders' : 'this folder') + ', ' + document.querySelector('input[name="rvContent"]:checked')?.value`);
     check(!s.on && !s.bodyClass && view === classicView, `Classic is back with its own view (${view}, was ${classicView})`);
-    check(/\bhits?\b/.test(s.status), `Classic keeps its standing status line ("${s.status.slice(0, 60)}")`);
   } catch (e) {
     failures.push('threw: ' + (e && e.stack ? e.stack : e));
     console.error(e);

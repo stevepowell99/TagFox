@@ -2,7 +2,7 @@
 
 Steve decided on 24 October 2026 to keep only Runner: hide Classic first, then delete its code in stages. Classic is hidden (no layout switch, every real start in Runner; the test hook still opens a fresh profile in Classic so its tests guard the code until it goes). This file is the inventory to delete against.
 
-- **Each stage** deletes one area (for example Classic's status line), its CSS and HTML, and the tests that cover only it, and keeps every piece Runner depends on (listed below). Run the full suite after each stage.
+- **Each stage** deletes one area (for example the empty-result pulse hints), its CSS and HTML, and the tests that cover only it, and keeps every piece Runner depends on (listed below). Run the full suite after each stage.
 - **Steve decided on 25 October 2026** what Runner gains before Classic's code goes: the deadline filters as `/` Due commands; a "Show only starred items" command instead of a visible star list; and Windows Recent as a ranking boost rather than a list. A "Search this folder only" command keeps typing to the current folder's own contents. All four are in Runner now. The Shelf shows in Runner (`2d8c22b`), and so does the Restart button, in the search box. Saved searches are back in Runner too (Steve, 25 October 2026): `/` commands ("Save this search", then one per saved search) and `Alt`+`1`…`9`, reading the same `LS.favSearches` list Classic saved, so stage two took only Classic's bar.
 
 Read-only survey by a subagent at main `74c8ac1`; line numbers are approximate. Since then Runner has gained chips for the deadline and hide-until filters (the hazard the survey found).
@@ -23,7 +23,6 @@ Read-only survey by a subagent at main `74c8ac1`; line numbers are approximate. 
 | Recency 1h / 1d / 1w / 1m / 1y / All | toolbar radios | Partial: `/` has all, 1h, 1d, 1w; 1m and 1y only by Ctrl+R cycling | `setRecencyFilterMode` |
 | Deadline filter (Overdue, Today, This week, Next week) and "Show hidden" for `xh-` files | `btnToggleDeadline`, `deadlineFilterPanel`, `optShowHiddenUntil` | Yes: the `/` Due commands and their chips | `setDeadlineRange`, `setShowHiddenUntil` |
 | Sort by path, oldest first, or Z-A | nothing on screen sets one, only a saved Classic value; folder rows take a tint while Path is the sort | No: smart, date, name, largest or smallest first | `sortColumn`/`sortAsc` through `applySearchState`, `syncSortPathClass` |
-| Status line with hit count and filter hints | standing line | None: Runner shows no count except "N of M ranked" | `formatResultsStatusMainHtml`, `hiddenDueToStatusHtml` |
 | Empty-result pulse hints | toolbar pulses | Partial: only the box pulses | `updateEmptyResultsPulseHints` |
 
 ### Shelf

@@ -5290,15 +5290,6 @@
       showNextDidYouKnowTip();
       didYouKnowTimerId = setInterval(() => showNextDidYouKnowTip(), DID_YOU_KNOW_ROTATE_MS);
     }
-    /** Leading icon inside a status hint chip (Font Awesome solid class, e.g. fa-gear). */
-    function statusHintPillInnerHtml(iconFaClass, escapedInnerHtml) {
-      return (
-        '<i class="fa-solid ' +
-        iconFaClass +
-        ' fa-fw" aria-hidden="true"></i> ' +
-        escapedInnerHtml
-      );
-    }
 
     /** Main status line. `progress`: routine progress
         ("Searching…") that Runner does not bring its hidden bar up for, and that never replaces a message
@@ -5331,7 +5322,7 @@
 
     /* ===== Single-level undo (Ctrl+Z): rename/tag-edit, move, copy/paste, new folder.
        One entry only: each new tracked action replaces it. Delete is not undone here — recycled items
-       are recoverable from the Windows Recycle Bin (runUndo says so). Bare `z` still sorts by size. ===== */
+       are recoverable from the Windows Recycle Bin (runUndo says so). ===== */
     let undoEntry = null; // { label, invert: async () => boolean }
 
     function setUndoEntry(entry) {
@@ -5386,99 +5377,6 @@
       } catch (err) {
         setStatusMain('Undo failed: ' + String((err && err.message) || err));
       }
-    }
-
-    /** First #statusMain segment: raw hit count from Everything (not table row count). */
-    function formatRowCountLeadingSegmentForStatus(vis, raw) {
-      void vis;
-      if (raw === 0) return { text: '0 hits' };
-      return { text: raw === 1 ? '1 hit' : raw + ' hits' };
-    }
-    /** Hidden-row reasons only (icons + labels); no “N hidden due to” prefix — count stays in the hits segment. */
-    function hiddenDueToStatusHtml(hiddenN, reasonParts) {
-      void hiddenN;
-      const body = reasonParts
-        .map((p, i) => {
-          const sep =
-            i === 0 ? '' : ' <span class="tagfox-status-hidden-sep text-muted">|</span> ';
-          return (
-            sep +
-            '<i class="fa-solid ' +
-            p.icon +
-            ' fa-fw" aria-hidden="true"></i> ' +
-            escStatusHtmlForStatus(p.label)
-          );
-        })
-        .join('');
-      return '<span class="tagfox-status-hidden-hint">' + body + '</span>';
-    }
-    /** Hide special / ~ only (no row delta): eye-slash matches Advanced popover icon. */
-    function hideOptionHintStatusHtml(plain) {
-      return (
-        '<span class="tagfox-status-hidden-hint">' +
-        '<i class="fa-solid fa-eye-slash fa-fw" aria-hidden="true"></i> ' +
-        escStatusHtmlForStatus(plain) +
-        '</span>'
-      );
-    }
-    /** “Filters on: …” chip: tags vs clock for recency (no gear). */
-    function tagRecencyStatusFilterHintHtml(plain) {
-      if (!plain) return '';
-      if (plain === 'Filters on: tags and recency') {
-        return (
-          '<span class="tagfox-status-hidden-hint">' +
-          '<i class="fa-solid fa-tags fa-fw" aria-hidden="true"></i> ' +
-          '<i class="fa-solid fa-clock fa-fw" aria-hidden="true"></i> ' +
-          escStatusHtmlForStatus(plain) +
-          '</span>'
-        );
-      }
-      const icon = plain === 'Filters on: recency' ? 'fa-clock' : 'fa-tags';
-      return (
-        '<span class="tagfox-status-hidden-hint">' +
-        '<i class="fa-solid ' + icon + ' fa-fw" aria-hidden="true"></i> ' +
-        escStatusHtmlForStatus(plain) +
-        '</span>'
-      );
-    }
-    /**
-     * Plain text for status bar: “Filters on: tags / recency / both” (empty = neither).
-     * recencyNarrows: recency bucket is on and removed ≥1 row vs tag-only set (else recency chip omitted).
-     */
-    function tagRecencyStatusFilterHintPlain(activeKeys, recencyMode, recencyNarrows) {
-      const hasTags = activeKeys && activeKeys.size > 0;
-      const hasRec = recencyMode && recencyMode !== 'all' && recencyNarrows;
-      if (!hasTags && !hasRec) return '';
-      if (hasTags && hasRec) return 'Filters on: tags and recency';
-      if (hasTags) return 'Filters on: tags';
-      return 'Filters on: recency';
-    }
-    /**
-     * Single place that builds the persistent results-table status HTML (hits, filter pills, view suffix).
-     * Separation is only via join(' · ') — never put “ · ” inside a segment.
-     */
-    function formatResultsStatusMainHtml(opts) {
-      const {
-        visN,
-        rawN,
-        tagRecencyHintPlain,
-        hiddenDueHtml,
-        showHideSpecialHint,
-        showHideTildeHint,
-        viewModeSentence,
-      } = opts;
-      const rowLead = formatRowCountLeadingSegmentForStatus(visN, rawN);
-      const segments = [];
-      segments.push(escStatusHtmlForStatus(rowLead.text));
-      if (hiddenDueHtml) segments.push(hiddenDueHtml);
-      else {
-        if (showHideSpecialHint) segments.push(hideOptionHintStatusHtml('Hiding special files/folders'));
-        if (showHideTildeHint) segments.push(hideOptionHintStatusHtml('Hiding paths with ~ segment'));
-      }
-      if (tagRecencyHintPlain) segments.push(tagRecencyStatusFilterHintHtml(tagRecencyHintPlain));
-      if (viewModeSentence)
-        segments.push('<span class="tagfox-status-view-suffix">' + escStatusHtmlForStatus(viewModeSentence) + '</span>');
-      return segments.join(' · ');
     }
 
     /** Folder that scopes the search (Settings “Scope folder” field). */
@@ -12903,7 +12801,6 @@
     }
     function renderTableImpl() {
       const tbody = document.getElementById('tbody');
-      const status = document.getElementById('statusMain');
       tbody.querySelectorAll('[data-bs-toggle="tooltip"], .results-td-actions-inner [title], .results-td-actions-inner [data-bs-original-title]').forEach((el) => {
         const tip = bootstrap.Tooltip.getInstance(el);
         if (tip) tip.dispose();
@@ -12925,78 +12822,6 @@
       hideHoverPreview(); /* its row is about to go, with no mouseout to say so */
       tbody.innerHTML = '';
       const rowsForDisplay = listRowsForUi();
-      const rawN = lastRows.length;
-      /* Display rows: filters may hide rows (visN < rawN). */
-      const visN = rowsForDisplay.length;
-      const scopePath = normalizeFolderPathForEverything(document.getElementById('rootFolder').value.trim());
-      const sub = isShowSubfolders(),
-        rcc = resultsContentMode();
-      /** One readable sentence for subfolders + content (status bar); the default, subfolders and everything, needs none. */
-      function viewModeStatusSentence() {
-        if (sub && rcc === 'all') return '';
-        let s = sub ? 'With subfolders' : 'This folder only';
-        if (rcc === 'folders') s += ', folders only';
-        else if (rcc === 'files') s += ', files only';
-        if (!sub && !scopePath) s += ' (set a current folder in Settings for a clearer listing)';
-        return s;
-      }
-      const someRowsHidden = visN < rawN;
-      const afterTagsOnlyRows = filteredRowsAfterTagsOnly();
-      const beforePathHides = filteredRowsBeforeAdvancedPathHides();
-      const hideSpecialDrops = isHideSpecialPaths()
-        ? beforePathHides.filter((r) => pathUnderHideSpecialSegments(fullPathForRow(r))).length
-        : 0;
-      const hideTildeDrops = isHideTildePaths()
-        ? beforePathHides.filter((r) => pathUnderTildeSegment(fullPathForRow(r))).length
-        : 0;
-      const recencyDrop =
-        recencyFilterMode() !== 'all'
-          ? Math.max(0, afterTagsOnlyRows.length - beforePathHides.length)
-          : 0;
-      let afterSpecial = beforePathHides;
-      if (isHideSpecialPaths()) {
-        afterSpecial = beforePathHides.filter((r) => !pathUnderHideSpecialSegments(fullPathForRow(r)));
-      }
-      const specialDrop = isHideSpecialPaths() ? beforePathHides.length - afterSpecial.length : 0;
-      let afterTilde = afterSpecial;
-      if (isHideTildePaths()) {
-        afterTilde = afterSpecial.filter((r) => !pathUnderTildeSegment(fullPathForRow(r)));
-      }
-      const tildeDrop = isHideTildePaths() ? afterSpecial.length - afterTilde.length : 0;
-      /* Recency status chip only when client pipeline drops rows (Everything-only window may drop 0 here). */
-      const recencyNarrows = recencyDrop > 0;
-      /* Runner keeps no standing status line: its filters are chips, and the bar shows only for messages
-         (setStatusMain → flashRunnerStatus). */
-      if (status && !isRunnerMode()) {
-        let hiddenDueHtml = '';
-        if (someRowsHidden) {
-          const hiddenN = rawN - visN;
-          const parts = [];
-          const tagDrop = activeTagKeys.size > 0 ? rawN - afterTagsOnlyRows.length : 0;
-          if (tagDrop > 0) parts.push({ icon: 'fa-tags', label: 'Tag filters' });
-          if (recencyDrop > 0) parts.push({ icon: 'fa-clock', label: 'Recency' });
-          if (specialDrop > 0) parts.push({ icon: 'fa-eye-slash', label: 'Hiding special files/folders' });
-          if (tildeDrop > 0) parts.push({ icon: 'fa-eye-slash', label: 'Hiding paths with ~ segment' });
-          if (parts.length) hiddenDueHtml = hiddenDueToStatusHtml(hiddenN, parts);
-          else {
-            hiddenDueHtml =
-              '<span class="tagfox-status-hidden-hint">' +
-              escStatusHtmlForStatus(hiddenN + ' hidden') +
-              '</span>';
-          }
-        }
-        status.innerHTML = formatResultsStatusMainHtml({
-          visN,
-          rawN,
-          tagRecencyHintPlain: !someRowsHidden
-            ? tagRecencyStatusFilterHintPlain(activeTagKeys, recencyFilterMode(), recencyNarrows)
-            : '',
-          hiddenDueHtml,
-          showHideSpecialHint: hideSpecialDrops > 0,
-          showHideTildeHint: hideTildeDrops > 0,
-          viewModeSentence: viewModeStatusSentence(),
-        });
-      }
       renderRunnerFilterChips();
       renderRunnerRankNote();
       /* Highlight #query in name/path when enabled (Settings). */

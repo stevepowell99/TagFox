@@ -95,7 +95,9 @@ async function main() {
     if (!start.rows) throw new Error('nothing to test against');
 
     const statusLine = () => ev(`document.getElementById('statusMain').textContent`);
-    const statusBefore = await statusLine();
+    /* A mark on the line: a quiet tick must leave it there. */
+    const STATUS_MARK = 'written before the ticks';
+    await ev(`document.getElementById('statusMain').textContent = ${JSON.stringify(STATUS_MARK)}; 1`);
     for (let i = 0; i < 4; i++) {
       await T('autoTick');
       await sleep(400);
@@ -105,7 +107,7 @@ async function main() {
     check('the scroll position survived the quiet ticks', quiet.scrollTop === start.scrollTop, 'scrollTop=' + quiet.scrollTop);
     /* A tick that found nothing used to leave "Searching…" on the status line for good. */
     const statusQuiet = await statusLine();
-    check('the status line is unchanged by the quiet ticks', /\bhits?\b/.test(statusBefore) && statusQuiet === statusBefore, `"${statusBefore}" then "${statusQuiet}"`);
+    check('the status line is unchanged by the quiet ticks', statusQuiet === STATUS_MARK, `"${statusQuiet}"`);
 
     fs.writeFileSync(LATE, 'late\n');
     const late = await waitForIndex(baseUrl, STEM + '-b', 1);
