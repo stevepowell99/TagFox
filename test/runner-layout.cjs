@@ -13,6 +13,7 @@
 //   - a row's size shows muted in a column of its own, /size sorts largest first and the other size
 //     command smallest first, a smaller unit is fainter, and a cell has a tooltip only where it says more
 //     than the cell;
+//   - after a sort change, Alt+Left goes to the search before and keeps the sort;
 //   - a deadline range or shown hide-until files show as chips whose x clears them, the / due and hidden-until
 //     commands set them, and from an empty box a deadline range looks below the folder;
 //   - "Show only starred items" lists just the stars under the folder, wherever they are below it;
@@ -381,6 +382,25 @@ async function main() {
     await drv.settle('size asc');
     s = await R();
     check(JSON.stringify(sizeOrder()) === JSON.stringify(sizeFiles.map(norm).reverse()), `the other size command sorts smallest first (${sizeOrder().map((p) => path.basename(p))})`);
+    // The sort is a chip, not a step in the history: after a sort change, Alt+Left goes to the search before
+    // and keeps the sort.
+    await drv.T('commitHistory');
+    await drv.T('setQuery', 'sizecheck history');
+    await drv.T('runSearchNow', 'identity');
+    await drv.settle('another search');
+    await drv.T('commitHistory');
+    await drv.T('setRunnerSort', 'name');
+    await drv.settle('name sort');
+    await drv.T('commitHistory');
+    await focusBox();
+    await key('ArrowLeft', 'ArrowLeft', 37, 1);
+    await drv.settle('alt left after a sort');
+    s = await R();
+    const byName = [0, 1, 3, 2].map((i) => norm(sizeFiles[i]));
+    check(
+      s.query === 'sizecheck' && s.sort === 'name' && JSON.stringify(sizeOrder()) === JSON.stringify(byName),
+      `after a sort change Alt+Left goes to the search before, still by name (box "${s.query}", sort ${s.sort}: ${sizeOrder().map((p) => path.basename(p))})`
+    );
     await drv.T('setRunnerSort', 'smart');
 
     // A deadline range or a shown hide-until shows as a chip whose x clears it.

@@ -89,7 +89,8 @@ async function evaluateOnce(expr) {
     if (!info.gmist || typeof info.gmist.devPortHeld !== 'boolean') fail('no gmist status: ' + JSON.stringify(info.gmist));
     let text = '';
     for (let i = 0; i < 40 && !text.includes('PID'); i++) {
-      text = await evaluate("document.getElementById('runningNowTagFox').textContent");
+      // A page reloading under the call has not parsed the block yet: that is a wait too.
+      text = await evaluate("document.getElementById('runningNowTagFox')?.textContent || ''");
       if (!text.includes('PID')) await sleep(250);
     }
     if (!text.includes('PID ' + info.pid)) fail('Running now block not filled: ' + text);

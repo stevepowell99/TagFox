@@ -248,10 +248,6 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   column-gap: 0.4rem;
   min-width: 0;
 }
-/* Path-sorted folder tint: row rule was #f0f0f3 — reads as bright gaps vs orange cells */
-#resultsTable.results-sort-path tbody tr.results-folder-row {
-  border-bottom-color: rgba(217, 119, 6, 0.22);
-}
 /* Last-crumb pill: open / ◀ ▲ ▶ / clip / tags / ⋯ between folder label and ▾ (same scope as that folder). */
 #breadcrumbBar .tagfox-breadcrumb-folder-chip > .tagfox-scope-bar-row-actions {
   background-color: var(--tagfox-folder-row-bg);
@@ -378,10 +374,6 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 /* Widths from <colgroup> only — auto layout re-measures every cell on each pane resize (splitter jank). */
 #resultsTable { table-layout: fixed; border-collapse: separate; border-spacing: 0; }
 #resultsTable tbody tr { border-bottom-color: #f0f0f3; }
-/* Folder rows: light orange tint only while Path is the active sort (path/tree cues). */
-#resultsTable.results-sort-path tbody tr.results-folder-row td {
-  background-color: var(--tagfox-folder-row-bg);
-}
 /* Size column heat: ≥1 GB .text-danger; ≥100 MB orange; ≥10 MB amber; ≥1 MB teal; ≥100 KB lime (renderer.js). */
 #resultsTable tbody td.results-td-size.tagfox-size-heat-orange {
   color: #ea580c;
@@ -1859,9 +1851,6 @@ body > .tooltip {
 }
 [data-bs-theme="dark"] .props-panel { background: #1e1e22 !important; }
 [data-bs-theme="dark"] #resultsTable tbody tr { border-bottom-color: #3f3f46; }
-[data-bs-theme="dark"] #resultsTable.results-sort-path tbody tr.results-folder-row {
-  border-bottom-color: rgba(251, 146, 60, 0.3);
-}
 [data-bs-theme="dark"] .name-badges .folder-child-count.folder-child-count-over {
   background-color: rgba(248, 113, 113, 0.16);
   color: #fecdd3 !important;

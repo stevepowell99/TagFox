@@ -21,8 +21,6 @@
       optDiacritics: 'tagBrowserOptDiac',
       optHideSpecial: 'tagBrowserOptHideSpecial',
       optHideTilde: 'tagBrowserOptHideTilde',
-      sortBy: 'tagBrowserSortBy',
-      optAsc: 'tagBrowserOptAsc',
       foldersOnly: 'tagBrowserFoldersOnly',
       filesOnly: 'tagBrowserFilesOnly',
       showSubfolders: 'tagBrowserShowSubfolders',
@@ -314,8 +312,6 @@
       document.querySelectorAll('.tagfox-results-row--drag-source').forEach((n) => n.classList.remove('tagfox-results-row--drag-source'));
       document.body.classList.remove('tagfox-internal-path-drag');
     }
-    let sortColumn = 'name';
-    let sortAsc = true;
     let searchDebounceTimer = null;
     const SEARCH_DEBUG_MAX = 3500;
     let searchDebugLines = [];
@@ -456,8 +452,6 @@
     let folderDocHeaderLastSyncedKey = '';
     /** Multi-select checkboxes: path key lowercase → canonical path */
     const checkedPathsMap = new Map();
-    /** Invalidates in-flight j/k follow-up scroll when another sibling nav runs. */
-    let siblingNavScrollToken = 0;
     let tagModalInst = null;
     let bulkRenameModalInst = null;
     /** Paths captured when bulk rename opens — preview and Apply use this list. */
@@ -2649,8 +2643,6 @@
         /* ~ paths are listed and ranked down (RUNNER_RANK.tilde), not hidden. */
         optHideTilde: false,
         recencyFilter: 'all',
-        sortColumn: 'date_modified',
-        sortAsc: false,
         advancedPanelOpen: false,
       };
     }
@@ -2663,6 +2655,7 @@
       return o;
     }
 
+    /** Everything's sort column for one of Runner's sorts; smart asks for the newest first and then re-ranks. */
     function runnerSortColumnFor(sort) {
       if (sort === 'name') return { col: 'name', asc: true };
       if (sort === 'size' || sort === 'size-asc') return { col: 'size', asc: sort === 'size-asc' };
@@ -2675,9 +2668,6 @@
       runnerSort = RUNNER_SORTS.includes(savedSort) ? savedSort : 'smart';
       const saved = lsGetJson(LS.runnerState, null);
       const st = searchStateWithoutCeiling({ ...runnerDefaultSearchState(), ...(saved || {}) });
-      const sc = runnerSortColumnFor(runnerSort);
-      st.sortColumn = sc.col;
-      st.sortAsc = sc.asc;
       applySearchState(st);
       /* Runner hid ~ paths by default until October 2026; carry that saved hide over to showing them once.
          A hide chosen after this survives, because the marker is written either way. */
@@ -3231,9 +3221,6 @@
       if (!RUNNER_SORTS.includes(sort)) return;
       runnerSort = sort;
       localStorage.setItem(LS.runnerSort, sort);
-      const sc = runnerSortColumnFor(sort);
-      sortColumn = sc.col;
-      sortAsc = sc.asc;
       selectAfterSearchKey = null;
       saveSettings();
       void runSearchNow('identity');
@@ -3654,15 +3641,11 @@
       showHiddenUntil = f.showHiddenUntil;
       flag(LS_SHOW_HIDDEN, showHiddenUntil);
       const st = searchStateWithoutCeiling({ ...runnerDefaultSearchState(), ...savedSearchCore(s) });
-      const sc = runnerSortColumnFor(runnerSort);
-      st.sortColumn = sc.col;
-      st.sortAsc = sc.asc;
       applySearchState(st);
       selectAfterSearchKey = null;
       updateQueryPlaceholder();
       persistActiveTagFilter();
       saveSettings();
-      syncSortPathClass();
       renderScopeBreadcrumb();
       renderRunnerScopeChip();
       await runSearchNow();
@@ -3911,9 +3894,6 @@
     function runnerResetAllFilters({ recency = 'all' } = {}) {
       runnerSort = 'smart';
       localStorage.setItem(LS.runnerSort, 'smart');
-      const sc = runnerSortColumnFor('smart');
-      sortColumn = sc.col;
-      sortAsc = sc.asc;
       selectAfterSearchKey = null;
       setRecencyFilterMode(recency);
       applyResultsViewRadiosToDom(isShowSubfolders(), 'all');
@@ -5139,12 +5119,6 @@
       clearAndScheduleSearchRetries();
       await runSearchNow('refresh');
       refreshTagModalDatalist();
-    }
-
-    /** Folder rows take a tint while Path is the sort. */
-    function syncSortPathClass() {
-      const rt = document.getElementById('resultsTable');
-      if (rt) rt.classList.toggle('results-sort-path', sortColumn === 'path');
     }
 
     /** Status strip: brief primary glow (matches pulse-hint accent; one-shot). */
@@ -10748,7 +10722,6 @@
         return 0;
       };
 
-      if (col === 'path') return byPath();
       if (col === 'name') {
         const na = String(a.name || '');
         const nb = String(b.name || '');
@@ -10774,8 +10747,10 @@
       return byPath();
     }
 
-    function sortRowsForDisplay(rows, col, asc) {
+    /** In Runner's sort as it is now. */
+    function sortRowsForDisplay(rows) {
       if (!Array.isArray(rows) || !rows.length) return;
+      const { col, asc } = runnerSortColumnFor(runnerSort);
       rows.sort((a, b) => compareRowsBySort(a, b, col, asc));
     }
 
@@ -10783,7 +10758,7 @@
     function sortLastRowsForDisplay() {
       if (!lastRows.length) return;
       if (runnerSort === 'smart') rankRowsForRunner(lastRows);
-      else sortRowsForDisplay(lastRows, sortColumn, sortAsc);
+      else sortRowsForDisplay(lastRows);
     }
 
     function rowIsFolder(row) {
@@ -11130,10 +11105,6 @@
       setRecencyFilterMode('all');
       restoreDeadlineFilter();
       restoreHideUntilFilter();
-      sortColumn = localStorage.getItem(LS.sortBy) || 'name';
-      if (sortColumn === 'ext') sortColumn = 'name';
-      if (!['name', 'path', 'date_modified', 'size'].includes(sortColumn)) sortColumn = 'name';
-      sortAsc = localStorage.getItem(LS.optAsc) !== '0';
       document.getElementById('optFolderGroupHighlight').checked = localStorage.getItem(LS.folderGroupHighlight) !== '0';
       {
         const hm = document.getElementById('optHighlightMatchedNames');
@@ -11207,8 +11178,6 @@
       localStorage.setItem(LS.showSubfolders, isShowSubfolders() ? '1' : '0');
       localStorage.setItem(LS.hideFiles, isFoldersOnly() ? '1' : '0');
       /* Recency intentionally not persisted (see loadSettings): it always launches at All. */
-      localStorage.setItem(LS.sortBy, sortColumn);
-      localStorage.setItem(LS.optAsc, sortAsc ? '1' : '0');
       localStorage.setItem(LS.folderGroupHighlight, document.getElementById('optFolderGroupHighlight').checked ? '1' : '0');
       {
         const hm = document.getElementById('optHighlightMatchedNames');
@@ -11225,14 +11194,15 @@
     }
 
     function searchOptionsFromUI() {
+      const sc = runnerSortColumnFor(runnerSort);
       return {
         case: document.getElementById('optCase').checked,
         wholeword: document.getElementById('optWholeWord').checked,
         pathSearch: document.getElementById('optPath').checked,
         regex: false,
         diacritics: document.getElementById('optDiacritics').checked,
-        sort: sortColumn,
-        ascending: sortAsc,
+        sort: sc.col,
+        ascending: sc.asc,
       };
     }
 
@@ -11549,8 +11519,6 @@
         optHideSpecial: document.getElementById('optHideSpecial').checked,
         optHideTilde: document.getElementById('optHideTilde').checked,
         recencyFilter: recencyFilterMode(),
-        sortColumn: sortColumn,
-        sortAsc: sortAsc,
         advancedPanelOpen: !!(advPanel && !advPanel.hasAttribute('hidden')),
       };
     }
@@ -11633,10 +11601,6 @@
       setRecencyFilterMode(
         s.recencyFilter && ['all', '1h', '1d', '1w', '1m', '1y'].includes(s.recencyFilter) ? s.recencyFilter : 'all'
       );
-      let sc = s.sortColumn && String(s.sortColumn);
-      if (sc === 'ext') sc = 'name';
-      sortColumn = sc && ['name', 'path', 'date_modified', 'size'].includes(sc) ? sc : 'name';
-      sortAsc = s.sortAsc !== false;
       const panel = document.getElementById('searchOptsAdvancedPanel');
       const advBtn = document.getElementById('btnToggleSearchOptsAdvanced');
       if (panel && advBtn) {
@@ -11658,7 +11622,6 @@
         applySearchState(entry);
         persistActiveTagFilter();
         saveSettings();
-        syncSortPathClass();
         renderScopeBreadcrumb();
         await runSearchNow();
       } finally {
@@ -13967,8 +13930,7 @@
         contentMode: resultsContentMode(),
         foldersOnly: fo,
         filesOnly: fileOnly,
-        sortColumn,
-        sortAsc,
+        runnerSort,
         cap,
         query,
         searchText,
@@ -14290,7 +14252,6 @@
     }
     function bindResultsViewRadiosChanged() {
       saveSettings();
-      syncSortPathClass();
       void runSearchNow('identity');
       commitSearchHistoryNow();
     }
@@ -15225,22 +15186,6 @@
       scrollActiveResultsRowIntoViewNearest();
     }
 
-    /** Scroll a result row to the top of #resultsScroll. */
-    function scrollResultsRowToTopOfList(tr) {
-      const wrap = document.getElementById('resultsScroll');
-      if (!wrap || !tr) return;
-      const w = wrap.getBoundingClientRect();
-      const r = tr.getBoundingClientRect();
-      wrap.scrollTop += r.top - w.top;
-    }
-
-    /** One step of j/k scroll-to-top; cancel if token !== siblingNavScrollToken. */
-    function applySiblingNavScrollToTop(token) {
-      if (token !== siblingNavScrollToken) return;
-      const tr = document.querySelector('#resultsTable tbody tr.table-active');
-      if (tr) scrollResultsRowToTopOfList(tr);
-    }
-
     /** Run callback after layout/paint (large tbody: one rAF is often too soon). */
     function runAfterNextLayoutPaint(cb) {
       requestAnimationFrame(() => {
@@ -15248,92 +15193,6 @@
       });
     }
 
-    /**
-     * j/k: scroll active row to top; if near bottom with more pages, wait for debounced load-more,
-     * full idle (incl. resultsScrollMoreTimer), layout, then scroll again — second pass catches chained
-     * load-more + late layout on big tables.
-     */
-    async function finishSiblingNavScrollAfterLoadMaybe(token) {
-      applySiblingNavScrollToTop(token);
-      if (token !== siblingNavScrollToken) return;
-      if (!resultsScrollNearBottom(140) || !(resultsPagingCtx && resultsPagingCtx.hasMore)) return;
-
-      const waitPagingIdle = async () => {
-        await new Promise((r) => setTimeout(r, 240));
-        if (token !== siblingNavScrollToken) return;
-        while (
-          (resultsLoadMoreBusy || searchInFlight || resultsScrollMoreTimer) &&
-          token === siblingNavScrollToken
-        ) {
-          await new Promise((r) => setTimeout(r, 30));
-        }
-      };
-
-      const scrollAfterLayout = () =>
-        new Promise((resolve) => {
-          if (token !== siblingNavScrollToken) return resolve();
-          runAfterNextLayoutPaint(() => {
-            applySiblingNavScrollToTop(token);
-            resolve();
-          });
-        });
-
-      for (let pass = 0; pass < 2 && token === siblingNavScrollToken; pass++) {
-        await waitPagingIdle();
-        if (token !== siblingNavScrollToken) return;
-        await scrollAfterLayout();
-        if (!resultsScrollNearBottom(140) || !(resultsPagingCtx && resultsPagingCtx.hasMore)) break;
-      }
-    }
-
-    /** Folder row index whose normalized path equals pathNorm (empty = not found). */
-    function indexOfFolderRowByPathNorm(rows, pathNorm) {
-      return rows.findIndex((r) => rowIsFolder(r) && pathNormKey(fullPathForRow(r)) === pathNorm);
-    }
-
-    /** Next/prev visible folder row sharing the same parent directory (siblings). dir: +1 / -1. */
-    function indexOfNextFolderSharingParent(rows, fromIdx, dir, parentNorm) {
-      const step = dir > 0 ? 1 : -1;
-      for (let i = fromIdx + step; i >= 0 && i < rows.length; i += step) {
-        const r = rows[i];
-        if (!rowIsFolder(r)) continue;
-        if (pathNormKey(T.parentDir(fullPathForRow(r))) !== parentNorm) continue;
-        return i;
-      }
-      return -1;
-    }
-
-    /**
-     * j/k: next/prev sibling folder; at first/last sibling, walk up to the parent row and continue
-     * at that level (next/prev “uncle” folder). Repeats until a move is found or the tree root is hit.
-     */
-    function moveResultsSiblingFolder(dir) {
-      resultsShiftRangeAnchorIdx = null;
-      const rows = listRowsForUi();
-      let cur = rows.length ? navFocusIndexInFilteredRows(rows) : -1;
-      const useScopeSiblings = cur < 0 || !rowIsFolder(rows[cur]);
-      if (useScopeSiblings) {
-        void goToSiblingScopeFolder(dir);
-        return;
-      }
-      for (let depth = 0; depth < 64; depth++) {
-        const parentNorm = pathNormKey(T.parentDir(fullPathForRow(rows[cur])));
-        const next = indexOfNextFolderSharingParent(rows, cur, dir, parentNorm);
-        if (next >= 0) {
-          const row = rows[next];
-          resultsExclusiveSelectRow(row, fullPathForRow(row));
-          const token = ++siblingNavScrollToken;
-          requestAnimationFrame(() => void finishSiblingNavScrollAfterLoadMaybe(token));
-          return;
-        }
-        if (!parentNorm) return;
-        const pi = indexOfFolderRowByPathNorm(rows, parentNorm);
-        if (pi < 0) return;
-        cur = pi;
-      }
-    }
-
-    /** Advanced → Whole word: flip + schedule search (same as clicking the checkbox). */
     /** Flip a search-option checkbox and fire its change handler (whole word, match path, hide special, hide ~). */
     function toggleSearchOptCheckbox(id) {
       const el = document.getElementById(id);
@@ -15350,64 +15209,6 @@
         const el = document.getElementById(id);
         if (el) el.disabled = !hasScope;
       }
-    }
-
-    /**
-     * Immediate child folders of parentNorm via Everything (parent: + folder:), then client-sort like the results table.
-     * Scope chevrons ← / → : sibling navigation.
-     */
-    async function fetchSortedSiblingFolderRowsUnderParent(parentNorm) {
-      if (!window.tagBrowser || typeof window.tagBrowser.search !== 'function') return [];
-      const par = normalizeFolderPathForEverything(String(parentNorm || '').trim());
-      if (!par) return [];
-      let searchText = composeScopedEverythingSearch(getSearchScopeCeilingFoldersNorms(), par, '', true).trim() + ' folder:';
-      const res = await everythingSearchOnce({
-        searchText,
-        count: parseMaxResultsCap(),
-        options: { ...everythingOptionsForRequest(), pathSearch: true, offset: 0 },
-      });
-      if (!res || !res.ok) return [];
-      let rows = Array.isArray(res.rows) ? res.rows.slice() : [];
-      rows = rows.filter(rowIsFolder);
-      const parKey = pathNormKey(par);
-      rows = rows.filter((r) => pathNormKey(normalizeFolderPathForEverything(T.parentDir(fullPathForRow(r)))) === parKey);
-      sortRowsForDisplay(rows, sortColumn, sortAsc);
-      return rows;
-    }
-
-    /** ← / → among sibling folders under the same parent (order = current table sort). */
-    async function goToSiblingScopeFolder(delta) {
-      const status = document.getElementById('statusMain');
-      const raw = document.getElementById('rootFolder').value.trim();
-      if (!raw) {
-        if (status) setStatusMain('No current folder set.');
-        return;
-      }
-      const norm = normalizeFolderPathForEverything(raw);
-      const parRaw = T.parentDir(norm);
-      const par = normalizeFolderPathForEverything(parRaw);
-      if (!par || pathNormKey(par) === pathNormKey(norm)) {
-        if (status) setStatusMain('No sibling folders at this level.');
-        return;
-      }
-      const rows = await fetchSortedSiblingFolderRowsUnderParent(par);
-      if (!rows.length) {
-        if (status) setStatusMain('Could not list folders in parent.');
-        return;
-      }
-      const scopeKey = pathNormKey(norm);
-      const idx = rows.findIndex((r) => pathNormKey(fullPathForRow(r)) === scopeKey);
-      if (idx < 0) {
-        if (status) setStatusMain('Current folder not in parent listing.');
-        return;
-      }
-      const j = idx + delta;
-      if (j < 0 || j >= rows.length) {
-        if (status)
-          setStatusMain(delta < 0 ? 'Already at first sibling folder.' : 'Already at last sibling folder.');
-        return;
-      }
-      await applySearchScopeAndRefresh(normalizeFolderPathForEverything(fullPathForRow(rows[j])));
     }
 
     /** Move scope folder to parent (toolbar scope / Settings field). */
@@ -15753,7 +15554,6 @@
       });
     }
 
-    const freshProfileSortsByPath = localStorage.getItem(LS.sortBy) === null;
     wireEverythingConnectionSectionCollapseOnce();
     wireTagfoxSettingsSectionCollapsesOnce();
     loadSettings();
@@ -15931,12 +15731,6 @@
     });
     loadPaneWidthsFromStorage();
     loadViewerDocSplitFromStorage();
-    if (freshProfileSortsByPath) {
-      sortColumn = 'path';
-      sortAsc = true;
-      localStorage.setItem(LS.sortBy, sortColumn);
-      localStorage.setItem(LS.optAsc, '1');
-    }
     /* Page zoom: Ctrl+= / - / 0 and the View menu change it in main, which tells the page; the level is
        remembered across restarts. */
     (function initPageZoom() {
@@ -16026,7 +15820,6 @@
     document.getElementById('propsTheaterBackdrop').addEventListener('click', () => setPropsTheaterMode(false));
     document.getElementById('btnPropsTheaterToggle').addEventListener('click', () => togglePropsTheaterMode());
     syncViewerDocDividerOrientation();
-    syncSortPathClass();
     bindFolderPathDropTargetBarsOnce();
     bindScopeFolderDropdownDragCaptureOnce();
     installLongTaskMonitor();
@@ -16036,7 +15829,6 @@
     applyRunnerAtStartup();
     seedSearchHistoryFromCurrent();
     updateQueryPlaceholder();
-    syncSortPathClass();
     renderScopeBreadcrumb();
     scheduleSearch();
     /* After the search is scheduled, so the empty-list note waits for its rows instead of showing at once. */

@@ -21,7 +21,6 @@ Read-only survey by a subagent at main `74c8ac1`; line numbers are approximate. 
 | Files and folders / folders only / files only | `optRvAll`, `optRvDirsOnly`, `optRvFilesOnly` radios | Partial: `/folders`, `/files` | `resultsContentMode` |
 | Match options | toolbar | Partial: `/` commands and Ctrl keys | `searchOptionsFromUI`, `toggleSearchOptCheckbox` |
 | Recency 1h / 1d / 1w / 1m / 1y / All | toolbar radios | Partial: `/` has all, 1h, 1d, 1w; 1m and 1y only by Ctrl+R cycling | `setRecencyFilterMode` |
-| Sort by path, oldest first, or Z-A | nothing on screen sets one. A fresh profile starts on Path, A-Z (`freshProfileSortsByPath`); otherwise only a saved Classic value sets one. Folder rows take a tint while Path is the sort | No: smart, date, name, largest or smallest first. `applyRunnerAtStartup` sets `sortColumn` from Runner's own sort, so a Path sort lasts only until then | `sortColumn`/`sortAsc` through `applySearchState`, `syncSortPathClass`, `freshProfileSortsByPath`, `compareRowsBySort`'s path case, the `results-sort-path` CSS |
 
 ### Shelf
 
@@ -39,7 +38,7 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 
 ## Classic code Runner depends on
 
-- **Hidden controls as Runner's state store (the main obstacle):** `#rootFolder` (current folder); `#optPath`, `#optHideSpecial`, `#optHideTilde`, `#optCase`, `#optWholeWord`, `#optDiacritics`; the recency radios; the `optRvSubs*` and content (`optRvAll`, `optRvDirsOnly`, `optRvFilesOnly`) radios; `sortColumn`/`sortAsc` and `compareRowsBySort`.
+- **Hidden controls as Runner's state store (the main obstacle):** `#rootFolder` (current folder); `#optPath`, `#optHideSpecial`, `#optHideTilde`, `#optCase`, `#optWholeWord`, `#optDiacritics`; the recency radios; the `optRvSubs*` and content (`optRvAll`, `optRvDirsOnly`, `optRvFilesOnly`) radios.
 - **Breadcrumb:** `#breadcrumbBar`, `renderScopeBreadcrumb`, `goToBreadcrumbFolder`, the flyout and dropdown helpers, the six `btnScopeBar*` buttons.
 - **Tags:** the filter state and functions (`tagFilterCombineOr` included, which nothing on screen sets now: only a stored value turns OR on), `appendTagFiltersToEverythingQuery`, the tag store and modal, and the rename, new-folder, paste-target, bulk-rename and recycle modals.
 - **Results table:** `renderTableImpl` (including Classic's row buttons), `#bulkBar`, `loadMoreResults`, `rowActionStripHandleKeydown`.
@@ -47,7 +46,7 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 - **Favourites store (the stars):** `loadFavouriteFolders`, `saveFavouriteFolders`, `toggleStarPath`, `openFavouritePath` (Ctrl+Shift+1..9, which asks IPC `path-kinds` whether a star is a file or a folder); `fuzzyPathScore` (used by Runner's `/` list) lives in the favourites code. IPC `windows-recent-folders`/`-files` and `scanWindowsRecentLnkTargets` in `main.js` feed Runner's ranking boost and are not Classic's.
 - **History and undo:** `searchHist`, `goSearchHistory`, `runUndo`.
 - **Clicked hidden controls:** `#helpModal`, `#settingsPanel`; `#statusMain` and `setStatusMain`.
-- **Keys:** every key is a `RUNNER_KEYS` entry, and the key map was rationalised on 25 October 2026 (Ctrl+J/K, Ctrl+↑, Ctrl+P and Ctrl+Shift+Home dropped; Alt+↑ is ←). `runnerGoUp` still calls Classic's `goToParentScopeFolder`, and Ctrl+Z calls `runUndo`. Nothing calls the sibling-folder block any more (`moveResultsSiblingFolder`, `goToSiblingScopeFolder`, `fetchSortedSiblingFolderRowsUnderParent`, `indexOfNextFolderSharingParent`, `finishSiblingNavScrollAfterLoadMaybe`, `applySiblingNavScrollToTop`, `siblingNavScrollToken`): delete it, checking each helper for other callers first. The search box's own keydown listener still sends Ctrl+↓ and Alt+↓ into the list (`enterResultsListKeepingSelection`).
+- **Keys:** every key is a `RUNNER_KEYS` entry, and the key map was rationalised on 25 October 2026 (Ctrl+J/K, Ctrl+↑, Ctrl+P and Ctrl+Shift+Home dropped; Alt+↑ is ←). `runnerGoUp` still calls Classic's `goToParentScopeFolder`, and Ctrl+Z calls `runUndo`. The search box's own keydown listener still sends Ctrl+↓ and Alt+↓ into the list (`enterResultsListKeepingSelection`).
 
 ## Tests
 
@@ -58,7 +57,6 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 
 ## Stages named so far
 
-- **Path sort:** everything in the Code column of the "Sort by path" row above.
 - **`runSearch`'s `eventKind`** reaches only the search debug log (`runSearch.start`), through `scheduleSearch` and `runSearchNow`, so the argument can go from every call site.
 
 ## Decisions before any deletion
