@@ -600,12 +600,14 @@
     /** Tag modal targets (length 1 = single-name edit, &gt;1 = union add/remove on each). */
     let modalTargetPaths = [];
     let modalTags = [];
-    /** 'rename' = existing paths; 'newTodo' = Add TODO box only (no rename until create). */
+    /** 'rename' = existing paths; 'folderDocDraft' = the new folder doc's name (no rename until Save). */
     let tagModalMode = 'rename';
-    /** Bracket tags for the next Add TODO .md (default TODO); edited via same #tagModal as renames. */
+    /** Tags for the next TODO file (default TODO), set in the Quick TODO box. */
     let newTodoMdTags = ['TODO'];
     /** Bracket tags for the folder doc file name (stem + ext in UI); applied on Save in the readme editor. */
     let folderDocMdTags = [];
+    /** The folder doc on screen exists on disk (syncFolderDocHeaderExists): its name is a label, not a field. */
+    let folderDocFoundOnDisk = false;
     /** Default folder doc stem (no ext); `-` sorts before letters in typical name order. */
     const DEFAULT_FOLDER_DOC_STEM = '-readme';
     /** When set: viewer uses this path or FOLDER_DOC_OVERRIDE_NEW instead of resolveFolderViewerDoc’s first match. */
@@ -1015,6 +1017,7 @@
         const disk = await window.tagBrowser.readTextFile({ fullPath: p });
         if (disk.ok && disk.text !== mdAutosaveLoadedText) {
           setStatusMain('Not saved: ' + T.baseName(p) + ' has changed on disk. Reselect the file to reload it.');
+          if (mdFileEditorIsOpen()) setViewerSaveState('refused');
           return;
         }
       }
@@ -1042,6 +1045,7 @@
       } catch (_) {}
       if (r.ok) mdAutosaveLoadedText = text;
       setStatusMain(r.ok ? 'Saved.' : (r.error || 'Save failed'));
+      if (mdFileEditorIsOpen()) setViewerSaveState(r.ok ? 'saved' : 'failed');
     }
 
     function scheduleMdFileAutosave() {
@@ -2133,10 +2137,12 @@
      * Electron PDF viewer at 1728px, `pagemode=none` left the thumbnails exactly where they were.
      * It takes the plugin's own toolbar with it (page counter, zoom buttons, print, download), which
      * is the price of the sidebar going; Ctrl+wheel still zooms and the TagFox header still refreshes.
-     * The side pane is narrow enough that no sidebar appears, so it keeps the toolbar and the fit.
+     * The side pane is a glance, so it drops the toolbar too and fits the page to the pane's width
+     * (Steve, 25 October 2026): with the toolbar the page sat small under a dark bar, and at a third
+     * of a wide window the sidebar could still open there.
      */
     const PDF_VIEW_PARAMS_THEATER = '#zoom=150&toolbar=0';
-    const PDF_VIEW_PARAMS_PANE = '';
+    const PDF_VIEW_PARAMS_PANE = '#toolbar=0&view=FitH';
 
     function pdfViewParams() {
       return isPropsTheaterOn() ? PDF_VIEW_PARAMS_THEATER : PDF_VIEW_PARAMS_PANE;
@@ -2801,10 +2807,11 @@
       split.classList.toggle('d-none', show);
       syncViewerDocDividerOrientation();
       syncPdfViewParams();
+      syncPropsFootHint();
       if (btn) {
         btn.setAttribute('aria-expanded', show ? 'true' : 'false');
-        btn.title = show ? 'Exit expanded view (Shift+Space or Esc)' : 'Near full screen (Shift+Space)';
-        btn.setAttribute('aria-label', show ? 'Exit expanded viewer panel' : 'Expand viewer panel');
+        btn.title = show ? 'Leave full screen (Shift+Space or Esc)' : 'Full screen (Shift+Space)';
+        btn.setAttribute('aria-label', show ? 'Leave full screen' : 'Expand the Viewer');
         btn.innerHTML = show
           ? '<i class="fa-solid fa-down-left-and-up-right-to-center" aria-hidden="true"></i>'
           : '<i class="fa-solid fa-up-right-and-down-left-from-center" aria-hidden="true"></i>';
@@ -4407,12 +4414,14 @@
       q.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertFromPaste' }));
     }
 
-    /** The Viewer's full-path line (Runner only; Classic has its Path column and breadcrumb). Click copies it. */
+    /** The Viewer's "where": the folder the item is in, under its name. Click copies the item's full path. */
     function setRunnerViewerPath(fp) {
       const el = document.getElementById('runnerViewerPath');
       if (!el) return;
-      el.textContent = fp || '';
+      const parent = fp ? String(T.parentDir(fp) || '').replace(/[/\\]+$/, '') : '';
+      el.textContent = parent || fp || '';
       el.dataset.path = fp || '';
+      el.title = fp ? fp + '\nClick to copy the full path' : '';
       el.classList.toggle('d-none', !fp);
       if (el.dataset.bound === '1') return;
       el.dataset.bound = '1';
@@ -4457,6 +4466,16 @@
       if (getCheckedPathsArr().length) keyboardOpenTagsModal();
       else if (selectedFullPath) openTagModal(selectedFullPath);
       else setStatusMain('Select a row first, then Ctrl+T edits its tags.');
+    }
+
+    /** /New TODO: the Quick TODO box, aimed at the current folder. */
+    function runnerNewTodoHere() {
+      const folder = currentScopeFolderPath();
+      if (!folder) {
+        setStatusMain('Go into a folder first (Right on a folder row), then /New TODO puts the file there.');
+        return;
+      }
+      showQuickTodoPop(folder);
     }
 
     /** One table drives the options panel and the / list. */
@@ -4507,6 +4526,7 @@
       { id: 'recent-1h', group: 'Modified', label: 'Modified in the last hour', isOn: () => recencyFilterMode() === '1h', run: () => runnerSetRecency('1h') },
       { id: 'recent-1d', group: 'Modified', label: 'Modified in the last day', isOn: () => recencyFilterMode() === '1d', run: () => runnerSetRecency('1d') },
       { id: 'recent-1w', group: 'Modified', label: 'Modified in the last week', isOn: () => recencyFilterMode() === '1w', run: () => runnerSetRecency('1w') },
+      { id: 'new-todo', group: 'TagFox', label: 'New TODO in this folder', run: () => runnerNewTodoHere() },
       { id: 'refresh', group: 'TagFox', label: 'Refresh (F5)', run: () => void refreshResultsFromUi() },
       { id: 'dark', group: 'TagFox', label: 'Dark or light mode', run: () => document.getElementById('btnToggleDarkMode')?.click() },
       { id: 'settings', group: 'TagFox', label: 'Settings', run: () => document.getElementById('btnToggleSettings')?.click() },
@@ -5617,31 +5637,23 @@
       void runSearchNow('refresh', { singlePaneOnly: true });
     }
 
-    function tagModalIsNewTodoDraft() {
-      return tagModalMode === 'newTodo';
-    }
-
     function tagModalIsFolderDocDraft() {
       return tagModalMode === 'folderDocDraft';
     }
 
-    /** Add TODO or folder doc title: chips edit local list only until create / readme save. */
+    /** Folder doc title: chips edit a local list only until the folder doc is saved. */
     function tagModalIsNameDraft() {
-      return tagModalIsNewTodoDraft() || tagModalIsFolderDocDraft();
+      return tagModalIsFolderDocDraft();
     }
 
     function syncTagModalHintsAndTitle() {
       const renameEl = document.getElementById('tagModalHintRename');
-      const newTodoEl = document.getElementById('tagModalHintNewTodo');
       const folderDocEl = document.getElementById('tagModalHintFolderDoc');
       const lbl = document.getElementById('tagModalLabel');
       const isRename = !tagModalIsNameDraft();
       renameEl?.classList.toggle('d-none', !isRename);
-      newTodoEl?.classList.toggle('d-none', !tagModalIsNewTodoDraft());
       folderDocEl?.classList.toggle('d-none', !tagModalIsFolderDocDraft());
-      if (tagModalIsNewTodoDraft()) {
-        if (lbl) lbl.textContent = 'Tags for new TODO file';
-      } else if (tagModalIsFolderDocDraft()) {
+      if (tagModalIsFolderDocDraft()) {
         if (lbl) lbl.textContent = 'Tags for folder doc file';
       } else {
         if (lbl) lbl.textContent = 'Edit tags (rename)';
@@ -9619,24 +9631,30 @@
       return fullPath;
     }
 
-    async function createTodoMdInScope() {
-      const folder = currentScopeFolderPath();
-      const raw = document.getElementById('newMdTitleInput').value.trim();
-      const created = await createTodoMdAt(folder, raw, {});
-      if (created) document.getElementById('newMdTitleInput').value = '';
-      return created;
-    }
+    /** Set while the Quick TODO box was opened for one folder (the Viewer's New TODO, /New TODO), not the
+        Quick TODO folder from Settings that the global shortcut uses. */
+    let quickTodoTargetFolder = '';
 
     function hideQuickTodoPop() {
       const el = document.getElementById('quickTodoPop');
       if (el) el.classList.add('d-none');
+      quickTodoTargetFolder = '';
       hideQuickTodoTagsPanel();
       hideQuickTodoBodyPanel();
     }
 
-    function showQuickTodoPop() {
+    /** The Quick TODO box; with a folder, it creates the file there instead of in the Quick TODO folder. */
+    function showQuickTodoPop(folder) {
       const el = document.getElementById('quickTodoPop');
       if (!el) return;
+      quickTodoTargetFolder = String(folder || '').trim();
+      const label = document.getElementById('quickTodoPopLabel');
+      if (label) {
+        label.textContent = quickTodoTargetFolder
+          ? 'New TODO in ' + segmentPretty(T.baseName(quickTodoTargetFolder.replace(/[/\\]+$/, '')))
+          : 'Quick TODO';
+        label.title = quickTodoTargetFolder || 'Goes in the Quick TODO folder set in Settings';
+      }
       el.classList.remove('d-none');
       hideQuickTodoTagsPanel();
       hideQuickTodoBodyPanel();
@@ -9656,7 +9674,7 @@
 
     async function createQuickTodoFromPop() {
       const hid = document.getElementById('quickTodoFolder');
-      const folder = hid ? hid.value.trim() : '';
+      const folder = quickTodoTargetFolder || (hid ? hid.value.trim() : '');
       const ti = document.getElementById('quickTodoTitleInput');
       const bodyInp = document.getElementById('quickTodoBodyInput');
       const raw = ti ? ti.value : '';
@@ -9676,6 +9694,77 @@
           void refreshAfterDiskMutation();
         }
       }
+    }
+
+    /** The Viewer's one message for loading, errors and kinds it cannot show. `withOpen` adds Open and
+        Show in folder, for when the message is all there is to see. */
+    function showPropsPlaceholder(text, opts) {
+      const wrap = document.getElementById('propPlaceholderWrap');
+      const p = document.getElementById('propPlaceholder');
+      const acts = document.getElementById('propPlaceholderActions');
+      const withOpen = !!(opts && opts.withOpen);
+      if (p) p.textContent = String(text || '');
+      acts?.classList.toggle('d-none', !withOpen);
+      wrap?.classList.toggle('tagfox-viewer-placeholder--final', withOpen);
+      wrap?.classList.remove('d-none');
+    }
+    function hidePropsPlaceholder() {
+      document.getElementById('propPlaceholderWrap')?.classList.add('d-none');
+      document.getElementById('propPlaceholderActions')?.classList.add('d-none');
+    }
+
+    /** Under the name: the size (files only) and the modified time, as the list shows them; the full time in the tooltip. */
+    function setViewerMetaLine(row, fp) {
+      const line = document.getElementById('propsMetaLine');
+      const facts = document.getElementById('propsMetaFacts');
+      if (!line || !facts) return;
+      const bits = [];
+      if (row && !rowIsFolder(row)) {
+        const sp = runnerSizeParts(rowSizeBytes(row));
+        if (sp) bits.push(sp.num + ' ' + sp.unit);
+      }
+      const ms = row ? modifiedTimeMs(row) : null;
+      if (ms) bits.push('modified ' + formatModifiedShort(ms).replace(/^Yesterday$/, 'yesterday'));
+      facts.textContent = bits.join(' · ');
+      facts.title = ms ? 'Modified ' + formatModified(row.date_modified ?? row.date_modified_unix) : '';
+      line.classList.toggle('d-none', !fp);
+    }
+
+    /** The foot line for whatever the Viewer is showing now, read from which block is visible. */
+    function syncPropsFootHint() {
+      const shown = (id) => {
+        const el = document.getElementById(id);
+        return !!(el && !el.classList.contains('d-none'));
+      };
+      if (!shown('propsDetails')) return setPropsFootHint('');
+      const theater = isPropsTheaterOn();
+      const big = theater ? 'Shift+Space or Esc closes the full screen view' : 'Shift+Space full screen';
+      const parts = [];
+      if (shown('mdFileBlock')) {
+        parts.push(shown('mdFileEditorWrap') ? 'It saves as you type' : 'Double-click the text to edit');
+      } else if (shown('readmeBlock')) {
+        if (globalNestedReadmeView) parts.push('Each doc has its own Edit');
+        else if (shown('readmeEditorWrap')) parts.push('Ctrl+Enter saves');
+        else if (shown('readmeDocSplit')) parts.push('Double-click the text to edit');
+      } else if (shown('pdfBlock')) {
+        parts.push('Ctrl+wheel zooms');
+      } else if (shown('htmlBlock')) {
+        parts.push('Scripts and forms are off in this preview');
+      } else if (shown('folderThumbsBlock')) {
+        parts.push('Click a thumbnail to open it');
+      } else if (!shown('imageBlock') && !shown('videoBlock') && !shown('officeBlock') && !shown('textFileBlock')) {
+        return setPropsFootHint('');
+      }
+      parts.push(big);
+      setPropsFootHint(parts.join(' · '));
+    }
+
+    /** One muted line at the foot of the Viewer: what can be done with what is shown. Empty hides it. */
+    function setPropsFootHint(text) {
+      const el = document.getElementById('propsFootHint');
+      if (!el) return;
+      el.textContent = String(text || '');
+      el.classList.toggle('d-none', !text);
     }
 
     function clearPropsUI() {
@@ -9713,20 +9802,17 @@
       }
       document.getElementById('propsEmpty').classList.remove('d-none');
       document.getElementById('propsDetails').classList.add('d-none');
+      document.getElementById('propsAside')?.classList.add('tagfox-viewer--empty');
+      hidePropsPlaceholder();
+      setPropsFootHint('');
       const dn = document.getElementById('propDisplayName');
       if (dn) dn.textContent = '';
       setRunnerViewerPath('');
+      setViewerMetaLine(null, '');
       const tt = document.getElementById('propTitleTags');
       if (tt) { tt.innerHTML = ''; tt.classList.add('d-none'); tt.classList.remove('d-flex'); }
       const iconMount = document.getElementById('propTitleIconMount');
       if (iconMount) iconMount.innerHTML = '';
-      const secTitle = document.getElementById('propsPanelSectionTitle');
-      if (secTitle) { secTitle.textContent = 'Viewer'; secTitle.classList.remove('d-none'); }
-      const todoLbl = document.getElementById('labelNewMdTitle');
-      if (todoLbl) {
-        todoLbl.textContent = 'Add TODO here';
-        todoLbl.title = 'Creates Title xkTODO.md in the current folder';
-      }
       const readmeStem = document.getElementById('readmeFolderDocStemInput');
       const readmeExt = document.getElementById('readmeFolderDocExt');
       if (readmeStem) readmeStem.value = DEFAULT_FOLDER_DOC_STEM;
@@ -9743,12 +9829,6 @@
       folderThumbsView = false;
       folderThumbsRenderedSig = '';
       document.getElementById('folderThumbsBlock')?.classList.add('d-none');
-      const single = document.getElementById('optViewerDocSingle');
-      const nested = document.getElementById('optViewerDocNested');
-      const thumbsOpt = document.getElementById('optViewerDocThumbs');
-      if (single) single.checked = true;
-      if (nested) nested.checked = false;
-      if (thumbsOpt) thumbsOpt.checked = false;
       document.getElementById('propsNestedReadmeToggleWrap')?.classList.add('d-none');
       activeMdPath = null;
       detachNestedReadmePreviewHandler();
@@ -9956,7 +10036,7 @@
       const ms = propsPreviewDebounceMsForSelection();
       propsPreviewDebounceTimer = setTimeout(() => {
         propsPreviewDebounceTimer = null;
-        void refreshPropsPanelHeavy();
+        void refreshPropsPanelHeavy().then(syncPropsFootHint);
       }, ms);
     }
 
@@ -9973,7 +10053,6 @@
       const audioBlock = document.getElementById('audioBlock');
       const textFileBlock = document.getElementById('textFileBlock');
       const gdocWorkspaceBlock = document.getElementById('gdocWorkspaceBlock');
-      const propPh = document.getElementById('propPlaceholder');
 
       const propPath = propsTargetPath();
       const propRow = propsTargetRowForDisplay();
@@ -9985,25 +10064,8 @@
       revokePreviewBlobs();
       empty.classList.add('d-none');
       details.classList.remove('d-none');
+      document.getElementById('propsAside')?.classList.remove('tagfox-viewer--empty');
       const isFolder = rowIsFolder(propRow);
-      const secTitle = document.getElementById('propsPanelSectionTitle');
-      if (secTitle) {
-        secTitle.textContent = isFolder ? 'View/edit text files in folder' : 'Viewer';
-        // File: the filename already labels the panel, so hide the "Viewer" word; folder: keep the label.
-        secTitle.classList.toggle('d-none', !isFolder);
-      }
-      const todoLbl = document.getElementById('labelNewMdTitle');
-      if (todoLbl) {
-        if (isFolder) {
-          todoLbl.textContent = 'Add TODO here';
-          todoLbl.title = 'Creates Title xkTODO.md in the current folder';
-        } else {
-          const par = T.parentDir(propPath);
-          const leaf = segmentPretty(T.baseName(String(par || '').replace(/[/\\]+$/, '')));
-          todoLbl.textContent = leaf ? 'Add TODO in ' + leaf : 'Add TODO here';
-          todoLbl.title = 'Creates Title xkTODO.md in ' + (leaf ? leaf : 'this folder');
-        }
-      }
       const nestReadmeToggle = document.getElementById('propsNestedReadmeToggleWrap');
       const showNestReadmeToggle = isFolder || isGlobalViewerMarkdownFilePath(propPath);
       if (nestReadmeToggle) nestReadmeToggle.classList.toggle('d-none', !showNestReadmeToggle);
@@ -10035,11 +10097,9 @@
       if (videoBlock) videoBlock.classList.add('d-none');
       if (audioBlock) audioBlock.classList.add('d-none');
       if (textFileBlock) textFileBlock.classList.add('d-none');
-      if (isSameFolderReadme || isSameFolderThumbs) propPh.classList.add('d-none');
-      else {
-        propPh.classList.remove('d-none');
-        propPh.textContent = 'Loading preview…';
-      }
+      if (isSameFolderReadme || isSameFolderThumbs) hidePropsPlaceholder();
+      else showPropsPlaceholder('Loading preview…');
+      setPropsFootHint('');
 
       const base = T.baseName(propPath);
       const parsedTitle = T.parseSegmentTags(base);
@@ -10052,6 +10112,7 @@
       }
       document.getElementById('propDisplayName').textContent = displayName;
       setRunnerViewerPath(propPath);
+      setViewerMetaLine(propRow, propPath);
       const tagBand = document.getElementById('propTitleTags');
       tagBand.innerHTML = '';
       for (const tag of parsedTitle.tags) appendTagPillWithRemove(tagBand, tag, propPath);
@@ -10071,7 +10132,6 @@
     async function refreshPropsPanelHeavy() {
       const targetFp = propsTargetPath();
       const targetRow = propsTargetRowForDisplay();
-      const propPh = document.getElementById('propPlaceholder');
       const mdFileBlock = document.getElementById('mdFileBlock');
       const pdfBlock = document.getElementById('pdfBlock');
       const officeBlock = document.getElementById('officeBlock');
@@ -10091,7 +10151,7 @@
       const ext = /\.[^.]+$/.test(base) ? base.slice(base.lastIndexOf('.') + 1).toLowerCase() : '';
       const editableTextKind = !rowIsFolder(targetRow) ? editableTextKindForBase(base) : null;
 
-      propPh.classList.add('d-none');
+      hidePropsPlaceholder();
 
       if (rowIsFolder(targetRow)) {
         activeMdPath = null;
@@ -10106,8 +10166,7 @@
           activeReadmePath = null;
           activeMdPath = null;
           mdAutosaveTargetPath = null;
-          propPh.classList.remove('d-none');
-          propPh.textContent = 'No parent folder for nested docs.';
+          showPropsPlaceholder('This doc has no parent folder.');
           return;
         }
         activeReadmePath = null;
@@ -10162,36 +10221,33 @@
         activeMdPath = null;
         mdAutosaveTargetPath = null;
         if (!gdocWorkspaceBlock) {
-          propPh.classList.remove('d-none');
-          propPh.textContent = 'Google shortcut UI missing.';
+          showPropsPlaceholder('Google shortcut UI missing.');
           return;
         }
         gdocWorkspaceBlock.classList.remove('d-none');
-        const titleEl = document.getElementById('gdocWorkspaceTitle');
-        if (titleEl) {
-          titleEl.textContent =
-            ext === 'gsheet' ? 'Google Sheet' : ext === 'gslides' ? 'Google Slides' : 'Google Doc';
-        }
+        const kindName = ext === 'gsheet' ? 'Google Sheet' : ext === 'gslides' ? 'Google Slides deck' : 'Google Doc';
+        const icon = document.getElementById('gdocWorkspaceIcon');
+        if (icon) icon.className = 'fa-solid ' + (ext === 'gsheet' ? 'fa-table' : ext === 'gslides' ? 'fa-display' : 'fa-file-lines');
         const urlEl = document.getElementById('gdocWorkspaceUrl');
         const btnGw = document.getElementById('btnOpenGoogleWorkspace');
-        const diagEl = document.getElementById('gdocWorkspaceDiag');
+        const btnBrowser = document.getElementById('btnGdocOpenBrowser');
         const linksWrap = document.getElementById('gdocWorkspaceDriveLinks');
         const btnGdocSearch = document.getElementById('btnGdocDriveSearch');
         const btnGdocFolder = document.getElementById('btnGdocDriveFolder');
+        urlEl.textContent = 'A shortcut to a ' + kindName + '.';
+        urlEl.title = '';
         const rGw = await window.tagBrowser.googleWorkspaceShortcutUrl({ fullPath: targetFp });
         if (!propsViewStill(targetFp)) return;
         if (!urlEl || !btnGw) return;
         if (!rGw.ok) {
           urlEl.textContent =
             rGw.code === 'ENOENT'
-              ? 'File not found.'
-              : 'Use Drive buttons below, or Open in the row menu. (In-app tab needs a readable shortcut file.)';
+              ? 'This shortcut file is not on disk any more.'
+              : 'TagFox could not read where this shortcut points, so it cannot open the ' + kindName + ' here. Look for it in Drive instead.';
           btnGw.classList.add('d-none');
           delete btnGw.dataset.url;
-          if (diagEl) {
-            diagEl.textContent = '';
-            diagEl.classList.add('d-none');
-          }
+          btnBrowser?.classList.add('d-none');
+          if (btnBrowser) delete btnBrowser.dataset.url;
           if (linksWrap && btnGdocSearch && btnGdocFolder && window.tagBrowser.openUrlDefaultBrowser) {
             const su = rGw.diag && rGw.diag.driveSearchUrl;
             const fu = rGw.diag && rGw.diag.driveFolderUrl;
@@ -10205,12 +10261,13 @@
             linksWrap.classList.add('d-none');
           }
         } else {
-          urlEl.textContent = rGw.url;
+          urlEl.textContent = 'A shortcut to a ' + kindName + '. It opens in a TagFox window, where you sign in to Google once.';
+          urlEl.title = rGw.url;
           btnGw.classList.remove('d-none');
           btnGw.dataset.url = rGw.url;
-          if (diagEl) {
-            diagEl.textContent = '';
-            diagEl.classList.add('d-none');
+          if (btnBrowser) {
+            btnBrowser.classList.toggle('d-none', !window.tagBrowser.openUrlDefaultBrowser);
+            btnBrowser.dataset.url = rGw.url;
           }
           if (linksWrap) {
             linksWrap.classList.add('d-none');
@@ -10236,8 +10293,7 @@
           imS.alt = parsedTitle.pretty;
           imS.src = url;
         } else {
-          propPh.classList.remove('d-none');
-          propPh.textContent = 'SVG: ' + (rSvg.error || 'Could not load.');
+          showPropsPlaceholder('Could not show this picture. ' + (rSvg.error || ''), { withOpen: true });
         }
         return;
       }
@@ -10255,8 +10311,7 @@
           im.alt = parsedTitle.pretty;
           im.src = base64ToBlobUrl(rImg.base64, rasterMime);
         } else {
-          propPh.classList.remove('d-none');
-          propPh.textContent = 'Image: ' + (rImg.error || 'Could not load.');
+          showPropsPlaceholder('Could not show this picture. ' + (rImg.error || ''), { withOpen: true });
         }
         return;
       }
@@ -10297,20 +10352,17 @@
         const htmlPreviewFrame = document.getElementById('htmlPreviewFrame');
         const sz = rowSizeBytes(targetRow);
         if (sz != null && sz > TEXT_PREVIEW_MAX_BYTES) {
-          propPh.classList.remove('d-none');
-          propPh.textContent = 'HTML preview: file too large (max ~2 MB). Use Open.';
+          showPropsPlaceholder('Too large to preview here (over 2 MB).', { withOpen: true });
           return;
         }
         const rHtml = await window.tagBrowser.readTextFile({ fullPath: targetFp });
         if (!propsViewStill(targetFp)) return;
         if (!htmlBlock || !htmlPreviewFrame) {
-          propPh.classList.remove('d-none');
-          propPh.textContent = 'HTML preview UI missing.';
+          showPropsPlaceholder('HTML preview UI missing.');
           return;
         }
         if (!rHtml.ok) {
-          propPh.classList.remove('d-none');
-          propPh.textContent = 'HTML: ' + (rHtml.error || 'Could not load.');
+          showPropsPlaceholder('Could not show this page. ' + (rHtml.error || ''), { withOpen: true });
           return;
         }
         htmlBlock.classList.remove('d-none');
@@ -10334,8 +10386,7 @@
           document.getElementById('btnPdfRefresh')?.classList.remove('d-none');
           setPdfFrameSrc(base64ToBlobUrl(r.base64, 'application/pdf'));
         } else {
-          propPh.classList.remove('d-none');
-          propPh.textContent = 'PDF: ' + (r.error || 'Could not load.');
+          showPropsPlaceholder('Could not show this PDF. ' + (r.error || ''), { withOpen: true });
         }
         return;
       }
@@ -10344,19 +10395,16 @@
         activeReadmePath = null;
         activeMdPath = null;
         mdAutosaveTargetPath = null;
-        officeBlock.classList.remove('d-none');
-        const docLabel = ext === 'docx' ? 'Word (DOCX)' : ext === 'odt' ? 'Writer (ODT)' : 'Word (DOC)';
-        document.getElementById('officeTitle').textContent = docLabel;
-        const prev = document.getElementById('officePreview');
         if (ext === 'doc') {
-          prev.innerHTML = '<p class="text-muted mb-0">Preview not supported for .doc — use Open.</p>';
+          showPropsPlaceholder('TagFox shows .docx but not the older .doc. Open it in Word.', { withOpen: true });
           return;
         }
+        officeBlock.classList.remove('d-none');
+        const prev = document.getElementById('officePreview');
         const r = await window.tagBrowser.readFileBuffer({ fullPath: targetFp });
         if (!propsViewStill(targetFp)) return;
         if (!r.ok) {
-          propPh.classList.remove('d-none');
-          propPh.textContent = String(r.error || 'Could not load.');
+          showPropsPlaceholder('Could not show this file. ' + (r.error || ''), { withOpen: true });
           officeBlock.classList.add('d-none');
           return;
         }
@@ -10395,14 +10443,12 @@
         activeMdPath = null;
         mdAutosaveTargetPath = null;
         officeBlock.classList.remove('d-none');
-        document.getElementById('officeTitle').textContent = ext === 'ods' ? 'Calc (ODS)' : 'Excel';
         const prev = document.getElementById('officePreview');
         prev.innerHTML = '<p class="text-muted small mb-0">Loading…</p>';
         const r = await window.tagBrowser.readFileBuffer({ fullPath: targetFp, maxBytes: SPREADSHEET_PREVIEW_MAX_BYTES });
         if (!propsViewStill(targetFp)) return;
         if (!r.ok) {
-          propPh.classList.remove('d-none');
-          propPh.textContent = String(r.error || 'Could not load.');
+          showPropsPlaceholder('Could not show this file. ' + (r.error || ''), { withOpen: true });
           officeBlock.classList.add('d-none');
           return;
         }
@@ -10473,14 +10519,12 @@
         activeMdPath = null;
         mdAutosaveTargetPath = null;
         officeBlock.classList.remove('d-none');
-        document.getElementById('officeTitle').textContent = 'PowerPoint (PPTX)';
         const prev = document.getElementById('officePreview');
         prev.innerHTML = '<p class="text-muted small mb-0">Loading…</p>';
         const r = await window.tagBrowser.readFileBuffer({ fullPath: targetFp });
         if (!propsViewStill(targetFp)) return;
         if (!r.ok) {
-          propPh.classList.remove('d-none');
-          propPh.textContent = String(r.error || 'Could not load.');
+          showPropsPlaceholder('Could not show this file. ' + (r.error || ''), { withOpen: true });
           officeBlock.classList.add('d-none');
           return;
         }
@@ -10499,10 +10543,7 @@
         activeReadmePath = null;
         activeMdPath = null;
         mdAutosaveTargetPath = null;
-        officeBlock.classList.remove('d-none');
-        document.getElementById('officeTitle').textContent = 'PowerPoint';
-        document.getElementById('officePreview').innerHTML =
-          '<p class="text-muted mb-0">Preview not supported for .ppt — use <strong>Open</strong>.</p>';
+        showPropsPlaceholder('TagFox shows .pptx but not the older .ppt. Open it in PowerPoint.', { withOpen: true });
         return;
       }
 
@@ -10511,14 +10552,12 @@
         activeMdPath = null;
         mdAutosaveTargetPath = null;
         officeBlock.classList.remove('d-none');
-        document.getElementById('officeTitle').textContent = 'Impress (ODP)';
         const prev = document.getElementById('officePreview');
         prev.innerHTML = '<p class="text-muted small mb-0">Loading…</p>';
         const r = await window.tagBrowser.readFileBuffer({ fullPath: targetFp });
         if (!propsViewStill(targetFp)) return;
         if (!r.ok) {
-          propPh.classList.remove('d-none');
-          propPh.textContent = String(r.error || 'Could not load.');
+          showPropsPlaceholder('Could not show this file. ' + (r.error || ''), { withOpen: true });
           officeBlock.classList.add('d-none');
           return;
         }
@@ -10539,19 +10578,16 @@
         mdAutosaveTargetPath = null;
         const sz = rowSizeBytes(targetRow);
         if (sz != null && sz > 50 * 1024 * 1024) {
-          propPh.classList.remove('d-none');
-          propPh.textContent = 'MSG preview: file too large (max 50 MB). Use Open.';
+          showPropsPlaceholder('Too large to preview here (over 50 MB).', { withOpen: true });
           return;
         }
         const rMsg = await window.tagBrowser.readMsgPreview({ fullPath: targetFp });
         if (!propsViewStill(targetFp)) return;
         if (!rMsg.ok) {
-          propPh.classList.remove('d-none');
-          propPh.textContent = 'Outlook MSG: ' + (rMsg.error || 'Could not load.');
+          showPropsPlaceholder('Could not show this email. ' + (rMsg.error || ''), { withOpen: true });
           return;
         }
         textFileBlock.classList.remove('d-none');
-        document.getElementById('textPreviewTitle').textContent = 'Outlook (.msg)';
         let body = String(rMsg.text ?? '');
         if (body.length > TEXT_PREVIEW_MAX_CHARS) {
           body = body.slice(0, TEXT_PREVIEW_MAX_CHARS) + '\n\n… [truncated for preview]';
@@ -10567,19 +10603,16 @@
         mdAutosaveTargetPath = null;
         const sz = rowSizeBytes(targetRow);
         if (sz != null && sz > TEXT_PREVIEW_MAX_BYTES) {
-          propPh.classList.remove('d-none');
-          propPh.textContent = 'CSV preview: file too large (max ~2 MB same as text). Use Open.';
+          showPropsPlaceholder('Too large to preview here (over 2 MB).', { withOpen: true });
           return;
         }
         const rCsv = await window.tagBrowser.readTextFile({ fullPath: targetFp });
         if (!propsViewStill(targetFp)) return;
         if (!rCsv.ok) {
-          propPh.classList.remove('d-none');
-          propPh.textContent = 'CSV: ' + (rCsv.error || 'Could not load.');
+          showPropsPlaceholder('Could not show this file. ' + (rCsv.error || ''), { withOpen: true });
           return;
         }
         officeBlock.classList.remove('d-none');
-        document.getElementById('officeTitle').textContent = 'CSV';
         const prev = document.getElementById('officePreview');
         try {
           const rows = parseCsvRows(rCsv.text);
@@ -10593,8 +10626,10 @@
       activeReadmePath = null;
       activeMdPath = null;
       mdAutosaveTargetPath = null;
-      propPh.classList.remove('d-none');
-      propPh.textContent = 'No preview for this type — use Open.';
+      showPropsPlaceholder(
+        'TagFox cannot show ' + (ext ? '.' + ext + ' files' : 'this kind of file') + '. Open it in the program Windows uses for it.',
+        { withOpen: true }
+      );
     }
 
     /** Immediate metadata + non-debounced heavy load (e.g. after search sync). */
@@ -10602,6 +10637,7 @@
       cancelPropsPreviewSchedule();
       refreshPropsPanelQuick();
       await refreshPropsPanelHeavy();
+      syncPropsFootHint();
     }
 
     /** Viewer header copy: reuse the visible text source for readme, md/txt, and plain text previews. */
@@ -10686,6 +10722,7 @@
       }
       if (!pulse) prev.classList.remove('readme-preview--pulse');
       prev.classList.toggle('readme-preview--filled', filled);
+      syncFolderDocChrome();
       syncViewerCopyButton();
       if (!pulse || !filled) return;
       prev.classList.remove('readme-preview--pulse');
@@ -10694,29 +10731,54 @@
       prev.addEventListener('animationend', () => prev.classList.remove('readme-preview--pulse'), { once: true });
     }
 
+    /** The Edit pill of the folder doc or the text file. Open, the folder doc's becomes Save (it writes only
+        then) beside Cancel; the text file's becomes Done, since it saves as you type. */
+    function setViewerEditButton(which, open) {
+      const b = document.getElementById(which === 'readme' ? 'btnReadmeEdit' : 'btnMdFileEdit');
+      if (!b) return;
+      const on = !!open;
+      b.setAttribute('aria-expanded', on ? 'true' : 'false');
+      let icon = 'fa-pen';
+      let label = 'Edit';
+      if (which === 'readme') {
+        if (on) {
+          icon = 'fa-floppy-disk';
+          label = 'Save';
+        }
+        b.title = on ? 'Save the folder doc and close the editor (Ctrl+Enter)' : 'Edit the folder doc (or double-click its text)';
+        document.getElementById('btnReadmeCancel')?.classList.toggle('d-none', !on);
+      } else {
+        if (on) {
+          icon = 'fa-check';
+          label = 'Done';
+        }
+        b.title = on ? 'Close the editor (it saves as you type)' : 'Edit the file (or double-click its text)';
+        if (!on) setViewerSaveState('');
+      }
+      b.classList.toggle('tagfox-viewer-pill--solid', on);
+      b.innerHTML = '<i class="fa-solid ' + icon + '" aria-hidden="true"></i><span>' + label + '</span>';
+    }
+
+    /** Beside Done while a text file is being edited: what the last autosave did, from its own result. */
+    function setViewerSaveState(kind) {
+      const el = document.getElementById('propsSaveState');
+      if (!el) return;
+      const text = { saved: 'Saved', failed: 'Not saved', refused: 'Not saved: changed on disk' }[kind] || '';
+      el.textContent = text;
+      el.classList.toggle('d-none', !text);
+      el.classList.toggle('tagfox-viewer-save-state--bad', kind === 'failed' || kind === 'refused');
+    }
+
     /** Folder doc + text-file viewer: editor hidden until Edit or double-click preview (same chrome for both). */
     function resetViewerDocEditorChrome() {
       for (const which of ['readme', 'mdFile']) {
         const wrapId = which === 'readme' ? 'readmeEditorWrap' : 'mdFileEditorWrap';
         const dividerId = which === 'readme' ? 'readmeEditorDivider' : 'mdFileEditorDivider';
-        const btnId = which === 'readme' ? 'btnReadmeEdit' : 'btnMdFileEdit';
         document.getElementById(wrapId)?.classList.add('d-none');
         document.getElementById(dividerId)?.classList.add('d-none');
-        const b = document.getElementById(btnId);
-        if (b) {
-          b.setAttribute('aria-expanded', 'false');
-          b.title = which === 'readme' ? 'Edit folder doc' : 'Edit file';
-          b.setAttribute('aria-label', which === 'readme' ? 'Edit folder doc' : 'Edit file');
-          if (which === 'readme') {
-            b.innerHTML = '<i class="fa-solid fa-pen" aria-hidden="true"></i>';
-            b.classList.remove('btn-primary', 'btn-outline-primary');
-            b.classList.add('btn-outline-secondary');
-            document.getElementById('btnReadmeCancel')?.classList.add('d-none');
-          } else {
-            b.innerHTML = '<i class="fa-solid fa-pen" aria-hidden="true"></i>';
-          }
-        }
+        setViewerEditButton(which, false);
       }
+      syncFolderDocChrome();
       refreshTagFoxChromeTooltips(document.getElementById('propsChromeStack') || document.body);
     }
 
@@ -10724,12 +10786,9 @@
       const wrapId = which === 'readme' ? 'readmeEditorWrap' : 'mdFileEditorWrap';
       const dividerId = which === 'readme' ? 'readmeEditorDivider' : 'mdFileEditorDivider';
       const prevId = which === 'readme' ? 'readmePreview' : 'mdFilePreview';
-      const btnId = which === 'readme' ? 'btnReadmeEdit' : 'btnMdFileEdit';
-      const cancelBtn = which === 'readme' ? document.getElementById('btnReadmeCancel') : null;
       const wrap = document.getElementById(wrapId);
       const divider = document.getElementById(dividerId);
       const prev = document.getElementById(prevId);
-      const btn = document.getElementById(btnId);
       if (!wrap || !prev) return;
       const show = !!open;
       if (show && which === 'readme' && globalNestedReadmeView) return;
@@ -10737,27 +10796,9 @@
       wrap.classList.toggle('d-none', !show);
       if (divider) divider.classList.toggle('d-none', !show);
       if (show) ensureViewerMdEditor(which);
-      if (btn) {
-        btn.setAttribute('aria-expanded', show ? 'true' : 'false');
-        if (which === 'readme') {
-          btn.innerHTML = show
-            ? '<i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>'
-            : '<i class="fa-solid fa-pen" aria-hidden="true"></i>';
-          btn.classList.toggle('btn-outline-primary', show);
-          btn.classList.toggle('btn-outline-secondary', !show);
-          btn.title = show ? 'Save folder doc to disk and close editor (Ctrl+Enter)' : 'Edit folder doc';
-          btn.setAttribute('aria-label', show ? 'Save folder doc' : 'Edit folder doc');
-        } else {
-          btn.innerHTML = show
-            ? '<i class="fa-solid fa-xmark" aria-hidden="true"></i>'
-            : '<i class="fa-solid fa-pen" aria-hidden="true"></i>';
-          btn.classList.remove('btn-outline-primary');
-          btn.classList.add('btn-outline-secondary');
-          btn.title = show ? 'Close editor (pending edits are saved automatically)' : 'Edit file';
-          btn.setAttribute('aria-label', show ? 'Close editor' : 'Edit file');
-        }
-      }
-      if (cancelBtn) cancelBtn.classList.toggle('d-none', !show);
+      setViewerEditButton(which, show);
+      if (which === 'readme') syncFolderDocChrome();
+      syncPropsFootHint();
       refreshTagFoxChromeTooltips(document.getElementById('propsChromeStack') || document.body);
       if (!show) {
         if (!(which === 'readme' && globalNestedReadmeView)) {
@@ -10924,9 +10965,9 @@
     /** Doc found on disk → read-only name label; no doc yet → editable stem + tags (Save creates it). */
     function syncFolderDocHeaderExists(existsOnDisk) {
       const found = !!existsOnDisk;
+      folderDocFoundOnDisk = found;
       const stemInp = document.getElementById('readmeFolderDocStemInput');
       const extEl = document.getElementById('readmeFolderDocExt');
-      const tagsBtn = document.getElementById('btnReadmeFolderDocTags');
       const nameEl = document.getElementById('readmeFolderDocNameLabel');
       if (nameEl) {
         const name =
@@ -10935,9 +10976,30 @@
         nameEl.title = name;
         nameEl.classList.toggle('d-none', !found);
       }
-      stemInp?.classList.toggle('d-none', found);
-      extEl?.classList.toggle('d-none', found);
-      tagsBtn?.classList.toggle('d-none', found);
+      document.getElementById('readmeFolderDocNameField')?.classList.toggle('d-none', found);
+      syncFolderDocChrome();
+    }
+
+    /** Which of the folder doc's two faces shows. No doc and nothing typed, with the editor shut: the empty
+        state, holding the name field and Write it. Otherwise the bar (the doc's name, or the name field while a
+        new one is written) over the editor and preview. The nested view has neither: each section has its own. */
+    function syncFolderDocChrome() {
+      const bar = document.getElementById('readmeFolderDocControlsWrap');
+      const empty = document.getElementById('readmeEmptyState');
+      const split = document.getElementById('readmeDocSplit');
+      const field = document.getElementById('readmeFolderDocNameField');
+      if (!bar || !empty || !split || !field) return;
+      const editorOpen = !document.getElementById('readmeEditorWrap')?.classList.contains('d-none');
+      const hasText = !!getViewerMdValue('readme').trim();
+      const showEmpty = !globalNestedReadmeView && !folderDocFoundOnDisk && !editorOpen && !hasText;
+      empty.classList.toggle('d-none', !showEmpty);
+      bar.classList.toggle('d-none', globalNestedReadmeView || showEmpty);
+      split.classList.toggle('d-none', showEmpty);
+      const slot = document.getElementById(showEmpty ? 'readmeEmptyNameSlot' : 'readmeFolderDocNameSlot');
+      if (slot && field.parentElement !== slot) slot.prepend(field);
+      const names = document.getElementById('readmeEmptyNames');
+      if (names && showEmpty) names.textContent = getGlobalViewerBasenamesList().join(', ');
+      syncPropsFootHint();
     }
 
     /** Sync stem input, extension label, and folderDocMdTags from a resolved doc path (or defaults when null). */
@@ -10978,15 +11040,16 @@
 
     /** Hide single-doc chrome; aggregated mode uses per-section Edit instead of folder doc editor. */
     function syncReadmeNestedDocsUi() {
-      const wrap = document.getElementById('readmeFolderDocControlsWrap');
-      const single = document.getElementById('optViewerDocSingle');
+      const docKind = document.getElementById('optViewerDocKindDoc');
       const nested = document.getElementById('optViewerDocNested');
       const thumbs = document.getElementById('optViewerDocThumbs');
       const prev = document.getElementById('readmePreview');
-      if (single) single.checked = !globalNestedReadmeView;
-      if (nested) nested.checked = globalNestedReadmeView;
+      if (docKind) docKind.checked = !folderThumbsView;
       if (thumbs) thumbs.checked = folderThumbsView;
-      if (wrap) wrap.classList.toggle('d-none', globalNestedReadmeView);
+      if (nested) nested.checked = globalNestedReadmeView;
+      const docLabel = document.querySelector('label[for="optViewerDocKindDoc"]');
+      if (docLabel && docLabel.lastChild) docLabel.lastChild.textContent = globalNestedReadmeView ? 'Folder docs' : 'Folder doc';
+      syncFolderDocChrome();
       if (!prev) return;
       if (globalNestedReadmeView) {
         prev.removeAttribute('title');
@@ -11304,6 +11367,7 @@
       const note = over ? 'Showing the first ' + FOLDER_THUMBS_MAX + ' matches — more exist.' : '';
       lastReadmeFolderPathLoose = pathKeyLoose(folderPath);
       block.classList.remove('d-none');
+      syncPropsFootHint();
       const sig =
         pathKeyLoose(norm) + '|' + (nested ? 'n' : 'f') + '|' + searchText + '|' +
         files.map((f) => f.folder + '\\' + f.name).join('\n');
@@ -16560,10 +16624,6 @@
     function updateTagModalPathLabel() {
       const el = document.getElementById('tagModalPath');
       if (!el) return;
-      if (tagModalIsNewTodoDraft()) {
-        el.textContent = 'New file from Add TODO (tags only; no path yet)';
-        return;
-      }
       if (tagModalIsFolderDocDraft()) {
         el.textContent = 'Folder doc file name (tags only until you save the folder doc)';
         return;
@@ -16638,22 +16698,6 @@
       modalTags = [...parsed.tags];
       const ni = document.getElementById('tagModalBaseName');
       if (ni) ni.value = T.splitExt(parsed.pretty)[0];
-      renderModalChips();
-      refreshTagModalDatalist();
-      if (!tagModalInst) {
-        tagModalInst = new bootstrap.Modal(document.getElementById('tagModal'), { focus: false });
-      }
-      tagModalInst.show();
-    }
-
-    function openTagModalNewTodoDraft() {
-      tagModalMode = 'newTodo';
-      syncTagModalHintsAndTitle();
-      modalTargetPaths = [];
-      document.getElementById('tagModalBulkHint').classList.add('d-none');
-      setTagApplyFeedback('');
-      modalTags = newTodoMdTags.slice();
-      updateTagModalPathLabel();
       renderModalChips();
       refreshTagModalDatalist();
       if (!tagModalInst) {
@@ -18034,49 +18078,8 @@
       setStatusMain('Search saved.');
     });
 
-    document.getElementById('btnNewTodoMdTags').addEventListener('click', () => openTagModalNewTodoDraft());
     document.getElementById('btnReadmeFolderDocTags').addEventListener('click', () => openTagModalFolderDocDraft());
     document.getElementById('readmeFolderDocStemInput').addEventListener('input', () => folderDocOnFilenameUiChanged());
-    document.getElementById('btnCreateTodoMd').addEventListener('click', () => {
-      void createTodoMdInScope().then((ok) => { if (ok) closeAddTodoPanel(); });
-    });
-    document.getElementById('btnCancelTodoMd').addEventListener('click', () => {
-      const inp = document.getElementById('newMdTitleInput');
-      if (inp) inp.value = '';
-      closeAddTodoPanel();
-    });
-    document.getElementById('newMdTitleInput').addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') { e.preventDefault(); closeAddTodoPanel(); return; }
-      if (e.key !== 'Enter') return;
-      e.preventDefault();
-      document.getElementById('btnCreateTodoMd').click();
-    });
-
-    /* Add TODO pop-out (header +TODO icon): click toggles; typing lives inside, so no hover-open. */
-    function closeAddTodoPanel() {
-      const panel = document.getElementById('addTodoPanel');
-      const btn = document.getElementById('btnToggleAddTodo');
-      if (!panel || panel.hasAttribute('hidden')) return;
-      panel.setAttribute('hidden', '');
-      btn?.setAttribute('aria-expanded', 'false');
-    }
-    (function wireAddTodoPopover() {
-      const wrap = document.querySelector('.tagfox-addtodo-wrap');
-      const panel = document.getElementById('addTodoPanel');
-      const btn = document.getElementById('btnToggleAddTodo');
-      if (!wrap || !panel || !btn) return;
-      const open = () => {
-        if (!panel.hasAttribute('hidden')) return;
-        panel.removeAttribute('hidden');
-        btn.setAttribute('aria-expanded', 'true');
-        const inp = document.getElementById('newMdTitleInput');
-        if (inp) { inp.focus(); inp.select(); }
-      };
-      btn.addEventListener('click', () => { panel.hasAttribute('hidden') ? open() : closeAddTodoPanel(); });
-      document.addEventListener('pointerdown', (e) => {
-        if (!panel.hasAttribute('hidden') && !wrap.contains(e.target)) closeAddTodoPanel();
-      });
-    })();
 
     document.querySelectorAll('input[name="tagFoxRecencyFilter"]').forEach((el) => {
       el.addEventListener('change', () => {
@@ -18504,8 +18507,7 @@
     });
     document.getElementById('tagModal').addEventListener('hidden.bs.modal', () => {
       const wasFolderDocDraft = tagModalMode === 'folderDocDraft';
-      if (tagModalMode === 'newTodo') newTodoMdTags = modalTags.slice();
-      else if (tagModalMode === 'folderDocDraft') folderDocMdTags = modalTags.slice();
+      if (tagModalMode === 'folderDocDraft') folderDocMdTags = modalTags.slice();
       tagModalMode = 'rename';
       syncTagModalHintsAndTitle();
       if (wasFolderDocDraft) {
@@ -18738,21 +18740,21 @@
       folderThumbsRenderedSig = '';
       applyViewerFolderView();
     }
-    document.getElementById('optViewerDocSingle')?.addEventListener('change', (e) => {
-      const t = e.target;
-      if (!t || t.id !== 'optViewerDocSingle' || !t.checked) return;
-      onViewerDepthChanged(false);
-    });
-    document.getElementById('optViewerDocNested')?.addEventListener('change', (e) => {
-      const t = e.target;
-      if (!t || t.id !== 'optViewerDocNested' || !t.checked) return;
-      onViewerDepthChanged(true);
+    /* The folder view's tabs (Folder doc | Thumbnails) and its Include subfolders switch. */
+    document.getElementById('optViewerDocKindDoc')?.addEventListener('change', (e) => {
+      if (e.target.checked) onViewerThumbsToggled(false);
     });
     document.getElementById('optViewerDocThumbs')?.addEventListener('change', (e) => {
-      const t = e.target;
-      if (!t || t.id !== 'optViewerDocThumbs') return;
-      onViewerThumbsToggled(!!t.checked);
+      if (e.target.checked) onViewerThumbsToggled(true);
     });
+    document.getElementById('optViewerDocNested')?.addEventListener('change', (e) => {
+      onViewerDepthChanged(!!e.target.checked);
+    });
+    document.getElementById('btnViewerNewTodo')?.addEventListener('click', () => {
+      const root = readmeAggregateRootFolderFromSelection(propsTargetPath(), propsTargetRowForDisplay());
+      showQuickTodoPop(root);
+    });
+    document.getElementById('btnReadmeWrite')?.addEventListener('click', () => setViewerDocEditorOpen('readme', true));
     document.getElementById('btnMdFileRefresh')?.addEventListener('click', () => void refreshMdFileViewerFromDisk());
     document.getElementById('btnPdfRefresh')?.addEventListener('click', () => void refreshPdfViewerFromDisk());
     document.getElementById('btnMdFileEdit').addEventListener('click', () => toggleViewerDocEditor('mdFile'));
@@ -18787,6 +18789,19 @@
       if (!u || !window.tagBrowser.openGoogleWorkspaceWindow) return;
       const r = await window.tagBrowser.openGoogleWorkspaceWindow({ url: u });
       if (status) setStatusMain(r.ok ? 'Opened in app window.' : (r.error || 'Open failed'));
+    });
+    document.getElementById('btnGdocOpenBrowser')?.addEventListener('click', (e) => {
+      const u = e.currentTarget.dataset.url;
+      if (u && window.tagBrowser.openUrlDefaultBrowser) void window.tagBrowser.openUrlDefaultBrowser({ url: u });
+    });
+    /* The Viewer's own Open and Show in folder, offered where it has nothing to show. */
+    document.getElementById('btnViewerOpenDefault')?.addEventListener('click', () => {
+      const fp = propsTargetPath();
+      if (fp) void openFileDefaultOrGoogleWorkspace(fp);
+    });
+    document.getElementById('btnViewerShowInFolder')?.addEventListener('click', () => {
+      const fp = propsTargetPath();
+      if (fp) void window.tagBrowser.showInFolder(fp);
     });
 
     function onPathsMutated(payload) {
@@ -20621,7 +20636,6 @@
       if (t.closest('#propsAside')) return;
       if (t.closest('#mdFileEditor') || t.closest('#propsAside textarea')) return;
       if (t.closest('#query, label[for="query"]')) return;
-      if (t.closest('#newMdTitleInput')) return;
       if (t.closest('#quickTodoPop') || t.closest('#quickTodoTitleInput')) return;
       if (t.closest('#settingsPanel input, #settingsPanel textarea, #settingsPanel select')) return;
       if (!t.closest('button, [role="button"], input.btn-check, a.btn, label.btn')) return;

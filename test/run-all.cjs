@@ -37,6 +37,7 @@ const runs = [
   { name: 'runner shelf', args: ['runner-shelf.cjs'] },
   { name: 'runner status line', args: ['runner-status.cjs'] },
   { name: 'runner go to a path', args: ['runner-go-to-path.cjs'] },
+  { name: 'viewer in runner', args: ['viewer-runner.cjs'] },
   { name: 'machine features', args: ['machine-features.cjs'] },
   { name: 'row buttons by keyboard', args: ['row-actions-keys.cjs'] },
   { name: 'hidden title bar', args: ['window-chrome.cjs'] },

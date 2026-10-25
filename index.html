@@ -917,194 +917,123 @@
     <div class="split-v" id="splitProps" role="separator" aria-label="Resize viewer column" title="Drag"></div>
     <!-- Viewer: details + previews / readme -->
     <aside class="props-panel border-start bg-body d-flex flex-column" id="propsAside">
-      <!-- Viewer header (kept as #propsChromeStack for tooltip refresh): file icon + name, folder/section
-           label, and viewer actions on one row. Tags band sits just below and collapses when empty. The
-           Add TODO row is pinned to the sidebar bottom (after #propsScroll), not here. -->
+      <!-- Viewer header (kept as #propsChromeStack for tooltip refresh): the type tile, the name and the
+           actions for what is shown; under it one muted line (tags, the folder it is in, size, modified);
+           for a folder, a row choosing what the body shows. Mode blocks below carry no header of their own. -->
       <div id="propsChromeStack" class="d-flex flex-column flex-shrink-0">
-        <div class="px-2 py-2 border-bottom d-flex align-items-center justify-content-between gap-2 flex-shrink-0">
+        <div class="tagfox-viewer-head d-flex align-items-center gap-2 flex-shrink-0">
           <div class="d-flex align-items-center gap-2 min-w-0 flex-grow-1">
-            <span id="propTitleIconMount" class="flex-shrink-0" aria-hidden="true"></span>
-            <div id="propDisplayName" class="fw-semibold text-truncate min-w-0"></div>
-            <span id="propsPanelSectionTitle" class="small fw-semibold text-muted flex-shrink-0">Viewer</span>
-            <!-- Folder rows only (renderer toggles visibility). Two dimensions: depth (this folder / nested)
-                 applies to whichever content is on (folder doc or thumbnails); thumbnails is a separate on/off. -->
-            <div id="propsNestedReadmeToggleWrap" class="d-none small flex-shrink-0 ms-0" style="min-width: min(100%, 14rem)">
-              <div class="d-inline-flex align-items-center gap-1">
-                <div class="btn-group btn-group-sm tagfox-segmented" role="group" aria-label="Viewer folder depth">
-                  <input type="radio" class="btn-check" name="viewerDocMode" id="optViewerDocSingle" value="single" autocomplete="off" checked />
-                  <label class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center" for="optViewerDocSingle" title="This folder only">
-                    <i class="fa-solid fa-folder fa-fw" aria-hidden="true"></i>
-                    <span class="visually-hidden">This folder only</span>
-                  </label>
-                  <input type="radio" class="btn-check" name="viewerDocMode" id="optViewerDocNested" value="nested" autocomplete="off" />
-                  <label class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center" for="optViewerDocNested" title="Include subfolders">
-                    <i class="fa-solid fa-folder-tree fa-fw" aria-hidden="true"></i>
-                    <span class="visually-hidden">Include subfolders</span>
-                  </label>
-                </div>
-                <div class="btn-group btn-group-sm tagfox-segmented" role="group" aria-label="Viewer thumbnails">
-                  <input type="checkbox" class="btn-check" id="optViewerDocThumbs" autocomplete="off" />
-                  <label class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center" for="optViewerDocThumbs" title="Thumbnails instead of folder doc">
-                    <i class="fa-solid fa-images fa-fw" aria-hidden="true"></i>
-                    <span class="visually-hidden">Thumbnails instead of folder doc</span>
-                  </label>
-                </div>
-              </div>
-            </div>
+            <span id="propTitleIconMount" class="tagfox-viewer-tile flex-shrink-0" aria-hidden="true"></span>
+            <div id="propDisplayName" class="tagfox-viewer-name text-truncate min-w-0 flex-grow-1"></div>
           </div>
-          <div class="d-inline-flex align-items-center gap-1 flex-shrink-0">
-            <button
-              type="button"
-              class="btn btn-sm btn-outline-secondary d-none d-inline-flex align-items-center justify-content-center p-0"
-              style="width: 2rem; height: 2rem"
-              id="btnPropsCopyText"
-              title="Copy viewer text"
-              aria-label="Copy viewer text"
-            >
-              <i class="fa-solid fa-clipboard" aria-hidden="true"></i>
-            </button>
-            <!-- PDF refresh lives in the header (shown only while a PDF preview is loaded). -->
-            <button
-              type="button"
-              id="btnPdfRefresh"
-              class="btn btn-sm btn-outline-secondary d-none d-inline-flex align-items-center justify-content-center p-0"
-              style="width: 2rem; height: 2rem"
-              title="Refresh PDF output from disk"
-              aria-label="Refresh PDF output from disk"
-            >
-              <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
-            </button>
-            <!-- Text/markdown file refresh + edit live here too (shown only while a text file is loaded). -->
-            <button
-              type="button"
-              id="btnMdFileRefresh"
-              class="btn btn-sm btn-outline-secondary d-none d-inline-flex align-items-center justify-content-center p-0"
-              style="width: 2rem; height: 2rem"
-              title="Refresh file text from disk"
-              aria-label="Refresh file text from disk"
-            >
-              <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
-            </button>
+          <div class="tagfox-viewer-acts d-inline-flex align-items-center gap-1 flex-shrink-0">
+            <span id="propsSaveState" class="tagfox-viewer-save-state d-none" role="status" aria-live="polite"></span>
+            <!-- Text file: Edit, which becomes Done while the editor is open (shown only while a text file is loaded). -->
             <button
               type="button"
               id="btnMdFileEdit"
-              class="btn btn-sm btn-outline-secondary d-none d-inline-flex align-items-center justify-content-center p-0"
-              style="width: 2rem; height: 2rem"
+              class="tagfox-viewer-pill d-none"
               aria-expanded="false"
               aria-controls="mdFileEditorWrap"
-              title="Edit file"
-              aria-label="Edit file"
+              title="Edit the file (or double-click its text)"
             >
-              <i class="fa-solid fa-pen" aria-hidden="true"></i>
+              <i class="fa-solid fa-pen" aria-hidden="true"></i><span>Edit</span>
             </button>
-            <!-- Add TODO folds into a header pop-out (was a bulky bottom row) to save vertical space; shown in theater too. -->
-            <div class="position-relative d-inline-flex tagfox-addtodo-wrap">
-              <button
-                type="button"
-                id="btnToggleAddTodo"
-                class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0"
-                style="width: 2rem; height: 2rem"
-                aria-expanded="false"
-                aria-controls="addTodoPanel"
-                title="Add a TODO file (xkTODO.md) in the current folder"
-                aria-label="Add TODO"
-              >
-                <i class="fa-solid fa-square-plus" aria-hidden="true"></i>
-              </button>
-              <div id="addTodoPanel" class="search-opts-advanced-popover border rounded p-2 bg-body shadow-sm flex-column gap-2" role="group" aria-label="Add TODO" hidden>
-                <label class="text-muted mb-0 small text-truncate min-w-0" id="labelNewMdTitle" for="newMdTitleInput" title="Creates Title xkTODO.md in the current folder">Add TODO here</label>
-                <div class="d-flex align-items-center gap-2">
-                  <input
-                    type="text"
-                    id="newMdTitleInput"
-                    class="form-control form-control-sm flex-grow-1"
-                    style="min-width: 9rem"
-                    placeholder="Title"
-                    autocomplete="off"
-                  />
-                  <button
-                    type="button"
-                    class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
-                    style="width: 2rem; height: 2rem"
-                    id="btnNewTodoMdTags"
-                    title="Tags applied to the new file name (xk/xp/xx)"
-                    aria-label="Edit tags for new TODO file"
-                  >
-                    <i class="fa-solid fa-tags" aria-hidden="true"></i>
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
-                    style="width: 2rem; height: 2rem"
-                    id="btnCancelTodoMd"
-                    title="Cancel new TODO title"
-                    aria-label="Cancel new TODO title"
-                  >
-                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn-sm btn-outline-primary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
-                    style="width: 2rem; height: 2rem"
-                    id="btnCreateTodoMd"
-                    title="Creates Title xkTODO.md in the current folder"
-                    aria-label="Create TODO markdown file in the current folder"
-                  >
-                    <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
-                  </button>
-                </div>
-              </div>
-            </div>
+            <button type="button" class="tagfox-viewer-icon d-none" id="btnPropsCopyText" title="Copy the text" aria-label="Copy the text">
+              <i class="fa-regular fa-clipboard" aria-hidden="true"></i>
+            </button>
+            <!-- PDF refresh (shown only while a PDF preview is loaded). -->
+            <button type="button" id="btnPdfRefresh" class="tagfox-viewer-icon d-none" title="Reload the PDF from disk" aria-label="Reload the PDF from disk">
+              <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
+            </button>
+            <!-- Text file refresh (shown only while a text file is loaded). -->
+            <button type="button" id="btnMdFileRefresh" class="tagfox-viewer-icon d-none" title="Reload the text from disk" aria-label="Reload the text from disk">
+              <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
+            </button>
             <button
               type="button"
-              class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0"
-              style="width: 2rem; height: 2rem"
+              class="tagfox-viewer-icon"
               id="btnPropsTheaterToggle"
-              title="Near full screen (Shift+Space)"
+              title="Full screen (Shift+Space)"
               aria-expanded="false"
               aria-controls="propsAside"
-              aria-label="Expand viewer panel"
+              aria-label="Expand the Viewer"
             >
               <i class="fa-solid fa-up-right-and-down-left-from-center" aria-hidden="true"></i>
             </button>
           </div>
         </div>
-        <!-- Runner only: the selected item's full path, since Runner's rows show only where it lives. -->
-        <div id="runnerViewerPath" class="tagfox-runner-only tagfox-runner-viewer-path px-2 py-1 border-bottom flex-shrink-0 d-none" title="Click to copy the full path"></div>
-        <div id="propTitleTags" class="d-none flex-wrap gap-1 px-2 pb-1 flex-shrink-0"></div>
+        <!-- Tags in the name, the folder it is in (click copies the full path), size and modified time. -->
+        <div id="propsMetaLine" class="tagfox-viewer-meta d-none">
+          <div id="propTitleTags" class="d-none flex-wrap gap-1"></div>
+          <span id="propsMetaFacts" class="tagfox-viewer-facts"></span>
+          <span id="runnerViewerPath" class="tagfox-viewer-where d-none" title="Click to copy the full path"></span>
+        </div>
+        <!-- Folders and folder docs: what the body shows. Which (doc or thumbnails) and how deep are separate
+             settings; depth applies to either. New TODO opens the Quick TODO box aimed at this folder. -->
+        <div id="propsNestedReadmeToggleWrap" class="tagfox-viewer-tabs d-none">
+          <div class="tagfox-viewer-tabgroup" role="radiogroup" aria-label="What the Viewer shows for this folder">
+            <input type="radio" class="btn-check" name="viewerDocKind" id="optViewerDocKindDoc" autocomplete="off" checked />
+            <label class="tagfox-viewer-tab" for="optViewerDocKindDoc" title="The folder's doc: -readme.md, readme.md, claude.md and similar">
+              <i class="fa-solid fa-file-lines" aria-hidden="true"></i>Folder doc
+            </label>
+            <input type="radio" class="btn-check" name="viewerDocKind" id="optViewerDocThumbs" autocomplete="off" />
+            <label class="tagfox-viewer-tab" for="optViewerDocThumbs" title="Thumbnails of the pictures and documents here (the search filters apply)">
+              <i class="fa-solid fa-images" aria-hidden="true"></i>Thumbnails
+            </label>
+          </div>
+          <div class="form-check form-switch tagfox-viewer-switch mb-0">
+            <input class="form-check-input" type="checkbox" role="switch" id="optViewerDocNested" autocomplete="off" />
+            <label class="form-check-label" for="optViewerDocNested" title="Include the subfolders' docs, or their thumbnails">Subfolders</label>
+          </div>
+          <button type="button" id="btnViewerNewTodo" class="tagfox-viewer-pill tagfox-viewer-pill--ghost" title="A new TODO file (Title xkTODO.md) in this folder">
+            <i class="fa-solid fa-plus" aria-hidden="true"></i><span>New TODO</span>
+          </button>
+        </div>
       </div>
       <div id="propsScroll" class="flex-grow-1 overflow-y-auto p-2 small">
-        <p id="propsEmpty" class="text-muted mb-0">Set the current folder in Settings — or select a row.</p>
+        <div id="propsEmpty" class="tagfox-viewer-empty">
+          <div class="tagfox-viewer-empty-icon" aria-hidden="true"><i class="fa-regular fa-eye"></i></div>
+          <div class="tagfox-viewer-empty-title">Nothing selected</div>
+          <p class="mb-0">Pick a file or folder in the list and it shows here.</p>
+          <p class="tagfox-viewer-empty-small mb-0"><kbd>Shift</kbd>+<kbd>Space</kbd> full screen · <kbd>Alt</kbd>+<kbd>P</kbd> hides the Viewer</p>
+        </div>
         <div id="propsDetails" class="d-none">
-          <p id="propPlaceholder" class="text-muted d-none mb-2">No preview for this type — use Open.</p>
-
-          <div id="imageBlock" class="d-none border-top pt-2">
-            <div class="fw-semibold mb-1">Image</div>
-            <img id="propImagePreview" class="border bg-light" alt="" />
+          <!-- Loading, errors, and kinds with no preview; the actions show only when there is nothing else to see. -->
+          <div id="propPlaceholderWrap" class="tagfox-viewer-placeholder d-none">
+            <p id="propPlaceholder" class="mb-0">Loading preview…</p>
+            <div id="propPlaceholderActions" class="tagfox-viewer-placeholder-acts d-none">
+              <button type="button" id="btnViewerOpenDefault" class="tagfox-viewer-pill tagfox-viewer-pill--solid">
+                <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i><span>Open</span>
+              </button>
+              <button type="button" id="btnViewerShowInFolder" class="tagfox-viewer-pill tagfox-viewer-pill--ghost">
+                <i class="fa-regular fa-folder-open" aria-hidden="true"></i><span>Show in folder</span>
+              </button>
+            </div>
           </div>
 
-          <div id="videoBlock" class="d-none border-top pt-2 d-flex flex-column flex-grow-1">
-            <div class="fw-semibold mb-1 flex-shrink-0">Video</div>
-            <video id="propVideoPreview" class="border rounded bg-dark" controls preload="metadata">
+          <div id="imageBlock" class="d-none">
+            <img id="propImagePreview" alt="" />
+          </div>
+
+          <div id="videoBlock" class="d-none d-flex flex-column flex-grow-1">
+            <video id="propVideoPreview" class="rounded bg-dark" controls preload="metadata">
               Your browser does not support this video.
             </video>
           </div>
 
-          <div id="audioBlock" class="d-none border-top pt-2">
-            <div class="fw-semibold mb-1">Audio</div>
+          <div id="audioBlock" class="d-none">
             <audio id="propAudioPreview" class="w-100" controls preload="metadata">
               Your browser does not support this audio.
             </audio>
           </div>
 
-          <div id="pdfBlock" class="d-none border-top pt-2 d-flex flex-column flex-grow-1">
+          <div id="pdfBlock" class="d-none d-flex flex-column flex-grow-1">
             <!-- Idle: srcdoc only — never iframe.src='' (that loads about:blank → Chromium debug_utils scenario 4 spam / jank, Electron #44368). -->
             <iframe id="pdfFrame" class="rounded" title="PDF preview" srcdoc="<!DOCTYPE html><html><head><meta charset='utf-8'></head><body style='margin:0;background:#f8f9fa'></body></html>"></iframe>
           </div>
 
-          <div id="htmlBlock" class="d-none border-top pt-2 d-flex flex-column flex-grow-1">
-            <div class="fw-semibold mb-1 flex-shrink-0">HTML</div>
-            <p class="small text-muted mb-1 flex-shrink-0">Sandboxed: scripts and plugins off; forms won’t escape the frame.</p>
+          <div id="htmlBlock" class="d-none d-flex flex-column flex-grow-1">
             <iframe
               id="htmlPreviewFrame"
               class="rounded"
@@ -1114,66 +1043,48 @@
             ></iframe>
           </div>
 
-          <div id="officeBlock" class="d-none border-top pt-2 d-flex flex-column flex-grow-1">
-            <div class="fw-semibold mb-1 flex-shrink-0" id="officeTitle">Document</div>
-            <div id="officePreview" class="border rounded p-2 bg-light small"></div>
+          <div id="officeBlock" class="d-none d-flex flex-column flex-grow-1">
+            <div id="officePreview" class="small"></div>
           </div>
 
-          <div id="readmeBlock" class="d-none border-top pt-2 d-flex flex-column flex-grow-1 gap-1 min-h-0">
-            <!-- Filename + tag button on one row (no flex-min-w traps); tag pills on next row -->
-            <div id="readmeFolderDocControlsWrap" class="d-flex flex-column gap-2 flex-shrink-0">
-              <div class="d-flex flex-wrap align-items-center gap-2 w-100">
-                <span class="small text-muted flex-shrink-0">Folder doc</span>
-                <!-- Found on disk: name is a plain label (create/rename chrome below is for the no-doc-yet state only). -->
-                <span id="readmeFolderDocNameLabel" class="small fw-semibold text-truncate min-w-0 d-none"></span>
-                <label class="visually-hidden" for="readmeFolderDocStemInput">Folder doc base name</label>
-                <input
-                  type="text"
-                  id="readmeFolderDocStemInput"
-                  class="form-control form-control-sm flex-shrink-0"
-                  style="width: 7.5rem; max-width: min(46vw, 14rem)"
-                  value="-readme"
-                  autocomplete="off"
-                  title="No folder doc here yet — this names the one created when you edit and Save"
-                />
-                <span id="readmeFolderDocExt" class="small text-nowrap fw-semibold flex-shrink-0">.md</span>
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
-                  style="width: 2rem; height: 2rem"
-                  id="btnReadmeFolderDocTags"
-                  title="xk/xp/xx tags in the folder doc file name — changing tags with the loaded file clears body for a new name (like renaming)"
-                  aria-label="Edit tags for folder doc file name"
-                >
-                  <i class="fa-solid fa-tags" aria-hidden="true"></i>
+          <div id="readmeBlock" class="d-none d-flex flex-column flex-grow-1 min-h-0">
+            <!-- Two states (syncFolderDocHeaderExists, syncFolderDocChrome). Found on disk: this bar names the doc
+                 and offers Edit. None yet: #readmeEmptyState says so and holds the name field, which moves up
+                 into this bar while the new doc is being written. -->
+            <div id="readmeFolderDocControlsWrap" class="tagfox-viewer-docbar">
+              <i class="fa-solid fa-file-lines tagfox-viewer-docbar-icon" aria-hidden="true"></i>
+              <span id="readmeFolderDocNameLabel" class="tagfox-viewer-docbar-name text-truncate min-w-0 d-none"></span>
+              <span id="readmeFolderDocNameSlot" class="d-inline-flex min-w-0"></span>
+              <div class="ms-auto d-inline-flex align-items-center gap-1 flex-shrink-0">
+                <button type="button" id="btnReadmeCancel" class="tagfox-viewer-pill tagfox-viewer-pill--ghost d-none" title="Discard the changes">
+                  <span>Cancel</span>
                 </button>
-                <div class="ms-auto d-inline-flex align-items-center gap-1 flex-shrink-0">
-                  <button
-                    type="button"
-                    id="btnReadmeCancel"
-                    class="btn btn-sm btn-outline-secondary d-none d-inline-flex align-items-center justify-content-center p-0"
-                    style="width: 2rem; height: 2rem"
-                    title="Cancel folder doc edit"
-                    aria-label="Cancel folder doc edit"
-                  >
-                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-                  </button>
-                  <button
-                    type="button"
-                    id="btnReadmeEdit"
-                    class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0"
-                    style="width: 2rem; height: 2rem"
-                    aria-expanded="false"
-                    aria-controls="readmeEditorWrap"
-                    title="Edit folder doc"
-                    aria-label="Edit folder doc"
-                  >
-                    <i class="fa-solid fa-pen" aria-hidden="true"></i>
-                  </button>
-                </div>
+                <button type="button" id="btnReadmeEdit" class="tagfox-viewer-pill" aria-expanded="false" aria-controls="readmeEditorWrap" title="Edit the folder doc (or double-click its text)">
+                  <i class="fa-solid fa-pen" aria-hidden="true"></i><span>Edit</span>
+                </button>
               </div>
-              <div id="readmeFolderDocTagPills" class="d-flex flex-wrap gap-1" aria-label="Tags in folder doc file name"></div>
             </div>
+            <div id="readmeEmptyState" class="tagfox-viewer-empty d-none">
+              <div class="tagfox-viewer-empty-icon tagfox-viewer-empty-icon--accent" aria-hidden="true"><i class="fa-solid fa-feather-pointed"></i></div>
+              <div class="tagfox-viewer-empty-title">No folder doc here yet</div>
+              <p class="mb-0">A folder doc is a short note saying what the folder is for. TagFox shows it whenever the folder is selected.</p>
+              <div id="readmeEmptyNameSlot" class="tagfox-viewer-empty-row">
+                <button type="button" id="btnReadmeWrite" class="tagfox-viewer-pill tagfox-viewer-pill--solid">
+                  <i class="fa-solid fa-pen" aria-hidden="true"></i><span>Write it</span>
+                </button>
+              </div>
+              <p class="tagfox-viewer-empty-small mb-0">TagFox shows the first it finds of <span id="readmeEmptyNames"></span>.</p>
+            </div>
+            <!-- The new doc's name: stem, extension and tags. Lives in one of the two slots above. -->
+            <span id="readmeFolderDocNameField" class="tagfox-viewer-namefield">
+              <label class="visually-hidden" for="readmeFolderDocStemInput">Folder doc base name</label>
+              <input type="text" id="readmeFolderDocStemInput" value="-readme" autocomplete="off" title="The new folder doc's name" />
+              <span id="readmeFolderDocExt">.md</span>
+              <span id="readmeFolderDocTagPills" class="d-inline-flex flex-wrap gap-1" aria-label="Tags in the folder doc's name"></span>
+              <button type="button" id="btnReadmeFolderDocTags" title="Tags in the new doc's file name (xk/xp/xx)" aria-label="Tags in the new doc's file name">
+                <i class="fa-solid fa-tags" aria-hidden="true"></i>
+              </button>
+            </span>
             <div class="viewer-doc-split flex-grow-1 min-h-0" id="readmeDocSplit">
               <div id="readmeEditorWrap" class="viewer-doc-editor-wrap d-none">
                 <textarea id="readmeEditor" class="form-control form-control-sm font-monospace" placeholder="Markdown…"></textarea>
@@ -1195,15 +1106,19 @@
             </div>
           </div>
 
-          <!-- Folder thumbnails mode (third viewerDocMode option): shell-thumbnail grid of the folder's files. -->
-          <div id="folderThumbsBlock" class="d-none border-top pt-2">
+          <!-- Folder thumbnails (the Thumbnails tab): shell-thumbnail grid of the folder's files. -->
+          <div id="folderThumbsBlock" class="d-none">
             <p id="folderThumbsNote" class="small text-muted mb-2 d-none"></p>
             <div id="folderThumbsGrid" class="folder-thumbs-grid" aria-label="Thumbnails in this folder"></div>
-            <p id="folderThumbsEmpty" class="text-muted small mb-0 d-none">No matching files with thumbnails here (search filters apply).</p>
+            <div id="folderThumbsEmpty" class="tagfox-viewer-empty d-none">
+              <div class="tagfox-viewer-empty-icon" aria-hidden="true"><i class="fa-regular fa-images"></i></div>
+              <div class="tagfox-viewer-empty-title">No thumbnails here</div>
+              <p class="mb-0">Nothing in this folder has a thumbnail, or the search filters leave none out.</p>
+            </div>
           </div>
 
-          <!-- No block header: the panel header (filename + copy/refresh/edit) is the header for a single text file. -->
-          <div id="mdFileBlock" class="d-none border-top pt-2 d-flex flex-column flex-grow-1 gap-1 min-h-0">
+          <!-- No block header: the panel header (name, Edit, copy, reload) is the header for a single text file. -->
+          <div id="mdFileBlock" class="d-none d-flex flex-column flex-grow-1 min-h-0">
             <div class="viewer-doc-split flex-grow-1 min-h-0" id="mdFileDocSplit">
               <div id="mdFileEditorWrap" class="viewer-doc-editor-wrap d-none">
                 <textarea id="mdFileEditor" class="form-control form-control-sm font-monospace"></textarea>
@@ -1217,7 +1132,7 @@
               ></div>
               <div
                 id="mdFilePreview"
-                class="prop-md-preview border rounded p-2 bg-light small min-h-0 viewer-doc-preview"
+                class="prop-md-preview border rounded p-2 small min-h-0 viewer-doc-preview"
                 title="Double-click to edit"
                 role="button"
                 tabindex="0"
@@ -1225,40 +1140,38 @@
             </div>
           </div>
 
-          <div id="gdocWorkspaceBlock" class="d-none border-top pt-2">
-            <div class="fw-semibold mb-1" id="gdocWorkspaceTitle">Google Workspace</div>
-            <p class="small text-muted mb-1">
-              Opens the linked document in an app window (sign in once; session is saved). Use <strong>Open</strong> in the row menu for your default browser instead.
-            </p>
-            <p id="gdocWorkspaceUrl" class="small text-break font-monospace mb-2"></p>
-            <pre
-              id="gdocWorkspaceDiag"
-              class="small font-monospace border rounded bg-body-secondary p-2 mb-2 d-none text-break"
-              style="white-space: pre-wrap; max-height: 14rem; overflow: auto"
-              aria-label="Google shortcut diagnostics"
-            ></pre>
-            <div id="gdocWorkspaceDriveLinks" class="d-none mb-2 small">
-              <span class="text-muted d-block mb-1">Stub unreadable — open in browser from path hints:</span>
-              <button type="button" id="btnGdocDriveSearch" class="btn btn-sm btn-outline-secondary me-1 mb-1">
-                Search in Google Drive
+          <div id="gdocWorkspaceBlock" class="tagfox-viewer-empty d-none">
+            <div class="tagfox-viewer-empty-icon tagfox-viewer-empty-icon--google" aria-hidden="true"><i id="gdocWorkspaceIcon" class="fa-solid fa-file-lines"></i></div>
+            <p id="gdocWorkspaceUrl" class="mb-0"></p>
+            <div id="gdocWorkspaceDriveLinks" class="tagfox-viewer-empty-row d-none">
+              <button type="button" id="btnGdocDriveSearch" class="tagfox-viewer-pill tagfox-viewer-pill--ghost">
+                <i class="fa-brands fa-google-drive" aria-hidden="true"></i><span>Search in Google Drive</span>
               </button>
-              <button type="button" id="btnGdocDriveFolder" class="btn btn-sm btn-outline-secondary mb-1 d-none">
-                Open parent folder in Drive
+              <button type="button" id="btnGdocDriveFolder" class="tagfox-viewer-pill tagfox-viewer-pill--ghost d-none">
+                <i class="fa-regular fa-folder-open" aria-hidden="true"></i><span>Its folder in Drive</span>
               </button>
             </div>
-            <button type="button" id="btnOpenGoogleWorkspace" class="btn btn-sm btn-primary">Open in app window</button>
+            <div class="tagfox-viewer-empty-row">
+              <button type="button" id="btnOpenGoogleWorkspace" class="tagfox-viewer-pill tagfox-viewer-pill--solid">
+                <i class="fa-solid fa-window-maximize" aria-hidden="true"></i><span>Open in TagFox</span>
+              </button>
+              <button type="button" id="btnGdocOpenBrowser" class="tagfox-viewer-pill tagfox-viewer-pill--ghost">
+                <i class="fa-solid fa-globe" aria-hidden="true"></i><span>Open in browser</span>
+              </button>
+            </div>
           </div>
 
-          <div id="textFileBlock" class="d-none border-top pt-2 d-flex flex-column flex-grow-1 gap-1 min-h-0">
-            <div class="fw-semibold flex-shrink-0" id="textPreviewTitle">Text</div>
+          <div id="textFileBlock" class="d-none d-flex flex-column flex-grow-1 min-h-0">
             <pre
               id="textPreviewPre"
-              class="prop-md-preview border rounded p-2 bg-light small mb-0 font-monospace min-h-0"
+              class="prop-md-preview small mb-0 font-monospace min-h-0"
               style="white-space: pre-wrap; word-break: break-word"
             ></pre>
           </div>
         </div>
       </div>
+      <!-- One muted line of what can be done here (double-click to edit, Shift+Space), set per mode. -->
+      <div id="propsFootHint" class="tagfox-viewer-foot d-none"></div>
     </aside>
     </div>
   </div>
@@ -1330,7 +1243,7 @@
         class="btn btn-sm btn-outline-primary flex-shrink-0 d-inline-flex align-items-center justify-content-center p-0"
         style="width: 2rem; height: 2rem"
         id="btnQuickTodoPopSave"
-        title="Save markdown in Quick TODO folder"
+        title="Create the TODO file"
         aria-label="Save Quick TODO markdown file"
       >
         <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
@@ -1422,9 +1335,6 @@
           <datalist id="tagModalExistingTags"></datalist>
           <p class="small text-muted mb-0" id="tagModalHintRename">
             Tags live in the <code>xk/xp/xx</code> tokens at the end of the segment name. Click a tag to toggle it; typing a new tag and pressing <strong>Add</strong> renames on disk immediately.
-          </p>
-          <p class="small text-muted mb-0 d-none" id="tagModalHintNewTodo">
-            These <code>xk/xp/xx</code> tags are used when you create a markdown file from Add TODO. Close to keep them for the next create; disk renames only happen on existing files in this dialog.
           </p>
           <p class="small text-muted mb-0 d-none" id="tagModalHintFolderDoc">
             These <code>xk/xp/xx</code> tags go in the folder doc file name. Close to keep them; if the name differs from the file that was loaded, <strong>Save</strong> creates that new file and leaves the previous file unchanged.

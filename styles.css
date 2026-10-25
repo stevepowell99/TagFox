@@ -2584,10 +2584,6 @@ ul.breadcrumb-folder-flyout .dropdown-item,
 #propsAside.props-theater #htmlPreviewFrame {
   min-height: 72vh;
 }
-/* Add TODO pop-out: wide enough for the title input plus its tag/cancel/save buttons on one row. */
-#addTodoPanel {
-  min-width: min(22rem, calc(100vw - 1rem));
-}
 /* Bootstrap tooltips for toolbar chrome (see refreshTagFoxChromeTooltips). */
 .tooltip.tagfox-ui-tooltip .tooltip-inner {
   text-align: left;
@@ -3577,22 +3573,470 @@ body.tagfox-runner #resultsTable tbody tr.results-row-actions-kbd .results-td-ac
     transition: none;
   }
 }
-/* Viewer: the selected item's full path under its header; wraps rather than truncates, click copies. */
-.tagfox-runner-viewer-path {
+/* Viewer: a card on the canvas like the list's, taking the right third unless Shift+Space has expanded it.
+   Its top and bottom line up with the list's: the centre panel's padding, as a margin here. */
+body.tagfox-runner #propsAside {
+  background-color: var(--runner-surface) !important;
+  border: 0 !important;
+  border-radius: 0.9rem;
+  box-shadow: 0 1px 2px rgba(26, 27, 46, 0.05);
+  overflow: hidden;
+  color: var(--runner-ink);
+}
+body.tagfox-runner #propsAside:not(.props-theater) {
+  width: calc(33.333% - 1.25rem) !important;
+  flex: 0 0 calc(33.333% - 1.25rem);
+  margin: 1rem 1.25rem 0.5rem 0;
+}
+body.tagfox-frameless.tagfox-runner #propsAside:not(.props-theater) {
+  margin-top: 0.35rem;
+}
+body.tagfox-runner #propsScroll {
+  padding: 0.55rem 0.95rem 0.6rem !important;
+}
+/* Nothing selected: no header, just the message. */
+body.tagfox-runner #propsAside.tagfox-viewer--empty #propsChromeStack {
+  display: none !important;
+}
+/* Documents sit on the card itself, without Classic's grey box. */
+body.tagfox-runner #mdFilePreview.prop-md-preview,
+body.tagfox-runner #readmePreview.prop-md-preview,
+body.tagfox-runner #textPreviewPre.prop-md-preview,
+body.tagfox-runner #officePreview {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  padding: 0.1rem 0.1rem 0.5rem !important;
+  box-shadow: none !important;
+  animation: none !important;
+  font-size: 0.875rem;
+  color: var(--runner-ink);
+}
+body.tagfox-runner #mdFilePreview h1,
+body.tagfox-runner #readmePreview h1 {
+  font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+  font-size: 1.6rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+body.tagfox-runner .viewer-doc-editor-wrap .CodeMirror {
+  border-radius: 0.6rem;
+  background-color: color-mix(in srgb, var(--runner-canvas) 45%, var(--runner-surface));
+}
+body.tagfox-runner .viewer-doc-split-divider {
+  flex-basis: 10px;
+  background: transparent;
+}
+body.tagfox-runner .viewer-doc-split-divider::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2.25rem;
+  height: 3px;
+  border-radius: 3px;
+  transform: translate(-50%, -50%);
+  background: var(--bs-border-color);
+}
+body.tagfox-runner .viewer-doc-split-divider:hover {
+  transform: none;
+  background: transparent;
+}
+body.tagfox-runner .viewer-doc-split-divider:hover::after {
+  background: var(--tb-accent);
+}
+body.tagfox-runner #propsAside.props-theater .viewer-doc-split-divider::after {
+  width: 3px;
+  height: 2.25rem;
+}
+body.tagfox-runner #pdfFrame,
+body.tagfox-runner #htmlPreviewFrame {
+  border-radius: 0.6rem;
+}
+body.tagfox-runner #imageBlock img#propImagePreview {
+  margin: 0 auto;
+  border-radius: 0.5rem;
+}
+/* Subfolders' docs: each section's name, chevron and Edit as quiet text rather than outlined buttons. */
+body.tagfox-runner .global-readme-section-head {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--runner-muted);
+}
+body.tagfox-runner .global-readme-section-head .btn {
+  border: 0;
+  background: transparent;
+  padding: 0.05rem 0.45rem;
+  font-size: 0.78rem;
+  color: var(--runner-muted);
+  box-shadow: none;
+}
+body.tagfox-runner .global-readme-section-head .btn.nested-doc-edit {
+  color: var(--tb-accent);
+  font-weight: 600;
+}
+body.tagfox-runner .global-readme-section-head .btn.nested-doc-save {
+  border-radius: 999px;
+  background: var(--tb-accent);
+  color: #fff;
+}
+body.tagfox-runner .global-readme-section-head .btn:hover {
+  background: color-mix(in srgb, var(--runner-ink) 7%, transparent);
+}
+body.tagfox-runner .global-readme-section-head .btn.nested-doc-save:hover {
+  background: #4f46e5;
+}
+/* Spreadsheet and CSV previews: a plain grid, headers muted. */
+body.tagfox-runner #officePreview table {
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+body.tagfox-runner #officePreview td,
+body.tagfox-runner #officePreview th {
+  padding: 0.3rem 0.55rem;
+  border-bottom: 1px solid var(--bs-border-color-translucent);
+}
+body.tagfox-runner #officePreview tr:first-child td,
+body.tagfox-runner #officePreview th {
+  font-weight: 600;
+  color: var(--runner-muted);
+}
+/* ─── The Viewer's own parts (both layouts; Runner is the one on screen) ─── */
+/* Header: the type tile, the name, the actions. */
+.tagfox-viewer-head {
+  padding: 0.7rem 0.6rem 0.1rem 0.95rem;
+}
+.tagfox-viewer-tile .folder-type-icon,
+.tagfox-viewer-tile .file-type-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.5rem;
+  background-color: color-mix(in srgb, currentColor 13%, transparent);
+}
+.tagfox-viewer-tile .folder-type-icon i,
+.tagfox-viewer-tile .file-type-icon i {
+  font-size: 0.85rem;
+}
+.tagfox-viewer-name {
+  font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+.tagfox-viewer-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
   color: var(--runner-muted, var(--bs-secondary-color));
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+.tagfox-viewer-icon:hover,
+.tagfox-viewer-icon:focus-visible {
+  opacity: 1;
+  color: var(--runner-ink, var(--bs-body-color));
+  background-color: color-mix(in srgb, var(--runner-ink, var(--bs-body-color)) 8%, transparent);
+}
+/* Labelled actions: Edit, Done, Save, Write it, Open, New TODO. */
+.tagfox-viewer-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 1.8rem;
+  padding: 0 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--tb-accent) 35%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tb-accent) 10%, transparent);
+  color: var(--runner-ink, var(--bs-body-color));
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tagfox-viewer-pill i {
+  color: var(--tb-accent);
+  font-size: 0.72rem;
+}
+.tagfox-viewer-pill:hover,
+.tagfox-viewer-pill:focus-visible {
+  background: color-mix(in srgb, var(--tb-accent) 18%, transparent);
+}
+.tagfox-viewer-pill--solid {
+  border-color: var(--tb-accent);
+  background: var(--tb-accent);
+  color: #fff;
+}
+.tagfox-viewer-pill--solid i {
+  color: #fff;
+}
+.tagfox-viewer-pill--solid:hover,
+.tagfox-viewer-pill--solid:focus-visible {
+  background: #4f46e5;
+}
+.tagfox-viewer-pill--ghost {
+  border-color: var(--bs-border-color);
+  background: transparent;
+  font-weight: 500;
+}
+.tagfox-viewer-pill--ghost i {
+  color: var(--runner-muted, var(--bs-secondary-color));
+}
+.tagfox-viewer-pill--ghost:hover,
+.tagfox-viewer-pill--ghost:focus-visible {
+  background: color-mix(in srgb, var(--runner-ink, var(--bs-body-color)) 6%, transparent);
+}
+/* What the last autosave did, beside Done. */
+.tagfox-viewer-save-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-right: 0.25rem;
+  font-size: 0.75rem;
+  color: #15803d;
+  white-space: nowrap;
+}
+.tagfox-viewer-save-state::before {
+  content: '';
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+.tagfox-viewer-save-state--bad {
+  color: var(--bs-danger);
+}
+/* Under the name: tags, the folder it is in, size and time. Indented to the name, past the tile. */
+.tagfox-viewer-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  padding: 0 0.95rem 0.6rem calc(0.95rem + 1.75rem + 0.5rem);
   font-size: 0.75rem;
   line-height: 1.35;
+  color: var(--runner-muted, var(--bs-secondary-color));
+}
+.tagfox-viewer-where {
   overflow-wrap: anywhere;
   cursor: copy;
   user-select: text;
 }
-.tagfox-runner-viewer-path:hover {
+.tagfox-viewer-where:hover {
+  color: var(--runner-ink, var(--bs-body-color));
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.tagfox-viewer-facts {
+  white-space: nowrap;
+}
+/* The folder takes a line of its own: a long path wraps there rather than pushing the facts about. */
+.tagfox-viewer-where {
+  flex-basis: 100%;
+}
+/* Folder: Folder doc | Thumbnails, Include subfolders, New TODO. Wraps when the pane is narrow. */
+.tagfox-viewer-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.75rem;
+  padding: 0 0.75rem 0.55rem 0.95rem;
+  border-bottom: 1px solid var(--bs-border-color-translucent);
+}
+.tagfox-viewer-tabgroup {
+  display: inline-flex;
+  gap: 0.15rem;
+}
+.tagfox-viewer-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.22rem 0.7rem;
+  border-radius: 999px;
+  color: var(--runner-muted, var(--bs-secondary-color));
+  font-size: 0.8rem;
+  cursor: pointer;
+  user-select: none;
+}
+.tagfox-viewer-tab:hover {
+  color: var(--runner-ink, var(--bs-body-color));
+  background: color-mix(in srgb, var(--runner-ink, var(--bs-body-color)) 6%, transparent);
+}
+.btn-check:checked + .tagfox-viewer-tab {
+  color: var(--runner-ink, var(--bs-body-color));
+  background: color-mix(in srgb, var(--tb-accent) 14%, transparent);
+  font-weight: 600;
+}
+.btn-check:checked + .tagfox-viewer-tab i {
+  color: var(--tb-accent);
+}
+.btn-check:focus-visible + .tagfox-viewer-tab {
+  outline: 2px solid var(--tb-accent);
+  outline-offset: 1px;
+}
+.tagfox-viewer-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 0;
+  margin-left: auto;
+  padding-left: 0;
+  font-size: 0.8rem;
+  color: var(--runner-muted, var(--bs-secondary-color));
+}
+.tagfox-viewer-switch .form-check-input {
+  float: none;
+  margin: 0;
+  cursor: pointer;
+}
+.tagfox-viewer-switch .form-check-input:checked {
+  background-color: var(--tb-accent);
+  border-color: var(--tb-accent);
+}
+.tagfox-viewer-switch .form-check-label {
+  cursor: pointer;
+}
+/* Folder doc: its name and Edit over the text. */
+.tagfox-viewer-docbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.05rem 0 0.55rem;
+  font-size: 0.8rem;
+  color: var(--runner-muted, var(--bs-secondary-color));
+}
+.tagfox-viewer-docbar-name {
+  font-weight: 600;
   color: var(--runner-ink, var(--bs-body-color));
 }
-/* Viewer: the right third, unless Shift+Space has expanded it. */
-body.tagfox-runner #propsAside:not(.props-theater) {
-  width: 33.333% !important;
-  flex: 0 0 33.333%;
+/* The new folder doc's name: stem, extension, tags, as one field. */
+.tagfox-viewer-namefield {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  max-width: 100%;
+  height: 1.85rem;
+  padding: 0 0.2rem 0 0.75rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 999px;
+  background: var(--runner-surface, var(--bs-body-bg));
+  font-size: 0.85rem;
+  color: var(--runner-ink, var(--bs-body-color));
+}
+.tagfox-viewer-namefield:focus-within {
+  border-color: var(--tb-accent);
+}
+.tagfox-viewer-namefield input {
+  width: 6.5rem;
+  min-width: 2.5rem;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.tagfox-viewer-namefield #readmeFolderDocExt {
+  margin-right: 0.2rem;
+  color: var(--runner-muted, var(--bs-secondary-color));
+}
+.tagfox-viewer-namefield #readmeFolderDocTagPills .badge {
+  font-size: 0.68rem;
+}
+.tagfox-viewer-namefield #btnReadmeFolderDocTags {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--runner-ink, var(--bs-body-color)) 7%, transparent);
+  color: var(--runner-muted, var(--bs-secondary-color));
+  font-size: 0.65rem;
+}
+.tagfox-viewer-namefield #btnReadmeFolderDocTags:hover {
+  color: var(--runner-ink, var(--bs-body-color));
+}
+/* Empty states: nothing selected, no folder doc, no thumbnails, a Google shortcut, a kind with no preview. */
+.tagfox-viewer-empty,
+.tagfox-viewer-placeholder--final {
+  flex: 1 1 auto;
+  min-height: 12rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  padding: 1.5rem 1.5rem;
+  text-align: center;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--runner-muted, var(--bs-secondary-color));
+}
+.tagfox-viewer-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  margin-bottom: 0.25rem;
+  border-radius: 1rem;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  font-size: 1.45rem;
+}
+.tagfox-viewer-empty-icon--accent {
+  color: var(--tb-accent);
+}
+.tagfox-viewer-empty-icon--google {
+  color: #188038;
+}
+.tagfox-viewer-empty-title {
+  font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--runner-ink, var(--bs-body-color));
+}
+.tagfox-viewer-empty-row,
+.tagfox-viewer-placeholder-acts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+.tagfox-viewer-empty-small {
+  max-width: 24rem;
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  opacity: 0.85;
+}
+.tagfox-viewer-placeholder {
+  padding: 0.5rem 0.1rem;
+  color: var(--runner-muted, var(--bs-secondary-color));
+}
+.tagfox-viewer-placeholder--final #propPlaceholder {
+  max-width: 22rem;
+  color: var(--runner-ink, var(--bs-body-color));
+}
+/* The foot line: what can be done with what is shown. */
+.tagfox-viewer-foot {
+  flex-shrink: 0;
+  padding: 0.35rem 0.95rem 0.6rem;
+  font-size: 0.72rem;
+  color: var(--runner-muted, var(--bs-secondary-color));
+  opacity: 0.85;
 }
 /* Alt+P: the list takes the whole width. */
 body.tagfox-runner.tagfox-runner-viewer-off #propsAside {

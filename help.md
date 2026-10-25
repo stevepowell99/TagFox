@@ -83,7 +83,7 @@ Meanwhile, tools like Google Drive train you to type a word and expect the right
 - 🔍 **Three view switches** — Flat/Tree, Subfolders on/off, Files+folders/Folders only (combine freely). Plus recency buttons (1h, 1d, 1w, 1m, 1y) to filter “what changed recently”.
 - 👁️ **Fast previews** — images, PDFs, Word, Excel, PowerPoint, text, JSON, markdown and more, right in the Viewer panel.
 - 🏷️ **Filename tags** — add, remove and filter by `xk`/`xp`/`xx` tags. Tags scan your folder automatically; click them to filter results.
-- 📋 **Add TODO** — create a small markdown file tagged `xkTODO` in the current folder, right from the Viewer panel.
+- 📋 **New TODO** — create a small markdown file tagged `xkTODO` in the folder the Viewer shows, or with the `/` command **New TODO in this folder** in the current one.
 - 📝 **Folder docs** — Viewer loads the first of `-readme.md` → `-readme.txt` → `readme.md` → `readme.txt` → `claude.md` → `agents.md` → `about.md` → `about.txt` → `context.md` → `context.txt` → `index.md` → `index.txt` (details under **📁 Files & folders**).
 - 📦 **Shelf** — a visual staging area for files, like a kind of clipboard. Copy items onto the Shelf, navigate to another folder, paste them. The Shelf keeps them as you move around.
 - 🔄 **Bulk rename** — check several files (or highlight one), press `Ctrl`+`H`, use wildcards (`*` / `?`) on the **last path segment only**; live preview shows the first 200 rows but **Rename** still applies to the whole batch captured when the dialog opened. **Match case** follows the search row toggle.
@@ -193,18 +193,20 @@ Type to search. With the box empty you see the current folder's own contents; on
 - To edit a file's tags: select the row and press `Ctrl`+`T`, or use the **Tags** button in the bulk bar. **Add** or removing a chip renames on disk immediately. When a **current folder** is set, renames must stay under that path.
 - Tags are stored as trailing prefixed tokens before the extension, e.g. `Notes xxINFO.md`. A token is a tag only when it is a vocabulary word with its family prefix (e.g. `xkTODO`, `xpGCC`, `xxPUB`); anything else is literal text.
 - Tag files, not folders. Renaming a folder to tag it is risky (it breaks shortcuts, saved paths and shared-folder names). To tag a folder, tag a readme inside it: any `.md` whose name contains `readme` is treated as the folder's doc, so `TreeAid readme xkTODO.md` both tags the folder and still shows as its folder doc. Never rename `CLAUDE.md` to tag it — that name is special and renaming it would hide it from Claude.
-- **Deadlines.** Set a deadline with the date picker in the tag editor or the Add TODO box; it is stored as `xd-2026-07-15`. The deadline buttons on the toolbar (Overdue, Today, This wk, Next wk) filter results to files whose deadline falls in that range; pick one (they are single-select), and the **✕** button clears it. Week ranges run Monday to Sunday, and This wk includes today.
+- **Deadlines.** Set a deadline with the date picker in the tag editor or the Quick TODO box; it is stored as `xd-2026-07-15`. The deadline buttons on the toolbar (Overdue, Today, This wk, Next wk) filter results to files whose deadline falls in that range; pick one (they are single-select), and the **✕** button clears it. Week ranges run Monday to Sunday, and This wk includes today.
 - **Hide until.** The second date picker, beside the deadline one, sets a hide-until date, stored as `xh-2026-09-01`. A file carrying a hide-until date in the future is dropped from results, so it stops competing for your attention until the day comes, then reappears on its own. This is switched **on by default**: a hide you have to remember to turn on hides nothing. To see what is currently hidden, open the deadline panel and turn on **Show hidden**.
   - A hide-until is not a status. `xkLATER` means someday, maybe never; a hide-until means definitely, just not yet, and here is when to ask again. Nor is it a deadline: put both on the same file when you cannot start before one date and must finish by another.
   - The hiding only happens inside TagFox. Everything, grep and Google Drive cannot read the token, so they will still return the file. That is the cost of keeping the whole state in the filename, and it errs the right way: a raw search is a deliberate act of looking.
 
 ### 📄 Viewer panel
 
-- Select a file to see its details and preview on the right. Supports images, PDFs, Office files, markdown, text, audio, and video.
-- For folders, the Viewer shows a **folder doc** — the first match it finds (case-insensitive basename): `-readme.md` → `-readme.txt` → `readme.md` → `readme.txt` → `claude.md` → `agents.md` → `about.md` → `about.txt` → `context.md` → `context.txt` → `index.md` → `index.txt`. **Edit** opens the editor (live preview); **Save** writes to disk, closes the editor, and refreshes the search. If none of those files exist yet, saving creates `-readme.md`.
+- Select a file to see it on the right: images, PDFs, Office files, markdown, text, audio and video. The top shows its name, then its tags, size and date, then the folder it is in; click the folder to copy the full path. A kind TagFox cannot show says so and offers **Open** and **Show in folder**.
+- A markdown or text file has **Edit**, which opens the editor. Changes save as you type, **Saved** shows beside the button, and **Done** closes the editor.
+- For folders, the Viewer has two tabs. **Folder doc** shows the first match it finds (case-insensitive basename): `-readme.md` → `-readme.txt` → `readme.md` → `readme.txt` → `claude.md` → `agents.md` → `about.md` → `about.txt` → `context.md` → `context.txt` → `index.md` → `index.txt`. **Edit** opens the editor (live preview); **Save** writes to disk, closes the editor, and refreshes the search. A folder with none of those says so: **Write it** opens the editor, and Save creates the file under the name beside the button (`-readme.md` unless you change it). **Thumbnails** shows the folder's pictures and documents as a grid. The **Subfolders** switch adds each subfolder's folder doc below the folder's own.
+- **New TODO**, beside the tabs, opens the Quick TODO box for the folder on screen; type a title and save, and TagFox creates a file like `Buy milk xkTODO.md` in that folder.
 - The row **⋯** menu gives you options to open, reveal in Explorer, copy the path, and more.
-- Press `Shift`+`Space` to expand the Viewer to near-fullscreen.
-- Google Workspace shortcuts (`.gdoc` / `.gsheet` / `.gslides`): **Open** uses an in-app window when TagFox can get the document URL (from the stub JSON, or on Windows from the Drive stream `filename:user.drive.id`). Streamed-only files are usually fine; if not, use Open again, context “Search Google Drive…”, or hydrate the file in Drive.
+- Press `Shift`+`Space` to expand the Viewer to near-fullscreen. A PDF fits the side pane's width, and opens at 150% when expanded.
+- Google Workspace shortcuts (`.gdoc` / `.gsheet` / `.gslides`) offer **Open in TagFox**, an in-app window where you sign in to Google once, and **Open in browser**. TagFox needs the document's address, from the shortcut file or on Windows from the Drive stream `filename:user.drive.id`. Streamed-only files are usually fine; if not, use Open again, context “Search Google Drive…”, or hydrate the file in Drive.
 
 <!-- help:tab {"id":"favourites","label":"⭐ Favourites"} -->
 
@@ -248,7 +250,7 @@ The Shelf is the strip under the results list, one line high while it is empty. 
 
 TagFox lets you manage simple projects right on your filesystem — no separate app needed.
 
-- 📋 **Add TODO** — in the Viewer panel, type a title and hit save. TagFox creates a markdown file like `Buy milk xkTODO.md` in your current folder. The `xkTODO` tag makes it easy to find later.
+- 📋 **New TODO** — select a folder, press **New TODO** in the Viewer, type a title and save. TagFox creates a markdown file like `Buy milk xkTODO.md` in that folder; the `/` command **New TODO in this folder** does the same for the current folder. The `xkTODO` tag makes it easy to find later.
 - 📝 **Folder docs** — write a short description of what a folder is for. Tag it *active*, *archived*, etc. to track project status. Filter by tag to see only active work.
 - 🌲 **Tree view + tags = lightweight project management.** You can organise a whole project with markdown notes, tags, and folder docs — no proprietary database. Everything stays as normal files that work in Explorer, Drive, and zip exports.
 
