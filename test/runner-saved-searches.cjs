@@ -72,7 +72,9 @@ async function main() {
       if ((await R()).cmdListOpen) await key('Escape', 'Escape', 27);
     };
     const saved = () => ev(`JSON.parse(localStorage.getItem('tagBrowserFavSearches') || '[]')`);
-    const cmdLabel = (id) => ev(`(document.querySelector('#runnerCmdList [data-cmd-id="${id}"]')?.textContent || '').trim()`);
+    // A command's label, and the key the / list shows beside it.
+    const cmdLabel = (id) => ev(`(document.querySelector('#runnerCmdList [data-cmd-id="${id}"] .tagfox-runner-cmd-state + span')?.textContent || '').trim()`);
+    const cmdKey = (id) => ev(`(document.querySelector('#runnerCmdList [data-cmd-id="${id}"] .tagfox-runner-cmd-key')?.textContent || '').trim()`);
     const startAgain = async () => {
       await focusBox();
       await key('Home', 'Home', 36, ALT);
@@ -107,8 +109,8 @@ async function main() {
     check(list.length === 1 && JSON.stringify(list[0].activeTagKeys) === '["todo"]', 'with its tag');
     check(/Saved as “budget”, Alt\+1 runs it/.test((await R()).status), `the status line says how to run it ("${(await R()).status}")`);
     await slash('');
-    check((await cmdLabel('save-search')) === 'Forget this saved search', `with it on screen the command reads Forget ("${await cmdLabel('save-search')}")`);
-    check(/^Saved search: budget \(in alpha place, tagged TODO\) · Alt\+1$/.test(await cmdLabel('saved-search-1')), `the saved search is a command ("${await cmdLabel('saved-search-1')}")`);
+    check((await cmdLabel('save-search')) === 'Forget this saved search' && (await cmdKey('save-search')) === '', `with it on screen the command reads Forget, without Ctrl+S beside it ("${await cmdLabel('save-search')}", "${await cmdKey('save-search')}")`);
+    check((await cmdLabel('saved-search-1')) === 'Saved search: budget (in alpha place, tagged TODO)' && (await cmdKey('saved-search-1')) === 'Alt+1', `the saved search is a command, with Alt+1 beside it ("${await cmdLabel('saved-search-1')}", "${await cmdKey('saved-search-1')}")`);
     await closeList();
 
     // Alt+1 after starting again.
@@ -149,7 +151,7 @@ async function main() {
     await ev(`(localStorage.setItem('tagBrowserFavSearches', ${JSON.stringify(JSON.stringify([classic]))}), 1)`);
     st = await slash('beta');
     check(st.cmdMatches[0] === 'saved-search-1', `a Classic entry comes back as a command, found by its folder's name (${st.cmdMatches.slice(0, 3).join(', ')})`);
-    check(/^Saved search: beta place · Alt\+1$/.test(await cmdLabel('saved-search-1')), `named after its folder ("${await cmdLabel('saved-search-1')}")`);
+    check((await cmdLabel('saved-search-1')) === 'Saved search: beta place', `named after its folder ("${await cmdLabel('saved-search-1')}")`);
     await key('Enter', 'Enter', 13);
     await drv.settle('classic by command');
     st = await R();

@@ -45,7 +45,7 @@ TagFox does not search the disk itself. It asks [Everything](https://www.voidtoo
 ### Bring TagFox up from anywhere
 
 - `Ctrl`+`Alt`+`Space` shows TagFox from any program, and pressing it again hides it. You can choose another key in **Settings**, under **Global hotkey & Quick TODO**: click **Record…** and press the keys you want.
-- The × at the top right of the window hides TagFox rather than closing it, so the shortcut still brings it back. To quit, choose **File → Quit TagFox**, or the `/` command **Quit TagFox**. The shortcuts then stop working until TagFox starts again.
+- The × at the top right of the window, or `Ctrl`+`W`, hides TagFox rather than closing it, so the shortcut still brings it back. To quit, choose **File → Quit TagFox**, or the `/` command **Quit TagFox**. The shortcuts then stop working until TagFox starts again.
 - `Ctrl`+`Shift`+`Space`, from anywhere, shows everything that changed in the last hour, in every folder.
 - `Alt`+`Shift`+`N`, from anywhere, opens the **Quick TODO** box, for noting a task as a file (see **Tags and tasks**).
 
@@ -66,7 +66,7 @@ TagFox does not search the disk itself. It asks [Everything](https://www.voidtoo
 
 ### Help and keys
 
-- `?`, with the search box empty, lists every key (the **Keys** tab here).
+- `?`, with the search box empty, or `Ctrl`+`/` anywhere, lists every key (the **Keys** tab here).
 - `F1` opens this help, and `Ctrl`+`,` opens **Settings**.
 
 <!-- help:tab {"id":"search","label":"Finding things"} -->
@@ -80,7 +80,7 @@ TagFox does not search the disk itself. It asks [Everything](https://www.voidtoo
 
 ### Moving between folders
 
-- `→`, or `Enter` on a folder, goes into the selected folder. `←` goes up to the parent, with the folder you left selected.
+- `→`, or `Enter` on a folder, goes into the selected folder. `←`, or `Alt`+`↑` as in File Explorer, goes up to the parent, with the folder you left selected.
 - `Backspace` in an empty search box leaves the folder, so you search everywhere. So does the × on the folder's name at the start of the box.
 - Click any name in the path above the search box to go there, or the › after it to choose one of the folders inside.
 - `Shift`+`Enter` goes to the folder holding the selected row.
@@ -90,13 +90,13 @@ TagFox does not search the disk itself. It asks [Everything](https://www.voidtoo
 
 ### Commands and options
 
-- Type `/` in the search box for a list of commands: sort orders, filters, tags, match settings, **Settings** and more. Type a few letters to find one (`/size`, `/todo`), choose with `↑` and `↓`, and press `Enter`.
+- Type `/` in the search box for a list of commands: sort orders, filters, tags, match settings, **Settings** and more. Type a few letters to find one (`/size`, `/todo`), choose with `↑` and `↓`, and press `Enter`. A command that has a key of its own shows it at the right.
 - **Options**, the second faint button at the right of the search box, or `Alt`+`O`, shows the same commands as buttons.
 - Every filter or setting that differs from the usual shows as a chip under the search box, such as **Modified in the last day** or **Folders only**. Click a chip's × to undo it. If the list is empty, the chips are the first place to look.
-- `Ctrl`+`R` limits the list to what changed recently: the last hour, then a day, a week, a month, a year, and then any time again, a step a press.
+- `Ctrl`+`R` limits the list to what changed recently: the last hour, then a day, a week, a month, a year, and then any time again, a step a press. `Ctrl`+`Shift`+`R` steps back.
 - **Folders only** and **Files only**, under `/`, do what they say.
 - **Search this folder only** keeps a search to the current folder's own contents, without the folders inside it.
-- **Show system files** lists the files Windows and programs keep out of sight (names starting with `.` or `$`, and `desktop.ini`), which are left out at first.
+- **Show system files**, or `Ctrl`+`.`, lists the files Windows and programs keep out of sight (names starting with `.` or `$`, and `desktop.ini`), which are left out at first.
 
 ### What you can type
 
@@ -112,14 +112,14 @@ TagFox does not search the disk itself. It asks [Everything](https://www.voidtoo
 - Files whose **name** matches come before files that match only by the folder they are in. A whole word ranks above the start of a word, which ranks above a match in the middle of one.
 - After that, TagFox favours files changed recently, starred files and folders, things you open often in TagFox, and things Windows lists as recently opened in any program.
 - Files under `AppData` and `ProgramData` folders, Word's `~$` lock files and the like are listed lower down, unless you typed their name.
-- `Ctrl`+`M` sorts by date and `Ctrl`+`N` by name; the same key again goes back to the usual order. `/size` puts the largest first, and `/smallest` the smallest.
+- `Ctrl`+`M` sorts by date, newest first, and the same key again goes back to the usual order. `/name` sorts by name, `/size` puts the largest first, and `/smallest` the smallest.
 - A search that finds a very large number of matches ranks only the newest few hundred; a note at the right of the search box then says how many it ranked out of how many it found. Type more to narrow it down.
 
 ### Saved searches
 
-- Type `/` and choose **Save this search**. TagFox keeps the folder, the text in the box and every filter, and names the search after its text, or after the folder when the box is empty.
+- `Ctrl`+`S`, or the `/` command **Save this search**, saves the search on screen. TagFox keeps the folder, the text in the box and every filter, and names the search after its text, or after the folder when the box is empty.
 - Each saved search becomes a `/` command of its own: type `/` and a few letters of its name. `Alt`+`1` to `Alt`+`9` run the first nine, in the order you saved them.
-- While a saved search is on screen, the same command reads **Forget this saved search**.
+- While a saved search is on screen, the `/` command reads **Forget this saved search**, and `Ctrl`+`S` says which one it is.
 
 <!-- help:tab {"id":"files-folders","label":"Working with files"} -->
 
@@ -146,6 +146,7 @@ TagFox does not search the disk itself. It asks [Everything](https://www.voidtoo
 
 - `F2` renames the selected file or folder. `Ctrl`+`H` renames all the checked files at once, using wildcards.
 - `Ctrl`+`Shift`+`N` makes a new folder in the folder you are in.
+- `Ctrl`+`Z` undoes the last rename, tag change, move, paste or new folder.
 - `Ctrl`+`C` and `Ctrl`+`X` copy or cut the selected files, to paste in File Explorer. `Ctrl`+`V` pastes files copied in File Explorer into the folder you are in. If you copied a picture or a screenshot instead, `Ctrl`+`V` saves it there as `Clipboard image.png`.
 - `Ctrl`+`Shift`+`C` copies the selected files' full paths as text.
 - `Del` sends the checked rows to the Recycle Bin, after asking. TagFox never deletes anything for good, so `Shift`+`Del` recycles too.
@@ -258,7 +259,7 @@ A word only counts as a tag with its own prefix: `xkTODO` is a tag, while `todo`
 
 - **Quick TODO** makes a markdown file whose name is the task, such as `Ring the bank xkTODO.md`. Type a title and press the save button.
 - `Alt`+`Shift`+`N` opens it from anywhere in Windows. The file goes in the **Quick TODO folder**, which you choose in **Settings** under **Global hotkey & Quick TODO**.
-- **New TODO** in the Viewer, when a folder is selected, or the `/` command **New TODO in this folder**, opens the same box aimed at that folder.
+- `Ctrl`+`N`, **New TODO** in the Viewer when a folder is selected, or the `/` command **New TODO in this folder** opens the same box aimed at that folder. Outside a folder, `Ctrl`+`N` aims it at the Quick TODO folder.
 - The box's tag button chooses its tags, deadline and hide-until date, and its other button adds text to go inside the file. **Open in list after save** takes you to the new file.
 - When the task is done, delete the file, or change its tag.
 

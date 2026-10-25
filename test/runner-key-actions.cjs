@@ -1,15 +1,21 @@
 // The keys that toggle options, open dialogs and move between folders, driven with real key events over CDP
 // against folders made for the test:
-//   - Ctrl+W and Ctrl+. switch whole words and system files, and switch them back;
-//   - Ctrl+R steps the recency window (any time, last hour, last day) and Ctrl+Shift+R toggles the last hour;
+//   - Ctrl+B and Ctrl+. switch whole words and system files, and switch them back;
+//   - Ctrl+R steps the recency window forward (any time, last hour, last day) and Ctrl+Shift+R back, round
+//     past any time to the last year;
 //   - Space checks and unchecks the selected row, Ctrl+A checks every row, and Esc goes back to the one;
-//   - Ctrl+J and Ctrl+K move to the next folder and back;
-//   - F2, Ctrl+Shift+N, Ctrl+H and Ctrl+/ open the rename, new-folder, bulk-rename and Help dialogs;
+//   - F2, Ctrl+Shift+N and Ctrl+H open the rename, new-folder and bulk-rename dialogs; Ctrl+/ opens Help on
+//     the Keys tab, and F1 on Get started;
+//   - Ctrl+N opens the Quick TODO box aimed at the folder on screen;
+//   - Ctrl+S saves the search on screen, and again says it is already saved rather than forgetting it;
+//   - the / list shows each command's key beside it (Ctrl+B by Whole words only);
 //   - Ctrl+, opens Settings, and Esc closes it without unchecking the selected row;
 //   - Shift+Space shows the Viewer full screen and Esc puts it back;
-//   - Ctrl+↑ from the list and Alt+↑ from the box go up a folder, Ctrl+Shift+Home leaves the folder,
-//     and Ctrl+Shift+1…9 goes into a starred folder;
+//   - Alt+↑ from the box, with text typed, goes up a folder with the one left selected, as ← does, and
+//     Ctrl+Shift+1…9 goes into a starred folder;
 //   - Ctrl+Z with nothing to undo says so;
+// Ctrl+W is not driven: it hides the window, which a test window already is, through the call Esc's last
+// step makes.
 //   - Enter on a focused button presses the button rather than opening the selected row. The positive control
 //     is Enter in the list, which opens that row, so a test that pressed nothing fails.
 // Nothing here opens a file outside TagFox: the folder Enter is pressed in holds only folders.
@@ -96,10 +102,10 @@ async function main() {
     await focusList();
     const opt = (id) => drv.ev(`document.getElementById('${id}').checked`);
     const ww = await opt('optWholeWord');
-    await key('w', 'KeyW', 87, CTRL);
+    await key('b', 'KeyB', 66, CTRL);
     const ww1 = await opt('optWholeWord');
-    await key('w', 'KeyW', 87, CTRL);
-    check(ww1 === !ww && (await opt('optWholeWord')) === ww, `Ctrl+W switches whole words and back (${ww} → ${ww1})`);
+    await key('b', 'KeyB', 66, CTRL);
+    check(ww1 === !ww && (await opt('optWholeWord')) === ww, `Ctrl+B switches whole words and back (${ww} → ${ww1})`);
     const sys = await opt('optHideSpecial');
     await key('.', 'Period', 190, CTRL);
     const sys1 = await opt('optHideSpecial');
@@ -116,7 +122,11 @@ async function main() {
     rec.push((await R()).recency);
     await key('R', 'KeyR', 82, CTRL | SHIFT);
     rec.push((await R()).recency);
-    check(rec.join(' ') === 'all 1h 1d 1h all', `Ctrl+R steps the recency window and Ctrl+Shift+R toggles the last hour (${rec.join(' ')})`);
+    await key('R', 'KeyR', 82, CTRL | SHIFT);
+    rec.push((await R()).recency);
+    await key('r', 'KeyR', 82, CTRL);
+    rec.push((await R()).recency);
+    check(rec.join(' ') === 'all 1h 1d 1h all 1y all', `Ctrl+R steps the recency window forward and Ctrl+Shift+R back (${rec.join(' ')})`);
     await drv.settle('recency');
 
     // Checks.
@@ -131,20 +141,6 @@ async function main() {
     check(s.checked === s.rows.length && s.rows.length >= 3, `Ctrl+A checks every row (${s.checked} of ${s.rows.length})`);
     await key('Escape', 'Escape', 27);
     check((await R()).checked === 1, `and Esc goes back to the selected row (${(await R()).checked} checked)`);
-
-    // Next folder and back.
-    const isFolder = (p) => ['alpha', 'beta', 'gamma'].includes(path.basename(p || '').toLowerCase());
-    s = await goTo(root, 'alpha');
-    const startJ = s.selected;
-    // Ctrl+J goes down the list's folders and Ctrl+K up, so the first key is the one with a folder that way.
-    const order = s.rows.filter(isFolder).map(norm);
-    const down = order.indexOf(norm(startJ)) < order.length - 1;
-    const [first, second] = down ? [['j', 'KeyJ', 74], ['k', 'KeyK', 75]] : [['k', 'KeyK', 75], ['j', 'KeyJ', 74]];
-    await key(...first, CTRL);
-    const gotJ = (await R()).selected;
-    await key(...second, CTRL);
-    const gotK = (await R()).selected;
-    check(isFolder(gotJ) && norm(gotJ) !== norm(startJ) && norm(gotK) === norm(startJ), `Ctrl+${first[0].toUpperCase()} goes to the ${down ? 'next' : 'previous'} folder and Ctrl+${second[0].toUpperCase()} back (${[startJ, gotJ, gotK].map((p) => path.basename(p || '-')).join(' → ')})`);
 
     // Dialogs.
     s = await goTo(root, 'alpha');
@@ -162,9 +158,44 @@ async function main() {
     check(await waitFor(shown('bulkRenameModal')), 'Ctrl+H opens the wildcard rename');
     await closeModal('bulkRenameModal');
     await focusList();
+    const helpTab = () => drv.ev(`document.querySelector('#helpModalTabs .nav-link.active')?.dataset.helpTab || ''`);
     await key('/', 'Slash', 191, CTRL);
-    check(await waitFor(shown('helpModal')), 'Ctrl+/ opens Help');
+    check((await waitFor(shown('helpModal'))) && (await helpTab()) === 'runner', `Ctrl+/ opens Help on the Keys tab (${await helpTab()})`);
     await closeModal('helpModal');
+    await focusList();
+    await key('F1', 'F1', 112);
+    check((await waitFor(shown('helpModal'))) && (await helpTab()) !== 'runner', `F1 opens Help on Get started, not the Keys tab (${await helpTab()})`);
+    await closeModal('helpModal');
+
+    // Ctrl+N: a new TODO, here.
+    await focusList();
+    await key('n', 'KeyN', 78, CTRL);
+    const todo = `(() => { const p = document.getElementById('quickTodoPop'); return !!p && !p.classList.contains('d-none') ? document.getElementById('quickTodoPopLabel').textContent : ''; })()`;
+    const todoLabel = (await waitFor(todo)) && (await drv.ev(todo));
+    check(todoLabel === 'New TODO in ' + path.basename(root), `Ctrl+N opens the Quick TODO box aimed at this folder ("${todoLabel}")`);
+    await drv.ev(`(document.getElementById('btnQuickTodoPopClose').click(), 1)`);
+
+    // Ctrl+S: save this search, and a second press keeps it saved.
+    const savedCount = () => drv.ev(`(JSON.parse(localStorage.getItem('tagBrowserFavSearches') || '[]') || []).length`);
+    s = await goTo(root, 'alpha');
+    const savedBefore = await savedCount();
+    await key('s', 'KeyS', 83, CTRL);
+    const savedAfter = await savedCount();
+    const st1 = (await R()).status;
+    check(savedAfter === savedBefore + 1 && /^Saved as/.test(st1), `Ctrl+S saves the search on screen (${savedBefore} → ${savedAfter}, "${st1.slice(0, 40)}")`);
+    await key('s', 'KeyS', 83, CTRL);
+    const st2 = (await R()).status;
+    check((await savedCount()) === savedAfter && /^Already saved/.test(st2), `Ctrl+S again keeps it saved and says so ("${st2.slice(0, 40)}")`);
+    await drv.T('runCommand', 'save-search'); // the / command forgets it, so the profile ends as it began
+    check((await savedCount()) === savedBefore, 'set up: the / command forgets it again');
+
+    // The / list shows each command's key.
+    await drv.T('setQuery', '');
+    await focusBox();
+    await key('/', 'Slash', 191, 0, '/');
+    const wordKey = await drv.ev(`document.querySelector('#runnerCmdList [data-cmd-id="word"] .tagfox-runner-cmd-key')?.textContent || ''`);
+    check(wordKey === 'Ctrl+B', `the / list shows Ctrl+B beside Whole words only ("${wordKey}")`);
+    await key('Escape', 'Escape', 27);
 
     // Settings, and Esc in it.
     s = await goTo(root, 'alpha');
@@ -186,19 +217,14 @@ async function main() {
 
     // Folders.
     s = await goTo(alpha);
-    await focusList();
-    await key('ArrowUp', 'ArrowUp', 38, CTRL);
-    await drv.settle('ctrl up');
-    check(norm((await R()).scope) === norm(root), `Ctrl+↑ from the list goes up a folder (${path.basename((await R()).scope)})`);
-    s = await goTo(alpha);
+    await drv.T('setQuery', 'inn');
     await focusBox();
     await key('ArrowUp', 'ArrowUp', 38, ALT);
     await drv.settle('alt up');
-    check(norm((await R()).scope) === norm(root), `Alt+↑ from the box goes up a folder (${path.basename((await R()).scope)})`);
-    await focusList();
-    await key('Home', 'Home', 36, CTRL | SHIFT);
-    await drv.settle('leave folder');
-    check((await R()).scope === '', `Ctrl+Shift+Home leaves the folder ("${(await R()).scope}")`);
+    await waitFor(`(document.getElementById('rootFolder').value || '').replace(/[\\\\/]+$/, '').toLowerCase() === ${JSON.stringify(norm(root))}`);
+    await drv.settle('alt up done');
+    s = await R();
+    check(norm(s.scope) === norm(root) && norm(s.selected) === norm(alpha), `Alt+↑ from the box, with text typed, goes up a folder with the one left selected (${path.basename(s.scope)}, ${path.basename(s.selected || '-')})`);
     await drv.T('toggleStar', beta);
     s = await goTo(root, 'alpha');
     const n = s.stars.findIndex((p) => norm(p) === norm(beta)) + 1;

@@ -292,8 +292,9 @@ async function main() {
     await letter('o', 1);
     await letter('o', 1);
     check(!(await opts()).open, 'Alt+O again closes them');
-    await letter('n', 2); // Ctrl+N: back to the smart order
-    await drv.settle('ctrl n');
+    await letter('m', 2); // Ctrl+M twice: by date, then back to the smart order
+    await letter('m', 2);
+    await drv.settle('ctrl m from name');
     check((await R()).sort === 'smart', 'set up: back to the smart order');
 
     // ? in an empty box: Help at Runner's keys, drawn from the key table.

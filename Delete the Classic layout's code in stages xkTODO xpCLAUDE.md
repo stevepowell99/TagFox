@@ -47,7 +47,7 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 - **Favourites store (the stars):** `loadFavouriteFolders`, `saveFavouriteFolders`, `toggleStarPath`, `openFavouritePath` (Ctrl+Shift+1..9, which asks IPC `path-kinds` whether a star is a file or a folder); `fuzzyPathScore` (used by Runner's `/` list) lives in the favourites code. IPC `windows-recent-folders`/`-files` and `scanWindowsRecentLnkTargets` in `main.js` feed Runner's ranking boost and are not Classic's.
 - **History and undo:** `searchHist`, `goSearchHistory`, `runUndo`.
 - **Clicked hidden controls:** `#helpModal`, `#settingsPanel`; `#statusMain` and `setStatusMain`.
-- **Keys:** every key is a `RUNNER_KEYS` entry, but several entries still call Classic's functions: `goToParentScopeFolder` (Ctrl+↑, Alt+↑), `moveResultsSiblingFolder` (Ctrl+J/K), `clearSearchScopeAndTagRecencyFilters` (Ctrl+Shift+Home), `toggleRecencyAllVsHour` (Ctrl+Shift+R) and `runUndo` (Ctrl+Z). The search box's own keydown listener still sends Ctrl+↓ and Alt+↓ into the list (`enterResultsListKeepingSelection`).
+- **Keys:** every key is a `RUNNER_KEYS` entry, and the key map was rationalised on 25 October 2026 (Ctrl+J/K, Ctrl+↑, Ctrl+P and Ctrl+Shift+Home dropped; Alt+↑ is ←). `runnerGoUp` still calls Classic's `goToParentScopeFolder`, and Ctrl+Z calls `runUndo`. Nothing calls the sibling-folder block any more (`moveResultsSiblingFolder`, `goToSiblingScopeFolder`, `fetchSortedSiblingFolderRowsUnderParent`, `indexOfNextFolderSharingParent`, `finishSiblingNavScrollAfterLoadMaybe`, `applySiblingNavScrollToTop`, `siblingNavScrollToken`): delete it, checking each helper for other callers first. The search box's own keydown listener still sends Ctrl+↓ and Alt+↓ into the list (`enterResultsListKeepingSelection`).
 
 ## Tests
 
@@ -64,4 +64,3 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 ## Decisions before any deletion
 
 - None left: deadlines, the star list, Restart, Windows Recent, Ctrl+Shift+Space and Subfolders are all settled above.
-- **For Steve, before the keys' Classic functions go:** Ctrl+↑ and Alt+↑ go up a folder keeping the box's text, where ← goes up the Runner way (box cleared, the folder left selected), so should the two become ←? And should the unlisted keys (Ctrl+W, Ctrl+., Ctrl+J/K, Ctrl+Shift+R, Ctrl+Shift+Home, Ctrl+Z, Ctrl+↑, Alt+↑) be listed in Help or dropped?

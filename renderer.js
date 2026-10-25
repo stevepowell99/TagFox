@@ -2296,18 +2296,6 @@
       commitSearchHistoryNow();
     }
 
-    /** Clear current folder plus active tag/recency filters; keep query and view mode unchanged. */
-    function clearSearchScopeAndTagRecencyFilters() {
-      document.getElementById('rootFolder').value = '';
-      activeTagKeys.clear();
-      excludedTagKeys.clear();
-      persistActiveTagFilter();
-      setRecencyFilterMode('all');
-      saveSettings();
-      renderScopeBreadcrumb();
-      scheduleSearch();
-      commitSearchHistoryNow();
-    }
 
     /** Empty #query and refresh — same as the search-row ✕ (not current folder / scope). */
     function clearSearchQuery() {
@@ -3445,14 +3433,9 @@
       else setStatusMain('Select a row first, then Ctrl+T edits its tags.');
     }
 
-    /** /New TODO: the Quick TODO box, aimed at the current folder. */
+    /** /New TODO and Ctrl+N: the Quick TODO box, aimed at the current folder; outside one, at the Quick TODO folder. */
     function runnerNewTodoHere() {
-      const folder = currentScopeFolderPath();
-      if (!folder) {
-        setStatusMain('Go into a folder first (Right on a folder row), then /New TODO puts the file there.');
-        return;
-      }
-      showQuickTodoPop(folder);
+      showQuickTodoPop(currentScopeFolderPath() || '');
     }
 
     /** One table drives the options panel and the / list. */
@@ -3462,7 +3445,7 @@
       { id: 'sort-name', group: 'Sort', label: 'Sort by name', isOn: () => runnerSort === 'name', run: () => setRunnerSort('name') },
       { id: 'sort-size', group: 'Sort', label: 'Sort by size, largest first', isOn: () => runnerSort === 'size', run: () => setRunnerSort('size') },
       { id: 'sort-size-asc', group: 'Sort', label: 'Sort by size, smallest first', isOn: () => runnerSort === 'size-asc', run: () => setRunnerSort('size-asc') },
-      { id: 'edit-tags', group: 'Tags', label: 'Edit tags of the selected or checked rows (Ctrl+T)', run: () => runnerEditTags() },
+      { id: 'edit-tags', group: 'Tags', label: 'Edit tags of the selected or checked rows', run: () => runnerEditTags() },
       /* One filter per vocabulary word; the options panel draws these as a row of small buttons. */
       ...Object.keys(T.TAG_VOCAB).map((word) => ({
         id: 'tag-' + word.toLowerCase(),
@@ -3493,7 +3476,7 @@
       { id: 'temp', group: 'Show', label: 'Hide temp files (AppData\\Local\\Temp; listed lower when shown)', isOn: () => runnerHideTempOn(), run: () => runnerToggleTemp() },
       { id: 'folders', group: 'Show', label: 'Folders only', isOn: () => isFoldersOnly(), run: () => runnerSetContent(isFoldersOnly() ? 'all' : 'folders') },
       { id: 'files', group: 'Show', label: 'Files only', isOn: () => isFilesOnly(), run: () => runnerSetContent(isFilesOnly() ? 'all' : 'files') },
-      { id: 'viewer', group: 'Show', label: 'The Viewer (Alt+P)', isOn: () => !runnerViewerOff(), run: () => runnerToggleViewer() },
+      { id: 'viewer', group: 'Show', label: 'The Viewer', isOn: () => !runnerViewerOff(), run: () => runnerToggleViewer() },
       { id: 'this-folder', group: 'Match', label: 'Search this folder only (not its subfolders)', isOn: () => runnerThisFolderOnlyOn(), run: () => runnerToggleThisFolderOnly() },
       { id: 'path', group: 'Match', label: 'Match path (off: names only)', isOn: () => !!document.getElementById('optPath')?.checked, run: () => runnerToggleMatchPath() },
       { id: 'word', group: 'Match', label: 'Whole words only', isOn: () => runnerOptOn('optWholeWord'), run: () => toggleSearchOptCheckbox('optWholeWord') },
@@ -3505,10 +3488,11 @@
       { id: 'recent-1d', group: 'Modified', label: 'Modified in the last day', isOn: () => recencyFilterMode() === '1d', run: () => runnerSetRecency('1d') },
       { id: 'recent-1w', group: 'Modified', label: 'Modified in the last week', isOn: () => recencyFilterMode() === '1w', run: () => runnerSetRecency('1w') },
       { id: 'new-todo', group: 'TagFox', label: 'New TODO in this folder', run: () => runnerNewTodoHere() },
-      { id: 'refresh', group: 'TagFox', label: 'Refresh (F5)', run: () => void refreshResultsFromUi() },
+      { id: 'refresh', group: 'TagFox', label: 'Refresh', run: () => void refreshResultsFromUi() },
       { id: 'dark', group: 'TagFox', label: 'Dark or light mode', run: () => toggleDarkMode() },
       { id: 'settings', group: 'TagFox', label: 'Settings', run: () => toggleSettingsPanel() },
-      { id: 'help', group: 'TagFox', label: 'Help (F1)', run: () => showHelp() },
+      { id: 'help', group: 'TagFox', label: 'Help', run: () => showHelp() },
+      { id: 'keys', group: 'TagFox', label: 'Keys', run: () => openRunnerKeysHelp() },
       { id: 'quit', group: 'TagFox', label: 'Quit TagFox (its shortcut stops working until TagFox starts again)', run: () => void window.tagBrowser?.quitTagFox?.() },
     ];
 
@@ -3642,6 +3626,14 @@
       setStatusMain('Saved as “' + saved.name + '”' + (n <= 9 ? ', Alt+' + n + ' runs it' : '') + '. Type / and its name to find it.');
     }
 
+    /** Ctrl+S: save the search on screen. One already saved stays saved; only the / command forgets it. */
+    function saveCurrentSearchFromKey() {
+      const idx = savedSearchIndexOfCurrent();
+      if (idx < 0) return saveOrForgetCurrentSearch();
+      const s = loadSavedSearches()[idx];
+      setStatusMain('Already saved as “' + savedSearchName(s) + '”' + (idx < 9 ? ', Alt+' + (idx + 1) + ' runs it' : '') + '.');
+    }
+
     /** Run saved search n (1-based): its folder, text and filters, then one search; it goes into Back and Forward. */
     async function runSavedSearch(n) {
       const s = loadSavedSearches()[n - 1];
@@ -3689,6 +3681,8 @@
           id: 'save-search',
           group: 'Saved searches',
           label: current >= 0 ? 'Forget this saved search' : 'Save this search (folder, text and filters)',
+          /* Ctrl+S never forgets, so it is shown beside Save only. */
+          key: current >= 0 ? '' : runnerKeyForCommand('save-search'),
           run: () => saveOrForgetCurrentSearch(),
         },
         ...saved.map((s, i) => {
@@ -3696,7 +3690,8 @@
           return {
             id: 'saved-search-' + (i + 1),
             group: 'Saved searches',
-            label: 'Saved search: ' + savedSearchName(s) + (detail ? ' (' + detail + ')' : '') + (i < 9 ? ' · Alt+' + (i + 1) : ''),
+            label: 'Saved search: ' + savedSearchName(s) + (detail ? ' (' + detail + ')' : ''),
+            key: i < 9 ? 'Alt+' + (i + 1) : '',
             isOn: () => i === current,
             run: () => void runSavedSearch(i + 1),
           };
@@ -3960,6 +3955,13 @@
       const lbl = document.createElement('span');
       lbl.textContent = cmd.label;
       b.appendChild(lbl);
+      const key = 'key' in cmd ? cmd.key : runnerKeyForCommand(cmd.id);
+      if (key && !cmd.tag) {
+        const k = document.createElement('span');
+        k.className = 'tagfox-runner-cmd-key';
+        k.textContent = key;
+        b.appendChild(k);
+      }
       return b;
     }
 
@@ -4253,8 +4255,9 @@
     /** Every key the window handles, in the order the handler tries them. Help's key list is drawn from this
         table, so the two cannot drift apart. `when(c)` decides; `run(c)` acts, returning nothing to consume the
         key or 'native' to leave it to the browser. While the focus is in another text field (the Viewer's
-        editor, Settings) an entry runs only with `fields`, and from an open menu only with `menus`. An entry
-        without `does` works but is not listed. */
+        editor, Settings) an entry runs only with `fields`, and from an open menu only with `menus`. `cmd` names
+        the / command the key stands for: the / list and the options panel show the key beside it, and an entry
+        without a `run` of its own runs that command. An entry without `does` works but is not listed. */
     const RUNNER_KEYS = [
       /* Search */
       {
@@ -4264,7 +4267,14 @@
         when: (c) => c.inBox && !c.mod && !c.alt && (c.key === '/' || c.code === 'NumpadDivide'),
         run: (c) => openRunnerCmdList(c.q.value),
       },
-      { group: 'Search', keys: ['?'], does: 'This list of keys, with the search box empty', when: (c) => c.inBox && c.empty && c.key === '?', run: () => openRunnerKeysHelp() },
+      {
+        group: 'Search',
+        keys: ['?', 'Ctrl+/'],
+        does: 'This list of keys (? with the search box empty)',
+        cmd: 'keys',
+        when: (c) => (c.inBox && c.empty && c.key === '?') || (c.mod && !c.alt && !c.shift && (c.key === '/' || c.code === 'Slash')),
+        menus: true,
+      },
       {
         group: 'Search',
         keys: ['Alt+O'],
@@ -4279,22 +4289,25 @@
         when: (c) => (c.plain && c.key === 'F3') || c.ctrl('f') || (c.alt && !c.mod && !c.shift && c.k === 'd'),
         run: () => focusQueryBox(true),
       },
-      { group: 'Search', keys: ['Ctrl+B'], does: 'Whole words only, on or off', when: (c) => c.ctrl('b'), run: () => toggleSearchOptCheckbox('optWholeWord') },
-      { group: 'Search', keys: ['Ctrl+I'], does: 'Match case, on or off', when: (c) => c.ctrl('i'), run: () => toggleSearchOptCheckbox('optCase') },
-      { group: 'Search', keys: ['Ctrl+U', 'Ctrl+P'], does: 'Match path, on or off (off: names only)', when: (c) => c.ctrl('u') || c.ctrl('p'), run: () => runnerToggleMatchPath() },
-      { group: 'Search', keys: ['Ctrl+R'], does: 'Modified within the last hour, day, week, month, year or any time, in turn', when: (c) => c.ctrl('r'), menus: true, run: () => cycleRecencyFilter() },
-      { group: 'Search', keys: ['Ctrl+M'], does: 'Sort by date; again for the smart order', when: (c) => c.ctrl('m'), run: () => setRunnerSort(runnerSort === 'date' ? 'smart' : 'date') },
-      { group: 'Search', keys: ['Ctrl+N'], does: 'Sort by name; again for the smart order', when: (c) => c.ctrl('n'), run: () => setRunnerSort(runnerSort === 'name' ? 'smart' : 'name') },
+      /* Ctrl+B, Ctrl+I and Ctrl+U are Everything's own keys for these three. */
+      { group: 'Search', keys: ['Ctrl+B'], does: 'Whole words only, on or off', cmd: 'word', when: (c) => c.ctrl('b') },
+      { group: 'Search', keys: ['Ctrl+I'], does: 'Match case, on or off', cmd: 'case', when: (c) => c.ctrl('i') },
+      { group: 'Search', keys: ['Ctrl+U'], does: 'Match path, on or off (off: names only)', cmd: 'path', when: (c) => c.ctrl('u') },
+      { group: 'Search', keys: ['Ctrl+.'], does: 'System files (. $ desktop.ini), shown or hidden', cmd: 'system', when: (c) => c.mod && !c.alt && !c.shift && (c.key === '.' || c.code === 'Period'), menus: true },
+      {
+        group: 'Search',
+        keys: ['Ctrl+R', 'Ctrl+Shift+R'],
+        does: 'Modified within the last hour, day, week, month, year or any time, a step a press; with Shift, a step back',
+        when: (c) => c.mod && !c.alt && c.k === 'r',
+        menus: true,
+        run: (c) => cycleRecencyFilter(c.shift ? -1 : 1),
+      },
+      { group: 'Search', keys: ['Ctrl+M'], does: 'Sort by date; again for the smart order', cmd: 'sort-date', when: (c) => c.ctrl('m'), run: () => setRunnerSort(runnerSort === 'date' ? 'smart' : 'date') },
       { group: 'Search', keys: ['Alt+Home'], does: 'Start again: no text, no folder, every filter at its default', when: (c) => c.alt && !c.mod && c.key === 'Home', run: () => runnerStartAgain() },
       { group: 'Search', keys: ['Alt+←', 'Alt+→'], does: 'Back and forward through earlier searches', when: (c) => c.alt && !c.mod && (c.key === 'ArrowLeft' || c.key === 'ArrowRight'), menus: true, run: (c) => void goSearchHistory(c.key === 'ArrowLeft' ? -1 : 1) },
-      { group: 'Search', keys: ['Alt+1…9'], does: 'Saved search 1 to 9: its folder, text and filters. / then “Save this search” saves the one on screen', when: (c) => c.alt && !c.mod && !c.shift && /^Digit[1-9]$/.test(c.code), run: (c) => void runSavedSearch(Number(c.code.slice(5))) },
-      { group: 'Search', keys: ['F5'], does: 'Search again', when: (c) => c.plain && c.key === 'F5', menus: true, run: () => void refreshResultsFromUi() },
-      /* Unlisted: a second Ctrl+B, system files, the last hour or any time, leaving the folder with the tag and recency filters, and undo. */
-      { keys: ['Ctrl+W'], when: (c) => c.ctrl('w'), menus: true, run: () => toggleSearchOptCheckbox('optWholeWord') },
-      { keys: ['Ctrl+.'], when: (c) => c.mod && !c.alt && !c.shift && (c.key === '.' || c.code === 'Period'), menus: true, run: () => toggleSearchOptCheckbox('optHideSpecial') },
-      { keys: ['Ctrl+Shift+R'], when: (c) => c.mod && !c.alt && c.shift && c.k === 'r', menus: true, run: () => toggleRecencyAllVsHour() },
-      { keys: ['Ctrl+Shift+Home'], when: (c) => c.mod && !c.alt && c.shift && c.key === 'Home', menus: true, run: () => clearSearchScopeAndTagRecencyFilters() },
-      { keys: ['Ctrl+Z'], when: (c) => c.ctrl('z') && !c.inBox, menus: true, run: () => void runUndo() },
+      { group: 'Search', keys: ['Ctrl+S'], does: 'Save this search: its folder, text and filters', cmd: 'save-search', when: (c) => c.ctrl('s'), menus: true, run: () => saveCurrentSearchFromKey() },
+      { group: 'Search', keys: ['Alt+1…9'], does: 'Saved search 1 to 9', when: (c) => c.alt && !c.mod && !c.shift && /^Digit[1-9]$/.test(c.code), run: (c) => void runSavedSearch(Number(c.code.slice(5))) },
+      { group: 'Search', keys: ['F5'], does: 'Search again', cmd: 'refresh', when: (c) => c.plain && c.key === 'F5', menus: true },
 
       /* Move */
       {
@@ -4348,7 +4361,6 @@
       },
       { group: 'Move and select', keys: ['Space'], does: 'In the list: check or uncheck the selected row', when: (c) => c.plain && !c.shift && c.key === ' ' && !c.inBox && !c.onControl, run: () => toggleKeyboardRowCheckbox() },
       { group: 'Move and select', keys: ['Ctrl+A'], does: 'In the search box, select its text; in the list, check every row', when: (c) => c.ctrl('a'), menus: true, run: (c) => (c.inBox ? 'native' : selectAllVisibleResultRows()) },
-      { keys: ['Ctrl+J', 'Ctrl+K'], when: (c) => c.ctrl('j') || c.ctrl('k'), menus: true, run: (c) => moveResultsSiblingFolder(c.k === 'j' ? 1 : -1) },
       {
         group: 'Move and select',
         keys: ['Esc'],
@@ -4371,9 +4383,9 @@
       },
       {
         group: 'Folders',
-        keys: ['←'],
-        does: 'Up to the parent folder, with the one you left selected (from the search box: with the caret at the start)',
-        when: (c) => c.plain && !c.shift && c.key === 'ArrowLeft' && (!c.inBox || c.caretStart),
+        keys: ['←', 'Alt+↑'],
+        does: 'Up to the parent folder, with the one you left selected (← from the search box: with the caret at the start)',
+        when: (c) => (c.plain && !c.shift && c.key === 'ArrowLeft' && (!c.inBox || c.caretStart)) || (c.alt && !c.mod && !c.shift && c.key === 'ArrowUp'),
         run: (c) => {
           if (!c.held) runnerGoUp();
         },
@@ -4398,7 +4410,6 @@
           void openFavouritePath(star);
         },
       },
-      { keys: ['Ctrl+↑', 'Alt+↑'], when: (c) => c.key === 'ArrowUp' && c.mod !== c.alt, menus: true, run: () => void goToParentScopeFolder() },
 
       /* Open and act */
       { group: 'Open and act', keys: ['Enter'], does: 'Open the selected row; a folder opens here. With a path typed in the search box, go there; with nothing listed inside a folder, search everywhere', when: (c) => c.plain && !c.shift && c.key === 'Enter' && !c.onControl, run: (c) => void runnerEnter(c) },
@@ -4409,11 +4420,11 @@
       { group: "Another app's Open or Save dialog", first: true, keys: ['Enter'], does: 'With a dialog waiting (the toggle shortcut was pressed from it): send it the selected row. In an Open dialog a file opens and a folder is shown; a Save dialog gets the folder and keeps its file name, and you press Save', when: (c) => !!fileDialogTarget && c.plain && !c.shift && c.key === 'Enter' && !c.onControl, run: (c) => void runnerEnter(c) },
       { group: "Another app's Open or Save dialog", first: true, keys: ['Ctrl+Enter'], does: 'With a dialog waiting: send it the folder TagFox is showing', when: (c) => !!fileDialogTarget && c.mod && !c.alt && !c.shift && c.key === 'Enter', run: () => sendScopeFolderToFileDialog() },
       { group: "Another app's Open or Save dialog", first: true, keys: ['Esc'], does: 'With a dialog waiting: stop sending to it, so Enter opens rows again', when: (c) => !!fileDialogTarget && c.plain && !c.shift && c.key === 'Escape', run: () => cancelFileDialogTarget() },
-      { group: 'Open and act', keys: ['Alt+P'], does: 'Show or hide the Viewer', when: (c) => c.alt && !c.mod && !c.shift && c.k === 'p', run: () => runnerToggleViewer() },
+      { group: 'Open and act', keys: ['Alt+P'], does: 'Show or hide the Viewer', cmd: 'viewer', when: (c) => c.alt && !c.mod && !c.shift && c.k === 'p' },
       { group: 'Open and act', keys: ['Shift+Space'], does: 'The Viewer full screen', when: (c) => c.plain && c.shift && c.key === ' ', menus: true, run: () => togglePropsTheaterMode() },
       { group: 'Open and act', keys: ['Shift+F10', 'Menu'], does: "The selected row's menu", when: (c) => (c.plain && c.shift && c.key === 'F10') || c.key === 'ContextMenu', run: () => runnerOpenRowMenu() },
       { group: 'Open and act', keys: ['Ctrl+D'], does: 'Star or unstar the selected row', when: (c) => c.ctrl('d'), run: () => toggleStarForSelection() },
-      { group: 'Open and act', keys: ['Ctrl+T'], does: 'Tags: add or remove them on the checked rows, or on the selected row', when: (c) => c.ctrl('t'), run: () => runnerEditTags() },
+      { group: 'Open and act', keys: ['Ctrl+T'], does: 'Tags: add or remove them on the checked rows, or on the selected row', cmd: 'edit-tags', when: (c) => c.ctrl('t') },
       { group: 'Open and act', keys: ['F2'], does: 'Rename', when: (c) => c.plain && c.key === 'F2', menus: true, run: () => void renameItemInteractive() },
       {
         group: 'Open and act',
@@ -4453,19 +4464,22 @@
         menus: true,
         run: () => void runnerPaste(),
       },
+      { group: 'Open and act', keys: ['Ctrl+N'], does: 'New TODO: a markdown file tagged xkTODO, in the folder on screen (outside a folder: in the Quick TODO folder)', cmd: 'new-todo', when: (c) => c.ctrl('n'), menus: true },
       { group: 'Open and act', keys: ['Ctrl+Shift+N'], does: 'New folder here', when: (c) => c.mod && c.shift && !c.alt && c.k === 'n', menus: true, run: () => void createNewFolderInScopeInteractive() },
       { group: 'Open and act', keys: ['Ctrl+H'], does: 'Rename the checked rows with wildcards', when: (c) => c.mod && !c.alt && c.k === 'h', menus: true, run: () => openBulkRenameModal() },
+      { group: 'Open and act', keys: ['Ctrl+Z'], does: 'Undo the last rename, tag change, move, paste or new folder (in the search box: undo the typing)', when: (c) => c.ctrl('z') && !c.inBox, menus: true, run: () => void runUndo() },
 
       /* TagFox */
-      { group: 'TagFox', keys: ['F1', 'Ctrl+/'], does: 'Help', when: (c) => c.key === 'F1' || (c.mod && !c.alt && !c.shift && (c.key === '/' || c.code === 'Slash')), menus: true, run: () => showHelp() },
-      { group: 'TagFox', keys: ['Ctrl+,'], does: 'Settings', when: (c) => c.mod && !c.alt && !c.shift && (c.key === ',' || c.code === 'Comma'), menus: true, run: () => toggleSettingsPanel() },
-
-      /* A Classic key for a part Runner does not show, answered. */
-      {
-        when: (c) => c.ctrl('s'),
-        run: () => setStatusMain('In Runner an empty search box shows the folder itself and typing searches everything below it.'),
-      },
+      { group: 'TagFox', keys: ['F1'], does: 'Help', cmd: 'help', when: (c) => c.key === 'F1', menus: true },
+      { group: 'TagFox', keys: ['Ctrl+,'], does: 'Settings', cmd: 'settings', when: (c) => c.mod && !c.alt && !c.shift && (c.key === ',' || c.code === 'Comma'), menus: true },
+      { group: 'TagFox', keys: ['Ctrl+W'], does: "Hide TagFox, as the window's × does; its shortcut brings it back", when: (c) => c.ctrl('w'), menus: true, run: () => void window.tagBrowser?.hideMainWindow?.() },
     ];
+
+    /** The key that runs a command, from RUNNER_KEYS, for the / list and the options panel. */
+    function runnerKeyForCommand(id) {
+      const x = RUNNER_KEYS.find((k) => k.cmd === id);
+      return x ? x.keys[0] : '';
+    }
 
     /** One key event, described once for every `when`. */
     function runnerKeyCtx(e) {
@@ -4561,7 +4575,8 @@
       const fits = (x) => (!c.inField || x.fields) && (!c.inMenu || x.menus) && x.when(c);
       const entry = RUNNER_KEYS.find((x) => x.first && fits(x)) || RUNNER_KEYS.find(fits);
       if (entry) {
-        if (entry.run(c) === 'native') return true;
+        const out = entry.run ? entry.run(c) : runRunnerCommand(runnerCommands().find((x) => x.id === entry.cmd));
+        if (out === 'native') return true;
         return consume();
       }
       if (c.inBox || c.inField || c.inMenu || !c.plain) return false;
@@ -10957,20 +10972,12 @@
       syncRecencyFilterActiveHighlight();
     }
 
-    /** Ctrl+R: the next recency window, from the last hour round to any time. */
-    function cycleRecencyFilter() {
+    /** Ctrl+R: the next recency window, from the last hour round to any time; Ctrl+Shift+R (dir -1) goes back. */
+    function cycleRecencyFilter(dir = 1) {
       const order = ['1h', '1d', '1w', '1m', '1y', 'all'];
-      const next = order[(order.indexOf(recencyFilterMode()) + 1) % order.length];
+      const next = order[(order.indexOf(recencyFilterMode()) + (dir < 0 ? -1 : 1) + order.length) % order.length];
       setRecencyFilterMode(next);
       document.querySelector('input[name="tagFoxRecencyFilter"][value="' + next + '"]')?.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-
-    /** Keyboard quick toggle: recent hour window vs no recency filter. */
-    function toggleRecencyAllVsHour() {
-      const next = recencyFilterMode() === '1h' ? 'all' : '1h';
-      setRecencyFilterMode(next);
-      const nextEl = document.querySelector(`input[name="tagFoxRecencyFilter"][value="${next}"]`);
-      nextEl?.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
     /** Settings → global shortcut capture: require modifiers (Electron globalShortcut). */
@@ -12705,7 +12712,7 @@
         btnScopeParent.type = 'button';
         btnScopeParent.className =
           'btn btn-sm btn-outline-secondary tagfox-scope-bar-icon-btn d-inline-flex align-items-center justify-content-center';
-        btnScopeParent.title = 'Parent folder (Ctrl+↑)';
+        btnScopeParent.title = 'Parent folder (←)';
         btnScopeParent.setAttribute('aria-label', 'Open parent folder');
         btnScopeParent.innerHTML = '<i class="fa-solid fa-arrow-up" aria-hidden="true"></i>';
         btnScopeParent.disabled = !parentForScope;

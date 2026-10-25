@@ -72,7 +72,7 @@
               <h3>Bring TagFox up from anywhere</h3>
               <ul>
               <li><code>Ctrl</code>+<code>Alt</code>+<code>Space</code> shows TagFox from any program, and pressing it again hides it. You can choose another key in <strong>Settings</strong>, under <strong>Global hotkey &amp; Quick TODO</strong>: click <strong>Record…</strong> and press the keys you want.</li>
-              <li>The × at the top right of the window hides TagFox rather than closing it, so the shortcut still brings it back. To quit, choose <strong>File → Quit TagFox</strong>, or the <code>/</code> command <strong>Quit TagFox</strong>. The shortcuts then stop working until TagFox starts again.</li>
+              <li>The × at the top right of the window, or <code>Ctrl</code>+<code>W</code>, hides TagFox rather than closing it, so the shortcut still brings it back. To quit, choose <strong>File → Quit TagFox</strong>, or the <code>/</code> command <strong>Quit TagFox</strong>. The shortcuts then stop working until TagFox starts again.</li>
               <li><code>Ctrl</code>+<code>Shift</code>+<code>Space</code>, from anywhere, shows everything that changed in the last hour, in every folder.</li>
               <li><code>Alt</code>+<code>Shift</code>+<code>N</code>, from anywhere, opens the <strong>Quick TODO</strong> box, for noting a task as a file (see <strong>Tags and tasks</strong>).</li>
               </ul>
@@ -93,7 +93,7 @@
               </ul>
               <h3>Help and keys</h3>
               <ul>
-              <li><code>?</code>, with the search box empty, lists every key (the <strong>Keys</strong> tab here).</li>
+              <li><code>?</code>, with the search box empty, or <code>Ctrl</code>+<code>/</code> anywhere, lists every key (the <strong>Keys</strong> tab here).</li>
               <li><code>F1</code> opens this help, and <code>Ctrl</code>+<code>,</code> opens <strong>Settings</strong>.</li>
               </ul>
 
@@ -110,7 +110,7 @@
               </ul>
               <h3>Moving between folders</h3>
               <ul>
-              <li><code>→</code>, or <code>Enter</code> on a folder, goes into the selected folder. <code>←</code> goes up to the parent, with the folder you left selected.</li>
+              <li><code>→</code>, or <code>Enter</code> on a folder, goes into the selected folder. <code>←</code>, or <code>Alt</code>+<code>↑</code> as in File Explorer, goes up to the parent, with the folder you left selected.</li>
               <li><code>Backspace</code> in an empty search box leaves the folder, so you search everywhere. So does the × on the folder&#39;s name at the start of the box.</li>
               <li>Click any name in the path above the search box to go there, or the › after it to choose one of the folders inside.</li>
               <li><code>Shift</code>+<code>Enter</code> goes to the folder holding the selected row.</li>
@@ -120,13 +120,13 @@
               </ul>
               <h3>Commands and options</h3>
               <ul>
-              <li>Type <code>/</code> in the search box for a list of commands: sort orders, filters, tags, match settings, <strong>Settings</strong> and more. Type a few letters to find one (<code>/size</code>, <code>/todo</code>), choose with <code>↑</code> and <code>↓</code>, and press <code>Enter</code>.</li>
+              <li>Type <code>/</code> in the search box for a list of commands: sort orders, filters, tags, match settings, <strong>Settings</strong> and more. Type a few letters to find one (<code>/size</code>, <code>/todo</code>), choose with <code>↑</code> and <code>↓</code>, and press <code>Enter</code>. A command that has a key of its own shows it at the right.</li>
               <li><strong>Options</strong>, the second faint button at the right of the search box, or <code>Alt</code>+<code>O</code>, shows the same commands as buttons.</li>
               <li>Every filter or setting that differs from the usual shows as a chip under the search box, such as <strong>Modified in the last day</strong> or <strong>Folders only</strong>. Click a chip&#39;s × to undo it. If the list is empty, the chips are the first place to look.</li>
-              <li><code>Ctrl</code>+<code>R</code> limits the list to what changed recently: the last hour, then a day, a week, a month, a year, and then any time again, a step a press.</li>
+              <li><code>Ctrl</code>+<code>R</code> limits the list to what changed recently: the last hour, then a day, a week, a month, a year, and then any time again, a step a press. <code>Ctrl</code>+<code>Shift</code>+<code>R</code> steps back.</li>
               <li><strong>Folders only</strong> and <strong>Files only</strong>, under <code>/</code>, do what they say.</li>
               <li><strong>Search this folder only</strong> keeps a search to the current folder&#39;s own contents, without the folders inside it.</li>
-              <li><strong>Show system files</strong> lists the files Windows and programs keep out of sight (names starting with <code>.</code> or <code>$</code>, and <code>desktop.ini</code>), which are left out at first.</li>
+              <li><strong>Show system files</strong>, or <code>Ctrl</code>+<code>.</code>, lists the files Windows and programs keep out of sight (names starting with <code>.</code> or <code>$</code>, and <code>desktop.ini</code>), which are left out at first.</li>
               </ul>
               <h3>What you can type</h3>
               <ul>
@@ -142,14 +142,14 @@
               <li>Files whose <strong>name</strong> matches come before files that match only by the folder they are in. A whole word ranks above the start of a word, which ranks above a match in the middle of one.</li>
               <li>After that, TagFox favours files changed recently, starred files and folders, things you open often in TagFox, and things Windows lists as recently opened in any program.</li>
               <li>Files under <code>AppData</code> and <code>ProgramData</code> folders, Word&#39;s <code>~$</code> lock files and the like are listed lower down, unless you typed their name.</li>
-              <li><code>Ctrl</code>+<code>M</code> sorts by date and <code>Ctrl</code>+<code>N</code> by name; the same key again goes back to the usual order. <code>/size</code> puts the largest first, and <code>/smallest</code> the smallest.</li>
+              <li><code>Ctrl</code>+<code>M</code> sorts by date, newest first, and the same key again goes back to the usual order. <code>/name</code> sorts by name, <code>/size</code> puts the largest first, and <code>/smallest</code> the smallest.</li>
               <li>A search that finds a very large number of matches ranks only the newest few hundred; a note at the right of the search box then says how many it ranked out of how many it found. Type more to narrow it down.</li>
               </ul>
               <h3>Saved searches</h3>
               <ul>
-              <li>Type <code>/</code> and choose <strong>Save this search</strong>. TagFox keeps the folder, the text in the box and every filter, and names the search after its text, or after the folder when the box is empty.</li>
+              <li><code>Ctrl</code>+<code>S</code>, or the <code>/</code> command <strong>Save this search</strong>, saves the search on screen. TagFox keeps the folder, the text in the box and every filter, and names the search after its text, or after the folder when the box is empty.</li>
               <li>Each saved search becomes a <code>/</code> command of its own: type <code>/</code> and a few letters of its name. <code>Alt</code>+<code>1</code> to <code>Alt</code>+<code>9</code> run the first nine, in the order you saved them.</li>
-              <li>While a saved search is on screen, the same command reads <strong>Forget this saved search</strong>.</li>
+              <li>While a saved search is on screen, the <code>/</code> command reads <strong>Forget this saved search</strong>, and <code>Ctrl</code>+<code>S</code> says which one it is.</li>
               </ul>
 
             </div>
@@ -179,6 +179,7 @@
               <ul>
               <li><code>F2</code> renames the selected file or folder. <code>Ctrl</code>+<code>H</code> renames all the checked files at once, using wildcards.</li>
               <li><code>Ctrl</code>+<code>Shift</code>+<code>N</code> makes a new folder in the folder you are in.</li>
+              <li><code>Ctrl</code>+<code>Z</code> undoes the last rename, tag change, move, paste or new folder.</li>
               <li><code>Ctrl</code>+<code>C</code> and <code>Ctrl</code>+<code>X</code> copy or cut the selected files, to paste in File Explorer. <code>Ctrl</code>+<code>V</code> pastes files copied in File Explorer into the folder you are in. If you copied a picture or a screenshot instead, <code>Ctrl</code>+<code>V</code> saves it there as <code>Clipboard image.png</code>.</li>
               <li><code>Ctrl</code>+<code>Shift</code>+<code>C</code> copies the selected files&#39; full paths as text.</li>
               <li><code>Del</code> sends the checked rows to the Recycle Bin, after asking. TagFox never deletes anything for good, so <code>Shift</code>+<code>Del</code> recycles too.</li>
@@ -310,7 +311,7 @@
               <ul>
               <li><strong>Quick TODO</strong> makes a markdown file whose name is the task, such as <code>Ring the bank xkTODO.md</code>. Type a title and press the save button.</li>
               <li><code>Alt</code>+<code>Shift</code>+<code>N</code> opens it from anywhere in Windows. The file goes in the <strong>Quick TODO folder</strong>, which you choose in <strong>Settings</strong> under <strong>Global hotkey &amp; Quick TODO</strong>.</li>
-              <li><strong>New TODO</strong> in the Viewer, when a folder is selected, or the <code>/</code> command <strong>New TODO in this folder</strong>, opens the same box aimed at that folder.</li>
+              <li><code>Ctrl</code>+<code>N</code>, <strong>New TODO</strong> in the Viewer when a folder is selected, or the <code>/</code> command <strong>New TODO in this folder</strong> opens the same box aimed at that folder. Outside a folder, <code>Ctrl</code>+<code>N</code> aims it at the Quick TODO folder.</li>
               <li>The box&#39;s tag button chooses its tags, deadline and hide-until date, and its other button adds text to go inside the file. <strong>Open in list after save</strong> takes you to the new file.</li>
               <li>When the task is done, delete the file, or change its tag.</li>
               </ul>
