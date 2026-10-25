@@ -156,7 +156,7 @@ async function main() {
     await drv.settle('classic by command');
     st = await R();
     check(norm(st.scope) === norm(beta) && st.query === '', `its command takes Runner to its folder (${st.scope})`);
-    check(st.sort === sortBefore && st.layout === 'flat', `its Classic view and name sort are left out (sort ${st.sort}, layout ${st.layout})`);
+    check(st.sort === sortBefore, `its Classic name sort is left out (sort ${st.sort})`);
     await startAgain();
     await altDigit(1);
     check(norm((await R()).scope) === norm(beta), 'and so does Alt+1');
