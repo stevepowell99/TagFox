@@ -5202,6 +5202,11 @@
       { group: 'Open and act', keys: ['Enter'], does: 'Open the selected row; a folder opens here. With a path typed in the search box, go there; with nothing listed inside a folder, search everywhere', when: (c) => c.plain && !c.shift && c.key === 'Enter' && (c.inBox || c.inList), run: (c) => void runnerEnter(c) },
       { group: 'Open and act', keys: ['Ctrl+Enter'], does: 'Open its folder in File Explorer, with it selected', when: (c) => c.mod && !c.alt && !c.shift && c.key === 'Enter', run: () => void runnerActivateSelection('reveal') },
       { group: 'Open and act', keys: ['Alt+Enter'], does: 'Properties', when: (c) => c.alt && !c.mod && !c.shift && c.key === 'Enter', run: () => void runnerActivateSelection('properties') },
+      /* Another app's Open or Save dialog, while the toggle shortcut has raised TagFox from one. `first`: these
+         are tried before every other entry, so they win over the plain Enter, Ctrl+Enter and Esc above and below. */
+      { group: "Another app's Open or Save dialog", first: true, keys: ['Enter'], does: 'With a dialog waiting (the toggle shortcut was pressed from it): send it the selected row. In an Open dialog a file opens and a folder is shown; a Save dialog gets the folder and keeps its file name, and you press Save', when: (c) => !!fileDialogTarget && c.plain && !c.shift && c.key === 'Enter' && (c.inBox || c.inList), run: (c) => void runnerEnter(c) },
+      { group: "Another app's Open or Save dialog", first: true, keys: ['Ctrl+Enter'], does: 'With a dialog waiting: send it the folder TagFox is showing', when: (c) => !!fileDialogTarget && c.mod && !c.alt && !c.shift && c.key === 'Enter', run: () => sendScopeFolderToFileDialog() },
+      { group: "Another app's Open or Save dialog", first: true, keys: ['Esc'], does: 'With a dialog waiting: stop sending to it, so Enter opens rows again', when: (c) => !!fileDialogTarget && c.plain && !c.shift && c.key === 'Escape', run: () => cancelFileDialogTarget() },
       { group: 'Open and act', keys: ['Alt+P'], does: 'Show or hide the Viewer', when: (c) => c.alt && !c.mod && !c.shift && c.k === 'p', run: () => runnerToggleViewer() },
       { group: 'Open and act', keys: ['Shift+Space'], does: 'The Viewer full screen', when: (c) => c.plain && c.shift && c.key === ' ', run: () => 'classic' },
       { group: 'Open and act', keys: ['Shift+F10', 'Menu'], does: "The selected row's menu", when: (c) => (c.plain && c.shift && c.key === 'F10') || c.key === 'ContextMenu', run: () => runnerOpenRowMenu() },
@@ -5344,7 +5349,7 @@
       /* Another text field (the Viewer's editor, Settings) or an open menu keeps its own keys. */
       if (!c.inBox && (isTypingTarget(e.target) || isInMarkdownEditSurface(e.target))) return false;
       if (isMenuKeyboardNavTarget(e.target)) return false;
-      const entry = RUNNER_KEYS.find((x) => x.when(c));
+      const entry = RUNNER_KEYS.find((x) => x.first && x.when(c)) || RUNNER_KEYS.find((x) => x.when(c));
       if (entry) {
         const r = entry.run(c);
         if (r === 'classic') return false;
@@ -18904,6 +18909,11 @@
     if (typeof window.tagBrowser.setHotkeyRaisedHandler === 'function') {
       window.tagBrowser.setHotkeyRaisedHandler(() => onHotkeyRaised());
     }
+    if (typeof window.tagBrowser.setFileDialogTargetHandler === 'function') {
+      window.tagBrowser.setFileDialogTargetHandler((info) => setFileDialogTarget(info));
+    }
+    document.getElementById('btnFileDialogSendFolder')?.addEventListener('click', () => sendScopeFolderToFileDialog());
+    document.getElementById('btnFileDialogCancel')?.addEventListener('click', () => cancelFileDialogTarget());
     document.getElementById('btnQuickTodoPopClose')?.addEventListener('click', () => hideQuickTodoPop());
     document.getElementById('btnQuickTodoPopCancel')?.addEventListener('click', () => {
       const inp = document.getElementById('quickTodoTitleInput');
@@ -19029,6 +19039,52 @@
        'focus' event also fires for alt-tab and mouse clicks, which keep the caret where it was, so only a
        raise main announced selects. The message and the focus event arrive in either order. Window already
        focused: select now. Otherwise leave a short flag for the focus event to read, one-shot. */
+    /* Another app's Open or Save dialog that the toggle shortcut raised TagFox from (main's
+       tagfox-file-dialog-target, told on every raise and cleared when the window hides; file-dialog-handoff.js).
+       While one is waiting, opening a row (Enter, a double-click, Ctrl+1…9) sends it to the dialog instead,
+       Ctrl+Enter sends the folder TagFox is showing, and Esc stops. The strip above the box says so. */
+    let fileDialogTarget = null;
+    const fileDialogSendLog = [];
+    function setFileDialogTarget(info) {
+      fileDialogTarget = info && typeof info === 'object' ? info : null;
+      const bar = document.getElementById('fileDialogBar');
+      if (!bar) return;
+      bar.classList.toggle('d-none', !fileDialogTarget);
+      if (!fileDialogTarget) return;
+      const t = fileDialogTarget;
+      const name = String(t.fileName || '').trim();
+      const press = t.kind === 'save' ? 'you press Save' : "you press the dialog's own button";
+      document.getElementById('fileDialogBarTitle').textContent = `Next pick goes to: ${t.app} · ${t.title}`;
+      document.getElementById('fileDialogBarHint').textContent =
+        t.kind === 'open'
+          ? 'Enter or a double-click sends the selected row: a file opens, a folder is shown in the dialog. Ctrl+Enter sends this folder; Esc stops.'
+          : `Enter sends the selected row's folder${name ? `, keeping the name “${name}”` : ''}, and ${press}. Ctrl+Enter sends this folder; Esc stops.`;
+    }
+    async function sendToFileDialog(fp, isFolder) {
+      if (!fileDialogTarget || !fp) return;
+      fileDialogSendLog.push({ path: fp, isFolder: !!isFolder });
+      if (fileDialogSendLog.length > 20) fileDialogSendLog.shift();
+      let r;
+      try {
+        r = await window.tagBrowser.fileDialogSend(fp, isFolder);
+      } catch (e) {
+        r = { ok: false, error: String((e && e.message) || e) };
+      }
+      if (!r || !r.ok) setStatusMain('Not sent to the dialog: ' + ((r && r.error) || 'no answer from TagFox'));
+    }
+    function sendScopeFolderToFileDialog() {
+      const folder = currentScopeFolderPath();
+      if (!folder) {
+        setStatusMain('No folder to send while searching everywhere: select a folder row and press Enter.');
+        return;
+      }
+      void sendToFileDialog(folder, true);
+    }
+    function cancelFileDialogTarget() {
+      setFileDialogTarget(null);
+      void window.tagBrowser.fileDialogCancel?.();
+    }
+
     let hotkeyRaiseSelectUntil = 0;
     const HOTKEY_RAISE_FLAG_MS = 1500;
     function onHotkeyRaised() {
@@ -19531,6 +19587,10 @@
       const row = selectedRowForActions();
       if (!row) return;
       const fp = fullPathForRow(row);
+      if (fileDialogTarget) {
+        await sendToFileDialog(fp, rowIsFolder(row));
+        return;
+      }
       const status = document.getElementById('statusMain');
       if (rowIsFolder(row)) {
         const folderFp = normalizeFolderPathForEverything(fp);
@@ -21046,6 +21106,9 @@
         openRecentTab: () => openRecentTab(),
         /* What main's tagfox-hotkey-raised message calls; a test cannot press the OS-wide shortcut. */
         hotkeyRaised: () => onHotkeyRaised(),
+        /* What main's tagfox-file-dialog-target message calls, and what the renderer has asked main to send since. */
+        fileDialogTarget: (info) => setFileDialogTarget(info),
+        fileDialogSends: () => fileDialogSendLog.slice(),
         closeTab: (id) => closeTab(Number(id)),
         activateTab: (id) => activateTab(Number(id)),
         cycleTab: (dir) => cycleTab(Number(dir) || 1),

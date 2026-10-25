@@ -34,6 +34,7 @@
       "styles.css",
       "tags.js",
       "preview-text-helpers.js",
+      "file-dialog-handoff.js",
       "did-you-know-tips.js",
       "renderer.js",
       "package.json",
@@ -66,6 +67,7 @@
   "dependencies": {
     "@googleapis/drive": "^16.0.0",
     "@kenjiuno/msgreader": "^1.28.0",
-    "google-auth-library": "^10.6.2"
+    "google-auth-library": "^10.6.2",
+    "koffi": "^3.3.4"
   }
 }

@@ -171,6 +171,13 @@ Type to search. With the search box empty you see the current folder's own conte
 - Files whose `xh-` hide-until date is still to come are left out. **Show files hidden until a later date** lists them as well.
 - **Show only starred items** lists the starred files and folders below the current folder, or every star when there is no folder.
 
+### 📂 Another app's Open and Save dialogs
+
+- In an Open or Save dialog (Notepad's, a browser's upload, most of Office), press TagFox's toggle shortcut. TagFox comes up with a strip above the box saying where the next pick goes, such as **Next pick goes to: Notepad · Open**.
+- Find the file or folder as usual, then press `Enter` or double-click it. TagFox steps aside and the dialog takes it: in an Open dialog a file opens and a folder is shown; a Save dialog gets the folder and keeps the file name it already had, and you press **Save** yourself.
+- `Ctrl`+`Enter`, or **Send this folder** on the strip, sends the folder TagFox is showing. `Esc` or the strip's × stops, and `Enter` opens rows again.
+- With any other window in front, the toggle shortcut works as it always does.
+
 ### 📊 How the list is ordered
 
 - The smart order puts rows whose **name** matches above rows that match only in the **path**. Within the name, a whole word ranks highest, then a match at the start of a word, then one at the end of a word, then one inside a word (`map` finds `old map`, `mapping`, `roadmap`, then `xmapx`). After that it favours recent changes, though never enough to lift a file that only contains the word above an older one named for it, starred items, things you open often, and files and folders in Windows' own Recent list (opened lately in any app), the more so the more recently. It puts anything under an `AppData` or `ProgramData` folder lower down, unless you are in that folder or typed its name, and anything with a `~` in its path (Word's `~$` lock files, `~folders`) lower down too, unless you typed its whole name or a `~`. The `/` sort commands switch to date or name order, or to size with the largest or the smallest first (`/size`).

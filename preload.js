@@ -29,6 +29,10 @@ ipcRenderer.on('tagfox-open-recent-tab', () => {
 ipcRenderer.on('tagfox-hotkey-raised', () => {
   if (onHotkeyRaised) onHotkeyRaised();
 });
+let onFileDialogTarget = null;
+ipcRenderer.on('tagfox-file-dialog-target', (_e, info) => {
+  if (onFileDialogTarget) onFileDialogTarget(info && typeof info === 'object' ? info : null);
+});
 ipcRenderer.on('tagfox-plain-f5-refresh', () => {
   if (onPlainF5SearchRefresh) onPlainF5SearchRefresh();
   else ipcRenderer.send('tagfox-plain-f5-missed');
@@ -148,6 +152,12 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   setHotkeyRaisedHandler: (fn) => {
     onHotkeyRaised = typeof fn === 'function' ? fn : null;
   },
+  /** Another app's Open or Save dialog that the toggle shortcut raised TagFox from: told on every raise (null when none). */
+  setFileDialogTargetHandler: (fn) => {
+    onFileDialogTarget = typeof fn === 'function' ? fn : null;
+  },
+  fileDialogSend: (p, isFolder) => ipcRenderer.invoke('file-dialog-send', { path: String(p || ''), isFolder: !!isFolder }),
+  fileDialogCancel: () => ipcRenderer.invoke('file-dialog-cancel'),
   pickScopeFolder: () => ipcRenderer.invoke('pick-scope-folder'),
   userHomeDir: () => ipcRenderer.invoke('user-home-dir'),
   /** Page zoom for the navbar buttons: 'in' | 'out' | 'reset' | 'get', or a factor to restore. */

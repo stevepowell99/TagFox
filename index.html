@@ -687,6 +687,21 @@
         </div>
       </div>
 
+      <!-- Shown while another app's Open or Save dialog is waiting for the next pick (the toggle shortcut raised TagFox from it). -->
+      <div id="fileDialogBar" class="tagfox-file-dialog-bar d-none" role="status" aria-live="polite">
+        <span class="tagfox-file-dialog-bar-icon" aria-hidden="true"><i class="fa-solid fa-arrow-right-to-bracket"></i></span>
+        <div class="tagfox-file-dialog-bar-text">
+          <div id="fileDialogBarTitle" class="tagfox-file-dialog-bar-title"></div>
+          <div id="fileDialogBarHint" class="tagfox-file-dialog-bar-hint"></div>
+        </div>
+        <button type="button" id="btnFileDialogSendFolder" class="tagfox-viewer-pill tagfox-viewer-pill--ghost" title="Send the folder TagFox is showing (Ctrl+Enter)">
+          <i class="fa-regular fa-folder-open" aria-hidden="true"></i><span>Send this folder</span>
+        </button>
+        <button type="button" id="btnFileDialogCancel" class="tagfox-viewer-icon" title="Stop sending to the dialog (Esc)" aria-label="Stop sending to the dialog">
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
+      </div>
+
       <!-- Search row: saved-search chips + query + view mode (Smart/Tree/Flat, subs, content); recency + Advanced on tag row RHS -->
       <div class="tagfox-search-toolbar-row d-flex align-items-center gap-2 min-w-0 flex-wrap">
         <div class="d-flex flex-wrap gap-1 align-items-center small flex-shrink-0 min-w-0">

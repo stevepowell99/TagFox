@@ -124,6 +124,9 @@ const { drive: createDriveClient } = require('@googleapis/drive');
 const { OAuth2Client } = require('google-auth-library');
 const MsgReader = require('@kenjiuno/msgreader').default;
 
+// Another app's Open or Save dialog, which the toggle shortcut can raise TagFox from (user32 through koffi).
+const fileDialogHandoff = require(path.join(__dirname, 'file-dialog-handoff.js'));
+
 // Populates globalThis.TagBrowserTags (same xk/xp/xx tag rules as the renderer).
 require(path.join(__dirname, 'tags.js'));
 const TagBrowserTags = globalThis.TagBrowserTags;
@@ -2365,6 +2368,19 @@ function saveQuickTodoAccelToDisk(acc) {
 
 let lastHiddenAt = 0;
 
+/** The Open or Save dialog the toggle shortcut raised TagFox from ({ hwnd, pid, info }), or null. Set only
+ *  when such a dialog was in front at the keypress, so the toggle does exactly what it always did otherwise;
+ *  cleared whenever the window hides. The handle never leaves main; the renderer is told `info`. */
+let fileDialogTarget = null;
+function setFileDialogTarget(target) {
+  fileDialogTarget = target || null;
+  const w = mainWindowRef;
+  if (!w || w.isDestroyed()) return;
+  try {
+    w.webContents.send('tagfox-file-dialog-target', fileDialogTarget ? fileDialogTarget.info : null);
+  } catch (_) {}
+}
+
 /** Doc windows (gmist, Workspace) are owned by the main window, and Windows keeps an owned window above
  *  its owner, so raising TagFox from a global shortcut left the results hidden underneath them.
  *  Minimise them on every shortcut raise; each leaves its lettered stub to restore from. */
@@ -2405,6 +2421,8 @@ function toggleMainWindowFromGlobalShortcut() {
       return out;
     };
     const m0 = metricsNow();
+    /* Read the window in front before TagFox takes its place: an Open or Save dialog there gets the next pick. */
+    const dialogInFront = fileDialogHandoff.foregroundFileDialog();
     minimiseWebEditorWindows();
     if (w.isMinimized()) w.restore();
     const tRestore = Date.now();
@@ -2415,6 +2433,7 @@ function toggleMainWindowFromGlobalShortcut() {
     try {
       w.webContents.send('tagfox-hotkey-raised');
     } catch (_) {}
+    setFileDialogTarget(dialogInFront);
     const shown = Date.now() - t0;
     /* Two probes, so a slow raise says which half is slow: a bare executeJavaScript measures the
        IPC round trip plus renderer main-thread availability; the rAF pair adds compositor paint. */
@@ -2626,6 +2645,9 @@ function createWindow() {
   win.tagfoxTitleBarHidden = hideTitleBar;
   win.on('closed', () => {
     if (mainWindowRef === win) mainWindowRef = null;
+  });
+  win.on('hide', () => {
+    if (fileDialogTarget) setFileDialogTarget(null);
   });
   attachPageZoomShortcuts(win.webContents);
   win.loadFile(path.join(__dirname, 'index.html'));
@@ -2918,6 +2940,10 @@ app.whenReady().then(() => {
     if (!globalShortcut.register(RECENT_TAB_ACCEL, openRecentTabFromGlobalShortcut)) {
       console.warn('[TagFox] Recent-tab shortcut ' + RECENT_TAB_ACCEL + ' is already in use by another app.');
     }
+    /* Load koffi now rather than on the first raise, which reads the foreground window (about 25ms once). */
+    setTimeout(() => {
+      if (!fileDialogHandoff.available()) console.warn('[TagFox] Open/Save dialog hand-off is off:', fileDialogHandoff.loadError());
+    }, 3000);
   }
   createWindow();
   app.on('activate', () => {
@@ -4698,6 +4724,34 @@ function restartTagFoxProcess() {
   }
 }
 ipcMain.handle('tagfox-restart', () => restartTagFoxProcess());
+
+/** Send a row to the Open or Save dialog the toggle shortcut raised TagFox from. The dialog is checked
+ *  before TagFox steps aside, so a dialog that has closed leaves TagFox where it is with the reason; the
+ *  dialog is brought forward while TagFox is still in front, which is what lets Windows allow it. */
+ipcMain.handle('file-dialog-send', (_e, payload) => {
+  const target = fileDialogTarget;
+  const fp = String((payload && payload.path) || '');
+  if (!target) return { ok: false, error: 'No Open or Save dialog is waiting.' };
+  if (!fp) return { ok: false, error: 'Nothing to send.' };
+  const check = fileDialogHandoff.checkTarget(target);
+  if (!check.ok) {
+    setFileDialogTarget(null);
+    return check;
+  }
+  const w = mainWindowRef;
+  fileDialogHandoff.bringToFront(target);
+  if (w && !w.isDestroyed()) w.hide();
+  const r = fileDialogHandoff.sendToFileDialog(target, fp, !!payload.isFolder);
+  if (!r.ok && w && !w.isDestroyed()) {
+    w.show();
+    w.focus();
+  }
+  return r;
+});
+ipcMain.handle('file-dialog-cancel', () => {
+  setFileDialogTarget(null);
+  return { ok: true };
+});
 
 /** What is in the way, in words Steve can act on without going looking for the PID himself. */
 function localGmistPortHolderHint() {

@@ -43,6 +43,7 @@ const runs = [
   { name: 'row buttons by keyboard', args: ['row-actions-keys.cjs'] },
   { name: 'hidden title bar', args: ['window-chrome.cjs'] },
   { name: 'hover preview', args: ['hover-preview.cjs'] },
+  { name: 'open and save dialog hand-off', args: ['file-dialog-handoff.cjs'] }, // the real-dialog half is manual-file-dialog.cjs, by hand
   { name: 'gmist start guard', args: ['gmist-start-guard.cjs'] }, // skips loudly if a real gmist holds 5173/5199
   { name: 'fuzz seed 999', args: ['fuzz.cjs', '40', '999'] },
   { name: 'fuzz seed 7', args: ['fuzz.cjs', '40', '7'] },

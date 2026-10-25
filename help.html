@@ -216,6 +216,13 @@ Keyboard nuance: `/` and `Ctrl+U` toggle focus into / out of the search box when
               <li>Files whose <code>xh-</code> hide-until date is still to come are left out. <strong>Show files hidden until a later date</strong> lists them as well.</li>
               <li><strong>Show only starred items</strong> lists the starred files and folders below the current folder, or every star when there is no folder.</li>
               </ul>
+              <h3>📂 Another app&#39;s Open and Save dialogs</h3>
+              <ul>
+              <li>In an Open or Save dialog (Notepad&#39;s, a browser&#39;s upload, most of Office), press TagFox&#39;s toggle shortcut. TagFox comes up with a strip above the box saying where the next pick goes, such as <strong>Next pick goes to: Notepad · Open</strong>.</li>
+              <li>Find the file or folder as usual, then press <code>Enter</code> or double-click it. TagFox steps aside and the dialog takes it: in an Open dialog a file opens and a folder is shown; a Save dialog gets the folder and keeps the file name it already had, and you press <strong>Save</strong> yourself.</li>
+              <li><code>Ctrl</code>+<code>Enter</code>, or <strong>Send this folder</strong> on the strip, sends the folder TagFox is showing. <code>Esc</code> or the strip&#39;s × stops, and <code>Enter</code> opens rows again.</li>
+              <li>With any other window in front, the toggle shortcut works as it always does.</li>
+              </ul>
               <h3>📊 How the list is ordered</h3>
               <ul>
               <li>The smart order puts rows whose <strong>name</strong> matches above rows that match only in the <strong>path</strong>. Within the name, a whole word ranks highest, then a match at the start of a word, then one at the end of a word, then one inside a word (<code>map</code> finds <code>old map</code>, <code>mapping</code>, <code>roadmap</code>, then <code>xmapx</code>). After that it favours recent changes, though never enough to lift a file that only contains the word above an older one named for it, starred items, things you open often, and files and folders in Windows&#39; own Recent list (opened lately in any app), the more so the more recently. It puts anything under an <code>AppData</code> or <code>ProgramData</code> folder lower down, unless you are in that folder or typed its name, and anything with a <code>~</code> in its path (Word&#39;s <code>~$</code> lock files, <code>~folders</code>) lower down too, unless you typed its whole name or a <code>~</code>. The <code>/</code> sort commands switch to date or name order, or to size with the largest or the smallest first (<code>/size</code>).</li>
