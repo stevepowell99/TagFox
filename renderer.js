@@ -3950,6 +3950,7 @@
       { id: 'dark', group: 'TagFox', label: 'Dark or light mode', run: () => document.getElementById('btnToggleDarkMode')?.click() },
       { id: 'settings', group: 'TagFox', label: 'Settings', run: () => document.getElementById('btnToggleSettings')?.click() },
       { id: 'help', group: 'TagFox', label: 'Help (F1)', run: () => bootstrap.Modal.getOrCreateInstance(document.getElementById('helpModal')).show() },
+      { id: 'quit', group: 'TagFox', label: 'Quit TagFox (its shortcut stops working until TagFox starts again)', run: () => void window.tagBrowser?.quitTagFox?.() },
     ];
 
     function runnerOptOn(id) {

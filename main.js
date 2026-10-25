@@ -2201,7 +2201,8 @@ function installApplicationMenu() {
         { label: 'View', submenu: viewSubmenu },
       ]
     : [
-        { label: 'File', submenu: [{ role: 'quit' }] },
+        /* Labelled, since the role reads "Exit" on Windows and the / command and the help say Quit TagFox. */
+        { label: 'File', submenu: [{ role: 'quit', label: 'Quit TagFox' }] },
         { label: 'View', submenu: viewSubmenu },
       ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -2620,6 +2621,18 @@ function createWindow() {
   win.on('closed', () => {
     if (mainWindowRef === win) mainWindowRef = null;
   });
+  /* The window's × hides TagFox, as Esc does, so the global shortcut can always bring it back: closing used to
+     quit, which took the shortcut with it (Steve, 25 October 2026). File → Quit and the / command Quit TagFox
+     still quit, through before-quit; Windows logging off or shutting down is let through too. */
+  win.on('close', (e) => {
+    if (appQuitting) return;
+    e.preventDefault();
+    win.hide();
+    lastHiddenAt = Date.now();
+  });
+  win.on('query-session-end', () => {
+    appQuitting = true;
+  });
   win.on('hide', () => {
     if (fileDialogTarget) setFileDialogTarget(null);
   });
@@ -2926,6 +2939,16 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+/** Set once TagFox is really quitting, so the main window's close handler stops turning a close into a hide. */
+let appQuitting = false;
+app.on('before-quit', () => {
+  appQuitting = true;
+});
+ipcMain.handle('tagfox-quit', () => {
+  app.quit();
+  return { ok: true };
 });
 
 app.on('will-quit', () => {

@@ -85,6 +85,12 @@ function makeCdp(wsUrl) {
     const m = JSON.parse(ev.data);
     if (m.id && pending.has(m.id)) { const { resolve, reject } = pending.get(m.id); pending.delete(m.id); m.error ? reject(new Error(JSON.stringify(m.error))) : resolve(m.result); }
   });
+  // A TagFox that goes away mid-test closes this socket. Fail what was waiting on it, or node runs out of work
+  // with the promise unsettled and exits 0 before the test prints a result.
+  ws.addEventListener('close', () => {
+    for (const { reject } of pending.values()) reject(new Error('CDP connection closed: the test TagFox went away'));
+    pending.clear();
+  });
   const send = (method, params) => { const id = nextId++; return new Promise((resolve, reject) => { pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params: params || {} })); }); };
   return { ready, send, close: () => ws.close() };
 }
@@ -189,8 +195,16 @@ async function connect({ profile, maxResults = 60, scope = SCOPES.repo, disableA
     throw new Error(`[${label}] did not settle within ${maxMs}ms (last depth=${last && last.topLevelSearchDepth}, inFlight=${last && last.searchInFlight})`);
   };
 
-  const close = () => { try { cdp.close(); } catch (_) {} try { child.kill('SIGKILL'); } catch (_) {} };
-  return { baseUrl, userData, ev, T, state, diag, settle, send: cdp.send, stderr: () => stderr, close };
+  let closed = false;
+  const close = () => { closed = true; try { cdp.close(); } catch (_) {} try { child.kill('SIGKILL'); } catch (_) {} };
+  // Node running out of work before the test closed its driver means the test stopped part-way, so it must
+  // not exit 0 (a test whose TagFox died mid-run used to end silently with success).
+  process.on('beforeExit', () => {
+    if (closed || process.exitCode) return;
+    console.log('  FAIL the test ended before it finished (its driver was never closed)');
+    process.exitCode = 1;
+  });
+  return { baseUrl, userData, pid: child.pid, ev, T, state, diag, settle, send: cdp.send, stderr: () => stderr, close };
 }
 
 // Standard structural invariants every settled state must satisfy. Returns an array of problem strings.

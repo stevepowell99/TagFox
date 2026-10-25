@@ -38,6 +38,7 @@ const runs = [
   { name: 'runner go to a path', args: ['runner-go-to-path.cjs'] },
   { name: 'viewer in runner', args: ['viewer-runner.cjs'] },
   { name: 'runner viewer divider', args: ['runner-viewer-split.cjs'] },
+  { name: 'window close hides', args: ['close-hides.cjs'] },
   { name: 'runner empty list says why', args: ['runner-empty-list.cjs'] },
   { name: 'runner stars open in order', args: ['runner-stars.cjs'] },
   { name: 'runner saved searches', args: ['runner-saved-searches.cjs'] },

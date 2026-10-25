@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   openPath: (fullPath) => ipcRenderer.invoke('open-path', fullPath),
   showInFolder: (fullPath) => ipcRenderer.invoke('show-in-folder', fullPath),
   hideMainWindow: () => ipcRenderer.invoke('hide-main-window'),
+  quitTagFox: () => ipcRenderer.invoke('tagfox-quit'),
   showProperties: (fullPath) => ipcRenderer.invoke('show-properties', fullPath),
   windowChromeGet: () => ipcRenderer.invoke('window-chrome-get'),
   windowChromeSet: (hideTitleBar) => ipcRenderer.invoke('window-chrome-set', !!hideTitleBar),
