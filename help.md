@@ -27,7 +27,7 @@
   Bulk rename preview: first 200 rows in the dialog only; Rename applies to the full batch captured at open. Wildcard Find uses same Match case as the search row.
 
   The Keys tab's table is drawn at open from RUNNER_KEYS (renderRunnerKeysHelp into #runnerKeysTable), so it cannot drift from the keys. Tab ids are read by
-  HELP_TAB_IDS and restoreHelpModalTab in renderer.js: `?` and F1 open `runner` (the Keys tab), the Settings link "Get Everything 1.5a" opens `installation`.
+  HELP_TAB_IDS and restoreHelpModalTab in renderer.js: F1 and the / command Help open `essentials` (Get started), `?` opens `runner` (the Keys tab), the Settings link "Get Everything 1.5a" opens `installation`.
 
   Tab boundaries: see scripts/build-help.js — each pane is introduced by a single-line HTML comment whose body is help:tab plus JSON (id, label, exactly one "active":true, optional "format":"html" for raw HTML). Run npm run build:help after edits.
 -->
@@ -45,6 +45,7 @@ TagFox does not search the disk itself. It asks [Everything](https://www.voidtoo
 ### Bring TagFox up from anywhere
 
 - `Ctrl`+`Alt`+`Space` shows TagFox from any program, and pressing it again hides it. You can choose another key in **Settings**, under **Global hotkey & Quick TODO**: click **Record…** and press the keys you want.
+- The × at the top right of the window hides TagFox rather than closing it, so the shortcut still brings it back. To quit, choose **File → Quit TagFox**, or the `/` command **Quit TagFox**. The shortcuts then stop working until TagFox starts again.
 - `Ctrl`+`Shift`+`Space`, from anywhere, shows everything that changed in the last hour, in every folder.
 - `Alt`+`Shift`+`N`, from anywhere, opens the **Quick TODO** box, for noting a task as a file (see **Tags and tasks**).
 

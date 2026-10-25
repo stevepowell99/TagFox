@@ -5021,10 +5021,11 @@
       host.innerHTML = html;
     }
 
-    /** `?` in an empty box: Help, on Runner's tab, at the keys. */
+    /** `?` in an empty box: Help on its Keys tab (`runner`), at the keys. */
     function openRunnerKeysHelp() {
       const hm = document.getElementById('helpModal');
       if (!hm) return;
+      helpTabOnNextOpen = 'runner';
       hm.addEventListener('shown.bs.modal', () => document.getElementById('runnerKeysTable')?.scrollIntoView({ block: 'start' }), { once: true });
       bootstrap.Modal.getOrCreateInstance(hm).show();
     }
@@ -18370,14 +18371,14 @@
       scheduleRestoreFocusAfterControlClick();
     });
     const HELP_TAB_IDS = ['essentials', 'search', 'files-folders', 'viewer', 'projects', 'runner', 'installation'];
-    /** A tab asked for by whatever opened Help (the Settings link asks for Setting up), used once. */
+    /** A tab asked for by whatever opened Help (`?` asks for Keys, the Settings link for Setting up), used once. */
     let helpTabOnNextOpen = '';
-    /** Runner opens Help on its keys (`runner`); Classic reopens the tab last read. */
+    /** Runner opens Help on Get started (F1, the / command); Classic reopens the tab last read. */
     function restoreHelpModalTab() {
       const once = helpTabOnNextOpen;
       helpTabOnNextOpen = '';
       const raw = localStorage.getItem(LS.helpModalTab);
-      const id = HELP_TAB_IDS.includes(once) ? once : isRunnerMode() ? 'runner' : HELP_TAB_IDS.includes(raw) ? raw : 'essentials';
+      const id = HELP_TAB_IDS.includes(once) ? once : isRunnerMode() ? 'essentials' : HELP_TAB_IDS.includes(raw) ? raw : 'essentials';
       const btn = document.getElementById('help-tab-' + id);
       if (btn) bootstrap.Tab.getOrCreateInstance(btn).show();
     }

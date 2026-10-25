@@ -27,7 +27,7 @@
   Bulk rename preview: first 200 rows in the dialog only; Rename applies to the full batch captured at open. Wildcard Find uses same Match case as the search row.
 
   The Keys tab's table is drawn at open from RUNNER_KEYS (renderRunnerKeysHelp into #runnerKeysTable), so it cannot drift from the keys. Tab ids are read by
-  HELP_TAB_IDS and restoreHelpModalTab in renderer.js: `?` and F1 open `runner` (the Keys tab), the Settings link "Get Everything 1.5a" opens `installation`.
+  HELP_TAB_IDS and restoreHelpModalTab in renderer.js: F1 and the / command Help open `essentials` (Get started), `?` opens `runner` (the Keys tab), the Settings link "Get Everything 1.5a" opens `installation`.
 
   Tab boundaries: see scripts/build-help.js — each pane is introduced by a single-line HTML comment whose body is help:tab plus JSON (id, label, exactly one "active":true, optional "format":"html" for raw HTML). Run npm run build:help after edits.
 -->
@@ -72,6 +72,7 @@
               <h3>Bring TagFox up from anywhere</h3>
               <ul>
               <li><code>Ctrl</code>+<code>Alt</code>+<code>Space</code> shows TagFox from any program, and pressing it again hides it. You can choose another key in <strong>Settings</strong>, under <strong>Global hotkey &amp; Quick TODO</strong>: click <strong>Record…</strong> and press the keys you want.</li>
+              <li>The × at the top right of the window hides TagFox rather than closing it, so the shortcut still brings it back. To quit, choose <strong>File → Quit TagFox</strong>, or the <code>/</code> command <strong>Quit TagFox</strong>. The shortcuts then stop working until TagFox starts again.</li>
               <li><code>Ctrl</code>+<code>Shift</code>+<code>Space</code>, from anywhere, shows everything that changed in the last hour, in every folder.</li>
               <li><code>Alt</code>+<code>Shift</code>+<code>N</code>, from anywhere, opens the <strong>Quick TODO</strong> box, for noting a task as a file (see <strong>Tags and tasks</strong>).</li>
               </ul>

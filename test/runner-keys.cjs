@@ -14,7 +14,7 @@
 //   - Alt+P, the Viewer button and the options panel's The Viewer hide and show the Viewer; ? in an empty box opens Help at Runner's keys, drawn from the table;
 //   - Alt+Home clears the text, the folder and every filter;
 //   - Ctrl+M sorts by date and again back to smart;
-//   - F1 opens Help on Runner's own tab;
+//   - F1 and the / command Help open Help on Get started, ? on the Keys tab, the Settings link on Setting up;
 //   - an AppData or ProgramData file ranks below an equally named file elsewhere;
 //   - Esc steps through the selection, the text and the folder, then hides TagFox.
 //
@@ -298,11 +298,11 @@ async function main() {
     await drv.ev(`bootstrap.Modal.getInstance(document.getElementById('helpModal'))?.hide(); 1`);
     await sleep(500);
 
-    // Help opens on Runner's tab.
+    // F1 opens Help on Get started (after ?, so the Keys tab is the one last shown).
     await key('F1', 'F1', 112);
     await sleep(500);
     const helpTab = await drv.ev(`document.querySelector('#helpModalTabs .nav-link.active')?.dataset.helpTab || ''`);
-    check(helpTab === 'runner', `F1 opens Help on the Keys tab (${helpTab})`);
+    check(helpTab === 'essentials', `F1 opens Help on Get started (${helpTab})`);
     // Every tab shows text of its own (a broken help:tab marker leaves a pane empty).
     const panes = await drv.ev(`(async () => {
       const out = [];
@@ -322,6 +322,22 @@ async function main() {
     await sleep(500);
     const setupTab = await drv.ev(`document.querySelector('#helpModalTabs .nav-link.active')?.dataset.helpTab || ''`);
     check(setupTab === 'installation', `the Everything setup link opens Help on Setting up (${setupTab})`);
+    await drv.ev(`bootstrap.Modal.getInstance(document.getElementById('helpModal'))?.hide(); 1`);
+    await sleep(500);
+    // The / command Help opens on Get started, like F1 (after the setup link, so Setting up was last shown).
+    await drv.T('setQuery', '');
+    await drv.settle('empty box for /help');
+    await focusBox();
+    await key('/', 'Slash', 191, 0, '/');
+    await drv.send('Input.insertText', { text: 'help' });
+    await sleep(300);
+    s = await R();
+    check(s.cmdListOpen && s.cmdMatches[0] === 'help', `/help offers Help first (${(s.cmdMatches || []).slice(0, 3).join(', ')})`);
+    await key('Enter', 'Enter', 13, 0, '\r');
+    await sleep(500);
+    const slashHelpTab = await drv.ev(`document.querySelector('#helpModalTabs .nav-link.active')?.dataset.helpTab || ''`);
+    const slashHelpOpen = await drv.ev(`document.getElementById('helpModal').classList.contains('show')`);
+    check(slashHelpOpen && slashHelpTab === 'essentials', `the / command Help opens Help on Get started (${slashHelpOpen ? slashHelpTab : 'not open'})`);
     await drv.ev(`bootstrap.Modal.getInstance(document.getElementById('helpModal'))?.hide(); 1`);
     await sleep(500);
 
