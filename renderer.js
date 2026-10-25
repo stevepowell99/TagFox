@@ -57,7 +57,6 @@
       globalViewerBasenames: 'tagBrowserGlobalViewerBasenames',
       viewerDocSplitPct: 'tagBrowserViewerDocSplitPct',
       viewerDocSplitPctTheater: 'tagBrowserViewerDocSplitPctTheater',
-      tagBarShowAll: 'tagBrowserTagBarShowAll',
       /* Runner layout: which layout the toggle key opens, and each layout's search state while the other is up. */
       toggleOpens: 'tagBrowserToggleOpens',
       runnerState: 'tagBrowserRunnerState',
@@ -322,10 +321,6 @@
       document.querySelectorAll('.tagfox-results-row--drag-source').forEach((n) => n.classList.remove('tagfox-results-row--drag-source'));
       document.body.classList.remove('tagfox-internal-path-drag');
     }
-    /** Last tag scan: Everything r=1 + `[ \\]x[kpxd]` so we only index `xk/xp/xx/xd` tag tokens. */
-    let tagDiscoveryRows = [];
-    /** Last non-empty scan — keeps tag pills when a later scan fails, returns empty, or races navigation. */
-    let tagDiscoveryRowsLastGood = [];
     let sortColumn = 'name';
     let sortAsc = true;
     let searchDebounceTimer = null;
@@ -430,7 +425,6 @@
       syncViewRadioActiveFromDom();
       saveSettings();
       updateSortHeaders();
-      renderTagBar();
       void runSearchNow('identity');
       commitSearchHistoryNow();
     }
@@ -455,15 +449,12 @@
       return localStorage.getItem(LS.highlightMatchedNames) !== '0';
     }
 
-    /** @type {Set<string>} lowercase keys; tag bar filters with AND (click cycles off → include → exclude → off). */
+    /** @type {Set<string>} lowercase keys of the tag filters, combined with AND unless tagFilterCombineOr. */
     let activeTagKeys = new Set();
-    /** @type {Set<string>} subset of activeTagKeys that are negated (not-B); a pill's 3rd click state. */
+    /** @type {Set<string>} subset of activeTagKeys that are negated (not-B). */
     let excludedTagKeys = new Set();
     /** Multiple tag filters: false = AND (default), true = OR (Everything regex + client filter). */
     let tagFilterCombineOr = false;
-    /** Tag bar: these bodies (lowercase keys) always show; the rest hide behind "More" (active hidden ones still show). */
-    const TAG_BAR_PRIMARY = ['todo', 'gcc', 'waiting', 'later'];
-    let tagBarShowAll = false;
     /** Tag modal targets (length 1 = single-name edit, &gt;1 = union add/remove on each). */
     let modalTargetPaths = [];
     let modalTags = [];
@@ -2039,26 +2030,10 @@
       return Math.abs(h) % 360;
     }
 
-    /** Light fill for row pills, breadcrumb badges, modal chips (same hash as tag bar). */
+    /** Light fill for row pills, breadcrumb badges, modal chips. */
     function tagColorCss(tagKeyOrDisplay) {
       const hue = tagHueFromKey(tagKeyOrDisplay);
       return 'hsl(' + hue + ', 42%, 86%)';
-    }
-
-    /** Tag bar pill colours (important beats Bootstrap .btn). Active filter = thicker border only (.tag-bar-pill-active). */
-    function applyTagBarPillStyle(el, tagKey) {
-      const hue = tagHueFromKey(tagKey);
-      el.style.setProperty('background-color', 'hsl(' + hue + ', 42%, 86%)', 'important');
-      el.style.setProperty('color', '#212529', 'important');
-      el.style.setProperty('border-color', 'hsl(' + hue + ', 38%, 58%)', 'important');
-    }
-
-    /** Negated (not-tag) pill: red tint + strike-through, overriding the per-tag hue style. */
-    function applyTagBarPillExcludeStyle(el) {
-      el.style.setProperty('background-color', 'hsl(0, 70%, 90%)', 'important');
-      el.style.setProperty('color', '#842029', 'important');
-      el.style.setProperty('border-color', 'hsl(0, 60%, 60%)', 'important');
-      el.style.setProperty('text-decoration', 'line-through', 'important');
     }
 
     /** Remove one tag chip from segment via rename (results / props; no modal). */
@@ -2447,7 +2422,6 @@
       setRecencyFilterMode('all');
       saveSettings();
       renderScopeBreadcrumb();
-      renderTagBar();
       scheduleSearch();
       commitSearchHistoryNow();
     }
@@ -2937,7 +2911,6 @@
       saveSettings();
       updateSortHeaders();
       renderScopeBreadcrumb();
-      renderTagBar();
       applyPaneWidths();
       await runSearchNow('identity');
       focusQueryBox(false);
@@ -3905,7 +3878,6 @@
       saveSettings();
       updateSortHeaders();
       renderScopeBreadcrumb();
-      renderTagBar();
       renderRunnerScopeChip();
       await runSearchNow();
       commitSearchHistoryNow();
@@ -4244,7 +4216,7 @@
         const not = excludedTagKeys.has(cmd.tag.toLowerCase());
         b.classList.add('tagfox-runner-cmd--tag');
         b.classList.toggle('tagfox-runner-cmd--not', not);
-        b.lastChild.textContent = (not ? '¬' : '') + cmd.tag; // ¬ marks a not-tag filter, as in Classic's tag bar
+        b.lastChild.textContent = (not ? '¬' : '') + cmd.tag; // ¬ marks a not-tag filter
         b.title = cmd.label + '. Right-click: not tagged ' + cmd.tag + '. The same click again clears it.';
         tagRow.appendChild(b);
       });
@@ -4863,7 +4835,7 @@
         e.stopPropagation();
         runRunnerCommand(runnerCommands().find((c) => c.id === b.dataset.cmdId));
       });
-      /* Right-click on a tag's button: not tagged, as on Classic's tag bar. */
+      /* Right-click on a tag's button: not tagged. */
       document.getElementById('runnerOptsPanel')?.addEventListener('contextmenu', (e) => {
         const b = e.target.closest('.tagfox-runner-cmd--tag');
         if (!b) return;
@@ -9761,7 +9733,7 @@
       return 'parent:"' + p.replace(/"/g, '') + '"';
     }
 
-    /** OR-group for multiple roots; mirrors tag-bar `< a | b >` style. */
+    /** OR-group for multiple roots, in the `< a | b >` grouping the tag filters use. */
     function combineFolderScopeGroup(normPaths, recursive) {
       const norms = (normPaths || [])
         .map((x) => normalizeFolderPathForEverything(String(x || '').trim()).replace(/[/\\]+$/, ''))
@@ -9897,115 +9869,6 @@
           }
         })();
       });
-    }
-
-    /** pruneDeadRemembered: ghost cleanup on “Rescan all tags” only. */
-    async function runTagDiscoverySearchInner(pruneDeadRemembered) {
-      const statusEl = document.getElementById('statusMain');
-      const { baseUrl, httpUser, httpPassword } = readEverythingConnection();
-      const mr = Math.max(1, parseInt(document.getElementById('maxResults').value, 10) || 60);
-      const countCap = Math.min(50000, Math.max(5000, mr));
-      const ui = searchOptionsFromUI();
-      // r=1: a space or path sep before any family prefix (xk/xp/xx/xd) so only tag tokens match.
-      const bracketDiscoveryQuery = '[ \\\\]x[kpxd]';
-      searchDebugLog('tagDiscovery.request', {
-        prune: pruneDeadRemembered,
-        searchText: bracketDiscoveryQuery,
-        countCap,
-        baseUrl,
-        hasSearchBridge: !!(window.tagBrowser && typeof window.tagBrowser.search === 'function'),
-        knownTagsBeforeScan: knownBracketTagsList.length,
-      });
-      const res = await window.tagBrowser.search({
-        baseUrl,
-        searchText: bracketDiscoveryQuery,
-        count: String(countCap),
-        httpUser,
-        httpPassword,
-        options: {
-          case: ui.case,
-          wholeword: false,
-          pathSearch: true,
-          regex: true,
-          diacritics: ui.diacritics,
-          sort: 'path',
-          ascending: true,
-        },
-      });
-      const rawRows = Array.isArray(res && res.rows) ? res.rows : [];
-      searchDebugLog('tagDiscovery.response', {
-        ok: !!(res && res.ok),
-        rawRows: rawRows.length,
-        err: res && res.ok ? '' : (res && res.error) || 'unknown',
-        resKeys: res && typeof res === 'object' ? Object.keys(res).slice(0, 14) : [],
-      });
-      if (!res.ok) {
-        if (statusEl) setStatusMain('Tag scan failed: ' + (res.error || 'unknown error'));
-        renderTagBar();
-        return;
-      }
-      searchDebugLog('tagDiscovery.rowsPipe', {
-        rawLen: rawRows.length,
-        sampleRaw: rawRows.slice(0, 3).map(searchDebugTagRowDigest),
-      });
-      tagDiscoveryRows = rawRows;
-      if (rawRows.length) tagDiscoveryRowsLastGood = rawRows;
-      absorbKnownBracketTagsFromScanRows(rawRows);
-      searchDebugLog('tagDiscovery.afterAbsorb', { knownBracketTagsListLen: knownBracketTagsList.length });
-      let fullScanActiveChanged = false;
-      if (pruneDeadRemembered) {
-        const countsFromDisc =
-          rawRows.length > 0 ? T.aggregateTagCountsFromRows(rawRows, fullPathForRow) : new Map();
-        searchDebugLog('tagDiscovery.prune', {
-          countsFromDiscSize: countsFromDisc.size,
-          keysSample: [...countsFromDisc.keys()].slice(0, 24),
-        });
-        let storeChanged = false;
-        const nextStore = tagStoreOrder.filter((t) => {
-          const hit = countsFromDisc.get(t.key);
-          if (hit && hit.count > 0) return true;
-          storeChanged = true;
-          return false;
-        });
-        let knownChanged = false;
-        const nextKnown = knownBracketTagsList.filter((t) => {
-          const hit = countsFromDisc.get(t.key);
-          if (hit && hit.count > 0) return true;
-          knownChanged = true;
-          return false;
-        });
-        if (knownChanged) {
-          knownBracketTagsList = nextKnown;
-          saveKnownBracketTags();
-          scheduleTagPrefsDiskSync();
-        }
-        if (storeChanged) {
-          tagStoreOrder = nextStore;
-          saveTagStore();
-          scheduleTagPrefsDiskSync();
-        }
-        for (const k of [...activeTagKeys]) {
-          const hit = countsFromDisc.get(k);
-          if (!hit || hit.count < 1) {
-            activeTagKeys.delete(k);
-            fullScanActiveChanged = true;
-          }
-        }
-        if (fullScanActiveChanged) persistActiveTagFilter();
-        if (statusEl) {
-          const n = rawRows.length;
-          const extra =
-            storeChanged || knownChanged || fullScanActiveChanged ? ' Dropped tags not in this scan.' : '';
-          setStatusMain('Tag scan: ' + n + ' path(s) with xk/xp/xx tags (full index).' + extra);
-        }
-      }
-      renderTagBar();
-      if (pruneDeadRemembered && fullScanActiveChanged) renderTable();
-    }
-
-    /** pruneDeadRemembered true = “Rescan all tags”. false = awaitable. */
-    async function runTagDiscoverySearch(pruneDeadRemembered) {
-      await runTagDiscoverySearchInner(pruneDeadRemembered);
     }
 
     /** Escape tag text for one Everything regex:… clause (modifiers off; global Regex UI off). */
@@ -11148,22 +11011,6 @@
       return dir + sep + name;
     }
 
-    /** Search-debug: one row’s path + basename tag-parse (Everything row shapes vary). */
-    function searchDebugTagRowDigest(row) {
-      if (!row) return null;
-      const fp = fullPathForRow(row);
-      const base = T.baseName(fp);
-      const parsed = T.parseSegmentTags(base);
-      return {
-        name: row.name,
-        path: row.path,
-        fullPath: fp,
-        base,
-        parsedTags: parsed.tags,
-        rowKeys: Object.keys(row).slice(0, 16),
-      };
-    }
-
     function searchDebugPathLooksLikeShortcutTargets(fullPath) {
       return /[\\/]\.(shortcut-targets-by-id|shortcuts-by-id)([\\/]|$)/i.test(String(fullPath || '').trim());
     }
@@ -11362,7 +11209,7 @@
       }
     }
 
-    /** Everything index can lag after many renames; align lastRows / tagDiscoveryRows + check map with paths we just wrote. */
+    /** Everything index can lag after many renames; align lastRows + check map with paths we just wrote. */
     function patchResultRowsAfterRenames(pairs) {
       if (!pairs || !pairs.length) return;
       for (const pair of pairs) {
@@ -11380,8 +11227,6 @@
           row.path = par;
         };
         for (const row of lastRows) patchOne(row);
-        for (const row of tagDiscoveryRows) patchOne(row);
-        for (const row of tagDiscoveryRowsLastGood) patchOne(row);
         if (checkedPathsMap.has(fromK)) {
           checkedPathsMap.delete(fromK);
           checkedPathsMap.set(pathNormKey(toRaw), toRaw);
@@ -11655,7 +11500,7 @@
     function ensureKnownBracketTag(key, display) {
       const k = String(key || '').trim().toLowerCase();
       if (!k) return;
-      if (T && T.isDateTag && T.isDateTag(k)) return; // deadlines have their own filter, not tag-bar pills
+      if (T && T.isDateTag && T.isDateTag(k)) return; // deadlines have their own filter
       const d = String(display || key).trim() || k;
       if (knownBracketTagsList.some((t) => t.key === k)) return;
       knownBracketTagsList.push({ key: k, display: d });
@@ -11664,52 +11509,6 @@
       }
       saveKnownBracketTags();
       scheduleTagPrefsDiskSync();
-    }
-
-    /** Append tag names from scan rows (full-index `\\[\\(` + r=1). */
-    function absorbKnownBracketTagsFromScanRows(rows) {
-      if (!rows || !rows.length) {
-        searchDebugLog('tags.absorb.skip', { reason: 'no rows', knownLen: knownBracketTagsList.length });
-        return;
-      }
-      const knownBefore = knownBracketTagsList.length;
-      const tagModOk = !!(window.TagBrowserTags && T && typeof T.aggregateTagCountsFromRows === 'function');
-      const m = tagModOk ? T.aggregateTagCountsFromRows(rows, fullPathForRow) : new Map();
-      const have = new Set(knownBracketTagsList.map((t) => t.key));
-      let added = 0;
-      let changed = false;
-      for (const [k, info] of m) {
-        if (have.has(k)) continue;
-        if (T && T.isDateTag && T.isDateTag(k)) continue; // deadlines have their own filter, not tag-bar pills
-        have.add(k);
-        knownBracketTagsList.push({ key: k, display: info.display });
-        added++;
-        changed = true;
-      }
-      searchDebugLog('tags.absorb', {
-        rowCount: rows.length,
-        aggregateMapSize: m.size,
-        aggregateKeysSample: [...m.keys()].slice(0, 30),
-        tagModuleOk: tagModOk,
-        newEntriesPushed: added,
-        knownBefore,
-        knownAfter: knownBracketTagsList.length,
-        sampleRows: rows.slice(0, 4).map(searchDebugTagRowDigest),
-      });
-      if (rows.length && m.size === 0) {
-        searchDebugLog('tags.absorb.emptyMap', {
-          message:
-            'Rows returned but aggregateTagCountsFromRows produced no tags — check fullPath/name vs bracket segment parsing.',
-          digests: rows.slice(0, 10).map(searchDebugTagRowDigest),
-        });
-      }
-      if (changed) {
-        if (knownBracketTagsList.length > KNOWN_BRACKET_TAGS_MAX) {
-          knownBracketTagsList = knownBracketTagsList.slice(0, KNOWN_BRACKET_TAGS_MAX);
-        }
-        saveKnownBracketTags();
-        scheduleTagPrefsDiskSync();
-      }
     }
 
     /** User chose this tag as filter — keep it in the bar across later searches. */
@@ -11954,7 +11753,6 @@
       // Excluded ⊆ active (drop any stale exclusion whose tag is no longer an active filter).
       excludedTagKeys = new Set([...activeTagKeysFromStored(localStorage.getItem(LS.excludedTagFilter))].filter((k) => activeTagKeys.has(k)));
       tagFilterCombineOr = localStorage.getItem(LS.tagFilterCombineOr) === '1';
-      tagBarShowAll = localStorage.getItem(LS.tagBarShowAll) === '1';
       applyTagPrefsFromUserDataFile();
       for (const t of tagStoreOrder) ensureKnownBracketTag(t.key, t.display);
       searchDebugLog('tags.loadSettings.tail', {
@@ -12470,7 +12268,6 @@
         saveSettings();
         updateSortHeaders();
         renderScopeBreadcrumb();
-        renderTagBar();
         await runSearchNow();
       } finally {
         searchHistNavigating = false;
@@ -13036,7 +12833,7 @@
       btn.classList.toggle('tagfox-advanced-filled', open || anyAdvancedSwitchOn());
     }
 
-    /** Recency segmented control (tag toolbar, RHS); target for zero-row pulse when a bucket other than All is active. */
+    /** Recency segmented control (toolbar row, RHS); target for zero-row pulse when a bucket other than All is active. */
     function recencyFilterGroupEl() {
       return document.querySelector('.tagfox-search-opts-rhs [aria-label="Recency"]');
     }
@@ -13058,10 +12855,6 @@
       const recencyGrp = recencyFilterGroupEl();
       recencyGrp?.classList.remove('pulse-hint', 'pulse-hint--sparse');
       recencyGrp?.style.removeProperty('--empty-pulse-frac');
-      document.querySelectorAll('#tagBar button[data-tag-key]').forEach((b) => {
-        b.classList.remove('pulse-hint', 'pulse-hint--sparse');
-        b.style.removeProperty('--empty-pulse-frac');
-      });
       const advBtn = document.getElementById('btnToggleSearchOptsAdvanced');
       advBtn?.classList.remove('pulse-hint', 'pulse-hint--sparse');
       advBtn?.style.removeProperty('--empty-pulse-frac');
@@ -13102,7 +12895,7 @@
     }
 
     /**
-     * Visible rows 0: full pulse on filters (non-empty query / active tags).
+     * Visible rows 0: full pulse on filters (non-empty query, the search options).
      * Visible 0 + recency ≠ All: also pulse the Recency control (client or Everything dm: filter may hide all rows).
      * Visible 0 + this-folder-only or subfolders-only layout: pulse that layout’s toolbar label (modes can hide all rows).
      * Visible 1–9: same targets, weaker pulse; strength (10−n)/10 → 0 at 10 rows (recency + layout labels not pulsed here).
@@ -13123,7 +12916,6 @@
       const advBtn = document.getElementById('btnToggleSearchOptsAdvanced');
       const qNonEmpty = !!(q && q.value && q.value.trim());
       const wantQ = inBand && qNonEmpty;
-      const wantTag = inBand && activeTagKeys.size > 0;
       const wantRecency = isEmpty && recencyMode !== 'all';
       const wantAdv = inBand && anyAdvancedSwitchOn();
       const hideSpecialBtn = document.querySelector('label[for="optHideSpecial"]');
@@ -13167,9 +12959,6 @@
         restartPulseHint(rvLbl.foldersOnly, wantRvFoldersOnly, mode, sparseFrac);
         restartPulseHint(rvLbl.filesOnly, wantRvFilesOnly, mode, sparseFrac);
         restartPulseHint(rvLbl.showSubfolders, wantRvShowSub, mode, sparseFrac);
-        document.querySelectorAll('#tagBar button.tag-bar-pill-active[data-tag-key]').forEach((btn) => {
-          restartPulseHint(btn, wantTag && activeTagKeys.has(btn.dataset.tagKey), mode, sparseFrac);
-        });
         return;
       }
 
@@ -13199,14 +12988,6 @@
       toggleRvPulse(rvLbl.foldersOnly, wantRvFoldersOnly);
       toggleRvPulse(rvLbl.filesOnly, wantRvFilesOnly);
       toggleRvPulse(rvLbl.showSubfolders, wantRvShowSub);
-
-      document.querySelectorAll('#tagBar button.tag-bar-pill-active[data-tag-key]').forEach((btn) => {
-        const on = wantTag && activeTagKeys.has(btn.dataset.tagKey);
-        btn.classList.toggle('pulse-hint', on);
-        btn.classList.toggle('pulse-hint--sparse', on && mode === 'sparse');
-        if (on && mode === 'sparse') btn.style.setProperty('--empty-pulse-frac', String(sparseFrac));
-        else if (!on || mode === 'empty') btn.style.removeProperty('--empty-pulse-frac');
-      });
     }
 
     /** After a successful Everything response: replay hint when visible row count is under 10. */
@@ -13216,8 +12997,8 @@
       updateEmptyResultsPulseHints(n, { forceRestart: true });
     }
 
-    /** A tag filter's include state: off or excluded → include; include → off. Classic's pill click and
-        Runner's tag commands both change the filter through these two, then search. */
+    /** A tag filter's include state: off or excluded → include; include → off. Runner's tag commands change
+        the filter through these two, then search. */
     function toggleTagFilterInclude(key, display) {
       if (activeTagKeys.has(key) && !excludedTagKeys.has(key)) {
         activeTagKeys.delete(key);
@@ -13238,222 +13019,6 @@
         activeTagKeys.add(key);
         excludedTagKeys.add(key);
       }
-    }
-
-    function renderTagBar() {
-      return perfTimeSync('render.tagBar', { rows: lastRows.length }, renderTagBarImpl);
-    }
-    function renderTagBarImpl() {
-      const el = document.getElementById('tagBar');
-      el.innerHTML = '';
-      // Icon-only tag-bar controls (tooltips + aria-labels carry the text).
-      const tagBarIconBtnClass =
-        'btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center p-0';
-      const tagBarIconBtnSize = 'width:2rem;height:2rem';
-      const faRescan15 = '<i class="fa-solid fa-arrows-rotate fa-fw" aria-hidden="true"></i>';
-      const faClear15 = '<i class="fa-solid fa-xmark fa-fw" aria-hidden="true"></i>';
-      const appendRescanAllTags = () => {
-        const rescan = document.createElement('button');
-        rescan.type = 'button';
-        rescan.className = tagBarIconBtnClass;
-        rescan.style.cssText = tagBarIconBtnSize;
-        rescan.innerHTML = faRescan15;
-        rescan.setAttribute('aria-label', 'Refresh search and rescan all tags');
-        rescan.title =
-          'Re-run the main Everything search, then a full-index xk/xp/xx tag scan. Prunes remembered or active tag filters that do not appear in that scan. (Ordinary searches do not run this scan — use this when the tag bar is stale.)';
-        rescan.addEventListener('click', () => {
-          void (async () => {
-            rescan.disabled = true;
-            try {
-              await runSearchNow('refresh');
-              await runTagDiscoverySearch(true);
-              refreshTagModalDatalist();
-            } finally {
-              rescan.disabled = false;
-            }
-          })();
-        });
-        el.appendChild(rescan);
-      };
-      // Counts match the visible table (listRowsForUi), not merged tag-scan rows.
-      const forTagCounting = listRowsForUi();
-      const counts = forTagCounting.length ? T.aggregateTagCountsFromRows(forTagCounting, fullPathForRow) : new Map();
-      // Pill set = global knownBracketTagsList order; numbers = tag hits in this result list.
-      const entries = [];
-      const pillKeys = new Set();
-      const isDateKey = (k) => !!(T && T.isDateTag && T.isDateTag(k));
-      for (const t of knownBracketTagsList) {
-        if (!t || !t.key) continue;
-        if (isDateKey(t.key)) continue; // deadlines never appear in the tag bar (own range filter)
-        pillKeys.add(t.key);
-        const hit = counts.get(t.key);
-        entries.push({ key: t.key, display: t.display, count: hit ? hit.count : 0 });
-      }
-      for (const ak of activeTagKeys) {
-        if (pillKeys.has(ak)) continue;
-        if (isDateKey(ak)) continue;
-        pillKeys.add(ak);
-        const hit = counts.get(ak);
-        entries.push({ key: ak, display: hit && hit.display ? hit.display : ak, count: hit ? hit.count : 0 });
-      }
-      searchDebugLog('tags.renderTagBar', {
-        pillEntries: entries.length,
-        knownListLen: knownBracketTagsList.length,
-        tagStoreLen: tagStoreOrder.length,
-        activeTagKeys: activeTagKeys.size,
-        countsMapSize: counts.size,
-        forTagCountingRows: forTagCounting.length,
-        discRowsLen: tagDiscoveryRows.length,
-        discLastGoodLen: tagDiscoveryRowsLastGood.length,
-        lastRowsLen: lastRows.length,
-        knownKeysSample: knownBracketTagsList.slice(0, 20).map((t) => t.key),
-      });
-      if (!entries.length) {
-        const s = document.createElement('span');
-        s.className = 'text-muted';
-        s.textContent =
-          'No tags in your list yet. Add one from the tags dialog, toggle a filter, or use Rescan.';
-        el.appendChild(s);
-        appendRescanAllTags();
-        updateEmptyResultsPulseHints(listRowsForUi().length);
-        return;
-      }
-      function appendTagFilterCombineToggle(barEl) {
-        const g = document.createElement('div');
-        g.className = 'btn-group btn-group-sm tagfox-tag-combine-toggle';
-        g.setAttribute('role', 'group');
-        g.title =
-          'Combine multiple tag filters: match ALL (AND) or ANY (OR). Used in the Everything query and in the result table filter.';
-        const idA = 'tagFoxTagCombineAnd';
-        const idO = 'tagFoxTagCombineOr';
-        const rA = document.createElement('input');
-        rA.type = 'radio';
-        rA.className = 'btn-check';
-        rA.name = 'tagFoxTagCombine';
-        rA.id = idA;
-        rA.autocomplete = 'off';
-        rA.checked = !tagFilterCombineOr;
-        const lA = document.createElement('label');
-        lA.className = 'btn btn-outline-secondary btn-sm';
-        lA.htmlFor = idA;
-        lA.textContent = 'AND';
-        const rO = document.createElement('input');
-        rO.type = 'radio';
-        rO.className = 'btn-check';
-        rO.name = 'tagFoxTagCombine';
-        rO.id = idO;
-        rO.autocomplete = 'off';
-        rO.checked = !!tagFilterCombineOr;
-        const lO = document.createElement('label');
-        lO.className = 'btn btn-outline-secondary btn-sm';
-        lO.htmlFor = idO;
-        lO.textContent = 'OR';
-        const sync = () => {
-          const next = !!rO.checked;
-          if (next === tagFilterCombineOr) return;
-          tagFilterCombineOr = next;
-          saveSettings();
-          void runSearchNow();
-          commitSearchHistoryNow();
-        };
-        rA.addEventListener('change', sync);
-        rO.addEventListener('change', sync);
-        g.appendChild(rA);
-        g.appendChild(lA);
-        g.appendChild(rO);
-        g.appendChild(lO);
-        barEl.appendChild(g);
-      }
-      const renderPill = (info) => {
-        const key = info.key;
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.dataset.tagKey = key;
-        const paintPill = () => {
-          const on = activeTagKeys.has(key);
-          const neg = on && excludedTagKeys.has(key);
-          b.className = 'btn btn-sm tag-bar-pill' + (on ? ' tag-bar-pill-active' : '') + (neg ? ' tag-bar-pill-exclude' : '');
-          b.style.cssText = '';
-          if (neg) applyTagBarPillExcludeStyle(b);
-          else applyTagBarPillStyle(b, key);
-          const label = (neg ? '¬' : '') + info.display; // ¬ marks a negated (not-tag) filter
-          b.textContent = info.count > 0 ? label + ' (' + info.count + ')' : label;
-        };
-        paintPill();
-        b.title = 'Left-click: filter by ' + info.display + '. Right-click: exclude (not ' + info.display + '). Same button again clears.';
-        const applyTagFilterChange = (mutate) => {
-          mutate();
-          // Instant feedback before the async Everything round-trip: recolour the clicked pill and re-filter
-          // the already-loaded rows client-side. runSearchNow() then reconciles (may pull more matches).
-          paintPill();
-          persistActiveTagFilter();
-          renderTable();
-          void (async () => {
-            await runSearchNow();
-            commitSearchHistoryNow();
-          })();
-        };
-        // Left-click: include. Right-click: exclude (not-tag). One search per click.
-        b.addEventListener('click', () => applyTagFilterChange(() => toggleTagFilterInclude(key, info.display)));
-        b.addEventListener('contextmenu', (e) => {
-          e.preventDefault();
-          applyTagFilterChange(() => toggleTagFilterExclude(key, info.display));
-        });
-        el.appendChild(b);
-      };
-
-      /* Primary tags (TAG_BAR_PRIMARY) always show, in that order; the rest hide behind "More". A hidden
-         tag that is currently an active filter still shows, so an active filter is never invisible. */
-      const isPrimaryKey = (k) => TAG_BAR_PRIMARY.includes(String(k).toLowerCase());
-      const byKey = new Map(entries.map((e) => [e.key, e]));
-      const primaryEntries = TAG_BAR_PRIMARY.map((k) => byKey.get(k)).filter(Boolean);
-      const secondaryEntries = entries.filter((e) => !isPrimaryKey(e.key));
-      const activeSecondary = secondaryEntries.filter((e) => activeTagKeys.has(e.key));
-      const hiddenSecondaryCount = secondaryEntries.length - activeSecondary.length;
-
-      primaryEntries.forEach(renderPill);
-      (tagBarShowAll ? secondaryEntries : activeSecondary).forEach(renderPill);
-
-      if (secondaryEntries.length > 0 && (tagBarShowAll || hiddenSecondaryCount > 0)) {
-        const more = document.createElement('button');
-        more.type = 'button';
-        more.className = 'btn btn-sm btn-outline-secondary tagfox-tagbar-more flex-shrink-0';
-        more.setAttribute('aria-expanded', tagBarShowAll ? 'true' : 'false');
-        more.innerHTML = tagBarShowAll
-          ? '<i class="fa-solid fa-chevron-left fa-fw" aria-hidden="true"></i> Less'
-          : '<i class="fa-solid fa-chevron-right fa-fw" aria-hidden="true"></i> More' + (hiddenSecondaryCount > 0 ? ' (' + hiddenSecondaryCount + ')' : '');
-        more.title = tagBarShowAll ? 'Show only the main tags' : 'Show all tags';
-        more.addEventListener('click', () => {
-          tagBarShowAll = !tagBarShowAll;
-          try { localStorage.setItem(LS.tagBarShowAll, tagBarShowAll ? '1' : '0'); } catch (_) {}
-          renderTagBar();
-        });
-        el.appendChild(more);
-      }
-      appendTagFilterCombineToggle(el);
-      if (activeTagKeys.size) {
-        const clearTags = document.createElement('button');
-        clearTags.type = 'button';
-        clearTags.className = tagBarIconBtnClass;
-        clearTags.style.cssText = tagBarIconBtnSize;
-        clearTags.innerHTML = faClear15;
-        clearTags.setAttribute('aria-label', 'Clear tag filters');
-        clearTags.title = 'Turn off every active tag filter at once.';
-        clearTags.addEventListener('click', () => {
-          void (async () => {
-            activeTagKeys.clear();
-            excludedTagKeys.clear();
-            persistActiveTagFilter();
-            await runSearchNow();
-            commitSearchHistoryNow();
-            updateEmptyResultsPulseHints(listRowsForUi().length);
-          })();
-        });
-        el.appendChild(clearTags);
-      }
-      appendRescanAllTags();
-      updateEmptyResultsPulseHints(listRowsForUi().length);
-      refreshTagFoxChromeTooltips(document.getElementById('tagBar'));
     }
 
     /** Hide every Bootstrap tooltip (optionally keep one trigger). Optional hard DOM purge removes every body tooltip node. */
@@ -14082,7 +13647,6 @@
           ? 'Edit xk/xp/xx tags in the folder name'
           : 'Edit xk/xp/xx tags in the file name';
         btnTags.setAttribute('aria-label', 'Edit tags');
-        /* Same tag icon as tag toolbar lead (#tagBar row in index.html). */
         btnTags.innerHTML = '<i class="fa-solid fa-tags" aria-hidden="true"></i>';
         btnTags.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -14873,7 +14437,6 @@
         autofillRunning = false;
         if (pagedAny && runId === searchRunSeq) {
           perfTimeSync('autofill.render', { rows: lastRows.length }, () => {
-            renderTagBar();
             renderTable();
           });
           updateResultsLoadMoreUi();
@@ -14882,7 +14445,7 @@
     }
 
     /** Next Everything offset page; same query/sort as resultsPagingCtx.
-        opts.deferRender: merge + persist rows but skip the table/tag-bar render (the autofill cascade renders
+        opts.deferRender: merge + persist rows but skip the table render (the autofill cascade renders
         once when it settles, instead of re-rendering the whole growing list on every page). */
     async function loadMoreResults(opts) {
       const deferRender = !!(opts && opts.deferRender);
@@ -14946,7 +14509,6 @@
         await syncSelectionAfterSearch();
         if (!deferRender) {
           perfTimeSync('loadMore.render', { rows: lastRows.length }, () => {
-            renderTagBar();
             renderTable();
           });
         }
@@ -15280,7 +14842,6 @@
         setStatusMain(res.error || 'Search failed');
         maybeShowEverythingHttpHelpBanner(res.error);
         await syncSelectionAfterSearch();
-        renderTagBar();
         renderTable();
         return;
       }
@@ -15367,7 +14928,6 @@
         seedOptions: stripOffsetFromOpts(res.optionsUsed),
       };
       await syncSelectionAfterSearch();
-      renderTagBar();
       renderTable();
       pulseEmptyResultHintsAfterSearchOk();
       if (runId === searchRunSeq) selectRowAfterSearch(query, rootFolder);
@@ -15505,7 +15065,6 @@
         }
         if (id === 'optHideSpecial' || id === 'optHideTilde') {
           renderTable();
-          renderTagBar();
           updateEmptyResultsPulseHints(listRowsForUi().length, { forceRestart: true });
           updateSelectAllCheckboxState();
           syncResultsSelectionHighlight();
@@ -18082,7 +17641,6 @@
     bindScopeFolderDropdownDragCaptureOnce();
     installLongTaskMonitor();
     installRendererPerfProbe();
-    renderTagBar();
     renderTable();
     bindRunnerChromeOnce();
     /* Runner is the only layout on screen (Steve, 24 October 2026). Classic's code stays until it is deleted

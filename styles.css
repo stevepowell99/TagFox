@@ -134,18 +134,6 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 .tagfox-recency-filter-wrap:not(.tagfox-recency-filter-wrap--active) {
   opacity: 0.55;
 }
-/* Tag row: no filter active — quieter tag lead, pills, and AND/OR (meaningful once ≥1 pill on). */
-.tag-toolbar-row:not(:has(#tagBar .tag-bar-pill-active)) .tagfox-toolbar-lead:has(> .fa-solid.fa-tags) {
-  opacity: 0.45;
-}
-.tag-toolbar-row #tagBar .tag-bar-pill,
-.tag-toolbar-row #tagBar .tagfox-tag-combine-toggle {
-  transition: opacity 0.15s ease;
-}
-.tag-toolbar-row #tagBar:not(:has(.tag-bar-pill-active)) .tag-bar-pill,
-.tag-toolbar-row #tagBar:not(:has(.tag-bar-pill-active)) .tagfox-tag-combine-toggle {
-  opacity: 0.55;
-}
 /* Scope strip after breadcrumb: pills on folder-tint tray; row gutter matches body surface */
 .tagfox-scope-bar-row-actions {
   flex-wrap: nowrap;
@@ -156,19 +144,6 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   background-color: var(--tagfox-folder-row-bg);
   border-radius: var(--bs-border-radius);
   padding: 0.15rem 0.35rem;
-}
-/* Favourites + saved-search hearts: quiet until hover/focus */
-.tagfox-soft-icon-lead {
-  opacity: 0.52;
-  transition: opacity 0.15s ease;
-}
-/* Tag filters lead only: slightly brighter idle than heart / fav leads */
-.tagfox-soft-icon-lead:has(> .fa-solid.fa-tags) {
-  opacity: 0.68;
-}
-.tagfox-soft-icon-lead:hover,
-.tagfox-soft-icon-lead:focus-within {
-  opacity: 1;
 }
 /* All “tags” stack icons: muted green; compact tag buttons dim the glyph until hover/focus (scope bar uses row opacity instead). */
 .fa-solid.fa-tags {
@@ -514,7 +489,6 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   border: 1px solid #e4e4e7; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
   border-radius: 0.75rem;
 }
-#tagBar .btn-primary { box-shadow: 0 0 0 3px rgba(99,102,241,0.18); }
 .name-badges .badge {
   border-radius: 999px; font-size: 0.68rem; font-weight: 500;
   border: 1px solid rgba(0,0,0,0.05);
@@ -579,15 +553,6 @@ body > .offcanvas-backdrop.show {
   flex-direction: column;
   min-height: 0;
   padding: 0.5rem 1rem;
-}
-/* Fixed-width first column so favourite icons, clears, and tag icon stack; content after lines up. */
-.tagfox-toolbar-lead {
-  flex: 0 0 2rem;
-  width: 2rem;
-  min-width: 2rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
 }
 /* Chrome × — shared “prepend” geometry: rounded LHS only, square RHS abutting the next control (breadcrumb tray + query row). */
 .tagfox-toolbar-clear.btn {
@@ -1649,7 +1614,6 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
   max-height: 332px;
   object-fit: contain;
 }
-.tagfox-toolbar-lead .fa-solid { font-size: 0.9375rem; line-height: 1; vertical-align: -0.06em; }
 .name-badges { min-width: 0; }
 /* Icon + pills + filename on one row; title truncates (flex-wrap was pushing the name under the icon). */
 .name-badges-lead {
@@ -1668,20 +1632,6 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
 }
 .name-badges .badge { flex-shrink: 0; font-weight: normal; }
 .tag-pill-x { line-height: 1; padding: 0 !important; min-width: 1em; }
-/* Hash-based tag colours on toolbar (inline background/border also set in JS). */
-#tagBar .tag-bar-pill,
-#tagModalQuickTags .tag-bar-pill { font-weight: 500; border-style: solid; border-width: 1px; box-sizing: border-box; }
-/* Thicker border must not shrink the visible fill: with border-box, extra border eats the bg unless padding is reduced. */
-#tagBar .tag-bar-pill.tag-bar-pill-active,
-#tagModalQuickTags .tag-bar-pill.tag-bar-pill-active {
-  border-width: 7px;
-  padding-top: calc(var(--bs-btn-padding-y) - 2px);
-  padding-bottom: calc(var(--bs-btn-padding-y) - 2px);
-  padding-left: calc(var(--bs-btn-padding-x) - 2px);
-  padding-right: calc(var(--bs-btn-padding-x) - 2px);
-}
-#tagBar .tag-bar-pill:focus-visible,
-#tagModalQuickTags .tag-bar-pill:focus-visible { box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.35); }
 /* sticky comes from #resultsTable thead th — don’t use position:relative here (kills sticky) */
 #resultsTable thead th.sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
 #resultsTable thead th.sortable-th:hover { background-color: var(--bs-secondary-bg); }

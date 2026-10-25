@@ -143,7 +143,7 @@
     return false;
   }
 
-  /** Same as pathHasTag but also checks row.name (keeps filter in sync with aggregateTagCountsFromRows). */
+  /** Same as pathHasTag but also checks row.name, since Everything sometimes splits fields oddly. */
   function rowHasTag(row, tagLower, getFullPath) {
     const tl = (tagLower || '').toLowerCase();
     if (!tl) return true;
@@ -219,33 +219,6 @@
     return m;
   }
 
-  /**
-   * Tag bar counts: union tags from full path and from row.name (Everything sometimes splits fields oddly).
-   * Per row, each tag key counts at most once (no double count if name and path repeat the same tag).
-   */
-  function aggregateTagCountsFromRows(rows, getFullPath) {
-    const m = new Map();
-    const rowsArr = Array.isArray(rows) ? rows : [];
-    for (const row of rowsArr) {
-      if (!row) continue;
-      const fp = typeof getFullPath === 'function' ? getFullPath(row) : '';
-      const seen = new Set();
-      const add = (t) => {
-        const s = String(t || '').trim();
-        if (!s) return;
-        const k = s.toLowerCase();
-        if (seen.has(k)) return;
-        seen.add(k);
-        const display = m.has(k) ? m.get(k).display : s;
-        m.set(k, { display, count: (m.get(k)?.count || 0) + 1 });
-      };
-      for (const t of allTagsFromFullPath(fp)) add(t);
-      const nm = String(row.name || '').trim();
-      if (nm) for (const t of parseSegmentTags(nm).tags) add(t);
-    }
-    return m;
-  }
-
   global.TagBrowserTags = {
     TAG_PREFIX,
     TAG_PREFIXES,
@@ -269,6 +242,5 @@
     baseName,
     normalizeRootPrefix,
     aggregateTagCountsFromPaths,
-    aggregateTagCountsFromRows,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

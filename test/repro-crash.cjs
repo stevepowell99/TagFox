@@ -84,9 +84,6 @@ function mkScope() {
     ["search 'xk'", () => T('setQuery', 'xk')],
     ["search 'report'", () => T('setQuery', 'report')],
     ["clear query", () => T('setQuery', '')],
-    ["rescan tags", () => ev('window.__tagfoxTest.rescanTags ? window.__tagfoxTest.rescanTags() : (document.querySelector("#tagBar [title*=Rescan]")||document.querySelector("#tagBar button"))?.click()')],
-    ["toggle first tag pill", () => ev('(document.querySelector("#tagBar .tagfox-tag-pill, #tagBar button.btn"))?.click()')],
-    ["toggle first tag pill again", () => ev('(document.querySelector("#tagBar .tagfox-tag-pill, #tagBar button.btn"))?.click()')],
   ];
   for (const [label, fn] of steps) {
     try { await fn(); } catch (e) { events.push('STEP-THREW [' + label + ']: ' + e.message); }

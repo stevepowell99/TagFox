@@ -2,12 +2,12 @@
 
 Steve decided on 24 October 2026 to keep only Runner: hide Classic first, then delete its code in stages. Classic is hidden (no layout switch, every real start in Runner; the test hook still opens a fresh profile in Classic so its tests guard the code until it goes). This file is the inventory to delete against.
 
-- **Each stage** deletes one area (for example the tag bar), its CSS and HTML, and the tests that cover only it, and keeps every piece Runner depends on (listed below). Run the full suite after each stage.
+- **Each stage** deletes one area (for example the breadcrumb's typed path), its CSS and HTML, and the tests that cover only it, and keeps every piece Runner depends on (listed below). Run the full suite after each stage.
 - **Steve decided on 25 October 2026** what Runner gains before Classic's code goes: the deadline filters as `/` Due commands; a "Show only starred items" command instead of a visible star list; and Windows Recent as a ranking boost rather than a list. A "Search this folder only" command keeps typing to the current folder's own contents. All four are in Runner now. The Shelf shows in Runner (`2d8c22b`), and so does the Restart button, in the search box. Saved searches are back in Runner too (Steve, 25 October 2026): `/` commands ("Save this search", then one per saved search) and `Alt`+`1`…`9`, reading the same `LS.favSearches` list Classic saved, so stage two took only Classic's bar.
 
 Read-only survey by a subagent at main `74c8ac1`; line numbers are approximate. Since then Runner has gained chips for the deadline and hide-until filters (the hazard the survey found).
 
-**Summary.** Runner would lose the tag bar's counts. Classic cannot be cut out cleanly, because Runner keeps its state in Classic's hidden controls.
+**Summary.** Classic cannot be cut out cleanly, because Runner keeps its state in Classic's hidden controls.
 
 ## What only Classic does
 
@@ -22,7 +22,6 @@ Read-only survey by a subagent at main `74c8ac1`; line numbers are approximate. 
 | Match options | toolbar, bare letters | Partial: `/` commands and Ctrl keys | `searchOptionsFromUI`, `toggleSearchOptCheckbox` |
 | Recency 1h / 1d / 1w / 1m / 1y / All | toolbar radios | Partial: `/` has all, 1h, 1d, 1w; 1m and 1y only by Ctrl+R cycling | `setRecencyFilterMode` |
 | Deadline filter (Overdue, Today, This week, Next week) and "Show hidden" for `xh-` files | `btnToggleDeadline`, `deadlineFilterPanel`, `optShowHiddenUntil` | Yes: the `/` Due commands and their chips | `setDeadlineRange`, `setShowHiddenUntil` |
-| Tag bar: pills with counts, include/exclude, More, AND/OR, ↻ full-index rescan | `#tagBar` | Partial: per-tag commands, the tags chip, Ctrl+T; no counts, no OR, no rescan | `renderTagBarImpl`, `runTagDiscoverySearch` |
 | Column sort by name, path, size, modified, either direction | header click; `z`, `m`, `n` | Partial: smart, date, name, size, size smallest first; no path sort, no oldest first, no Z-A | `applySortColumnKey`, `updateSortHeaders` |
 | Status line with hit count and filter hints | standing line | None: Runner shows no count except "N of M ranked" | `formatResultsStatusMainHtml`, `hiddenDueToStatusHtml` |
 | Empty-result pulse hints | toolbar pulses | Partial: only the box pulses | `updateEmptyResultsPulseHints` |
@@ -45,7 +44,7 @@ Classic only: clear-folder ×, parent ▲, typed-path editor, recent-folders dro
 
 - **Hidden controls as Runner's state store (the main obstacle):** `#rootFolder` (current folder); `#optPath`, `#optHideSpecial`, `#optHideTilde`, `#optCase`, `#optWholeWord`, `#optDiacritics`; the recency radios; the `optRvSubs*` and content (`optRvAll`, `optRvDirsOnly`, `optRvFilesOnly`) radios; `sortColumn`/`sortAsc` and `compareRowsBySort`.
 - **Breadcrumb:** `#breadcrumbBar`, `renderScopeBreadcrumb`, `goToBreadcrumbFolder`, the flyout and dropdown helpers, the six `btnScopeBar*` buttons.
-- **Tags:** the filter state and functions, `appendTagFiltersToEverythingQuery`, `renderTagBar` (runs on every search into the hidden bar), the tag store and modal, and the rename, new-folder, paste-target, bulk-rename and recycle modals.
+- **Tags:** the filter state and functions (`tagFilterCombineOr` included, which nothing on screen sets now: only a stored value turns OR on), `appendTagFiltersToEverythingQuery`, the tag store and modal, and the rename, new-folder, paste-target, bulk-rename and recycle modals.
 - **Results table:** `renderTableImpl` (including Classic's row buttons), `#bulkBar`, `loadMoreResults`, `rowActionStripHandleKeydown`.
 - **Viewer:** `#propsAside` and everything in it.
 - **Favourites store (the stars):** `loadFavouriteFolders`, `saveFavouriteFolders`, `toggleStarPath`, `openFavouritePath` (Ctrl+Shift+1..9, which asks IPC `path-kinds` whether a star is a file or a folder); `fuzzyPathScore` (used by Runner's `/` list) lives in the favourites code. IPC `windows-recent-folders`/`-files` and `scanWindowsRecentLnkTargets` in `main.js` feed Runner's ranking boost and are not Classic's.
