@@ -44,7 +44,7 @@ function mkScope() {
   const port = 9931;
   const userData = path.join(os.tmpdir(), 'tf-repro-profile-' + Date.now());
   const events = [];
-  const child = spawn(ELECTRON, [APP_DIR, `--remote-debugging-port=${port}`, `--user-data-dir=${userData}`], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, TAGFOX_TEST_HIDDEN: '1' } });
+  const child = spawn(ELECTRON, [APP_DIR, `--remote-debugging-port=${port}`, `--user-data-dir=${userData}`], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, TAGFOX_TEST_HIDDEN: '1', TAGFOX_TEST_PARENT_PID: String(process.pid) } });
   let stderr = '';
   child.stderr.on('data', (d) => { stderr += d.toString(); });
   child.on('exit', (code, sig) => events.push(`MAIN PROCESS EXIT code=${code} sig=${sig}`));

@@ -117,7 +117,7 @@ async function connect({ profile, maxResults = 60, scope = SCOPES.repo, disableA
   // the hidden window still renders and drives through the #tagfoxtest hook over CDP.
   const child = spawn(ELECTRON, [APP_DIR, `--remote-debugging-port=${port}`, `--user-data-dir=${userData}`], {
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, TAGFOX_TEST_HIDDEN: '1' },
+    env: { ...process.env, TAGFOX_TEST_HIDDEN: '1', TAGFOX_TEST_PARENT_PID: String(process.pid) },
   });
   let stderr = '';
   child.stderr.on('data', (d) => (stderr += d.toString()));

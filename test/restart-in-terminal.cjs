@@ -77,7 +77,7 @@ async function evaluateOnce(expr) {
   const wrapper = spawn(process.execPath, [path.join(APP_DIR, 'scripts', 'start.js'), `--remote-debugging-port=${port}`, `--user-data-dir=${userData}`], {
     cwd: APP_DIR,
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, TAGFOX_TEST_HIDDEN: '1' },
+    env: { ...process.env, TAGFOX_TEST_HIDDEN: '1', TAGFOX_TEST_PARENT_PID: String(process.pid) },
   });
   let wrapperExited = false;
   wrapper.on('exit', () => (wrapperExited = true));

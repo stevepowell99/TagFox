@@ -38,6 +38,7 @@ const runs = [
   { name: 'runner viewer divider', args: ['runner-viewer-split.cjs'] },
   { name: 'window close hides', args: ['close-hides.cjs'] },
   { name: 'page health logged and a crash recovered', args: ['page-health.cjs'] },
+  { name: 'a test Electron outliving its test ends itself', args: ['orphan-exits.cjs'] },
   { name: 'runner empty list says why', args: ['runner-empty-list.cjs'] },
   { name: 'runner stars open in order', args: ['runner-stars.cjs'] },
   { name: 'runner saved searches', args: ['runner-saved-searches.cjs'] },

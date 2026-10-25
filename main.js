@@ -90,6 +90,26 @@ function mainPerfLog(line) {
     fssync.appendFileSync(MAIN_PERF_LOG, new Date().toISOString() + ' ' + line + '\n');
   } catch (_) {}
 }
+
+/* A test instance ends itself once the node test process that started it has gone. The harness kills it at
+   the end of a test, but under a loaded suite one was still running nine seconds after that kill, three
+   times on 25 October 2026, failing runs that had passed; a test that dies part-way would strand one for
+   good. The harness passes its own PID, and a relaunch inherits the environment, so watches the same one. */
+{
+  const testParent = process.env.TAGFOX_TEST_HIDDEN === '1' ? Number(process.env.TAGFOX_TEST_PARENT_PID) : 0;
+  if (testParent > 0) {
+    setInterval(() => {
+      try {
+        process.kill(testParent, 0);
+      } catch (e) {
+        if (e && e.code === 'ESRCH') {
+          mainPerfLog(`test parent ${testParent} gone, exiting`);
+          app.exit(0);
+        }
+      }
+    }, 2000).unref();
+  }
+}
 /* Name the slow channel rather than leaving a main-loop stall to be guessed at: every IPC handler is
    timed, and one that runs long enough to be felt says which one it was. A sync handler (ipcRenderer
    .sendSync) blocks the renderer for its whole duration, so it logs at a lower bar than an async one. */
@@ -4753,9 +4773,13 @@ function restartTagFoxProcess() {
   try {
     globalShortcut.unregisterAll();
   } catch (_) {}
+  /* Logged, so a TagFox found running where none should be (a test instance left over) can be told apart
+     from a relaunch, which starts outside its parent's job object and so outlives it. */
   if (START_WRAPPER_EXIT_CODE) {
+    mainPerfLog(`restart pid ${process.pid}: exit ${START_WRAPPER_EXIT_CODE} for the npm start wrapper`);
     app.exit(START_WRAPPER_EXIT_CODE);
   } else {
+    mainPerfLog(`restart pid ${process.pid}: relaunch`);
     app.relaunch();
     app.exit(0);
   }
