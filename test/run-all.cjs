@@ -35,6 +35,7 @@ const runs = [
   { name: 'runner tags', args: ['runner-tags.cjs'] },
   { name: 'runner query order', args: ['runner-query-order.cjs'] },
   { name: 'runner shelf', args: ['runner-shelf.cjs'] },
+  { name: 'runner status line', args: ['runner-status.cjs'] },
   { name: 'machine features', args: ['machine-features.cjs'] },
   { name: 'row buttons by keyboard', args: ['row-actions-keys.cjs'] },
   { name: 'hidden title bar', args: ['window-chrome.cjs'] },

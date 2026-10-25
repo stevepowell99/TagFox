@@ -1786,6 +1786,13 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
   color: #f8f9fa;
   background-color: #495057;
 }
+.tagfox-navbar-tip-code {
+  font-size: 0.92em;
+  color: inherit;
+  padding: 0 0.2em;
+  border-radius: 0.25rem;
+  background-color: color-mix(in srgb, var(--bs-secondary-color) 12%, transparent);
+}
 .tagfox-navbar-tip-label,
 .tagfox-navbar-tip-text {
   overflow: hidden;
@@ -3066,21 +3073,67 @@ body.tagfox-runner #queryInputGroup #btnRestartTagFox {
   white-space: nowrap;
   cursor: help;
 }
-/* Runner has no standing status line: the bar sits over the bottom edge, hidden, and a message brings it up
-   for a few seconds (flashRunnerStatus). Fixed, so showing it never moves the list. */
+/* Status line: between the list and the Shelf (placeStatusLineForLayout), lined up with the Shelf's left edge.
+   It holds the rotating tip, muted, until a message comes; the message shows as a box for a few seconds
+   (flashRunnerStatus) and the tip comes back. Its height does not change between the two, so the list
+   never moves. */
 body.tagfox-runner #tagfoxNavbarStatus {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s ease;
-  box-shadow: 0 -0.25rem 0.75rem rgba(0, 0, 0, 0.08);
+  align-self: flex-start;
+  max-width: 100%;
+  min-height: 2rem;
+  margin: 0;
+  padding: 0 0.15rem;
+  border: 1px solid transparent;
+  border-radius: 0.6rem;
+  background: transparent;
+  flex-wrap: nowrap;
+  z-index: auto;
+  font-size: 0.8rem;
+}
+body.tagfox-runner #statusMain,
+body.tagfox-runner #statusSmartNote,
+body.tagfox-runner .tagfox-runner-status-icon {
+  display: none !important;
 }
 body.tagfox-runner.tagfox-runner-status-on #tagfoxNavbarStatus {
-  opacity: 1;
-  pointer-events: auto;
+  padding: 0.25rem 0.8rem 0.25rem 0.65rem;
+  border-color: color-mix(in srgb, var(--tb-accent) 30%, transparent);
+  border-left: 3px solid var(--tb-accent);
+  background: var(--runner-surface);
+  box-shadow: 0 1px 2px rgba(26, 27, 46, 0.06), 0 6px 18px -12px rgba(79, 70, 229, 0.5);
+  font-size: 0.85rem;
+}
+body.tagfox-runner.tagfox-runner-status-on #statusMain {
+  display: inline !important;
+  color: var(--runner-ink);
+}
+body.tagfox-runner.tagfox-runner-status-on .tagfox-runner-status-icon {
+  display: inline-block !important;
+  color: var(--tb-accent);
+}
+body.tagfox-runner.tagfox-runner-status-on #navbarDidYouKnow {
+  display: none;
+}
+body.tagfox-runner #navbarDidYouKnow {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent;
+  color: var(--runner-muted);
+  font-size: 0.8rem;
+  overflow: hidden;
+}
+body.tagfox-runner #navbarDidYouKnow .fa-lightbulb {
+  color: var(--runner-muted) !important;
+}
+body.tagfox-runner #navbarDidYouKnow .tagfox-navbar-tip-label {
+  font-weight: 600;
+}
+body.tagfox-runner #navbarDidYouKnow .tagfox-navbar-tip-kbd {
+  color: var(--runner-ink);
+  background: var(--runner-surface);
+  border-color: color-mix(in srgb, var(--runner-muted) 40%, transparent);
+  font-weight: 500;
 }
 /* Filters in use: a line of chips under the box, only when something differs from the defaults. */
 .tagfox-runner-filter-chips {
@@ -3519,9 +3572,6 @@ body.tagfox-runner #resultsTable tbody tr.results-row-actions-kbd .results-td-ac
 .results-row-star:focus-visible {
   opacity: 1;
 }
-body.tagfox-runner #statusMain {
-  color: var(--runner-muted);
-}
 @media (prefers-reduced-motion: reduce) {
   body.tagfox-runner #resultsTable > tbody > tr {
     transition: none;
@@ -3625,11 +3675,6 @@ body.tagfox-runner .shelf-chip-with-remove .shelf-chip-remove {
 }
 body.tagfox-runner .shelf-chip-with-remove:hover .shelf-chip-remove {
   visibility: visible;
-}
-/* The status line comes up over the bottom edge; with the Shelf there it sits just above the Shelf, or a
-   message after a drop would cover the chips it is about (syncShelfAsideWidth sets the height). */
-body.tagfox-runner #tagfoxNavbarStatus {
-  bottom: var(--tagfox-runner-shelf-h, 0px);
 }
 /* ─── End Runner layout ─── */
 
