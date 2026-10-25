@@ -29,7 +29,7 @@ The results area is one pane (see [Search concurrency](../README.md#search-concu
 ```
 npm test                      # whole suite: every test listed in run-all.cjs, in order
 npm run test:smoke            # readable walkthrough of the main flows
-npm run test:loadmore         # focused load-more / tab-state regression
+npm run test:loadmore         # focused load-more regression
 npm run test:fuzz             # randomized fuzz, default 60 iterations
 node test/fuzz.cjs 100 31337  # fuzz: <iterations> <seed>
 ```
@@ -87,7 +87,7 @@ instances alone.
 | `help-build.cjs` | No Electron. Builds a copy of the working `help.md` in a temp folder, once with LF and once with CRLF line endings, and checks that each build writes one line ending (the one `help.md` had) and says exactly what the working `help.html` says. So a start on a CRLF checkout leaves `help.html` unmodified in `git status`, and a `help.md` edited without rebuilding fails here. It fails on the build script from before 23 October 2026, which turned a CRLF blank line into an indented one. |
 | `smoke.cjs` | Startup, a 10x F5 refresh loop, type+refresh races, and searching two other scope folders, one of them while a search is running. Checks the structural invariants after each step. |
 | `delete-hides-row.cjs` | The renderer side of a delete (`removeGonePathsFromUiNow`, through the `tombstone` driver; nothing on disk is touched): the row drops out of the list at once and a refresh does not bring it back, checked by count and by path. The positive control is that the search had rows to start with. |
-| `loadmore-regression.cjs` | Loads two extra pages and checks the rows are stored on the active tab and rendered (the load-more desync bug). |
+| `loadmore-regression.cjs` | Loads two extra pages and checks that an auto-refresh tick leaves the grown rows on screen. The positive control comes first: on the first page a tick runs a search. |
 | `column-resize.cjs` | Walks `elementFromPoint` across every visible header boundary and requires the resize handle to be on top for most of a 15px window. Catches handles buried under the neighbouring sticky `th`, which leaves a divider half-dead and sends boundary clicks to that column's sort. |
 | `refresh-visible.cjs` | The header Refresh button exists and is wired. Every explicit refresh route (button, F5) writes a `Refreshed hh:mm:ss — N row(s), …` status. Guards the answer to "F5 sometimes does not refresh": a refresh that finds nothing new must still prove it ran. |
 | `quiet-refresh.cjs` | Auto-refresh is silent until something really changes: four ticks over an unchanged folder leave the row nodes, the scroll position and the status line alone (a tick used to leave "Searching…" there for good), and a file appearing on disk still gets through and repaints. The positive control matters more than the negative one here, because a tick that never ran looks exactly like a tick that found nothing. |
@@ -125,11 +125,9 @@ instances alone.
 After every settle:
 
 - **id integrity:** each canonical results id (`tbody`, `resultsTable`, and so on) appears exactly once.
-- **settled:** no search depth, nothing in flight, no pending debounce (no deadlock).
-- **active-tab state in sync:** global `lastRows` equals the active tab's stored rows.
-- **an active tab:** there is at least one tab.
-- **render matches data:** when no recency / folders-only / files-only filter is hiding rows, the visible
-  tbody is non-empty exactly when `lastRows` is non-empty.
+- **settled:** no search flow running (`searchFlowRunning`), nothing in flight, no pending debounce (no deadlock).
+- **render matches data:** the rows in `tbody` are exactly the rows the list should draw: every row
+  `listRowsForUi()` returns in Classic, and the render window of them in Runner (`renderedRowCount`).
 
 `fuzz.cjs` also re-runs the identical search and checks the row count is unchanged, *unless* the
 subfolders or content toggles differ between the two searches, which is skipped.

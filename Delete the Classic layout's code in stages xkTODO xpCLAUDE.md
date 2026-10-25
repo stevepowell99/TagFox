@@ -54,7 +54,6 @@ History back/forward (Runner: Alt+←/→), Undo (Ctrl+Z), Restart (Runner: the 
 - **Results table:** `renderTableImpl` (including Classic's row buttons), `#bulkBar`, `loadMoreResults`, `rowActionStripHandleKeydown`.
 - **Viewer:** `#propsAside` and everything in it.
 - **Favourites store (the stars):** `loadFavouriteFolders`, `saveFavouriteFolders`, `toggleStarPath`, `openFavouritePath` (Ctrl+Shift+1..9, which asks IPC `path-kinds` whether a star is a file or a folder); `fuzzyPathScore` (used by Runner's `/` list) lives in the favourites code. IPC `windows-recent-folders`/`-files` and `scanWindowsRecentLnkTargets` in `main.js` feed Runner's ranking boost and are not Classic's.
-- **Tab state:** `tabs`, `saveActiveTabStateFromUi` (called by `setRunnerMode`), `persistTabsToStorage`, the load-more persist and startup tab init. Collapsing it is a stage of its own (below).
 - **History and undo:** `searchHist`, `goSearchHistory`, `runUndo`.
 - **Clicked hidden controls:** `#btnToggleDarkMode`, `#btnToggleSettings`, `#helpModal`, `#settingsPanel`, `#selToggleOpens`; `#statusMain` and `setStatusMain`.
 - **Keys:** Runner's key table hands several keys to Classic's handler (Ctrl+R, Alt+←/→, F5, Space, Ctrl+A, Ctrl+Shift+1..9, Shift+Space, F2, Ctrl+Shift+N, Ctrl+H, F1, Ctrl+,), and some work in Runner only by falling through to it: Ctrl+W, Ctrl+., Ctrl+J/K, Ctrl+Shift+R, Ctrl+Z, Ctrl+↑ / Alt+↑, Ctrl+Shift+Home.
@@ -75,7 +74,7 @@ History back/forward (Runner: Alt+←/→), Undo (Ctrl+Z), Restart (Runner: the 
 
 ## Stages named so far
 
-- **Collapse the tab state to Runner's one search.** Nothing switches tabs, but the search state is still an array: `tabs`, `activeTabId`, `nextTabId`, `makeTabId`, `newBlankTab`, `tabIndexById`, `activeTab`; `persistTabsToStorage` and `loadTabsFromStorage` (`LS.tabsState`, which still restores every tab a Classic session saved); the copies `saveActiveTabStateFromUi` makes after every search and load-more, which only the tests read; and the test hook's `state().tabCount` and `activeTabRows` with the harness's "active-tab state in sync" check. `openRecentTab`, `RECENT_TAB_ACCEL`, `tagfox-open-recent-tab`, `setRecentTabOpenHandler` and `recent-tab.cjs` are named for a tab they no longer open. `runSearchNow`'s `singlePaneOnly` option is passed but never read. The nested-search path (`opts.nested` in `runSearchNow`, `topLevelSearchDepth` in `runSearch`) existed for Smart view's re-searches and has no caller now, and `eventKind` now reaches only the search debug log.
+- **Rename what Ctrl+Shift+Space is called.** `openRecentTab`, `RECENT_TAB_ACCEL`, `tagfox-open-recent-tab`, `setRecentTabOpenHandler` and `recent-tab.cjs` are named for a tab they no longer open; the rename spans `main.js`, `preload.js` and the renderer. `runSearch`'s `eventKind` now reaches only the search debug log.
 
 ## Decisions before any deletion
 

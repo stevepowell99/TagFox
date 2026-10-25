@@ -163,16 +163,11 @@ a second pane rendering in the background. The old two-pane split kept two panes
 historical bug (searches rendering into the hidden pane, load-more rows lost on a background refresh, a
 copy/delete in one pane bleeding into the other) came from a background flow re-rendering the *other* pane.
 
-The search state is kept in the `tabs` array. Each entry holds a `searchState`, which
-`persistTabsToStorage` saves across restarts, and the active entry, the only one ever shown, also holds
-`lastRows` and the paging context. `saveActiveTabStateFromUi` copies all three from the live UI after
-every search, and Runner calls it before switching layout.
+There is one search state: the live controls, `lastRows` and the paging context (`resultsPagingCtx`).
 
-One search flow still runs at a time. `searchMutex` serialises top-level flows; a nested call (one started
-synchronously inside an outer `runSearch`) would skip the mutex by passing `nested: true`, though nothing
-makes one at present. Nesting is marked explicitly: a fresh event-loop task (the debounced search, F5, a
-disk-mutation retry) that fires while another flow is mid-await waits for the mutex rather than running
-concurrently.
+One search flow runs at a time. Every call to `runSearchNow` waits on `searchMutex`, so a fresh event-loop
+task (the debounced search, F5, a disk-mutation retry) that fires while another flow is mid-await waits its
+turn rather than running concurrently. `runSearch` is called only from there, inside the mutex.
 
 In Runner, a search that a newer one overtakes sends nothing more. Every top-level request takes a number
 (`searchRequestSeq`); one that is still waiting for the mutex when a newer request arrives steps aside and
@@ -181,9 +176,11 @@ before each of its extra queries, which go out one at a time after the main quer
 at a time, so otherwise each stale keystroke's four or five queries would hold up the newest one's.
 `runner-query-order.cjs` counts the queries sent to prove it.
 
-`loadMoreResults()` grows `lastRows` and copies it into the active tab in its `finally`, so the stored
-rows always match the rows on screen. Every test's structural check compares the two, and
-`loadmore-regression.cjs` does so after two load-mores.
+`loadMoreResults()` grows `lastRows`. A refresh comes back with page one, so an auto-refresh tick would throw
+the extra pages away; `autoRefreshTickWouldDisturb()` skips the tick once the list has grown past its first
+page. `loadmore-regression.cjs` checks that a tick on the first page runs and that one after two load-mores
+leaves the grown rows on screen, and every test's structural check compares the rows on screen with the rows
+the list should draw.
 
 ### Refresh after CRUD (delete fast-path)
 

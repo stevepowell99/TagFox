@@ -181,18 +181,18 @@ async function connect({ profile, maxResults = 60, scope = SCOPES.repo, disableA
   await T('configure', { baseUrl, rootFolder: scope, maxResults });
   if (!autoRefresh) await T('autoStop');
 
-  // Settle: quiescent when no search depth, nothing in flight, and no pending debounce timer.
+  // Settle: quiescent when no search flow is running, nothing is in flight, and no debounce timer is pending.
   const settle = async (label, maxMs = 15000) => {
     const t0 = Date.now(); let stableSince = null; let last = null;
     while (Date.now() - t0 < maxMs) {
       const s = await state(); last = s;
-      if (s.topLevelSearchDepth === 0 && !s.searchInFlight && !s.pendingDebounce) {
+      if (!s.searchFlowRunning && !s.searchInFlight && !s.pendingDebounce) {
         if (stableSince == null) stableSince = Date.now();
         else if (Date.now() - stableSince > 500) return s;
       } else stableSince = null;
       await sleep(100);
     }
-    throw new Error(`[${label}] did not settle within ${maxMs}ms (last depth=${last && last.topLevelSearchDepth}, inFlight=${last && last.searchInFlight})`);
+    throw new Error(`[${label}] did not settle within ${maxMs}ms (last flowRunning=${last && last.searchFlowRunning}, inFlight=${last && last.searchInFlight})`);
   };
 
   let closed = false;
@@ -212,12 +212,9 @@ function structuralProblems(s) {
   const probs = [];
   if (!s) return ['no state'];
   if (s.dupBaseIds && s.dupBaseIds.length) probs.push(`dup/missing base ids: ${s.dupBaseIds.join(',')}`);
-  if (s.topLevelSearchDepth !== 0 || s.searchInFlight) probs.push(`not settled depth=${s.topLevelSearchDepth} inFlight=${s.searchInFlight}`);
-  // global lastRows must equal the active tab's stored rows.
-  if (s.lastRows !== s.activeTabRows) probs.push(`active-tab desync lastRows=${s.lastRows} tabRows=${s.activeTabRows}`);
-  // recency / folders-only / files-only legitimately hide rows client-side; only assert render==data otherwise
-  if (s.recency === 'all' && !s.foldersOnly && !s.filesOnly && (s.lastRows > 0) !== (s.tbodyBase > 0)) probs.push(`render!=data lastRows=${s.lastRows} tbody=${s.tbodyBase}`);
-  if (s.tabCount < 1) probs.push('no tabs');
+  if (s.searchFlowRunning || s.searchInFlight) probs.push(`not settled flowRunning=${s.searchFlowRunning} inFlight=${s.searchInFlight}`);
+  // What is on screen is what the rows say should be: every listed row in Classic, the render window in Runner.
+  if (s.tbodyBase !== s.renderedRows) probs.push(`render!=data tbody=${s.tbodyBase} rows to draw=${s.renderedRows} lastRows=${s.lastRows}`);
   return probs;
 }
 

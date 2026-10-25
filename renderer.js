@@ -58,7 +58,6 @@
       globalViewerBasenames: 'tagBrowserGlobalViewerBasenames',
       viewerDocSplitPct: 'tagBrowserViewerDocSplitPct',
       viewerDocSplitPctTheater: 'tagBrowserViewerDocSplitPctTheater',
-      tabsState: 'tagBrowserTabsState',
       tagBarShowAll: 'tagBrowserTagBarShowAll',
       /* Runner layout: which layout the toggle key opens, and each layout's search state while the other is up. */
       toggleOpens: 'tagBrowserToggleOpens',
@@ -364,7 +363,7 @@
     let resultsLoadMoreBusy = false;
     /** Offset paging: replay same query with higher Everything offset (null = no further pages for current search). */
     let resultsPagingCtx = null;
-    /** One top-level search flow at a time: serializes runSearchNow. A nested call (a search started synchronously inside an outer runSearch) passes opts.nested and skips the mutex to avoid self-deadlock; nothing makes one at present. */
+    /** One search flow at a time: serializes runSearchNow. */
     let searchMutex = Promise.resolve();
     /* Runner: every top-level search request takes a number, and the search holding the mutex keeps its own,
        so one that a newer request has overtaken stops sending queries (runSearchNow, runnerSearchSuperseded). */
@@ -372,11 +371,8 @@
     let activeSearchRequest = 0;
     /* Counted so a test can prove that an overtaken search sent nothing, rather than infer it from timings. */
     const runnerSearchCounters = { run: 0, stepAside: 0, extraSent: 0 };
-    let topLevelSearchDepth = 0;
-    /** Result tab state (see "Result tab state" below). Each tab: { id, searchState, lastRows, resultsPagingCtx }. */
-    let tabs = [];
-    let activeTabId = null;
-    let nextTabId = 1;
+    /** True while a runSearchNow flow holds the mutex; the test harness waits for it to clear. */
+    let searchFlowRunning = false;
     let resultsScrollMoreTimer = null;
     let autoRefreshTimerId = null;
     /** Set only around timer-driven runSearch — avoid RHS viewer tear-down when results are just re-fetched. */
@@ -2867,57 +2863,6 @@
       pulseSearchBoxAfterScopeFolderChange();
     }
 
-    function cloneResultsPagingCtx(ctx) {
-      if (!ctx || typeof ctx !== 'object') return null;
-      try {
-        return JSON.parse(JSON.stringify(ctx));
-      } catch (_) {
-        return null;
-      }
-    }
-
-    // -------------------------------------------------------------------------
-    // Result tab state. The results pane shows the active tab, and `tabs` keeps each saved tab's search
-    // (searchState) across restarts; the active tab also holds its rows and paging. Nothing switches
-    // tabs, so the active tab is the only one ever shown.
-    // -------------------------------------------------------------------------
-
-    function makeTabId() { return nextTabId++; }
-    function activeTab() { return tabs.find((t) => t.id === activeTabId) || null; }
-    function tabIndexById(id) { return tabs.findIndex((t) => t.id === id); }
-    function newBlankTab(searchState) {
-      return { id: makeTabId(), searchState: searchState || null, lastRows: [], resultsPagingCtx: null };
-    }
-
-    function saveActiveTabStateFromUi() {
-      const tab = activeTab();
-      if (!tab) return;
-      tab.searchState = serializeSearchState();
-      tab.lastRows = Array.isArray(lastRows) ? lastRows.slice() : [];
-      tab.resultsPagingCtx = cloneResultsPagingCtx(resultsPagingCtx);
-      persistTabsToStorage();
-    }
-
-    /* Tabs persist their searchState (filter / scope / view) across restart as one JSON blob.
-       lastRows / resultsPagingCtx are search results (stale after restart) and intentionally not
-       persisted; the active tab's search re-runs at startup. */
-    function persistTabsToStorage() {
-      try {
-        const blob = {
-          activeIndex: Math.max(0, tabIndexById(activeTabId)),
-          tabs: tabs.map((t) => ({ searchState: t.searchState || null })),
-        };
-        localStorage.setItem(LS.tabsState, JSON.stringify(blob));
-      } catch (_) {
-        /* ignore quota / serialize errors — tabs fall back to a single default tab next restart */
-      }
-    }
-    function loadTabsFromStorage() {
-      const obj = lsGetJson(LS.tabsState, null);
-      if (!obj || !Array.isArray(obj.tabs) || !obj.tabs.length) return null;
-      return obj;
-    }
-
     /** The last hour's changes anywhere, reset in place: no query, no scope folder, no tags, every option
      *  off but Match path, subfolders and everything shown, 1 hour recency. Reached only by the global Ctrl+Shift+Space (main.js
      *  RECENT_TAB_ACCEL), so it works while TagFox is hidden. */
@@ -2947,7 +2892,6 @@
       syncAdvancedSearchIconFilledState();
       renderScopeBreadcrumb();
       reimposeResultsViewDefaults();
-      saveActiveTabStateFromUi();
     }
 
     // -------------------------------------------------------------------------
@@ -3066,7 +3010,6 @@
       on = !!on;
       if (on) {
         if (!opts.startup) {
-          saveActiveTabStateFromUi();
           lsSetJson(LS.runnerClassicStash, serializeSearchState());
         }
         const savedSort = localStorage.getItem(LS.runnerSort);
@@ -3149,7 +3092,6 @@
       renderTagBar();
       applyPaneWidths();
       await runSearchNow('identity');
-      saveActiveTabStateFromUi();
       focusQueryBox(false);
       syncTitleBarOverlayColors();
     }
@@ -5209,55 +5151,45 @@
       void everythingKeepalivePing();
     }
 
-    /* Serialize whole runSearchNow flow (active runSearch + inactive refresh dance) so two F5/auto-refresh ticks can't interleave the swap-canonical-IDs dance. Reuses searchMutex/topLevelSearchDepth; a nested runSearchNow (one started inside an outer runSearch) sees depth>0 and skips re-acquire. */
+    /* One search flow at a time, so two F5 or auto-refresh ticks cannot interleave: every call waits on
+       searchMutex. F5, auto-refresh and disk mutation all search the one results pane, so there is no
+       background flow against a second pane, which is where the old dual-pane races and bleed lived. */
     async function runSearchNow(eventKind = 'identity', opts) {
-      /* Nested = a call made synchronously inside an already-running flow, which must skip the mutex to
-         avoid self-deadlock; nothing makes one at present. It is marked explicitly via opts.nested. A fresh event-loop task (debounced search, F5, disk-mutation retry) that fires while
-         a flow holds topLevelSearchDepth>0 is NOT nested: inferring nesting from the global counter let it
-         skip the mutex and run concurrently with the inactive-pane dance, rendering its rows into the
-         id-swapped (hidden) pane's tbody. The active pane then looked empty until a pane switch repainted
-         it. Explicit flag → such a task waits on the mutex instead. */
-      const isNested = !!(opts && opts.nested);
-      const myRequest = isNested ? 0 : ++searchRequestSeq;
+      const myRequest = ++searchRequestSeq;
       let releaseMutex = null;
-      if (!isNested) {
-        const prev = searchMutex;
-        searchMutex = new Promise((r) => {
-          releaseMutex = r;
-        });
-        await prev;
-        /* Runner: a newer search was asked for while this one waited its turn, so this one has nothing left
-           to show. Everything answers one query at a time, so running it anyway put its four or five queries
-           ahead of the newest keystroke's, and on a slow day typing four letters ran three stale searches in
-           full first. It waits for the newest instead, so a caller that awaits it still resumes once the list
-           for the current box is on screen. An auto-refresh tick starts only when nothing is in flight, so it
-           never overtakes a typed search. */
-        if (isRunnerMode() && myRequest !== searchRequestSeq) {
-          runnerSearchCounters.stepAside++;
-          releaseMutex();
-          let tail;
-          do {
-            tail = searchMutex;
-            await tail;
-          } while (tail !== searchMutex);
-          return;
-        }
-        activeSearchRequest = myRequest;
-        if (isRunnerMode()) runnerSearchCounters.run++;
+      const prev = searchMutex;
+      searchMutex = new Promise((r) => {
+        releaseMutex = r;
+      });
+      await prev;
+      /* Runner: a newer search was asked for while this one waited its turn, so this one has nothing left
+         to show. Everything answers one query at a time, so running it anyway put its four or five queries
+         ahead of the newest keystroke's, and on a slow day typing four letters ran three stale searches in
+         full first. It waits for the newest instead, so a caller that awaits it still resumes once the list
+         for the current box is on screen. An auto-refresh tick starts only when nothing is in flight, so it
+         never overtakes a typed search. */
+      if (isRunnerMode() && myRequest !== searchRequestSeq) {
+        runnerSearchCounters.stepAside++;
+        releaseMutex();
+        let tail;
+        do {
+          tail = searchMutex;
+          await tail;
+        } while (tail !== searchMutex);
+        return;
       }
-      topLevelSearchDepth++;
+      activeSearchRequest = myRequest;
+      if (isRunnerMode()) runnerSearchCounters.run++;
+      searchFlowRunning = true;
       try {
         if (searchDebounceTimer) {
           clearTimeout(searchDebounceTimer);
           searchDebounceTimer = null;
         }
         await runSearch(eventKind, opts);
-        saveActiveTabStateFromUi();
-        /* One pane: F5, auto-refresh and disk mutation all search the active tab and nothing else, so there is
-           no background flow against another pane, which is where the old dual-pane races and bleed lived. */
       } finally {
-        topLevelSearchDepth--;
-        if (!isNested && releaseMutex) releaseMutex();
+        searchFlowRunning = false;
+        releaseMutex();
       }
     }
 
@@ -5277,7 +5209,7 @@
       for (const delayMs of delays) {
         diskMutationRefreshTimeouts.push(
           setTimeout(() => {
-            void runSearchNow('refresh', { singlePaneOnly: true });
+            void runSearchNow('refresh');
           }, delayMs)
         );
       }
@@ -5302,13 +5234,13 @@
       await detachViewerEditorsIfOpenTargetsGone();
       void renderShelf();
       if (isPureTombstoneMutation(payload)) {
-        /* Rows are already gone from the UI. Skip the immediate re-render and its inactive-pane dance;
+        /* Rows are already gone from the UI. Skip the immediate re-render;
            schedule a single quiet reconcile to retire the tombstones once the index settles. */
         clearAndScheduleSearchRetries(payload, { quietSingle: true });
         return;
       }
       clearAndScheduleSearchRetries(payload);
-      void runSearchNow('refresh', { singlePaneOnly: true });
+      void runSearchNow('refresh');
     }
 
     function tagModalIsFolderDocDraft() {
@@ -10958,13 +10890,6 @@
           wrap.classList.remove('results-scope-drop-over');
         }
 
-        function paneScopeFolderForDrop() {
-          const s = activeTab() && activeTab().searchState;
-          const paneRoot = normalizeFolderPathForEverything(String((s && s.rootFolder) || '').trim());
-          if (paneRoot) return paneRoot;
-          return currentScopeFolderPath();
-        }
-
         wrap.addEventListener('dragover', (e) => {
           if (!dataTransferHasTagBrowserOrFiles(e.dataTransfer)) {
             clearRowDragOver();
@@ -10981,7 +10906,7 @@
             return;
           }
           clearRowDragOver();
-          const scopeDest = paneScopeFolderForDrop();
+          const scopeDest = currentScopeFolderPath();
           if (scopeDest) {
             e.preventDefault();
             e.dataTransfer.dropEffect = e.shiftKey ? 'copy' : 'move';
@@ -11003,7 +10928,7 @@
             await applyInternalPathsDrop(tr.dataset.dropPath, paths, e.shiftKey ? 'copy' : 'move');
             return;
           }
-          const scopeDest = paneScopeFolderForDrop();
+          const scopeDest = currentScopeFolderPath();
           if (!scopeDest) {
             setStatusMain(
               isRunnerMode()
@@ -15329,8 +15254,6 @@
         updateResultsLoadMoreUi();
       } finally {
         resultsLoadMoreBusy = false;
-        /* loadMore mutates lastRows + resultsPagingCtx; keep the active tab's copy of them in step. */
-        if (runId === searchRunSeq) saveActiveTabStateFromUi();
         updateResultsLoadMoreUi();
       }
     }
@@ -15537,27 +15460,8 @@
       return appendRecencyToEverythingQuery(searchText);
     }
 
+    /** One search, run by runSearchNow while it holds searchMutex. */
     async function runSearch(eventKind = 'identity', opts = {}) {
-      const isNested = topLevelSearchDepth > 0;
-      let releaseSearchMutex = null;
-      if (!isNested) {
-        const prev = searchMutex;
-        const next = new Promise((r) => {
-          releaseSearchMutex = r;
-        });
-        searchMutex = next;
-        /* The "Searching…" status below is set after the mutex, so a click that queues behind a slow
-           search used to change nothing on screen at all, which reads as the filter being ignored.
-           Delay the hint so an uncontended search (the normal case) does not flash it. */
-        const waitHintTimer = setTimeout(() => setStatusMain('Waiting for the current search…', { progress: true }), 150);
-        try {
-          await prev;
-        } finally {
-          clearTimeout(waitHintTimer);
-        }
-      }
-      topLevelSearchDepth++;
-      try {
       searchInFlight = true;
       const runId = ++searchRunSeq;
       resultsPagingCtx = null;
@@ -15776,10 +15680,6 @@
       } finally {
         if (runId === searchRunSeq) searchInFlight = false;
       }
-    } finally {
-      topLevelSearchDepth--;
-      if (!isNested && releaseSearchMutex) releaseSearchMutex();
-    }
     }
 
     function bindResultsDomListeners() {
@@ -18563,28 +18463,6 @@
       updateSortHeaders();
       renderScopeBreadcrumb();
     }
-    /* Result tab state from last session (or a single default tab). The live UI already reflects the loaded
-       per-control settings, so it becomes the active tab's state; the other saved tabs keep only their
-       searchState. lastRows / resultsPagingCtx are not persisted (stale after restart); scheduleSearch()
-       below rebuilds the active tab's rows. */
-    {
-      const saved = loadTabsFromStorage();
-      const activeState = serializeSearchState();
-      if (saved) {
-        const activeIndex = Math.min(Math.max(0, saved.activeIndex | 0), saved.tabs.length - 1);
-        tabs = saved.tabs.map((t, i) => {
-          const st = i === activeIndex ? activeState : (t.searchState || null);
-          /* Same rule as the live UI (loadSettings): recency always launches at All, never restored. */
-          if (st) st.recencyFilter = 'all';
-          return newBlankTab(st);
-        });
-        activeTabId = tabs[activeIndex].id;
-      } else {
-        tabs = [newBlankTab(activeState)];
-        activeTabId = tabs[0].id;
-      }
-      persistTabsToStorage();
-    }
     scheduleSearch();
     startDidYouKnowTips();
     /** Drive API hello-world (navbar tick after New dbg). */
@@ -18760,9 +18638,8 @@
           rows: lastRows.slice(0, 8).map((r) => ({ path: fullPathForRow(r), folder: rowIsFolder(r), mtime: modifiedTimeMs(r) })),
         }),
         state: () => ({
-          tabCount: tabs.length,
-          activeTabRows: activeTab() && Array.isArray(activeTab().lastRows) ? activeTab().lastRows.length : 0,
-          topLevelSearchDepth,
+          searchFlowRunning,
+          renderedRows: renderedRowCount(listRowsForUi().length),
           searchInFlight,
           pendingDebounce: !!searchDebounceTimer,
           searchRunSeq,
