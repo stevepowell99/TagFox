@@ -4,7 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 let onPathsMutated = null;
 let onShellActionError = null;
 let onQuickTodoOpen = null;
-let onRecentTabOpen = null;
+let onRecentChangesOpen = null;
 let onHotkeyRaised = null;
 let onSearchDebugLine = null;
 let onPlainF5SearchRefresh = null;
@@ -23,8 +23,8 @@ ipcRenderer.on('search-debug-line', (_e, payload) => {
 ipcRenderer.on('tagfox-open-quick-todo', () => {
   if (onQuickTodoOpen) onQuickTodoOpen();
 });
-ipcRenderer.on('tagfox-open-recent-tab', () => {
-  if (onRecentTabOpen) onRecentTabOpen();
+ipcRenderer.on('tagfox-open-recent-changes', () => {
+  if (onRecentChangesOpen) onRecentChangesOpen();
 });
 ipcRenderer.on('tagfox-hotkey-raised', () => {
   if (onHotkeyRaised) onHotkeyRaised();
@@ -144,8 +144,8 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   setQuickTodoOpenHandler: (fn) => {
     onQuickTodoOpen = typeof fn === 'function' ? fn : null;
   },
-  setRecentTabOpenHandler: (fn) => {
-    onRecentTabOpen = typeof fn === 'function' ? fn : null;
+  setRecentChangesOpenHandler: (fn) => {
+    onRecentChangesOpen = typeof fn === 'function' ? fn : null;
   },
   setHotkeyRaisedHandler: (fn) => {
     onHotkeyRaised = typeof fn === 'function' ? fn : null;

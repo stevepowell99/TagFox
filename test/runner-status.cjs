@@ -12,7 +12,7 @@ const fs = require('fs');
 const { connect, APP_DIR, sleep } = require('./harness.cjs');
 
 /* Keys a tip may name that Runner's key table does not: the global shortcuts (main.js DEFAULT_GLOBAL_TOGGLE_ACCEL
-   and RECENT_TAB_ACCEL) and modifiers held during a drag. */
+   and RECENT_CHANGES_ACCEL) and modifiers held during a drag. */
 const KEYS_OUTSIDE_TABLE = ['Ctrl+Alt+Space', 'Ctrl+Shift+Space', 'Alt', 'Shift'];
 /* The command each `/` text in a tip must offer first. */
 const SLASH_EXPECT = { '/todo': 'tag-todo', '/not todo': 'not-todo', '/size': 'sort-size', '/smallest': 'sort-size-asc', '/save': 'save-search' };

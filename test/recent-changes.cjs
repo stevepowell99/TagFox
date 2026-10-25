@@ -2,11 +2,11 @@
 // place: empty query, no scope folder, every option off but Match path, 1 hour recency. Runner's half is
 // checked in runner-layout.cjs.
 //
-// main.js registers the OS-wide accelerator and sends 'tagfox-open-recent-tab'; the renderer half is
-// openRecentTab(), driven here through the test hook. A real global keypress cannot be sent from a
+// main.js registers the OS-wide accelerator and sends 'tagfox-open-recent-changes'; the renderer half is
+// openRecentChanges(), driven here through the test hook. A real global keypress cannot be sent from a
 // test without raising the window and fighting Steve's running TagFox for the accelerator.
 //
-// Run: node test/recent-tab.cjs
+// Run: node test/recent-changes.cjs
 
 const { connect, SCOPES } = require('./harness.cjs');
 
@@ -18,7 +18,7 @@ async function main() {
   };
   let drv;
   try {
-    drv = await connect({ profile: 'tagfox-test-recent-tab', scope: SCOPES.repo });
+    drv = await connect({ profile: 'tagfox-test-recent-changes', scope: SCOPES.repo });
     const { ev, T, settle } = drv;
     await settle('startup');
     const read = async () => JSON.parse(await ev(`JSON.stringify({
@@ -46,7 +46,7 @@ async function main() {
       before.q === 'readme' && before.root !== '' && before.rec === '1d' && before.cs && before.ww && before.dia && !before.path,
       JSON.stringify(before));
 
-    await T('openRecentTab');
+    await T('openRecentChanges');
     await settle('recent');
     const after = await read();
     check('query is empty', after.q === '', JSON.stringify(after.q));
@@ -62,7 +62,7 @@ async function main() {
   } finally {
     if (drv) drv.close();
   }
-  console.log('\n========== RECENT TAB RESULT ==========');
+  console.log('\n========== RECENT CHANGES RESULT ==========');
   if (!failures.length) console.log('PASS: Ctrl+Shift+Space resets the search to the last hour anywhere');
   else { console.log(`${failures.length} FAILURE(S):`); failures.forEach((f) => console.log(' - ' + f)); }
   process.exit(failures.length ? 1 : 0);

@@ -584,11 +584,11 @@ async function main() {
     })()`);
     check(restartSeen.ok, `once code has changed it shows there and takes a click (${JSON.stringify(restartSeen)})`);
 
-    // Ctrl+Shift+Space (main sends tagfox-open-recent-tab): Runner resets its one search in place to its
+    // Ctrl+Shift+Space (main sends tagfox-open-recent-changes): Runner resets its one search in place to its
     // own defaults, with no folder, no text and the last hour.
     await drv.T('setQuery', 'zeta');
     await drv.settle('before recent');
-    await drv.T('openRecentTab');
+    await drv.T('openRecentChanges');
     await drv.settle('recent');
     s = await R();
     check(s.scope === '' && s.query === '' && s.recency === '1h',

@@ -2588,8 +2588,8 @@
 
     /** The last hour's changes anywhere, reset in place: no query, no scope folder, no tags, every option
      *  off but Match path, subfolders and everything shown, 1 hour recency. Reached only by the global Ctrl+Shift+Space (main.js
-     *  RECENT_TAB_ACCEL), so it works while TagFox is hidden. */
-    async function openRecentTab() {
+     *  RECENT_CHANGES_ACCEL), so it works while TagFox is hidden. */
+    async function openRecentChanges() {
       if (isRunnerMode()) {
         /* Runner resets to its own defaults, with no folder, no text and the last hour. */
         document.getElementById('rootFolder').value = '';
@@ -15291,8 +15291,8 @@
     if (typeof window.tagBrowser.setQuickTodoOpenHandler === 'function') {
       window.tagBrowser.setQuickTodoOpenHandler(() => showQuickTodoPop());
     }
-    if (typeof window.tagBrowser.setRecentTabOpenHandler === 'function') {
-      window.tagBrowser.setRecentTabOpenHandler(() => void openRecentTab());
+    if (typeof window.tagBrowser.setRecentChangesOpenHandler === 'function') {
+      window.tagBrowser.setRecentChangesOpenHandler(() => void openRecentChanges());
     }
     if (typeof window.tagBrowser.setHotkeyRaisedHandler === 'function') {
       window.tagBrowser.setHotkeyRaisedHandler(() => onHotkeyRaised());
@@ -16936,9 +16936,9 @@
         setScope: (root) => { const e = document.getElementById('rootFolder'); if (e) e.value = String(root || ''); void runSearchNow('identity'); },
         autoTick: () => maybeAutoRefreshSearchTick(),
         loadMore: () => loadMoreResults(),
-        /* What main's tagfox-open-recent-tab and tagfox-hotkey-raised messages call; a test cannot press the
+        /* What main's tagfox-open-recent-changes and tagfox-hotkey-raised messages call; a test cannot press the
            OS-wide shortcuts. */
-        openRecentTab: () => openRecentTab(),
+        openRecentChanges: () => openRecentChanges(),
         hotkeyRaised: () => onHotkeyRaised(),
         /* What main's tagfox-file-dialog-target message calls, and what the renderer has asked main to send since. */
         fileDialogTarget: (info) => setFileDialogTarget(info),

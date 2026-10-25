@@ -38,7 +38,7 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 
 - Viewer modes and the splitter `#splitProps` are shared; only Classic's remembered width (`LS.propsWidthPx`, `propsPanePx`) is Classic's. Runner keeps its own (`LS.runnerViewerWidthPx`) and holds the Viewer at a third until the divider is dragged.
 - Settings: only "Open the shelf folder" is Classic's. **Folder groups** (Search results) frames a selected folder with the rows under it that follow it, in both layouts.
-- Ctrl+Alt+Space and Quick TODO are shared. **Ctrl+Shift+Space** (`openRecentTab`) resets the search in place in both layouts; Runner's branch is guarded in `runner-layout.cjs`, and Classic's reset (every option off but Match path, subfolders and everything shown) in `recent-tab.cjs`.
+- Ctrl+Alt+Space and Quick TODO are shared. **Ctrl+Shift+Space** (`openRecentChanges`) resets the search in place in both layouts; Runner's branch is guarded in `runner-layout.cjs`, and Classic's reset (every option off but Match path, subfolders and everything shown) in `recent-changes.cjs`.
 
 ## Classic code Runner depends on
 
@@ -54,7 +54,7 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 
 ## Tests
 
-- **Classic only:** `smoke`, `fuzz`, `splitter-drag`, `recent-tab`.
+- **Classic only:** `smoke`, `fuzz`, `splitter-drag`, `recent-changes`.
 - **Runner only:** the `runner-*` tests and `viewer-runner`, several with Classic round-trip checks that would need rewriting.
 - **Both:** `hotkey-raise-select`, `hover-preview`, `row-actions-keys`, `window-chrome`.
 - **Layout-neutral but run in Classic:** `menu-enter` (the ▾ subfolder menu), `md-preview-no-write`, `quiet-refresh`, `loadmore-regression`, `delete-hides-row`, `restart-in-terminal`, `gmist-start-guard`, `help-build`, `tags-dates`.
@@ -63,7 +63,7 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 ## Stages named so far
 
 - **Move the rest of Classic's key handler into `RUNNER_KEYS`:** the keys in the Keys bullet above. `hotkey-raise-select`, `row-actions-keys` and `menu-enter` press keys in Classic, so they move to Runner in the same stage.
-- **Rename what Ctrl+Shift+Space is called.** `openRecentTab`, `RECENT_TAB_ACCEL`, `tagfox-open-recent-tab`, `setRecentTabOpenHandler` and `recent-tab.cjs` are named for a tab they no longer open; the rename spans `main.js`, `preload.js` and the renderer. `runSearch`'s `eventKind` now reaches only the search debug log.
+- **`runSearch`'s `eventKind`** reaches only the search debug log (`runSearch.start`), through `scheduleSearch` and `runSearchNow`, so the argument can go from every call site.
 
 ## Decisions before any deletion
 

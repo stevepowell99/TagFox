@@ -22,7 +22,7 @@ const runs = [
   { name: 'quiet auto-refresh', args: ['quiet-refresh.cjs'] },
   { name: 'markdown preview never writes', args: ['md-preview-no-write.cjs'] },
   { name: 'menu Enter activates item', args: ['menu-enter.cjs'] },
-  { name: 'recent tab (global hotkey)', args: ['recent-tab.cjs'] },
+  { name: 'recent changes (global hotkey)', args: ['recent-changes.cjs'] },
   { name: 'hotkey raise selects the query', args: ['hotkey-raise-select.cjs'] },
   { name: 'zoom restore', args: ['zoom-restore.cjs'] },
   { name: 'restart stays in the terminal', args: ['restart-in-terminal.cjs'] },

@@ -2461,12 +2461,12 @@ function openQuickTodoFromGlobalShortcut() {
 
 /** Third global shortcut: raise TagFox on the last hour's changes anywhere. Fixed rather
  *  than configurable; a failed registration (another app holds it) is logged at startup. */
-const RECENT_TAB_ACCEL = 'Control+Shift+Space';
-function openRecentTabFromGlobalShortcut() {
+const RECENT_CHANGES_ACCEL = 'Control+Shift+Space';
+function openRecentChangesFromGlobalShortcut() {
   const w = raiseMainWindowForShortcut();
   if (!w) return;
   try {
-    w.webContents.send('tagfox-open-recent-tab');
+    w.webContents.send('tagfox-open-recent-changes');
   } catch (_) {}
 }
 
@@ -2965,8 +2965,8 @@ app.whenReady().then(() => {
     if (!gt.ok) console.warn('[TagFox] Global toggle shortcut:', gt.error);
     const qt = registerQuickTodoShortcut(loadQuickTodoAccelFromDisk());
     if (!qt.ok) console.warn('[TagFox] Quick TODO shortcut:', qt.error);
-    if (!globalShortcut.register(RECENT_TAB_ACCEL, openRecentTabFromGlobalShortcut)) {
-      console.warn('[TagFox] Recent-tab shortcut ' + RECENT_TAB_ACCEL + ' is already in use by another app.');
+    if (!globalShortcut.register(RECENT_CHANGES_ACCEL, openRecentChangesFromGlobalShortcut)) {
+      console.warn('[TagFox] Recent-changes shortcut ' + RECENT_CHANGES_ACCEL + ' is already in use by another app.');
     }
     /* Load koffi now rather than on the first raise, which reads the foreground window (about 25ms once). */
     setTimeout(() => {
