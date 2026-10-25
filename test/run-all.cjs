@@ -5,7 +5,7 @@
 const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 
-const { killTestElectron } = require('./test-processes.cjs');
+const { killTestElectron, testElectronProcesses } = require('./test-processes.cjs');
 
 const NODE = process.execPath;
 // One hung test must never stall the suite: past this, its whole process tree (the test, and the
@@ -78,8 +78,15 @@ function runOne(r) {
     let ok = await runOne(r);
     // A test that leaves a TagFox running (a relaunch escapes the killed process tree) fails, and the
     // TagFox is stopped, so it can neither sit on Steve's screen nor hold a port the next test wants.
-    await new Promise((res) => setTimeout(res, 1500));
-    const left = killTestElectron();
+    // A killed Electron can take a few seconds to go on a loaded machine, so look again for up to 8s
+    // before calling it left running; an escaped relaunch is still there after any wait.
+    let left = [];
+    for (let t0 = Date.now(); ; ) {
+      await new Promise((res) => setTimeout(res, left.length ? 1000 : 1500));
+      left = testElectronProcesses();
+      if (!left.length || Date.now() - t0 > 9500) break;
+    }
+    if (left.length) left = killTestElectron();
     if (left.length) {
       ok = false;
       console.log(`LEFT RUNNING by ${r.name}, now stopped: ` + left.map((p) => `pid ${p.pid} (${p.profile})`).join(', '));

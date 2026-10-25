@@ -73,7 +73,8 @@ Without both, node ran out of work with a call unsettled and exited 0 before pri
 launched and counted as failed, so one hung test cannot stall the suite. Each run's time is printed after
 it. After every run it also looks for an Electron still running on a test profile (a folder in the temp
 directory whose name starts `tagfox-test-`, found by `test-processes.cjs`, never by image name) and stops
-it by PID, failing that run with `LEFT RUNNING by …`. A relaunched TagFox is outside the process tree a
+it by PID, failing that run with `LEFT RUNNING by …`. It looks again for up to about 9 seconds first,
+since a killed Electron can take a few seconds to go on a loaded machine. A relaunched TagFox is outside the process tree a
 kill reaches, which is how one was once left open on Steve's screen. Only Electrons started from this
 checkout's own `node_modules` count, so a suite in a worktree and one in `C:\dev\TagFox` leave each other's
 instances alone.
