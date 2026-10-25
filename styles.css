@@ -106,25 +106,6 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   white-space: nowrap;
   max-width: 100%;
 }
-/* Smart status chip (#statusSmartNote): same violet as active Smart view — not danger red. */
-.tagfox-status-hidden-hint--warn {
-  background-color: rgba(124, 58, 237, 0.22);
-  color: #5b21b6;
-}
-[data-bs-theme="dark"] .tagfox-status-hidden-hint--warn {
-  background-color: rgba(167, 139, 250, 0.2);
-  color: #ede9fe;
-}
-#optRvSmart:checked + .btn {
-  background-color: rgba(124, 58, 237, 0.22);
-  border-color: #7c3aed;
-  color: #5b21b6;
-}
-[data-bs-theme="dark"] #optRvSmart:checked + .btn {
-  background-color: rgba(167, 139, 250, 0.2);
-  border-color: #a78bfa;
-  color: #ede9fe;
-}
 
 /* Gaps between control groups (view mode on .tagfox-search-toolbar-row; recency + Advanced on tag row). */
 .tagfox-search-opts-rhs {
@@ -405,29 +386,6 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 /* Inside the tray the shared background does the grouping, so drop each toggle's own faint fill (checked / hover / filled states still stand out). */
 .tagfox-match-opts-group .tagfox-search-opt-icon {
   background-color: transparent;
-}
-/* Smart view on: visually quiet the other layout modes + subs/content (still fully clickable). */
-.tagfox-search-opts-rhs:has(#optRvSmart:checked) .tagfox-rv-layout-trio > .btn-check:not(:checked) + .btn {
-  opacity: 0.42;
-}
-.tagfox-search-opts-rhs:has(#optRvSmart:checked) .tagfox-rv-smart-secondary > .btn-check:not(:checked) + .btn {
-  opacity: 0.42;
-}
-.tagfox-search-opts-rhs:has(#optRvSmart:checked) .tagfox-rv-smart-secondary.tagfox-view-pair {
-  background: color-mix(in srgb, var(--bs-secondary-bg) 40%, transparent);
-}
-/* Subfolders + content: lighter selected chip than view-mode row (Tree/Smart/Flat stay full contrast). */
-.tagfox-search-toolbar-row .tagfox-rv-smart-secondary > .btn-check:checked + .btn.btn-outline-secondary,
-.tag-toolbar-row .tagfox-rv-smart-secondary > .btn-check:checked + .btn.btn-outline-secondary {
-  background-color: color-mix(in srgb, var(--bs-secondary) 26%, var(--bs-body-bg));
-  color: var(--bs-body-color);
-  border-color: color-mix(in srgb, var(--bs-secondary) 35%, var(--bs-border-color));
-}
-.tagfox-search-toolbar-row .tagfox-rv-smart-secondary > .btn-check:checked + .btn.btn-outline-secondary:hover,
-.tag-toolbar-row .tagfox-rv-smart-secondary > .btn-check:checked + .btn.btn-outline-secondary:hover {
-  background-color: color-mix(in srgb, var(--bs-secondary) 34%, var(--bs-body-bg));
-  color: var(--bs-body-color);
-  border-color: color-mix(in srgb, var(--bs-secondary) 42%, var(--bs-border-color));
 }
 /* Row recency dot (same buckets as 1h / 1d / 1w / 1m / 1y); slightly larger + more gap from checkbox in #resultsTable rules. */
 .recency-blob {
@@ -1175,40 +1133,6 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
 }
 #tagfoxNavbarStatus.status-bar--pulse-hint {
   animation: status-bar-hint-pulse 0.85s ease-out 1;
-}
-/* Recursive + path sort: box-drawing tree gutter (├ └ ─ │) in Name column. */
-.path-tree-gutter {
-  font-family: ui-monospace, Consolas, "Courier New", monospace;
-  font-size: 0.88em;
-  color: var(--bs-secondary-color);
-  line-height: 1.25;
-  white-space: pre;
-  user-select: none;
-  letter-spacing: 0;
-}
-/* Path tree: +/- hides deeper rows (persisted across searches/restarts). */
-.results-tree-twisty {
-  width: 1.35rem;
-  height: 1.35rem;
-  min-width: 1.35rem;
-  font-size: 0.9rem;
-  line-height: 1;
-  font-weight: 600;
-}
-.results-tree-twisty-spacer {
-  display: inline-block;
-  width: 1.35rem;
-  min-width: 1.35rem;
-  flex-shrink: 0;
-}
-#resultsTable tbody tr.results-tree-collapse-hidden {
-  display: none;
-}
-.tree-hidden-badge {
-  font-size: 0.7rem;
-  font-weight: 500;
-  vertical-align: middle;
-  opacity: 0.8;
 }
 /* Default cap for ad-hoc MD previews; RHS viewer blocks override with flex + max-height: none */
 .prop-md-preview { max-height: 220px; overflow: auto; }
@@ -2517,7 +2441,6 @@ body.tagfox-runner.tagfox-runner-status-on #tagfoxNavbarStatus {
   pointer-events: auto;
 }
 body.tagfox-runner #statusMain,
-body.tagfox-runner #statusSmartNote,
 body.tagfox-runner .tagfox-runner-status-icon {
   display: none !important;
 }

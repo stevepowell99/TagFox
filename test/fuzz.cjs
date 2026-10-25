@@ -51,7 +51,7 @@ async function main() {
       probs = structuralProblems(s);
       if (probs.length) { log(`  FAIL ${label} :: ${probs.join(' | ')}`); log('  DIAG: ' + JSON.stringify(await diag())); failures.push(`[${label}] ${probs.join(' | ')}`); }
 
-      // consistency: same search again -> same count, unless smart view toggled the view between them
+      // consistency: same search again -> same count, unless the view changed between them
       if (!probs.length) {
         const count1 = s.lastRows; const d1 = await diag();
         await T('runSearchNow', 'identity');

@@ -1,6 +1,6 @@
 # TagFox
 
-TagFox is a fast, keyboard-friendly file finder and tagger for Windows. It puts instant search, a folder tree, file previews and filename tags in one window, so you can find, preview and organise your files without opening File Explorer.
+TagFox is a fast, keyboard-friendly file finder and tagger for Windows. It puts instant search, file previews and filename tags in one window, so you can find, preview and organise your files without opening File Explorer.
 
 It runs on top of [Voidtools Everything](https://www.voidtools.com/), which indexes your whole drive and answers searches the moment you type.
 
@@ -13,7 +13,6 @@ It runs on top of [Voidtools Everything](https://www.voidtools.com/), which inde
 - **Instant search** across your whole drive as you type.
 - **Tags** you add right in the filename, like `Report xkdraft xkurgent.docx`. Click a tag to filter; the tags travel with the file into Explorer, Google Drive and zip files because they are part of the name.
 - **Previews** of images, PDFs, Word, Excel, PowerPoint, markdown, text, audio and video, in a side panel.
-- **A folder tree** so you see results in context, not as a flat list.
 - **Stars** on the files and folders you come back to, which rank near the top and open with a number key.
 
 ### Install in three steps
@@ -32,7 +31,7 @@ TagFox relies on the `sort-mix:` feature, so Everything 1.5a is the supported ve
 
 - **Set a search scope (recommended on a new PC).** In **Settings**, set one **search scope folder**, for example your profile or a projects root. Everything then only returns paths under that root.
 - **Pick a current folder** from the breadcrumb. Search, paste and new files use the current folder.
-- **Switch views** with the buttons by the search box: Flat, Tree or Smart layout, subfolders on or off, files and folders or folders only.
+- **Switch views** with the buttons by the search box: subfolders on or off, files and folders or folders only.
 - **Tag a file.** Select a row, press `Ctrl`+`T`, and add a tag like `draft` or `2026`. The file is renamed on disk straight away.
 - **Press `F1` or `Ctrl`+`/`** any time for the full in-app guide.
 
@@ -42,9 +41,8 @@ If search feels slow, open **Advanced** and turn off **Folder-contents highlight
 
 - **Keyboard first.** Navigate, tag, rename, bulk-edit and search without the mouse. Press `F1` for the shortcut table.
 - **Filename tags.** Add, remove and filter by `xktag` labels stored in the filename. No database and no hidden metadata, so tags work everywhere the file goes.
-- **Three view switches.** Flat or Tree, subfolders on or off, files and folders or folders only, combined freely. Recency buttons (1h, 1d, 1w, 1m, 1y) filter to what changed recently.
+- **View switches.** Subfolders on or off, files and folders or folders only, combined freely. Recency buttons (1h, 1d, 1w, 1m, 1y) filter to what changed recently.
 - **Fast previews.** Images, PDFs, Word, Excel, PowerPoint, text, JSON, markdown and more in the Viewer panel. For a folder it shows a folder readme you can edit in place.
-- **Smart view.** The default layout adjusts which results you see relative to **Max results**, so you rarely touch the subfolder and file toggles by hand.
 - **Runner layout.** The window is one large search box over a ranked list, with the Viewer on the right third: arrows to move, right and left to go into a folder and back up, `/` for commands and tag filters, `Ctrl`+`D` to star, `Ctrl`+`T` to tag. Name matches rank above path matches, then recent, starred and often-used items. Runner is the only layout on screen; the Classic layout this list otherwise describes is hidden while its code is deleted in stages.
 - **The toggle shortcut selects the search text.** Raising TagFox with the global toggle key (set in Settings) puts the cursor in the search box with its text selected, so typing replaces it and an arrow key steps out of it. Alt-tab and a click into the window leave the cursor where it was.
 - **Hide the window's title bar.** A Settings box, off by default, applied on the next start. Windows then draws only the minimise, maximise and close buttons, over the top right of the page, and you drag the window by its top strip (Runner) or its header row (Classic). Double-clicking there maximises and restores as before.
@@ -106,7 +104,7 @@ invariants checked and how to add a test, is in [`test/README.md`](test/README.m
 |------|------|
 | `main.js` | Electron main process: window, menus, IPC, filesystem and shell operations, Google OAuth |
 | `preload.js` | Context bridge between renderer and main |
-| `renderer.js` | The UI: search, results, tree, tags, Viewer, Shelf, favourites, keyboard handling |
+| `renderer.js` | The UI: search, results, tags, Viewer, Shelf, favourites, keyboard handling |
 | `index.html`, `styles.css` | Markup and styling (Bootstrap 5 plus custom CSS) |
 | `tags.js` | Tag parsing and the `xktag1 xktag2` filename grammar |
 | `preview-text-helpers.js` | Text and markdown preview helpers |
@@ -170,9 +168,9 @@ The search state is kept in the `tabs` array. Each entry holds a `searchState`, 
 `lastRows` and the paging context. `saveActiveTabStateFromUi` copies all three from the live UI after
 every search, and Runner calls it before switching layout.
 
-One search flow still runs at a time. `searchMutex` serialises top-level flows; truly nested calls
-(smart narrow / probe re-searches fired synchronously inside an outer `runSearch`) skip the mutex by passing
-`nested: true`. Nesting is marked explicitly: a fresh event-loop task (the debounced search, F5, a
+One search flow still runs at a time. `searchMutex` serialises top-level flows; a nested call (one started
+synchronously inside an outer `runSearch`) would skip the mutex by passing `nested: true`, though nothing
+makes one at present. Nesting is marked explicitly: a fresh event-loop task (the debounced search, F5, a
 disk-mutation retry) that fires while another flow is mid-await waits for the mutex rather than running
 concurrently.
 

@@ -37,12 +37,8 @@ const PROBE = `(() => {
   return out;
 })()`;
 
-async function checkView(drv, label, flat, failures) {
+async function checkView(drv, label, failures) {
   const { T, ev } = drv;
-  await ev(
-    `(() => { const el = document.getElementById('${flat ? 'optRvFlat' : 'optRvTree'}');
-       if (el && !el.checked) { el.checked = true; el.dispatchEvent(new Event('change', { bubbles: true })); } })()`,
-  );
   await T('runSearchNow', 'identity');
   await new Promise((r) => setTimeout(r, 500));
 
@@ -68,8 +64,7 @@ async function main() {
   try {
     drv = await connect({ profile: 'tagfox-test-colresize', scope: SCOPES.repo });
     console.log('Hook ready.');
-    await checkView(drv, 'flat view', true, failures);
-    await checkView(drv, 'tree view', false, failures);
+    await checkView(drv, 'results table', failures);
   } catch (e) {
     failures.push('ERROR: ' + (e.stack || e.message || String(e)));
   } finally {

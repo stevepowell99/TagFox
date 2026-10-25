@@ -119,7 +119,7 @@ async function main() {
     drv = await connect({ profile: 'tagfox-test-runner', scope: root });
     console.log('Hook ready.');
     await drv.settle('startup');
-    const classicLayout = await drv.ev(`document.querySelector('input[name="rvViewMode"]:checked')?.value`);
+    const classicView = await drv.ev(`(document.getElementById('optRvSubsOn').checked ? 'subfolders' : 'this folder') + ', ' + document.querySelector('input[name="rvContent"]:checked')?.value`);
 
     const key = async (k, code, vk, mods = 0, text) => {
       await drv.send('Input.dispatchKeyEvent', { type: text ? 'keyDown' : 'rawKeyDown', key: k, code, windowsVirtualKeyCode: vk, modifiers: mods, text });
@@ -150,7 +150,7 @@ async function main() {
     const carried = await drv.ev(`JSON.stringify({ live: document.getElementById('optHideTilde').checked, saved: JSON.parse(localStorage.getItem('tagBrowserRunnerState')).optHideTilde })`);
     check(carried === '{"live":false,"saved":false}', `an old saved hide-~ is carried over to showing ~ paths (${carried})`);
     let s = await R();
-    check(s.on && s.bodyClass && s.layout === 'flat', `Runner is on with a flat list (layout ${s.layout})`);
+    check(s.on && s.bodyClass, `Runner is on`);
     // Runner keeps its own search state, so its current folder is set here rather than inherited from Classic.
     await drv.T('configure', { rootFolder: root });
 
@@ -601,8 +601,8 @@ async function main() {
     await drv.T('setRunnerMode', false);
     await drv.settle('classic');
     s = await R();
-    const layout = await drv.ev(`document.querySelector('input[name="rvViewMode"]:checked')?.value`);
-    check(!s.on && !s.bodyClass && layout === classicLayout, `Classic is back with its own view (${layout}, was ${classicLayout})`);
+    const view = await drv.ev(`(document.getElementById('optRvSubsOn').checked ? 'subfolders' : 'this folder') + ', ' + document.querySelector('input[name="rvContent"]:checked')?.value`);
+    check(!s.on && !s.bodyClass && view === classicView, `Classic is back with its own view (${view}, was ${classicView})`);
     check(/\bhits?\b/.test(s.status), `Classic keeps its standing status line ("${s.status.slice(0, 60)}")`);
     check((await restartWhere()) === 'header', `in Classic the Restart button is back in the header (${await restartWhere()})`);
   } catch (e) {

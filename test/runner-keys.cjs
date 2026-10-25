@@ -341,13 +341,12 @@ async function main() {
     check(norm(s.rows[0]) === norm(progFile), 'inside a ProgramData folder nothing is pushed down');
 
     // Alt+Left and Alt+Right step through searches. History is shared with Classic, so a Classic entry brings
-    // only its text and folder into Runner, never Classic's tree view.
+    // its text and folder into Runner.
     await drv.T('setRunnerMode', false);
     await drv.settle('classic for history');
     await drv.T('configure', { rootFolder: root });
     await drv.T('setQuery', 'classicword');
-    await drv.ev(`(() => { const t = document.getElementById('optRvTree'); t.checked = true; t.dispatchEvent(new Event('change', { bubbles: true })); return 1; })()`);
-    await drv.settle('classic tree');
+    await drv.settle('classic search');
     await drv.T('commitHistory');
     await drv.T('setRunnerMode', true);
     await drv.settle('runner for history');
@@ -357,7 +356,7 @@ async function main() {
     await key('ArrowLeft', 'ArrowLeft', 37, 1);
     await drv.settle('alt left');
     s = await R();
-    check(s.query === 'classicword' && norm(s.scope) === norm(root) && s.layout === 'flat', `Alt+Left brings back a Classic search's text and folder, not its tree view (box "${s.query}", ${s.layout})`);
+    check(s.query === 'classicword' && norm(s.scope) === norm(root), `Alt+Left brings back a Classic search's text and folder (box "${s.query}")`);
     await key('ArrowRight', 'ArrowRight', 39, 1);
     await drv.settle('alt right');
     s = await R();

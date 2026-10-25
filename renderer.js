@@ -23,11 +23,8 @@
       optHideTilde: 'tagBrowserOptHideTilde',
       sortBy: 'tagBrowserSortBy',
       optAsc: 'tagBrowserOptAsc',
-      treeView: 'tagBrowserTreeView',
-      resultsViewMode: 'tagBrowserResultsViewMode',
       foldersOnly: 'tagBrowserFoldersOnly',
       filesOnly: 'tagBrowserFilesOnly',
-      flatView: 'tagBrowserFlatView',
       showSubfolders: 'tagBrowserShowSubfolders',
       hideFiles: 'tagBrowserHideFiles',
       propsWidthPx: 'tagBrowserPropsW',
@@ -51,13 +48,10 @@
       optPathDefaultMoved: 'tagBrowserOptPathDefaultMoved',
       darkMode: 'tagBrowserDarkMode',
       pageZoom: 'tagBrowserPageZoom',
-      treeFolding: 'tagBrowserTreeFolding',
-      treeGroupHighlight: 'tagBrowserTreeGroupHL',
+      folderGroupHighlight: 'tagBrowserTreeGroupHL',
       highlightMatchedNames: 'tagBrowserHighlightMatchedNames',
       resultThumbnails: 'tagBrowserResultThumbnails',
       hoverPreview: 'tagBrowserHoverPreview',
-      collapsedFolders: 'tagBrowserCollapsedFolders',
-      resultsLayout: 'tagBrowserResultsLayout',
       resultsContent: 'tagBrowserResultsContent',
       gdriveShortcutNames: 'tagBrowserGDriveShortcutNames',
       quickTodoFolder: 'tagBrowserQuickTodoFolder',
@@ -241,7 +235,7 @@
     const COL_PERCENT_DEFAULT = [4, 42, 24, 14, 6, 10];
     /** Drag resize: don’t shrink Actions below this (% of table) at Path|Actions or Actions|Size. */
     const COL_RESIZE_MIN_ACTIONS_PCT = 6;
-    /** Table column index for Path (hidden in tree view). */
+    /** Table column index for Path. */
     const RESULTS_PATH_COL_IDX = 2;
     let colPercent = COL_PERCENT_DEFAULT.slice();
 
@@ -370,7 +364,7 @@
     let resultsLoadMoreBusy = false;
     /** Offset paging: replay same query with higher Everything offset (null = no further pages for current search). */
     let resultsPagingCtx = null;
-    /** One top-level search flow at a time: serializes runSearchNow. Nested calls (smart-narrow / smart-probe re-search fired synchronously inside an outer runSearch) pass opts.nested and skip the mutex to avoid self-deadlock. */
+    /** One top-level search flow at a time: serializes runSearchNow. A nested call (a search started synchronously inside an outer runSearch) passes opts.nested and skips the mutex to avoid self-deadlock; nothing makes one at present. */
     let searchMutex = Promise.resolve();
     /* Runner: every top-level search request takes a number, and the search holding the mutex keeps its own,
        so one that a newer request has overtaken stops sending queries (runSearchNow, runnerSearchSuperseded). */
@@ -383,18 +377,6 @@
     let tabs = [];
     let activeTabId = null;
     let nextTabId = 1;
-    /** Smart view event kind for the current search: identity|refresh|manual|smart-narrow|smart-probe|null. */
-    let smartEvent = null;
-    /** Before a Smart probe-widen: saved {subs, content} to revert if cap exceeded. */
-    let smartProbePrior = null;
-    /** After Smart revert — blocks repeated expand probe until query/offset/hasMore state changes. */
-    let smartRevertFP = null;
-    /** Smart narrow/before-paint message flushed after runSearch + smartAfterPaint (row line must stay). */
-    let pendingSmartStatusNote = null;
-    /** Set in smartAfterPaint when results page is full (more in Everything); merged with pending chip in runSearch tail. */
-    let smartCapStressBigFolderAfterPaint = false;
-    /** Smart: last #rootFolder + scope max — detect navigation for probe-widen on plain browse. */
-    let lastSmartBrowseScopeKey = null;
     let resultsScrollMoreTimer = null;
     let autoRefreshTimerId = null;
     /** Set only around timer-driven runSearch — avoid RHS viewer tear-down when results are just re-fetched. */
@@ -430,16 +412,8 @@
 
     const SORT_LABELS = { name: 'Name', path: 'Path', size: 'Size', date_modified: 'Modified' };
 
-    /* View: Smart | Tree | Flat; Subfolders (on first); Content: all | folders | files. */
-    function isFlatView() { return !!document.getElementById('optRvFlat')?.checked; }
-    function isSmartView() { return !!document.getElementById('optRvSmart')?.checked; }
+    /* View: Subfolders (on first); Content: all | folders | files. */
     function isShowSubfolders() { return !!document.getElementById('optRvSubsOn')?.checked; }
-    /** @returns {'tree'|'smart'|'flat'} */
-    function resultsLayoutFromUi() {
-      if (isFlatView()) return 'flat';
-      if (isSmartView()) return 'smart';
-      return 'tree';
-    }
     /** @returns {'all'|'folders'|'files'} */
     function resultsContentMode() {
       if (document.getElementById('optRvDirsOnly')?.checked) return 'folders';
@@ -450,58 +424,8 @@
     function isFilesOnly() { return resultsContentMode() === 'files'; }
     function isAllContent() { return resultsContentMode() === 'all'; }
 
-    /** Fingerprint for Smart revert gate (load more / query change clears stale revert lock). */
-    function smartOutcomeFingerprint() {
-      const ctx = resultsPagingCtx;
-      return [
-        document.getElementById('query')?.value ?? '',
-        document.getElementById('rootFolder')?.value ?? '',
-        document.getElementById('maxResults')?.value ?? '',
-        ctx && ctx.mode === 'single' ? String(ctx.singleOffset) : '0',
-        ctx && ctx.hasMore ? '1' : '0',
-        isShowSubfolders() ? '1' : '0',
-        resultsContentMode(),
-        resultsLayoutFromUi(),
-      ].join('\0');
-    }
-
-    /**
-     * Smart “real search” vs plain empty browse: broad start + probe-widen only when query, tag filter, or recency window.
-     * Advanced toggles alone (hide special, case, …) must not force full view / skip prefetch on browse — thousands of hits.
-     */
-    function smartSearchShouldStartBroad() {
-      const q = (document.getElementById('query')?.value || '').trim();
-      if (q) return true;
-      if (activeTagKeys.size) return true;
-      if (recencyFilterMode() !== 'all') return true;
-      return false;
-    }
-
-    /** Cap-only “Big folder!” is for empty-browse stress; full Smart + real search expects paged hits. */
-    function shouldSuppressCapOnlyBigFolderChip() {
-      return (
-        isSmartView() &&
-        isShowSubfolders() &&
-        isAllContent() &&
-        smartSearchShouldStartBroad()
-      );
-    }
-
-    /** Stable key for “same browse scope” (folder + settings ceiling). */
-    function smartBrowseScopeKeyFromInputs(rootFolderRaw) {
-      const root = normalizeFolderPathForEverything(
-        String(rootFolderRaw ?? document.getElementById('rootFolder')?.value ?? '').trim()
-      );
-      const max = getSearchScopeMaxFolderNorm() || '';
-      return pathNormKey(root) + '\0' + pathNormKey(max);
-    }
-
-    /** Apply view + content radios only (no save/search). */
-    function applyResultsViewRadiosToDom(layout, showSubs, content) {
-      const t = layout === 'flat' ? 'flat' : layout === 'smart' ? 'smart' : 'tree';
-      document.getElementById('optRvTree').checked = t === 'tree';
-      document.getElementById('optRvSmart').checked = t === 'smart';
-      document.getElementById('optRvFlat').checked = t === 'flat';
+    /** Apply the subfolders and content radios only (no save/search). */
+    function applyResultsViewRadiosToDom(showSubs, content) {
       document.getElementById('optRvSubsOn').checked = !!showSubs;
       document.getElementById('optRvSubsOff').checked = !showSubs;
       const c = content === 'folders' ? 'folders' : content === 'files' ? 'files' : 'all';
@@ -510,23 +434,18 @@
       document.getElementById('optRvFilesOnly').checked = c === 'files';
     }
 
-    /** Restore / migrate: layout tree|smart|flat, content all|folders|files; no save, no search. */
-    function setResultsViewRadios(layout, showSubs, content) {
-      applyResultsViewRadiosToDom(layout, showSubs, content);
+    /** Restore: subfolders on or off, content all|folders|files; no save, no search. */
+    function setResultsViewRadios(showSubs, content) {
+      applyResultsViewRadiosToDom(showSubs, content);
       syncViewRadioActiveFromDom();
     }
 
-    /** Smart layout + subfolders + files & folders; re-search. */
-    function reimposeSmartViewDefaults() {
-      smartRevertFP = null;
-      smartProbePrior = null;
-      applyResultsViewRadiosToDom('smart', true, 'all');
+    /** Subfolders + files & folders; re-search. */
+    function reimposeResultsViewDefaults() {
+      applyResultsViewRadiosToDom(true, 'all');
       syncViewRadioActiveFromDom();
-      clearStatusSmartNote();
-      applyNaturalSortWhenTreeViewOn();
       saveSettings();
       updateSortHeaders();
-      applyResultsTablePathColumnVisibility();
       renderTagBar();
       void runSearchNow('identity');
       commitSearchHistoryNow();
@@ -542,24 +461,8 @@
       return !!document.getElementById('optHideTilde')?.checked;
     }
 
-    /** Path column hidden + tree gutter when Tree or Smart (not Flat). */
-    function isTreeViewOn() { return !isFlatView(); }
-
-    /** Tree layout follows path order — keep Everything sort Path A→Z whenever tree is on (any entry path). */
-    function applyNaturalSortWhenTreeViewOn() {
-      if (!isTreeViewOn()) return;
-      sortColumn = 'path';
-      sortAsc = true;
-      localStorage.setItem(LS.sortBy, sortColumn);
-      localStorage.setItem(LS.optAsc, '1');
-    }
-
-    function isTreeFoldingOn() { return !!document.getElementById('optTreeFolding')?.checked; }
-    /** +/- twisties only when this result set is complete (no Load more pending). */
-    function isTreeFoldUiActive() {
-      return isTreeFoldingOn() && isShowSubfolders() && !(resultsPagingCtx && resultsPagingCtx.hasMore);
-    }
-    function isTreeGroupHLOn() { return !!document.getElementById('optTreeGroupHL')?.checked; }
+    /** Settings: a selected folder is framed together with the rows under it that follow it. */
+    function isFolderGroupHighlightOn() { return !!document.getElementById('optFolderGroupHighlight')?.checked; }
 
     /** Yellow markup for search terms in Name / Path cells (Settings → Search results). Default on. */
     function isHighlightMatchedNamesOn() {
@@ -597,8 +500,6 @@
     let folderDocHeaderLastSyncedKey = '';
     /** Multi-select checkboxes: path key lowercase → canonical path */
     const checkedPathsMap = new Map();
-    /** Persisted set of folder paths the user has collapsed in tree view. */
-    const collapsedFolderPaths = new Set();
     /** Invalidates in-flight j/k follow-up scroll when another sibling nav runs. */
     let siblingNavScrollToken = 0;
     let tagModalInst = null;
@@ -613,7 +514,7 @@
 
     let selectedRow = null;
     let selectedFullPath = null;
-    /** Index in filteredRows() for Shift+↑/↓ range checkbox select; cleared on plain ↑/↓. */
+    /** Index in listRowsForUi() for Shift+↑/↓ range checkbox select; cleared on plain ↑/↓. */
     let resultsShiftRangeAnchorIdx = null;
     /** Plain-click uncheck on a checked row is deferred so double-click (detail 2) can cancel it. */
     let resultsRowUncheckTimer = null;
@@ -2839,19 +2740,8 @@
       } catch (_) {}
     }
 
-    /** Fold Path weight into Name when tree view hides Path so bars still sum to 100. */
-    function effectiveColWeights() {
-      const w = colPercent.slice();
-      if (isTreeViewOn() && w.length > RESULTS_PATH_COL_IDX) {
-        const fold = w[RESULTS_PATH_COL_IDX] || 0;
-        w[1] = (w[1] || 0) + fold;
-        w[RESULTS_PATH_COL_IDX] = 0;
-      }
-      return w;
-    }
-
     function applyTableColWidths() {
-      const w = effectiveColWeights();
+      const w = colPercent;
       let sumV = 0;
       for (let i = 0; i < w.length; i++) {
         if (w[i] > 0) sumV += w[i];
@@ -2864,36 +2754,6 @@
         }
         c.style.width = (w[i] / sumV) * 100 + '%';
       });
-    }
-
-    /** Only the name|path handle is view-specific: tree view hides Path, and 2|3 covers both views. */
-    function syncResultsTableResizeHandles() {
-      const showPath = !isTreeViewOn();
-      const table = document.getElementById('resultsTable');
-      if (!table) return;
-      for (const el of table.querySelectorAll('.th-resize[data-resize-mode]')) {
-        const mode = el.dataset.resizeMode;
-        if (mode === 'always') el.style.removeProperty('display');
-        else if (mode === 'flat') el.style.display = showPath ? '' : 'none';
-      }
-    }
-
-    /** Flat view: show Path column; tree view: hide Path col+header (grouping uses name gutter). */
-    function applyResultsTablePathColumnVisibility() {
-      const showPath = !isTreeViewOn();
-      const table = document.getElementById('resultsTable');
-      if (!table) return;
-      const cols = table.querySelectorAll('col');
-      const ths = table.querySelectorAll('thead th');
-      const idx = RESULTS_PATH_COL_IDX;
-      if (cols[idx]) cols[idx].style.display = showPath ? '' : 'none';
-      if (ths[idx]) ths[idx].style.display = showPath ? '' : 'none';
-      table.querySelectorAll('tbody tr').forEach((tr) => {
-        const cell = tr.children[idx];
-        if (cell) cell.style.display = showPath ? '' : 'none';
-      });
-      applyTableColWidths();
-      syncResultsTableResizeHandles();
     }
 
     /** Clamp the dragged pair so a divider cannot collapse either column. */
@@ -3059,7 +2919,7 @@
     }
 
     /** The last hour's changes anywhere, reset in place: no query, no scope folder, no tags, every option
-     *  off but Match path, smart view, 1 hour recency. Reached only by the global Ctrl+Shift+Space (main.js
+     *  off but Match path, subfolders and everything shown, 1 hour recency. Reached only by the global Ctrl+Shift+Space (main.js
      *  RECENT_TAB_ACCEL), so it works while TagFox is hidden. */
     async function openRecentTab() {
       if (isRunnerMode()) {
@@ -3086,7 +2946,7 @@
       }
       syncAdvancedSearchIconFilledState();
       renderScopeBreadcrumb();
-      reimposeSmartViewDefaults();
+      reimposeResultsViewDefaults();
       saveActiveTabStateFromUi();
     }
 
@@ -3171,7 +3031,6 @@
         activeTagKeys: [],
         excludedTagKeys: [],
         tagFilterCombineOr: false,
-        resultsLayout: 'flat',
         resultsContent: 'all',
         showSubfolders: false,
         optCase: false,
@@ -3217,7 +3076,6 @@
         const sc = runnerSortColumnFor(runnerSort);
         st.sortColumn = sc.col;
         st.sortAsc = sc.asc;
-        st.resultsLayout = 'flat';
         applySearchState(st);
         /* Runner hid ~ paths by default until October 2026; carry that saved hide over to showing them once.
            A hide chosen after this survives, because the marker is written either way. */
@@ -3289,7 +3147,6 @@
       updateSortHeaders();
       renderScopeBreadcrumb();
       renderTagBar();
-      applyResultsTablePathColumnVisibility();
       applyPaneWidths();
       await runSearchNow('identity');
       saveActiveTabStateFromUi();
@@ -3997,7 +3854,7 @@
     }
 
     function runnerSetContent(cm) {
-      applyResultsViewRadiosToDom('flat', isShowSubfolders(), cm);
+      applyResultsViewRadiosToDom(isShowSubfolders(), cm);
       syncViewRadioActiveFromDom();
       saveSettings();
       void runSearchNow('identity');
@@ -4508,7 +4365,7 @@
       sortAsc = sc.asc;
       selectAfterSearchKey = null;
       setRecencyFilterMode(recency);
-      applyResultsViewRadiosToDom('flat', isShowSubfolders(), 'all');
+      applyResultsViewRadiosToDom(isShowSubfolders(), 'all');
       syncViewRadioActiveFromDom();
       const d = runnerDefaultSearchState();
       for (const [id, key] of [
@@ -5351,11 +5208,10 @@
       void everythingKeepalivePing();
     }
 
-    /* Serialize whole runSearchNow flow (active runSearch + inactive refresh dance) so two F5/auto-refresh ticks can't interleave the swap-canonical-IDs dance. Reuses searchMutex/topLevelSearchDepth; nested runSearchNow (smart-narrow inside outer runSearch) sees depth>0 and skips re-acquire. */
+    /* Serialize whole runSearchNow flow (active runSearch + inactive refresh dance) so two F5/auto-refresh ticks can't interleave the swap-canonical-IDs dance. Reuses searchMutex/topLevelSearchDepth; a nested runSearchNow (one started inside an outer runSearch) sees depth>0 and skips re-acquire. */
     async function runSearchNow(eventKind = 'identity', opts) {
-      /* Nested = a call made synchronously inside an already-running flow (smart-narrow / smart-probe
-         re-search), which must skip the mutex to avoid self-deadlock. It is marked explicitly via
-         opts.nested. A fresh event-loop task (debounced search, F5, disk-mutation retry) that fires while
+      /* Nested = a call made synchronously inside an already-running flow, which must skip the mutex to
+         avoid self-deadlock; nothing makes one at present. It is marked explicitly via opts.nested. A fresh event-loop task (debounced search, F5, disk-mutation retry) that fires while
          a flow holds topLevelSearchDepth>0 is NOT nested: inferring nesting from the global counter let it
          skip the mutex and run concurrently with the inactive-pane dance, rendering its rows into the
          id-swapped (hidden) pane's tbody. The active pane then looked empty until a pane switch repainted
@@ -5702,7 +5558,6 @@
         // Size / Modified: first activation = largest / newest first; Name & Path = A→Z.
         sortAsc = key !== 'size' && key !== 'date_modified';
       }
-      applyNaturalSortWhenTreeViewOn();
       saveSettings();
       updateSortHeaders();
       commitSearchHistoryNow();
@@ -5838,56 +5693,7 @@
       );
     }
 
-    /** Smart automation line (wand icon + chip); kind warn = big-folder / cap stress. */
-    function clearStatusSmartNote() {
-      const el = document.getElementById('statusSmartNote');
-      if (!el) return;
-      el.innerHTML = '';
-      el.classList.add('d-none');
-      el.classList.remove('tagfox-status-hidden-hint--warn');
-    }
-    /** Cap-stress chip from smartAfterPaint; clear when paging shows no further pages (load-more doesn’t rerun smartAfterPaint). */
-    function clearBigFolderCapSmartNoteIfStale() {
-      if (!isSmartView() || !resultsPagingCtx || resultsPagingCtx.hasMore) return;
-      const chip = document.getElementById('statusSmartNote');
-      if (chip && !chip.classList.contains('d-none') && /Big folder!/.test(String(chip.textContent || '')))
-        clearStatusSmartNote();
-    }
-
-    function setStatusSmartNote(text, kind) {
-      const el = document.getElementById('statusSmartNote');
-      if (!el) return;
-      if (!text) {
-        clearStatusSmartNote();
-        return;
-      }
-      /* Same chip as filter hints; wand icon links to Smart view control. */
-      el.innerHTML =
-        statusHintPillInnerHtml('fa-wand-magic-sparkles', escStatusHtmlForStatus(text));
-      el.classList.remove('d-none');
-      el.classList.toggle('tagfox-status-hidden-hint--warn', kind === 'warn');
-      /* Chip already says Smart/layout context — remove trailing “Smart view, …” from main line. */
-      stripViewModeSentenceFromStatusMain();
-      flashRunnerStatus();
-    }
-
-    /** Drop last " · Flat|Tree|Smart view…" segment from #statusMain (smart chip is the sole layout hint). */
-    function stripViewModeSentenceFromStatusMain() {
-      const main = document.getElementById('statusMain');
-      if (!main) return;
-      const vx = main.querySelector('.tagfox-status-view-suffix');
-      if (vx) {
-        vx.remove();
-        return;
-      }
-      const t = String(main.textContent || '');
-      const idx = t.lastIndexOf(' · ');
-      if (idx < 0) return;
-      const tail = t.slice(idx + 3);
-      if (/^(Flat|Tree|Smart) view/.test(tail)) main.textContent = t.slice(0, idx);
-    }
-
-    /** Main status line; clears Smart chip so transient messages don’t stack. `progress`: routine progress
+    /** Main status line. `progress`: routine progress
         ("Searching…") that Runner does not bring its hidden bar up for, and that never replaces a message
         the bar is still showing: an action's result starts a search, whose "Searching…" would otherwise
         be all the bar said for the result's five seconds. */
@@ -5895,7 +5701,6 @@
       if (progress && isRunnerMode() && document.body.classList.contains('tagfox-runner-status-on')) return;
       const el = document.getElementById('statusMain');
       if (el) el.textContent = text == null ? '' : String(text);
-      clearStatusSmartNote();
       if (text && !progress) flashRunnerStatus();
     }
 
@@ -5990,7 +5795,7 @@
       }
     }
 
-    /** First #statusMain segment: raw hit count from Everything (not table row count — path tree may add rows). */
+    /** First #statusMain segment: raw hit count from Everything (not table row count). */
     function formatRowCountLeadingSegmentForStatus(vis, raw) {
       void vis;
       if (raw === 0) return { text: '0 hits' };
@@ -6067,7 +5872,6 @@
         hiddenDueHtml,
         showHideSpecialHint,
         showHideTildeHint,
-        omitViewSuffix,
         viewModeSentence,
       } = opts;
       const rowLead = formatRowCountLeadingSegmentForStatus(visN, rawN);
@@ -6079,7 +5883,7 @@
         if (showHideTildeHint) segments.push(hideOptionHintStatusHtml('Hiding paths with ~ segment'));
       }
       if (tagRecencyHintPlain) segments.push(tagRecencyStatusFilterHintHtml(tagRecencyHintPlain));
-      if (!omitViewSuffix && viewModeSentence)
+      if (viewModeSentence)
         segments.push('<span class="tagfox-status-view-suffix">' + escStatusHtmlForStatus(viewModeSentence) + '</span>');
       return segments.join(' · ');
     }
@@ -6128,175 +5932,10 @@
       }
     }
 
-    /** Tree + Size/Modified/Name (z/m/n or those headers): Flat on so sort sticks. */
-    function flatViewOnIfTreeForColumnSort() {
-      if (!isTreeViewOn()) return '';
-      const el = document.getElementById('optRvFlat');
-      if (el) { el.checked = true; }
-      syncViewRadioActiveFromDom();
-      applyResultsTablePathColumnVisibility();
-      return 'Switched to Flat — column sort; Tree view uses path A→Z only.';
-    }
-
     /** Folder that scopes the search (Settings “Scope folder” field). */
     function currentScopeFolderPath() {
       const rootRaw = document.getElementById('rootFolder').value.trim();
       return rootRaw ? normalizeFolderPathForEverything(rootRaw) : '';
-    }
-
-    /** Path → segments for tree depth (Windows-style, normalized slashes). */
-    function pathSegmentsForTree(fullPathRaw) {
-      let s = String(fullPathRaw || '').trim().replace(/\//g, '\\');
-      s = s.replace(/\\+$/, '');
-      if (/^[a-zA-Z]:$/i.test(s)) s += '\\';
-      return s.split('\\').filter(Boolean);
-    }
-
-    /** Path folder grouping: synthetic ancestor folders when path-sorted non-flat + subfolders shown. */
-    function shouldShowPathFolderGrouping() {
-      if (!isTreeViewOn() || sortColumn !== 'path') return false;
-      /* Files-only: list file hits in path order only — no real or synthetic folder rows. */
-      if (isFilesOnly()) return false;
-      return isShowSubfolders();
-    }
-
-    /** Parent-dir segments for one result row (files and folders both use parent of full path). */
-    function parentSegmentsForRow(row) {
-      const fp = fullPathForRow(row);
-      const parent = String(T.parentDir(fp) || '').trim().replace(/[/\\]+$/, '');
-      return pathSegmentsForTree(parent);
-    }
-
-    /** Scope folder (#rootFolder / breadcrumb) as segments — empty when searching whole index. */
-    function scopeSegmentsForTree() {
-      const scope = currentScopeFolderPath();
-      return scope ? pathSegmentsForTree(scope) : [];
-    }
-
-    /**
-     * Parent path segments shown in tree view: only below the current scope (last breadcrumb folder).
-     * If a hit isn’t under scope, fall back to full parent segments (odd result / no scope).
-     */
-    function parentSegmentsUnderScope(row) {
-      const full = parentSegmentsForRow(row);
-      const sp = scopeSegmentsForTree();
-      if (!sp.length) return full;
-      if (commonPrefixLen(sp, full) !== sp.length) return full;
-      return full.slice(sp.length);
-    }
-
-    /** Common prefix length for two arrays (case-insensitive). */
-    function commonPrefixLen(a, b) {
-      const aa = Array.isArray(a) ? a : [];
-      const bb = Array.isArray(b) ? b : [];
-      let i = 0;
-      while (i < aa.length && i < bb.length && String(aa[i]).toLowerCase() === String(bb[i]).toLowerCase()) i++;
-      return i;
-    }
-
-    /** Longest common prefix length over a list of segment arrays. */
-    function segmentArraysCommonPrefixLen(arrs) {
-      if (!Array.isArray(arrs) || arrs.length === 0) return 0;
-      let n = arrs[0].length;
-      for (let i = 1; i < arrs.length; i++) {
-        n = Math.min(n, commonPrefixLen(arrs[0], arrs[i]));
-        if (n === 0) break;
-      }
-      return n;
-    }
-
-    /** Expand visible rows with synthetic folder rows for path grouping (rows stay fully interactive). */
-    function buildPathGroupedDisplayRows(rows) {
-      const src = Array.isArray(rows) ? rows : [];
-      if (!shouldShowPathFolderGrouping() || !src.length) return src;
-      // Everything often returns real folder rows too — skip fake placeholders for those paths (no size/date → “--”).
-      const realFolderKeys = new Set();
-      for (const r of src) {
-        if (rowIsFolder(r)) {
-          const k = pathNormKey(fullPathForRow(r));
-          if (k) realFolderKeys.add(k);
-        }
-      }
-      const scopeParts = scopeSegmentsForTree();
-      const parentSegsList = src.map((r) => parentSegmentsUnderScope(r));
-      const stripPrefixLen = segmentArraysCommonPrefixLen(parentSegsList);
-      const out = [];
-      // Shared parent prefix (stripPrefixLen) was only injected when row 0 had relParts empty; if path order
-      // puts a deeper hit first, those ancestor folders never appeared — emit the chain once up front.
-      if (stripPrefixLen > 0) {
-        const u0 = parentSegsList[0];
-        for (let k = 0; k < stripPrefixLen; k++) {
-          const prefixSegs = scopeParts.concat(u0.slice(0, k + 1));
-          const fullDir = prefixSegs.join('\\');
-          if (realFolderKeys.has(pathNormKey(fullDir))) continue;
-          const synthetic = syntheticFolderRow(fullDir);
-          synthetic.__pathTreeDepthUi = k + 1;
-          out.push(synthetic);
-        }
-      }
-      let prevRelParent = [];
-      for (let rowIdx = 0; rowIdx < src.length; rowIdx++) {
-        const row = src[rowIdx];
-        const under = parentSegsList[rowIdx];
-        const relParts = under.slice(stripPrefixLen);
-        const l = commonPrefixLen(prevRelParent, relParts);
-        for (let j = l; j < relParts.length; j++) {
-          const prefixSegs = scopeParts.concat(under.slice(0, stripPrefixLen + j + 1));
-          const fullDir = prefixSegs.join('\\');
-          if (realFolderKeys.has(pathNormKey(fullDir))) continue;
-          const synthetic = syntheticFolderRow(fullDir);
-          // Depth under scope: relParts = under.slice(stripPrefixLen), so j indexes the tail only.
-          synthetic.__pathTreeDepthUi = stripPrefixLen + j + 1;
-          out.push(synthetic);
-        }
-        // Always use full parent chain under scope — relParts.length is only the tail after stripPrefixLen (bug: child matched same depth as parent folder).
-        row.__pathTreeDepthUi = under.length + 1;
-        out.push(row);
-        prevRelParent = relParts;
-      }
-      return out;
-    }
-
-    /** UI tree depth for path-sort gutter (grouping uses synthetic rows + __pathTreeDepthUi). */
-    function pathTreeUiDepth(row, showPathFolderGrouping) {
-      return showPathFolderGrouping ? Number(row.__pathTreeDepthUi) || 1 : parentSegmentsForRow(row).length;
-    }
-
-    /**
-     * Box-drawing prefixes (├/└/─/│) for a depth column — list should be tree-ordered (path grouping on).
-     * moreAtCol[c] mirrors archy: after a non-last sibling, column c gets │ for deeper rows.
-     */
-    function pathTreeGutterStringsForDepths(depths) {
-      const n = depths.length;
-      const out = new Array(n).fill('');
-      const moreAtCol = [];
-      for (let i = 0; i < n; i++) {
-        const D = depths[i];
-        if (D <= 1) {
-          out[i] = '';
-          while (moreAtCol.length > 0 && moreAtCol.length >= D) moreAtCol.pop();
-          continue;
-        }
-        while (moreAtCol.length > D - 1) moreAtCol.pop();
-        let s = '';
-        for (let c = 0; c < D - 2; c++) {
-          s += (moreAtCol[c] ? '\u2502' : ' ') + ' ';
-        }
-        let isLast = true;
-        for (let j = i + 1; j < n; j++) {
-          if (depths[j] < D) break;
-          if (depths[j] === D) {
-            isLast = false;
-            break;
-          }
-        }
-        /* ├/└ already include a short horizontal stub; extra ─ was widening the arm. */
-        s += (isLast ? '\u2514' : '\u251c') + ' ';
-        out[i] = s;
-        while (moreAtCol.length < D - 1) moreAtCol.push(false);
-        moreAtCol[D - 2] = !isLast;
-      }
-      return out;
     }
 
     /** Parent folder chain under scope (empty string = item sits in scope root). */
@@ -10443,7 +10082,7 @@
       return pathNormKey(norm) + '\0' + everythingSearchTextForFolderChildCount(norm);
     }
 
-    /** Folder row: exact (n); capped (100+) — pill only when narrowed (Smart); full subs+all → plain muted text. */
+    /** Folder row: exact (n); capped (100+) — pill only when narrowed; full subs+all → plain muted text. */
     function syncFolderChildCountSpanDisplay(span, out) {
       if (!span) return;
       span.classList.remove('folder-child-count-over');
@@ -10505,7 +10144,6 @@
         const tasks = [];
         const seen = new Set();
         for (const tr of tbody.querySelectorAll('tr.results-folder-row')) {
-          if (tr.classList.contains('results-tree-collapse-hidden')) continue;
           const fp = tr.dataset.rowPath;
           if (!fp) continue;
           const norm = normalizeFolderPathForEverything(fp);
@@ -10806,8 +10444,7 @@
      * Send recency to Everything as dm:>=… so max-results applies inside the time window (fixes path sort taking 200 “old” hits then client-filtering to a handful).
      * Recency means a file's own modified time, so folders are excluded (file:) unless Folders only is on:
      * Windows bumps a folder's modified time when a child is created, deleted or renamed, never when one is edited,
-     * so a folder hit in a recency window reports creation, not modification. Tree view still shows the folders
-     * of surviving files as synthetic ancestor rows.
+     * so a folder hit in a recency window reports creation, not modification.
      */
     function appendRecencyToEverythingQuery(searchText) {
       if (recencyFilterMode() === 'all') return searchText;
@@ -10860,7 +10497,7 @@
       'tagfox-size-heat-kb100',
     ];
 
-    /** Size column: accent by magnitude (Everything gives size for many folder rows too; synthetic tree folders stay —). */
+    /** Size column: accent by magnitude (Everything gives size for many folder rows too; synthetic folder rows stay —). */
     function applySizeHeatToElement(el, row) {
       if (!el) return;
       el.classList.remove('text-danger', 'fw-semibold', ...SIZE_HEAT_CLASSES);
@@ -12641,27 +12278,12 @@
       document.getElementById('optHideTilde').checked = localStorage.getItem(LS.optHideTilde) === '1';
       {
         const showSubs = localStorage.getItem(LS.showSubfolders) !== '0';
-        let layout = localStorage.getItem(LS.resultsLayout);
-        if (!['tree', 'smart', 'flat'].includes(layout)) {
-          const hasFlatKey = localStorage.getItem(LS.flatView) !== null;
-          if (hasFlatKey) {
-            layout = localStorage.getItem(LS.flatView) === '1' ? 'flat' : 'smart';
-          } else {
-            let mode = localStorage.getItem(LS.resultsViewMode);
-            if (!mode || !['flat', 'tree1', 'treeBrowse', 'treeFull'].includes(mode)) {
-              const tv = localStorage.getItem(LS.treeView);
-              mode = tv === '1' ? 'treeBrowse' : 'flat';
-            }
-            layout = mode === 'flat' ? 'flat' : 'smart';
-          }
-          localStorage.setItem(LS.resultsLayout, layout);
-        }
         let content = localStorage.getItem(LS.resultsContent);
         if (!['all', 'folders', 'files'].includes(content)) {
           content = localStorage.getItem(LS.hideFiles) === '1' ? 'folders' : 'all';
           localStorage.setItem(LS.resultsContent, content);
         }
-        setResultsViewRadios(layout, showSubs, content);
+        setResultsViewRadios(showSubs, content);
       }
       /* Recency is a "right now" filter: always launch at All rather than restoring a persisted time window.
          A stale 1h/1d would otherwise silently cap every search after a restart (looks like search is broken). */
@@ -12672,9 +12294,7 @@
       if (sortColumn === 'ext') sortColumn = 'name';
       if (!['name', 'path', 'date_modified', 'size'].includes(sortColumn)) sortColumn = 'name';
       sortAsc = localStorage.getItem(LS.optAsc) !== '0';
-      applyNaturalSortWhenTreeViewOn();
-      document.getElementById('optTreeFolding').checked = localStorage.getItem(LS.treeFolding) !== '0';
-      document.getElementById('optTreeGroupHL').checked = localStorage.getItem(LS.treeGroupHighlight) !== '0';
+      document.getElementById('optFolderGroupHighlight').checked = localStorage.getItem(LS.folderGroupHighlight) !== '0';
       {
         const hm = document.getElementById('optHighlightMatchedNames');
         if (hm) hm.checked = localStorage.getItem(LS.highlightMatchedNames) !== '0';
@@ -12685,13 +12305,6 @@
       }
       /* Default on; only stays off when user saved off ('0'). */
       document.getElementById('optSearchDebug').checked = localStorage.getItem(LS.searchDebug) !== '0';
-      {
-        collapsedFolderPaths.clear();
-        try {
-          const arr = JSON.parse(localStorage.getItem(LS.collapsedFolders) || '[]');
-          if (Array.isArray(arr)) for (const p of arr) collapsedFolderPaths.add(p);
-        } catch (_) { /* ignore bad JSON */ }
-      }
       activeTagKeys = activeTagKeysFromStored(localStorage.getItem(LS.activeTagFilter));
       // Excluded ⊆ active (drop any stale exclusion whose tag is no longer an active filter).
       excludedTagKeys = new Set([...activeTagKeysFromStored(localStorage.getItem(LS.excludedTagFilter))].filter((k) => activeTagKeys.has(k)));
@@ -12752,17 +12365,13 @@
       localStorage.setItem(LS.optDiacritics, document.getElementById('optDiacritics').checked ? '1' : '0');
       localStorage.setItem(LS.optHideSpecial, document.getElementById('optHideSpecial').checked ? '1' : '0');
       localStorage.setItem(LS.optHideTilde, document.getElementById('optHideTilde').checked ? '1' : '0');
-      localStorage.setItem(LS.resultsLayout, resultsLayoutFromUi());
       localStorage.setItem(LS.resultsContent, resultsContentMode());
-      localStorage.setItem(LS.flatView, isFlatView() ? '1' : '0');
       localStorage.setItem(LS.showSubfolders, isShowSubfolders() ? '1' : '0');
       localStorage.setItem(LS.hideFiles, isFoldersOnly() ? '1' : '0');
-      localStorage.setItem(LS.treeView, isFlatView() ? '0' : '1');
       /* Recency intentionally not persisted (see loadSettings): it always launches at All. */
       localStorage.setItem(LS.sortBy, sortColumn);
       localStorage.setItem(LS.optAsc, sortAsc ? '1' : '0');
-      localStorage.setItem(LS.treeFolding, document.getElementById('optTreeFolding').checked ? '1' : '0');
-      localStorage.setItem(LS.treeGroupHighlight, document.getElementById('optTreeGroupHL').checked ? '1' : '0');
+      localStorage.setItem(LS.folderGroupHighlight, document.getElementById('optFolderGroupHighlight').checked ? '1' : '0');
       {
         const hm = document.getElementById('optHighlightMatchedNames');
         if (hm) localStorage.setItem(LS.highlightMatchedNames, hm.checked ? '1' : '0');
@@ -12773,7 +12382,6 @@
       }
       localStorage.setItem(LS.searchDebug, document.getElementById('optSearchDebug').checked ? '1' : '0');
       localStorage.setItem(LS.tagFilterCombineOr, tagFilterCombineOr ? '1' : '0');
-      localStorage.setItem(LS.collapsedFolders, JSON.stringify([...collapsedFolderPaths]));
       persistActiveTagFilter();
       persistSearchScopeMax();
     }
@@ -13102,9 +12710,6 @@
         activeTagKeys: [...activeTagKeys].sort(),
         excludedTagKeys: [...excludedTagKeys].sort(),
         tagFilterCombineOr: !!tagFilterCombineOr,
-        flatView: isFlatView(),
-        smartView: isSmartView(),
-        resultsLayout: resultsLayoutFromUi(),
         resultsContent: resultsContentMode(),
         showSubfolders: isShowSubfolders(),
         hideFiles: isFoldersOnly(),
@@ -13192,29 +12797,13 @@
       excludedTagKeys = new Set(excArr.filter((k) => activeTagKeys.has(k)));
       tagFilterCombineOr = !!s.tagFilterCombineOr;
       {
-        if (s.resultsLayout && ['tree', 'smart', 'flat'].includes(s.resultsLayout)) {
-          const rc =
-            s.resultsContent && ['all', 'folders', 'files'].includes(s.resultsContent)
-              ? s.resultsContent
-              : s.hideFiles
-                ? 'folders'
-                : 'all';
-          setResultsViewRadios(s.resultsLayout, s.showSubfolders !== false, rc);
-        } else if (s.flatView !== undefined) {
-          const layout = s.smartView ? 'smart' : s.flatView ? 'flat' : 'tree';
-          const content = s.resultsContent && ['all', 'folders', 'files'].includes(s.resultsContent)
+        const rc =
+          s.resultsContent && ['all', 'folders', 'files'].includes(s.resultsContent)
             ? s.resultsContent
             : s.hideFiles
               ? 'folders'
               : 'all';
-          setResultsViewRadios(layout, s.showSubfolders !== false, content);
-        } else if (s.resultsViewMode) {
-          const m = s.resultsViewMode;
-          const layout = m === 'flat' ? 'flat' : 'tree';
-          const subs = m === 'flat' || m === 'treeFull';
-          const content = m === 'treeBrowse' ? 'folders' : 'all';
-          setResultsViewRadios(layout, subs, content);
-        }
+        setResultsViewRadios(s.showSubfolders !== false, rc);
       }
       document.getElementById('optCase').checked = !!s.optCase;
       document.getElementById('optWholeWord').checked = !!s.optWholeWord;
@@ -13229,7 +12818,6 @@
       if (sc === 'ext') sc = 'name';
       sortColumn = sc && ['name', 'path', 'date_modified', 'size'].includes(sc) ? sc : 'name';
       sortAsc = s.sortAsc !== false;
-      applyNaturalSortWhenTreeViewOn();
       const panel = document.getElementById('searchOptsAdvancedPanel');
       const advBtn = document.getElementById('btnToggleSearchOptsAdvanced');
       if (panel && advBtn) {
@@ -13779,7 +13367,7 @@
       return rows;
     }
 
-    /** Same pipeline as filteredRows but before Hide special / Hide ~ (for status hints). */
+    /** Same pipeline as listRowsForUi but before Hide special / Hide ~ (for status hints). */
     function filteredRowsBeforeAdvancedPathHides() {
       let rows = filteredRowsAfterTagsOnly();
       if (deadlineFilterActive()) {
@@ -13789,7 +13377,7 @@
       return rows;
     }
 
-    /** Advanced path hides at node level (used for both raw rows and tree display rows), plus the
+    /** Advanced path hides at node level, plus the
      *  hide-until drop, which belongs in the same pass: both answer "should this be on screen". */
     function applyAdvancedPathHides(rowsIn) {
       let rows = Array.isArray(rowsIn) ? rowsIn : [];
@@ -13802,87 +13390,9 @@
       return applyHideUntilFilter(rows);
     }
 
-    function filteredRows() {
-      const baseRows = filteredRowsBeforeAdvancedPathHides();
-      return applyAdvancedPathHides(baseRows);
-    }
-
-    /** Smart + tree + path A→Z: custom display order only — lastRows stays path-sorted (grouping + selection need that). */
-    function shouldReorderRowsForSmartViewTree() {
-      return isSmartView() && !isFlatView() && sortColumn === 'path' && sortAsc;
-    }
-
-    /**
-     * Preorder DFS: folders A→Z, then files by modified desc. Input must be the same row set as lastRows (filtered);
-     * never mutates lastRows — only reorders refs for buildPathGroupedDisplayRows so synthetics stay consistent.
-     */
-    function orderRowsForSmartViewTreeDisplay(rows) {
-      const arr = Array.isArray(rows) ? rows : [];
-      if (!arr.length || !shouldReorderRowsForSmartViewTree()) return arr;
-      const byParent = new Map();
-      for (const r of arr) {
-        const fp = fullPathForRow(r);
-        const par = normalizeFolderPathForEverything(String(T.parentDir(fp) || '').trim());
-        const pk = pathNormKey(par);
-        if (!byParent.has(pk)) byParent.set(pk, []);
-        byParent.get(pk).push(r);
-      }
-      function cmpSibling(a, b) {
-        const fa = rowIsFolder(a);
-        const fb = rowIsFolder(b);
-        if (fa !== fb) return fa ? -1 : 1;
-        if (fa) {
-          const na = String(T.baseName(fullPathForRow(a)) || '');
-          const nb = String(T.baseName(fullPathForRow(b)) || '');
-          const c = na.localeCompare(nb, undefined, { numeric: true, sensitivity: 'base' });
-          if (c !== 0) return c;
-          return pathSortKey(a).localeCompare(pathSortKey(b));
-        }
-        const da = rowModifiedSortKey(a);
-        const db = rowModifiedSortKey(b);
-        if (db !== da) return db - da;
-        return pathSortKey(a).localeCompare(pathSortKey(b));
-      }
-      for (const kids of byParent.values()) kids.sort(cmpSibling);
-      const out = [];
-      const visited = new Set();
-      function walk(parentKey) {
-        const kids = byParent.get(parentKey) || [];
-        for (const r of kids) {
-          const k = pathNormKey(fullPathForRow(r));
-          if (!k || visited.has(k)) continue;
-          visited.add(k);
-          out.push(r);
-          if (rowIsFolder(r)) walk(k);
-        }
-      }
-      const scope = currentScopeFolderPath();
-      const scopeKey = scope ? pathNormKey(normalizeFolderPathForEverything(scope)) : '';
-      const pathKeys = new Set(arr.map((r) => pathNormKey(fullPathForRow(r))).filter(Boolean));
-      if (scopeKey) {
-        walk(scopeKey);
-      } else {
-        const roots = [];
-        for (const pk of byParent.keys()) {
-          if (!pathKeys.has(pk)) roots.push(pk);
-        }
-        roots.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-        for (const pk of roots) walk(pk);
-      }
-      if (out.length < arr.length) {
-        const rest = arr.filter((r) => !visited.has(pathNormKey(fullPathForRow(r))));
-        rest.sort((a, b) => pathSortKey(a).localeCompare(pathSortKey(b)));
-        out.push(...rest);
-      }
-      return out;
-    }
-
-    /** Visible rows in the table UI (includes synthetic folder rows in path-group mode). */
+    /** The rows the list shows: lastRows after the tag, recency and path filters. */
     function listRowsForUi() {
-      const baseRows = filteredRowsBeforeAdvancedPathHides();
-      const forTree = orderRowsForSmartViewTreeDisplay(baseRows);
-      const treeRows = buildPathGroupedDisplayRows(forTree);
-      return applyAdvancedPathHides(treeRows);
+      return applyAdvancedPathHides(filteredRowsBeforeAdvancedPathHides());
     }
 
     /** True when a popover-only toggle (case / whole-word / diacritics) is checked. Path + hide are exposed icons with their own active state. */
@@ -14014,14 +13524,10 @@
         '\0' +
         (q && q.value != null ? String(q.value).trim() : '') +
         '\0' +
-        (isTreeViewOn() ? '1' : '0') +
-        '\0' +
         (tagFilterCombineOr ? 'or' : 'and') +
         '\0' +
         recencyMode +
         '\0' +
-        (isFlatView() ? 'F' : '') +
-        (isSmartView() ? 'M' : '') +
         (isShowSubfolders() ? 'S' : '') +
         resultsContentMode()[0];
       const fpChanged = forceRestart || fp !== pulseHintFingerprint;
@@ -14144,8 +13650,8 @@
         });
         el.appendChild(rescan);
       };
-      // Counts match the visible table (filteredRows), not merged tag-scan rows.
-      const forTagCounting = filteredRows();
+      // Counts match the visible table (listRowsForUi), not merged tag-scan rows.
+      const forTagCounting = listRowsForUi();
       const counts = forTagCounting.length ? T.aggregateTagCountsFromRows(forTagCounting, fullPathForRow) : new Map();
       // Pill set = global knownBracketTagsList order; numbers = tag hits in this result list.
       const entries = [];
@@ -14458,63 +13964,12 @@
       td.removeAttribute('title');
     }
 
-    /**
-     * Path-sorted tree: cosmetic hide of nested rows under a collapsed folder.
-     * Uses tr[data-tree-depth] and results-tree-collapsed on folder rows; toggles results-tree-collapse-hidden.
-     * Also adds/removes a "N hidden" badge on each collapsed folder row.
-     */
-    function refreshResultsTreeCollapseHidden() {
-      const tbody = document.getElementById('tbody');
-      if (!tbody) return;
-      const rows = Array.from(tbody.querySelectorAll('tr'));
-      if (!rows.length || rows[0].dataset.treeDepth === undefined) return;
-      let collapseDepth = null;
-      let collapsedFolderTr = null;
-      let hiddenCount = 0;
-      const badgeCounts = [];
-      for (const tr of rows) {
-        const d = Number(tr.dataset.treeDepth);
-        if (collapseDepth !== null && d <= collapseDepth) {
-          badgeCounts.push({ tr: collapsedFolderTr, count: hiddenCount });
-          collapseDepth = null;
-          collapsedFolderTr = null;
-          hiddenCount = 0;
-        }
-        const hide = collapseDepth !== null && d > collapseDepth;
-        tr.classList.toggle('results-tree-collapse-hidden', hide);
-        if (hide) hiddenCount++;
-        if (
-          !hide &&
-          tr.classList.contains('results-folder-row') &&
-          tr.classList.contains('results-tree-collapsed')
-        ) {
-          collapseDepth = d;
-          collapsedFolderTr = tr;
-          hiddenCount = 0;
-        }
-      }
-      if (collapsedFolderTr) badgeCounts.push({ tr: collapsedFolderTr, count: hiddenCount });
-      // Update badges on all folder rows
-      for (const tr of tbody.querySelectorAll('tr.results-folder-row')) {
-        const existing = tr.querySelector('.tree-hidden-badge');
-        if (existing) existing.remove();
-      }
-      for (const { tr, count } of badgeCounts) {
-        if (count <= 0) continue;
-        const badge = document.createElement('span');
-        badge.className = 'badge bg-secondary ms-1 tree-hidden-badge';
-        badge.textContent = count + ' hidden';
-        const nameCell = tr.querySelector('td:nth-child(2)');
-        if (nameCell) nameCell.appendChild(badge);
-      }
-    }
-
     /** Keyboard ↑/↓: move highlight only — avoids full renderTable() (O(n) per key). */
     function syncResultsSelectionHighlight() {
       const tbody = document.getElementById('tbody');
       if (!tbody) return;
       const want = selectedFullPath;
-      const groupHL = isTreeGroupHLOn();
+      const groupHL = isFolderGroupHighlightOn();
 
       /* 1. Clear previous highlights — only touches rows that had them */
       const prev = tbody.querySelector('tr.table-active');
@@ -14658,7 +14113,6 @@
     function renderTableImpl() {
       const tbody = document.getElementById('tbody');
       const status = document.getElementById('statusMain');
-      /* Do not clear #statusSmartNote here — e.g. “Big folder!” must survive checkbox/selection redraws. Cleared by setStatusMain, smartAfterPaint, or empty chip. */
       tbody.querySelectorAll('[data-bs-toggle="tooltip"], .results-td-actions-inner [title], .results-td-actions-inner [data-bs-original-title]').forEach((el) => {
         const tip = bootstrap.Tooltip.getInstance(el);
         if (tip) tip.dispose();
@@ -14679,24 +14133,17 @@
       resetThumbObserver();
       hideHoverPreview(); /* its row is about to go, with no mouseout to say so */
       tbody.innerHTML = '';
-      const rows = filteredRows();
       const rowsForDisplay = listRowsForUi();
       const rawN = lastRows.length;
-      /* Display rows: path-tree may inject ancestor folders not in lastRows (visN > rawN), or filters may hide rows (visN < rawN). */
+      /* Display rows: filters may hide rows (visN < rawN). */
       const visN = rowsForDisplay.length;
       const scopePath = normalizeFolderPathForEverything(document.getElementById('rootFolder').value.trim());
-      const flat = isFlatView(),
-        smart = isSmartView(),
-        sub = isShowSubfolders(),
+      const sub = isShowSubfolders(),
         rcc = resultsContentMode();
-      /** One readable sentence for layout + subfolders + content (status bar). */
+      /** One readable sentence for subfolders + content (status bar); the default, subfolders and everything, needs none. */
       function viewModeStatusSentence() {
-        /* Default Smart (subs on, all content): redundant with toolbar — omit suffix. */
-        if (smart && sub && rcc === 'all') return '';
-        const layout = flat ? 'Flat view' : smart ? 'Smart view' : 'Tree view';
-        let s = layout;
-        if (sub) s += ' with subfolders';
-        else s += ', this folder only';
+        if (sub && rcc === 'all') return '';
+        let s = sub ? 'With subfolders' : 'This folder only';
         if (rcc === 'folders') s += ', folders only';
         else if (rcc === 'files') s += ', files only';
         if (!sub && !scopePath) s += ' (set a current folder in Settings for a clearer listing)';
@@ -14747,18 +14194,6 @@
               '</span>';
           }
         }
-        /* Omit “Smart view, …” when #statusSmartNote will say it (pending/cap chip) or chip already visible — avoids “Smart view… · Big folder! Smart View is hiding…”. */
-        const smartNoteEl = document.getElementById('statusSmartNote');
-        const smartNoteVisible =
-          smartNoteEl &&
-          !smartNoteEl.classList.contains('d-none') &&
-          String(smartNoteEl.textContent || '').trim().length > 0;
-        const capStressOmitsViewSuffix =
-          isSmartView() &&
-          resultsPagingCtx &&
-          resultsPagingCtx.mode === 'single' &&
-          !!resultsPagingCtx.hasMore &&
-          !shouldSuppressCapOnlyBigFolderChip();
         status.innerHTML = formatResultsStatusMainHtml({
           visN,
           rawN,
@@ -14768,18 +14203,11 @@
           hiddenDueHtml,
           showHideSpecialHint: hideSpecialDrops > 0,
           showHideTildeHint: hideTildeDrops > 0,
-          omitViewSuffix:
-            !!pendingSmartStatusNote || smartNoteVisible || capStressOmitsViewSuffix,
           viewModeSentence: viewModeStatusSentence(),
         });
       }
       renderRunnerFilterChips();
       renderRunnerRankNote();
-      const showPathFolderGrouping = shouldShowPathFolderGrouping();
-      const showPathTreeGutter = isTreeViewOn() && sortColumn === 'path' && isShowSubfolders();
-      const pathTreeDepths = rowsForDisplay.map((r) => pathTreeUiDepth(r, showPathFolderGrouping));
-      const pathTreeGutters = showPathTreeGutter ? pathTreeGutterStringsForDepths(pathTreeDepths) : null;
-      const treeFoldUi = isTreeFoldUiActive();
       /* Highlight #query in name/path when enabled (Settings). */
       const qTrim = (document.getElementById('query')?.value || '').trim();
       const queryNeedle = isHighlightMatchedNamesOn() && qTrim ? qTrim : null;
@@ -14832,53 +14260,7 @@
         }
         const tdName = document.createElement('td');
         tdName.className = 'min-w-0';
-        {
-          const nameInner = renderNameCell(row, parsedName, queryNeedle);
-          if (showPathTreeGutter) {
-            const g = (pathTreeGutters && pathTreeGutters[rowIdx]) || '';
-            const outer = document.createElement('div');
-            outer.className = 'd-flex align-items-center min-w-0';
-            if (rowIsFolder(row) && treeFoldUi) {
-              const twisty = document.createElement('button');
-              twisty.type = 'button';
-              twisty.className =
-                'btn btn-outline-secondary btn-sm results-tree-twisty flex-shrink-0 p-0 d-inline-flex align-items-center justify-content-center';
-              twisty.textContent = '\u2212';
-              twisty.title = 'Toggle folder contents visibility';
-              twisty.setAttribute('aria-expanded', 'true');
-              twisty.setAttribute('aria-label', 'Toggle showing contents under this folder');
-              twisty.addEventListener('click', (e) => {
-                e.stopPropagation();
-                tr.classList.toggle('results-tree-collapsed');
-                const collapsed = tr.classList.contains('results-tree-collapsed');
-                if (collapsed) collapsedFolderPaths.add(fp); else collapsedFolderPaths.delete(fp);
-                twisty.textContent = collapsed ? '+' : '\u2212';
-                twisty.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-                refreshResultsTreeCollapseHidden();
-                scheduleFolderChildCountsForVisibleResultsRows();
-                localStorage.setItem(LS.collapsedFolders, JSON.stringify([...collapsedFolderPaths]));
-              });
-              if (collapsedFolderPaths.has(fp)) {
-                tr.classList.add('results-tree-collapsed');
-                twisty.textContent = '+';
-                twisty.setAttribute('aria-expanded', 'false');
-              }
-              outer.appendChild(twisty);
-            } else {
-              const sp = document.createElement('span');
-              sp.className = 'results-tree-twisty-spacer flex-shrink-0';
-              sp.setAttribute('aria-hidden', 'true');
-              outer.appendChild(sp);
-            }
-            const gut = document.createElement('span');
-            gut.className = 'path-tree-gutter flex-shrink-0';
-            gut.textContent = g;
-            nameInner.classList.add('min-w-0');
-            outer.appendChild(gut);
-            outer.appendChild(nameInner);
-            tdName.appendChild(outer);
-          } else tdName.appendChild(nameInner);
-        }
+        tdName.appendChild(renderNameCell(row, parsedName, queryNeedle));
         const nameTipLines = [parsedName.pretty];
         if (parsedName.tags.length) {
           nameTipLines.push(
@@ -15150,7 +14532,6 @@
         tr.appendChild(tdDate);
 
         tr.dataset.rowPath = fp;
-        if (showPathTreeGutter) tr.dataset.treeDepth = String(pathTreeDepths[rowIdx]);
         // Drop target: folder row → that folder; file row → parent folder
         {
           const dropDir = rowIsFolder(row)
@@ -15248,22 +14629,7 @@
 
         tbody.appendChild(tr);
       }
-      applyResultsTablePathColumnVisibility();
       syncResultsSelectionHighlight();
-      if (treeFoldUi) {
-        refreshResultsTreeCollapseHidden();
-        if (rowsForDisplay.length) {
-          const liveFolders = new Set(
-            Array.from(tbody.querySelectorAll('tr.results-folder-row'))
-              .map(tr => tr.dataset.rowPath)
-          );
-          let pruned = false;
-          for (const p of collapsedFolderPaths) {
-            if (!liveFolders.has(p)) { collapsedFolderPaths.delete(p); pruned = true; }
-          }
-          if (pruned) localStorage.setItem(LS.collapsedFolders, JSON.stringify([...collapsedFolderPaths]));
-        }
-      }
       updateSelectAllCheckboxState();
       updateEmptyResultsPulseHints(rowsForDisplay.length);
       renderRunnerEmptyNote();
@@ -15886,7 +15252,6 @@
             renderTable();
           });
           updateResultsLoadMoreUi();
-          clearBigFolderCapSmartNoteIfStale();
         }
       }
     }
@@ -15929,7 +15294,6 @@
           maybeShowEverythingHttpHelpBanner(res && res.error);
           renderTable();
           updateResultsLoadMoreUi();
-          clearBigFolderCapSmartNoteIfStale();
           return;
         }
         hideEverythingHttpHelpBanner();
@@ -15962,7 +15326,6 @@
           });
         }
         updateResultsLoadMoreUi();
-        clearBigFolderCapSmartNoteIfStale();
       } finally {
         resultsLoadMoreBusy = false;
         /* loadMore mutates lastRows + resultsPagingCtx; keep the active tab's copy of them in step. */
@@ -16152,146 +15515,6 @@
       wrap.classList.remove('d-none');
     }
 
-    /** Smart auto-narrow chip: one short line from toggles (no jargon). */
-    function smartNarrowChipForToggles(subsOn, content) {
-      const bits = [];
-      if (!subsOn) bits.push('Smart View is hiding subfolders');
-      if (content === 'folders') bits.push('Smart View is hiding files');
-      if (content === 'files') bits.push('Smart View is hiding folders');
-      if (!bits.length) return 'Smart View is using a smaller view.';
-      return bits.join('; ') + '.';
-    }
-    /** Text after “Big folder! ” when cap stress is merged with the auto-narrow note (see smartNarrowChipForToggles). */
-    function bigFolderSmartChipNarrowSuffix(narrowNoteText) {
-      const t = String(narrowNoteText || '').trim();
-      const lower = t.toLowerCase();
-      const hasSub = /smart view is hiding subfolders/.test(lower);
-      const hasNotFiles = /smart view is hiding files/.test(lower);
-      const hasNotFolders = /smart view is hiding folders/.test(lower);
-      if (hasSub && hasNotFiles) return 'Smart View is hiding subfolders and files.';
-      if (hasSub && hasNotFolders) return 'Smart View is hiding subfolders and folders.';
-      if (hasSub) return 'Smart View is hiding subfolders.';
-      if (hasNotFiles) return 'Smart View is hiding files.';
-      if (hasNotFolders) return 'Smart View is hiding folders.';
-      if (t) return t.replace(/\.\s*$/, '') + '.';
-      return '';
-    }
-
-    /**
-     * Smart before-paint: if cap exceeded, either revert a probe or narrow the view, then re-search.
-     * Returns true if a re-search was triggered (caller should return without painting).
-     */
-    async function smartBeforePaint(runId) {
-      if (!isSmartView()) return false;
-      if (runId !== searchRunSeq) return false;
-      if (!resultsPagingCtx || resultsPagingCtx.mode !== 'single' || !resultsPagingCtx.hasMore) return false;
-
-      /* Probe exceeded cap: revert to prior toggles and re-search as smart-narrow. */
-      if (smartEvent === 'smart-probe' && smartProbePrior) {
-        const prior = smartProbePrior;
-        pendingSmartStatusNote = {
-          text: smartNarrowChipForToggles(prior.subs, prior.content),
-          kind: 'warn',
-        };
-        applyResultsViewRadiosToDom('smart', prior.subs, prior.content);
-        syncViewRadioActiveFromDom();
-        saveSettings();
-        smartProbePrior = null;
-        await runSearchNow('smart-narrow', { keepPendingSmartNote: true, nested: true });
-        smartRevertFP = smartOutcomeFingerprint();
-        return true;
-      }
-
-      /* Identity + plain empty browse only: cap full page ⇒ narrow. If query, tags, or recency filter act on ES, do not impose toggles here. */
-      if (smartEvent === 'identity' && !smartSearchShouldStartBroad()) {
-        const rootFolder = document.getElementById('rootFolder').value.trim();
-        if (isShowSubfolders()) {
-          const droppingSubsOk = !lastRows.length || smartScopeHasDirectChildHit(lastRows, rootFolder);
-          if (droppingSubsOk) {
-            applyResultsViewRadiosToDom('smart', false, resultsContentMode());
-            syncViewRadioActiveFromDom();
-            saveSettings();
-            pendingSmartStatusNote = { text: 'Smart View is hiding subfolders.', kind: 'warn' };
-            await runSearchNow('smart-narrow', { keepPendingSmartNote: true, nested: true });
-            return true;
-          }
-        }
-        if (!isFilesOnly() && !isFoldersOnly()) {
-          applyResultsViewRadiosToDom('smart', isShowSubfolders(), 'folders');
-          syncViewRadioActiveFromDom();
-          saveSettings();
-          pendingSmartStatusNote = { text: 'Smart View is hiding files.', kind: 'warn' };
-          await runSearchNow('smart-narrow', { keepPendingSmartNote: true, nested: true });
-          return true;
-        }
-      }
-
-      return false;
-    }
-
-    /**
-     * Smart after-paint: if the view is narrowed but results are within Max results, probe-widen to full tree.
-     * Probe success: chip suppressed — main status line already reflects Smart view + toggles.
-     */
-    async function smartAfterPaint() {
-      smartCapStressBigFolderAfterPaint = false;
-      if (!isSmartView()) {
-        smartEvent = null;
-        smartProbePrior = null;
-        smartRevertFP = null;
-        clearStatusSmartNote();
-        return;
-      }
-      if (!resultsPagingCtx || resultsPagingCtx.mode !== 'single') return;
-
-      if (smartRevertFP && smartOutcomeFingerprint() !== smartRevertFP) smartRevertFP = null;
-
-      const hasMore = !!resultsPagingCtx.hasMore;
-
-      /* Probe success: main line already shows Smart view + subs; no chip. */
-      if (smartEvent === 'smart-probe' && !hasMore) {
-        smartProbePrior = null;
-        smartRevertFP = null;
-        clearStatusSmartNote();
-        return;
-      }
-
-      /* Cap stress: more hits in Everything than fit this page (incl. after smart-narrow). Chip text merged with pending in runSearch. */
-      if (hasMore) {
-        smartRevertFP = null;
-        smartCapStressBigFolderAfterPaint = true;
-        return;
-      }
-
-      /* manual / smart-narrow / refresh: no probe-widen below (everything fits one page). */
-      if (smartEvent === 'manual' || smartEvent === 'smart-narrow' || smartEvent === 'refresh') return;
-
-      /* All results fit but view is narrowed: probe-widen back to full Smart defaults. */
-      if (!isShowSubfolders() || !isAllContent()) {
-        const scopeJustChanged = smartRevertFP == null;
-        if (!smartSearchShouldStartBroad() && !scopeJustChanged) return;
-        if (smartRevertFP && smartOutcomeFingerprint() === smartRevertFP) return;
-        smartProbePrior = { subs: isShowSubfolders(), content: resultsContentMode() };
-        applyResultsViewRadiosToDom('smart', true, 'all');
-        syncViewRadioActiveFromDom();
-        saveSettings();
-        await runSearchNow('smart-probe', { nested: true });
-      }
-    }
-
-    function smartScopeHasDirectChildHit(rows, rootFolderRaw) {
-      const scope = normalizeFolderPathForEverything(String(rootFolderRaw || '').trim());
-      if (!scope) return true;
-      const sk = pathNormKey(scope);
-      for (const r of rows) {
-        const fp = fullPathForRow(r);
-        if (!fp) continue;
-        const par = normalizeFolderPathForEverything(T.parentDir(fp));
-        if (pathNormKey(par) === sk) return true;
-      }
-      return false;
-    }
-
     /** The Everything search text for the current filters: scope, query, tags, deadlines, content, recency.
         `tempDir` asks for Runner's Temp hits in that folder instead of leaving Temp out. */
     function everythingSearchTextForUi(ceilingNorms, rootFolder, query, recursive, { tempDir = '' } = {}) {
@@ -16334,16 +15557,8 @@
       }
       topLevelSearchDepth++;
       try {
-      const keepPendingSmartNote = !!opts.keepPendingSmartNote;
       searchInFlight = true;
       const runId = ++searchRunSeq;
-      if (!isSmartView()) {
-        smartEvent = null;
-        smartProbePrior = null;
-        smartRevertFP = null;
-      } else {
-        smartEvent = eventKind;
-      }
       resultsPagingCtx = null;
       try {
       cancelPropsPreviewSchedule();
@@ -16355,32 +15570,22 @@
         const q = (document.getElementById('query')?.value || '').trim();
         const wantsTag = [...activeTagKeys].some((k) => !excludedTagKeys.has(k));
         const below = !!(q || wantsTag || deadlineFilterActive() || runnerStarredOnlyOn()) && !runnerThisFolderOnlyOn();
-        applyResultsViewRadiosToDom('flat', below, resultsContentMode());
+        applyResultsViewRadiosToDom(below, resultsContentMode());
         syncViewRadioActiveFromDom();
       } else {
-        const smart = isSmartView();
-        const broadForSmart = smart && eventKind === 'identity' && smartSearchShouldStartBroad();
+        /* Classic: typing or a tag searches below the folder. */
         const q = (document.getElementById('query')?.value || '').trim();
-        const broadForNonSmart = !smart && (q || activeTagKeys.size);
-        if (broadForSmart || broadForNonSmart) {
+        if (q || activeTagKeys.size) {
           const cm = resultsContentMode();
           const keepNarrow = cm === 'files' || cm === 'folders';
-          applyResultsViewRadiosToDom(resultsLayoutFromUi(), true, keepNarrow ? cm : 'all');
+          applyResultsViewRadiosToDom(true, keepNarrow ? cm : 'all');
           syncViewRadioActiveFromDom();
         }
       }
-      if (!keepPendingSmartNote) pendingSmartStatusNote = null;
       saveSettings();
       const { baseUrl, httpUser, httpPassword } = readEverythingConnection();
       const ceilingNorms = getSearchScopeCeilingFoldersNorms();
       const rootFolder = document.getElementById('rootFolder').value.trim();
-      /* Scope-change detection for Smart probe-widen on plain browse navigation. */
-      if (isSmartView() && eventKind === 'identity') {
-        const sk = smartBrowseScopeKeyFromInputs(rootFolder);
-        const scopeChanged = lastSmartBrowseScopeKey != null && sk !== lastSmartBrowseScopeKey;
-        lastSmartBrowseScopeKey = sk;
-        if (scopeChanged) smartRevertFP = null;
-      }
       const query = document.getElementById('query').value;
       const hasBread = !!normalizeFolderPathForEverything(rootFolder);
       const hasCeil = ceilingNorms.length > 0;
@@ -16404,8 +15609,6 @@
       searchDebugLog('runSearch.start', {
         runId,
         eventKind,
-        flat: isFlatView(),
-        smart: isSmartView(),
         showSubfolders: showSub,
         contentMode: resultsContentMode(),
         foldersOnly: fo,
@@ -16432,8 +15635,6 @@
 
       searchDebugLog('runSearch.branch', {
         runId,
-        flat: isFlatView(),
-        smart: isSmartView(),
         showSubfolders: showSub,
         contentMode: resultsContentMode(),
       });
@@ -16525,7 +15726,7 @@
         }
       }
       lastRows = got;
-      dedupeLastRowsByPathKey(); // Everything can repeat the same path in one page — breaks tree (duplicate siblings).
+      dedupeLastRowsByPathKey(); // Everything can repeat the same path in one page, which would list it twice.
       sortLastRowsForDisplay(!!res.usedFallbackSort);
       applyTagRenamePendingToLastRows();
       searchDebugLog('runSearch.single.final', {
@@ -16561,34 +15762,15 @@
         searchText,
         seedOptions: stripOffsetFromOpts(res.optionsUsed),
       };
-      if (runId === searchRunSeq && (await smartBeforePaint(runId))) return;
       await syncSelectionAfterSearch();
       renderTagBar();
       renderTable();
       pulseEmptyResultHintsAfterSearchOk();
       if (runId === searchRunSeq) selectRowAfterSearch(query, rootFolder);
-      if (runId === searchRunSeq) await smartAfterPaint();
-      if (runId === searchRunSeq) {
-        const pending = pendingSmartStatusNote;
-        pendingSmartStatusNote = null;
-        const cap = smartCapStressBigFolderAfterPaint;
-        clearStatusSmartNote();
-        const capChip = cap && !shouldSuppressCapOnlyBigFolderChip();
-        if (pending || capChip) {
-          /* pending: auto-narrow note. capChip: empty-browse page full — not when full Smart + query/tags/recency (normal paging). */
-          let text;
-          if (pending) {
-            const extra = bigFolderSmartChipNarrowSuffix(pending.text);
-            text = extra ? 'Big folder! ' + extra : 'Big folder!';
-          } else {
-            text = 'Big folder!';
-          }
-          setStatusSmartNote(text, pending ? pending.kind : 'warn');
-        } else if (explicitRefresh) {
-          setStatusMain(
-            'Refreshed ' + clockTimeHms() + ' — ' + lastRows.length + ' row(s)' + refreshRowChangeSuffix(refreshPrevKeys) + '.'
-          );
-        }
+      if (runId === searchRunSeq && explicitRefresh) {
+        setStatusMain(
+          'Refreshed ' + clockTimeHms() + ' — ' + lastRows.length + ' row(s)' + refreshRowChangeSuffix(refreshPrevKeys) + '.'
+        );
       }
       } finally {
         if (runId === searchRunSeq) searchInFlight = false;
@@ -16631,9 +15813,7 @@
           const th = e.target.closest('th[data-sort]');
           if (!th) return;
           const sk = th.dataset.sort;
-          const note =
-            ['size', 'date_modified', 'name'].includes(String(sk || '')) ? flatViewOnIfTreeForColumnSort() : '';
-          applySortColumnKey(sk, note || undefined);
+          applySortColumnKey(sk);
         });
       }
       const selectAll = document.getElementById('chkSelectAllResults');
@@ -16854,15 +16034,13 @@
       const rect = e.currentTarget.getBoundingClientRect();
       await openResultsRowItemActionsMenu(fp, rect.left, rect.bottom, null);
     });
-    /* Re-click active segment cycles, except Smart which reapplies Smart defaults for this context. */
-    const viewLayoutTrioIds = ['optRvSmart', 'optRvTree', 'optRvFlat'];
+    /* Re-click active segment cycles. */
     const contentTrioIds = ['optRvAll', 'optRvDirsOnly', 'optRvFilesOnly'];
     const viewPairs = [['optRvSubsOn', 'optRvSubsOff']];
     const viewRadioActive = {};
-    let pendingSmartViewReset = false;
-    /** Mirror checked state for toggle-on-reclick (loadSettings, setResultsViewRadios, column-sort flat switch). */
+    /** Mirror checked state for toggle-on-reclick (loadSettings, setResultsViewRadios). */
     function syncViewRadioActiveFromDom() {
-      for (const id of [...viewLayoutTrioIds, ...contentTrioIds]) {
+      for (const id of contentTrioIds) {
         const el = document.getElementById(id);
         if (el) viewRadioActive[id] = !!el.checked;
       }
@@ -16873,29 +16051,17 @@
         if (ey) viewRadioActive[y] = !!ey.checked;
       }
     }
-    function bindResultsViewRadiosChanged(isNonLayoutToggle) {
-      applyNaturalSortWhenTreeViewOn();
-      const kind = (isNonLayoutToggle && isSmartView()) ? 'manual' : 'identity';
-      if (kind === 'manual') smartRevertFP = null;
+    function bindResultsViewRadiosChanged() {
       saveSettings();
       updateSortHeaders();
-      applyResultsTablePathColumnVisibility();
-      void runSearchNow(kind);
+      void runSearchNow('identity');
       commitSearchHistoryNow();
     }
-    function wireViewTrioClickCycle(ids, isNonLayout) {
+    function wireViewTrioClickCycle(ids) {
       for (const id of ids) {
         const el = document.getElementById(id);
         if (!el) continue;
         el.addEventListener('click', () => {
-          if (id === 'optRvSmart') {
-            if (viewRadioActive[id]) {
-              reimposeSmartViewDefaults();
-            } else {
-              pendingSmartViewReset = true;
-            }
-            return;
-          }
           if (viewRadioActive[id]) {
             const idx = ids.indexOf(id);
             const nextId = ids[(idx + 1) % ids.length];
@@ -16910,19 +16076,12 @@
           }
         });
         el.addEventListener('change', () => {
-          if (id === 'optRvSmart' && pendingSmartViewReset) {
-            pendingSmartViewReset = false;
-            syncViewRadioActiveFromDom();
-            reimposeSmartViewDefaults();
-            return;
-          }
           syncViewRadioActiveFromDom();
-          bindResultsViewRadiosChanged(isNonLayout);
+          bindResultsViewRadiosChanged();
         });
       }
     }
-    wireViewTrioClickCycle(viewLayoutTrioIds, false);
-    wireViewTrioClickCycle(contentTrioIds, true);
+    wireViewTrioClickCycle(contentTrioIds);
     for (const [a, b] of viewPairs) {
       for (const id of [a, b]) {
         const el = document.getElementById(id);
@@ -16940,7 +16099,7 @@
         });
         el.addEventListener('change', () => {
           syncViewRadioActiveFromDom();
-          bindResultsViewRadiosChanged(true);
+          bindResultsViewRadiosChanged();
         });
       }
     }
@@ -17025,6 +16184,10 @@
     document.getElementById('optHoverPreview')?.addEventListener('change', () => {
       saveSettings();
       if (!isHoverPreviewOn()) hideHoverPreview();
+    });
+    document.getElementById('optFolderGroupHighlight')?.addEventListener('change', () => {
+      saveSettings();
+      syncResultsSelectionHighlight();
     });
     /* Hover preview: delegated so it survives re-renders; anything other than resting on the icon closes it. */
     document.addEventListener('mouseover', onResultRowHoverOver);
@@ -17773,13 +16936,6 @@
       let idx = navFocusIndexInFilteredRows(rows);
       if (idx < 0) idx = delta > 0 ? 0 : rows.length - 1;
       else idx = Math.max(0, Math.min(rows.length - 1, idx + delta));
-      // Skip collapse-hidden rows
-      const trs = document.querySelectorAll('#resultsTable tbody tr');
-      const step = delta > 0 ? 1 : -1;
-      while (idx >= 0 && idx < rows.length && trs[idx] && trs[idx].classList.contains('results-tree-collapse-hidden')) {
-        idx += step;
-      }
-      if (idx < 0 || idx >= rows.length) return;
       const row = rows[idx];
       resultsExclusiveSelectRow(row, fullPathForRow(row));
       runnerGrowRenderWindow(idx);
@@ -17888,13 +17044,6 @@
       scrollActiveResultsRowIntoViewNearest();
     }
 
-    /** True when tbody row i is hidden by tree collapse (display:none). */
-    function isResultsTableRowCollapseHidden(idx) {
-      const trs = document.querySelectorAll('#resultsTable tbody tr');
-      const tr = trs[idx];
-      return !!(tr && tr.classList.contains('results-tree-collapse-hidden'));
-    }
-
     /** Scroll a result row to the top of #resultsScroll (below sticky thead if present). */
     function scrollResultsRowToTopOfList(tr) {
       const wrap = document.getElementById('resultsScroll');
@@ -17967,7 +17116,6 @@
     function indexOfNextFolderSharingParent(rows, fromIdx, dir, parentNorm) {
       const step = dir > 0 ? 1 : -1;
       for (let i = fromIdx + step; i >= 0 && i < rows.length; i += step) {
-        if (isResultsTableRowCollapseHidden(i)) continue;
         const r = rows[i];
         if (!rowIsFolder(r)) continue;
         if (pathNormKey(T.parentDir(fullPathForRow(r))) !== parentNorm) continue;
@@ -18074,8 +17222,7 @@
       rows = rows.filter(rowIsFolder);
       const parKey = pathNormKey(par);
       rows = rows.filter((r) => pathNormKey(normalizeFolderPathForEverything(T.parentDir(fullPathForRow(r)))) === parKey);
-      if (shouldReorderRowsForSmartViewTree()) sortRowsForDisplay(rows, 'name', true);
-      else sortRowsForDisplay(rows, sortColumn, sortAsc);
+      sortRowsForDisplay(rows, sortColumn, sortAsc);
       return rows;
     }
 
@@ -18612,21 +17759,6 @@
         toggleSearchOptCheckbox('optHideTilde');
         return;
       }
-      if (modC && !e.shiftKey && (e.key === 'i' || e.key === 'I')) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        e.preventDefault();
-        const vl = ['optRvSmart', 'optRvTree', 'optRvFlat'];
-        const ci = vl.findIndex((id) => document.getElementById(id)?.checked);
-        const nextId = vl[(ci >= 0 ? ci : 0) + 1 >= vl.length ? 0 : ci + 1];
-        const t = document.getElementById(nextId);
-        if (t) {
-          t.checked = true;
-          syncViewRadioActiveFromDom();
-          t.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-        return;
-      }
       if (modC && !e.shiftKey && (e.key === 'j' || e.key === 'J')) {
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
@@ -18645,16 +17777,14 @@
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
         e.preventDefault();
-        const note = flatViewOnIfTreeForColumnSort();
-        applySortColumnKey('date_modified', note || undefined);
+        applySortColumnKey('date_modified');
         return;
       }
       if (modC && !e.shiftKey && (e.key === 'n' || e.key === 'N')) {
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
         e.preventDefault();
-        const note = flatViewOnIfTreeForColumnSort();
-        applySortColumnKey('name', note || undefined);
+        applySortColumnKey('name');
         return;
       }
       if (modC && !e.shiftKey && (e.key === 'r' || e.key === 'R')) {
@@ -18881,46 +18011,7 @@
         return;
       }
 
-      /* +/- toggle tree expand/collapse — multi-select: all top-level folder twisties; single: selected row */
-      if ((e.key === '+' || e.key === '-') && isTreeFoldUiActive()) {
-        e.preventDefault();
-        if (checkedPathsMap.size > 1) {
-          const tbody = document.getElementById('tbody');
-          if (!tbody) return;
-          const folderTrs = Array.from(tbody.querySelectorAll('tr.results-folder-row'));
-          if (!folderTrs.length) return;
-          const minDepth = Math.min(...folderTrs.map(tr => Number(tr.dataset.treeDepth) || 1));
-          for (const tr of folderTrs) {
-            if (Number(tr.dataset.treeDepth) !== minDepth) continue;
-            const twisty = tr.querySelector('.results-tree-twisty');
-            if (twisty) twisty.click();
-          }
-          return;
-        }
-        if (!selectedFullPath) return;
-        const row = selectedRowForActions();
-        if (!row || !rowIsFolder(row)) return;
-        const tr = document.querySelector('#resultsTable tbody tr.table-active');
-        if (!tr) return;
-        const twisty = tr.querySelector('.results-tree-twisty');
-        if (twisty) twisty.click();
-        return;
-      }
-
-      /* i / f / s: toggle view / content / subfolders radio pairs */
-      if (e.key === 'i') {
-        e.preventDefault();
-        const vl = ['optRvSmart', 'optRvTree', 'optRvFlat'];
-        const ci = vl.findIndex((id) => document.getElementById(id)?.checked);
-        const nextId = vl[(ci >= 0 ? ci : 0) + 1 >= vl.length ? 0 : ci + 1];
-        const t = document.getElementById(nextId);
-        if (t) {
-          t.checked = true;
-          syncViewRadioActiveFromDom();
-          t.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-        return;
-      }
+      /* f / s: toggle content / subfolders radio pairs */
       if (e.key === 'f') {
         e.preventDefault();
         const cl = ['optRvAll', 'optRvDirsOnly', 'optRvFilesOnly'];
@@ -18953,23 +18044,20 @@
         nextEl?.dispatchEvent(new Event('change', { bubbles: true }));
         return;
       }
-      /* z / m / n: sort by size / modified / name (in Tree, switches to Flat first — see status bar). */
+      /* z / m / n: sort by size / modified / name. */
       if (e.key === 'z') {
         e.preventDefault();
-        const note = flatViewOnIfTreeForColumnSort();
-        applySortColumnKey('size', note || undefined);
+        applySortColumnKey('size');
         return;
       }
       if (e.key === 'm') {
         e.preventDefault();
-        const note = flatViewOnIfTreeForColumnSort();
-        applySortColumnKey('date_modified', note || undefined);
+        applySortColumnKey('date_modified');
         return;
       }
       if (e.key === 'n') {
         e.preventDefault();
-        const note = flatViewOnIfTreeForColumnSort();
-        applySortColumnKey('name', note || undefined);
+        applySortColumnKey('name');
         return;
       }
       if (e.key === 'T') { e.preventDefault(); void keyboardRemoveCheckedTags(); return; }
@@ -19140,7 +18228,7 @@
       });
     }
 
-    const treeViewDefaultsFreshProfile = localStorage.getItem(LS.sortBy) === null;
+    const freshProfileSortsByPath = localStorage.getItem(LS.sortBy) === null;
     wireEverythingConnectionSectionCollapseOnce();
     wireTagfoxSettingsSectionCollapsesOnce();
     loadSettings();
@@ -19350,17 +18438,8 @@
     loadPaneWidthsFromStorage();
     loadViewerDocSplitFromStorage();
     loadColWidthsFromStorage();
-    applyResultsTablePathColumnVisibility();
-    if (treeViewDefaultsFreshProfile) {
-      if (localStorage.getItem(LS.flatView) === null && localStorage.getItem(LS.resultsViewMode) === null) {
-        setResultsViewRadios('smart', true, 'all');
-        localStorage.setItem(LS.resultsLayout, 'smart');
-        localStorage.setItem(LS.resultsContent, 'all');
-        localStorage.setItem(LS.flatView, '0');
-        localStorage.setItem(LS.showSubfolders, '1');
-        localStorage.setItem(LS.hideFiles, '0');
-        localStorage.setItem(LS.treeView, '1');
-      }
+    applyTableColWidths();
+    if (freshProfileSortsByPath) {
       sortColumn = 'path';
       sortAsc = true;
       localStorage.setItem(LS.sortBy, sortColumn);
@@ -19571,7 +18650,7 @@
           if (el) { el.value = String(q == null ? '' : q); el.dispatchEvent(new Event('input', { bubbles: true })); }
         },
         setRecency: (mode) => { setRecencyFilterMode(mode); void runSearchNow('identity'); },
-        setView: (subsOn, content) => { applyResultsViewRadiosToDom('smart', !!subsOn, content || 'all'); syncViewRadioActiveFromDom(); void runSearchNow('identity'); },
+        setView: (subsOn, content) => { applyResultsViewRadiosToDom(!!subsOn, content || 'all'); syncViewRadioActiveFromDom(); void runSearchNow('identity'); },
         setScope: (root) => { const e = document.getElementById('rootFolder'); if (e) e.value = String(root || ''); void runSearchNow('identity'); },
         autoTick: () => maybeAutoRefreshSearchTick(),
         loadMore: () => loadMoreResults(),
@@ -19635,7 +18714,6 @@
           query: document.getElementById('query')?.value || '',
           scope: document.getElementById('rootFolder')?.value || '',
           subfolders: isShowSubfolders(),
-          layout: resultsLayoutFromUi(),
           selected: selectedFullPath || '',
           rows: listRowsForUi().map((r) => fullPathForRow(r)),
           stars: loadFavouriteFolders(),
@@ -19674,11 +18752,9 @@
           foldersOnly: isFoldersOnly(),
           filesOnly: isFilesOnly(),
           showSubfolders: isShowSubfolders(),
-          smart: isSmartView(),
           n_lastRows: lastRows.length,
           n_afterTags: filteredRowsAfterTagsOnly().length,
           n_beforeAdvanced: filteredRowsBeforeAdvancedPathHides().length,
-          n_filteredRows: filteredRows().length,
           n_listRowsForUi: listRowsForUi().length,
           rows: lastRows.slice(0, 8).map((r) => ({ path: fullPathForRow(r), folder: rowIsFolder(r), mtime: modifiedTimeMs(r) })),
         }),

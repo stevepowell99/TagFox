@@ -2,12 +2,12 @@
 
 Steve decided on 24 October 2026 to keep only Runner: hide Classic first, then delete its code in stages. Classic is hidden (no layout switch, every real start in Runner; the test hook still opens a fresh profile in Classic so its tests guard the code until it goes). This file is the inventory to delete against.
 
-- **Each stage** deletes one area (for example Tree and Smart views), its CSS and HTML, and the tests that cover only it, and keeps every piece Runner depends on (listed below). Run the full suite after each stage.
+- **Each stage** deletes one area (for example column resizing), its CSS and HTML, and the tests that cover only it, and keeps every piece Runner depends on (listed below). Run the full suite after each stage.
 - **Steve decided on 25 October 2026** what Runner gains before Classic's code goes: the deadline filters as `/` Due commands; a "Show only starred items" command instead of a visible star list; and Windows Recent as a ranking boost rather than a list. A "Search this folder only" command keeps typing to the current folder's own contents. All four are in Runner now. The Shelf shows in Runner (`2d8c22b`), and so does the Restart button, in the search box. Saved searches are back in Runner too (Steve, 25 October 2026): `/` commands ("Save this search", then one per saved search) and `Alt`+`1`…`9`, reading the same `LS.favSearches` list Classic saved, so stage two took only Classic's bar.
 
 Read-only survey by a subagent at main `74c8ac1`; line numbers are approximate. Since then Runner has gained chips for the deadline and hide-until filters (the hazard the survey found).
 
-**Summary.** Runner would lose Smart view, Tree view and the tag bar's counts. Classic cannot be cut out cleanly, because Runner keeps its state in Classic's hidden controls.
+**Summary.** Runner would lose the tag bar's counts. Classic cannot be cut out cleanly, because Runner keeps its state in Classic's hidden controls.
 
 ## What only Classic does
 
@@ -17,8 +17,6 @@ Read-only survey by a subagent at main `74c8ac1`; line numbers are approximate. 
 
 | Feature | In Classic | Runner? | Code |
 |---|---|---|---|
-| Smart view (auto narrow and widen, "Big folder!" chip) | `#optRvSmart`, `i` / Ctrl+I | None; Runner is always flat | `smartBeforePaint`, `smartAfterPaint`, `smartSearchShouldStartBroad`, `reimposeSmartViewDefaults` (~250 lines) |
-| Tree view (path grouping, twisties, collapse state) | `#optRvTree`, `+` / `-`; Settings tree-performance option | None | `buildPathGroupedDisplayRows`, `pathTreeGutterStringsForDepths`, `refreshResultsTreeCollapseHidden` (~300 lines) |
 | Subfolders on/off | `optRvSubsOn/Off`, `s` / Ctrl+S | Yes: the `/` command "Search this folder only" and its chip | `applyResultsViewRadiosToDom`, `isShowSubfolders` |
 | Files and folders / folders only / files only | `f` / Ctrl+F | Partial: `/folders`, `/files` | `resultsContentMode` |
 | Match options | toolbar, bare letters | Partial: `/` commands and Ctrl keys | `searchOptionsFromUI`, `toggleSearchOptCheckbox` |
@@ -45,12 +43,12 @@ History back/forward (Runner: Alt+←/→), Undo (Ctrl+Z), Restart (Runner: the 
 ### Viewer, Settings, global shortcuts
 
 - Viewer modes and the splitter `#splitProps` are shared; only Classic's remembered width (`LS.propsWidthPx`, `propsPanePx`) is Classic's. Runner keeps its own (`LS.runnerViewerWidthPx`) and holds the Viewer at a third until the divider is dragged.
-- Settings: only "Open the shelf folder" and the tree-performance option are Classic's.
-- Ctrl+Alt+Space and Quick TODO are shared. **Ctrl+Shift+Space** (`openRecentTab`) resets the search in place in both layouts; Runner's branch is guarded in `runner-layout.cjs`, and Classic's reset (every option off but Match path, smart view) in `recent-tab.cjs`.
+- Settings: only "Open the shelf folder" is Classic's. **Folder groups** (Search results) frames a selected folder with the rows under it that follow it, in both layouts.
+- Ctrl+Alt+Space and Quick TODO are shared. **Ctrl+Shift+Space** (`openRecentTab`) resets the search in place in both layouts; Runner's branch is guarded in `runner-layout.cjs`, and Classic's reset (every option off but Match path, subfolders and everything shown) in `recent-tab.cjs`.
 
 ## Classic code Runner depends on
 
-- **Hidden controls as Runner's state store (the main obstacle):** `#rootFolder` (current folder); `#optPath`, `#optHideSpecial`, `#optHideTilde`, `#optCase`, `#optWholeWord`, `#optDiacritics`; the recency radios; the `optRv*` view radios; `sortColumn`/`sortAsc` and `compareRowsBySort`.
+- **Hidden controls as Runner's state store (the main obstacle):** `#rootFolder` (current folder); `#optPath`, `#optHideSpecial`, `#optHideTilde`, `#optCase`, `#optWholeWord`, `#optDiacritics`; the recency radios; the `optRvSubs*` and content (`optRvAll`, `optRvDirsOnly`, `optRvFilesOnly`) radios; `sortColumn`/`sortAsc` and `compareRowsBySort`.
 - **Breadcrumb:** `#breadcrumbBar`, `renderScopeBreadcrumb`, `goToBreadcrumbFolder`, the flyout and dropdown helpers, the six `btnScopeBar*` buttons.
 - **Tags:** the filter state and functions, `appendTagFiltersToEverythingQuery`, `renderTagBar` (runs on every search into the hidden bar), the tag store and modal, and the rename, new-folder, paste-target, bulk-rename and recycle modals.
 - **Results table:** `renderTableImpl` (including Classic's row buttons), `#bulkBar`, `loadMoreResults`, `rowActionStripHandleKeydown`.
@@ -59,13 +57,12 @@ History back/forward (Runner: Alt+←/→), Undo (Ctrl+Z), Restart (Runner: the 
 - **Tab state:** `tabs`, `saveActiveTabStateFromUi` (called by `setRunnerMode`), `persistTabsToStorage`, the load-more persist and startup tab init. Collapsing it is a stage of its own (below).
 - **History and undo:** `searchHist`, `goSearchHistory`, `runUndo`.
 - **Clicked hidden controls:** `#btnToggleDarkMode`, `#btnToggleSettings`, `#helpModal`, `#settingsPanel`, `#selToggleOpens`; `#statusMain` and `setStatusMain`.
-- **Smart and tree code is guarded, not isolated:** `runSearch` sets the Smart state and calls `smartBeforePaint`/`smartAfterPaint`; `renderTableImpl` and `listRowsForUi` call the tree helpers.
 - **Keys:** Runner's key table hands several keys to Classic's handler (Ctrl+R, Alt+←/→, F5, Space, Ctrl+A, Ctrl+Shift+1..9, Shift+Space, F2, Ctrl+Shift+N, Ctrl+H, F1, Ctrl+,), and some work in Runner only by falling through to it: Ctrl+W, Ctrl+., Ctrl+J/K, Ctrl+Shift+R, Ctrl+Z, Ctrl+↑ / Alt+↑, Ctrl+Shift+Home.
 
 ## Classic-only keys
 
-- Bare letters outside a text field: `i`, `f`, `s`, `w`, `p`, `.`, `t`, `r`, `z`, `m`, `n`, `j`, `k`, `+`, `-`, Home, End, and `/` (focus toggle).
-- Ctrl+I layout cycle, Ctrl+F content cycle, Ctrl+S subfolders, Ctrl+L recent folders, Ctrl+Home clear folder, Ctrl+Enter scope to the parent, Ctrl+U unfocus search.
+- Bare letters outside a text field: `f`, `s`, `w`, `p`, `.`, `t`, `r`, `z`, `m`, `n`, `j`, `k`, Home, End, and `/` (focus toggle).
+- Ctrl+F content cycle, Ctrl+S subfolders, Ctrl+L recent folders, Ctrl+Home clear folder, Ctrl+Enter scope to the parent, Ctrl+U unfocus search.
 - Left from the results can scope to the first subfolder towards a deeper item; Runner's Left only goes up.
 
 ## Tests
@@ -78,7 +75,7 @@ History back/forward (Runner: Alt+←/→), Undo (Ctrl+Z), Restart (Runner: the 
 
 ## Stages named so far
 
-- **Collapse the tab state to Runner's one search.** Nothing switches tabs, but the search state is still an array: `tabs`, `activeTabId`, `nextTabId`, `makeTabId`, `newBlankTab`, `tabIndexById`, `activeTab`; `persistTabsToStorage` and `loadTabsFromStorage` (`LS.tabsState`, which still restores every tab a Classic session saved); the copies `saveActiveTabStateFromUi` makes after every search and load-more, which only the tests read; and the test hook's `state().tabCount` and `activeTabRows` with the harness's "active-tab state in sync" check. `openRecentTab`, `RECENT_TAB_ACCEL`, `tagfox-open-recent-tab`, `setRecentTabOpenHandler` and `recent-tab.cjs` are named for a tab they no longer open. `runSearchNow`'s `singlePaneOnly` option is passed but never read.
+- **Collapse the tab state to Runner's one search.** Nothing switches tabs, but the search state is still an array: `tabs`, `activeTabId`, `nextTabId`, `makeTabId`, `newBlankTab`, `tabIndexById`, `activeTab`; `persistTabsToStorage` and `loadTabsFromStorage` (`LS.tabsState`, which still restores every tab a Classic session saved); the copies `saveActiveTabStateFromUi` makes after every search and load-more, which only the tests read; and the test hook's `state().tabCount` and `activeTabRows` with the harness's "active-tab state in sync" check. `openRecentTab`, `RECENT_TAB_ACCEL`, `tagfox-open-recent-tab`, `setRecentTabOpenHandler` and `recent-tab.cjs` are named for a tab they no longer open. `runSearchNow`'s `singlePaneOnly` option is passed but never read. The nested-search path (`opts.nested` in `runSearchNow`, `topLevelSearchDepth` in `runSearch`) existed for Smart view's re-searches and has no caller now, and `eventKind` now reaches only the search debug log.
 
 ## Decisions before any deletion
 

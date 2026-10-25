@@ -297,38 +297,6 @@
           type="button"
           class="btn btn-link text-body text-decoration-none p-0 d-flex align-items-center gap-2 w-100 text-start"
           aria-expanded="false"
-          aria-controls="settingsTreePerfDetails"
-          data-bs-toggle="collapse"
-          data-bs-target="#settingsTreePerfDetails"
-          data-tagfox-settings-collapse="settingsTreePerfDetails"
-          title="Show or hide tree view performance options"
-        >
-          <i
-            class="fa-solid fa-chevron-right tagfox-settings-section-chevron flex-shrink-0 d-inline-flex align-items-center justify-content-center"
-            style="width: 1.5rem"
-            aria-hidden="true"
-          ></i>
-          <span class="h6 fw-semibold mb-0">Improve performance if tree view is slow</span>
-        </button>
-      </div>
-      <div id="settingsTreePerfDetails" class="collapse">
-        <div class="mb-0">
-          <div class="form-check mb-1">
-            <input class="form-check-input" type="checkbox" id="optTreeFolding" autocomplete="off" checked />
-            <label class="form-check-label" for="optTreeFolding">Show expand/collapse (<kbd>+</kbd>/<kbd>−</kbd>) in tree</label>
-          </div>
-          <div class="form-check mb-0">
-            <input class="form-check-input" type="checkbox" id="optTreeGroupHL" autocomplete="off" checked />
-            <label class="form-check-label" for="optTreeGroupHL">Highlight items inside the same folder</label>
-          </div>
-        </div>
-      </div>
-
-      <div class="mb-3 pb-2 border-bottom tagfox-settings-section-title">
-        <button
-          type="button"
-          class="btn btn-link text-body text-decoration-none p-0 d-flex align-items-center gap-2 w-100 text-start"
-          aria-expanded="false"
           aria-controls="settingsSearchResultsDetails"
           data-bs-toggle="collapse"
           data-bs-target="#settingsSearchResultsDetails"
@@ -367,6 +335,12 @@
             for="optHoverPreview"
             title="Show a larger floating preview when the pointer rests on the icon at the left of an image, video, PDF or Office row"
             >Hover preview</label>
+          <input type="checkbox" class="btn-check" id="optFolderGroupHighlight" autocomplete="off" checked />
+          <label
+            class="btn btn-outline-secondary btn-sm"
+            for="optFolderGroupHighlight"
+            title="Frame a selected folder together with the rows under it that follow it"
+            >Folder groups</label>
         </div>
       </div>
 
@@ -635,7 +609,7 @@
         </button>
       </div>
 
-      <!-- Search row: query + view mode (Smart/Tree/Flat, subs, content); recency + Advanced on tag row RHS -->
+      <!-- Search row: query + view (subfolders, content); recency + Advanced on tag row RHS -->
       <div class="tagfox-search-toolbar-row d-flex align-items-center gap-2 min-w-0 flex-wrap">
         <div id="queryInputGroup" class="input-group input-group-sm tagfox-query-input min-w-0">
           <button type="button" class="btn btn-sm d-inline-flex align-items-center justify-content-center p-0 flex-shrink-0 align-self-stretch tagfox-toolbar-clear tagfox-query-clear" style="width: 2rem; min-width: 2rem" id="btnClearQuery" title="Clear search text" aria-label="Clear search text">
@@ -667,18 +641,7 @@
         <!-- Runner only: one chip per setting that differs from Runner's defaults (RUNNER_FILTER_CHIPS). -->
         <div id="runnerFilterChips" class="tagfox-runner-only tagfox-runner-filter-chips d-none" aria-label="Filters in use"></div>
         <div class="d-flex align-items-center flex-shrink-0 flex-wrap gap-2 tagfox-search-opts-rhs tagfox-status-view-opts">
-          <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair tagfox-view-trio tagfox-rv-layout-trio flex-shrink-0" role="group" aria-label="View mode">
-            <input type="radio" class="btn-check" name="rvViewMode" id="optRvSmart" value="smart" autocomplete="off" checked />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvSmart" title="Smart view — auto-adjust subfolders/content — X; L cycles layout"
-              ><i class="fa-solid fa-wand-magic-sparkles fa-fw" aria-hidden="true"></i></label>
-            <input type="radio" class="btn-check" name="rvViewMode" id="optRvTree" value="tree" autocomplete="off" />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvTree" title="Tree view — L cycles layout"
-              ><i class="fa-solid fa-sitemap fa-fw" aria-hidden="true"></i></label>
-            <input type="radio" class="btn-check" name="rvViewMode" id="optRvFlat" value="flat" autocomplete="off" />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvFlat" title="Flat view — L cycles layout"
-              ><i class="fa-solid fa-list fa-fw" aria-hidden="true"></i></label>
-          </div>
-          <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair tagfox-rv-smart-secondary flex-shrink-0" role="group" aria-label="Subfolders">
+          <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair flex-shrink-0" role="group" aria-label="Subfolders">
             <input type="radio" class="btn-check" name="rvSubfolders" id="optRvSubsOn" value="on" autocomplete="off" checked />
             <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvSubsOn" title="Include subfolders — S toggles subfolders"
               ><i class="fa-solid fa-folder-tree fa-fw" aria-hidden="true"></i></label>
@@ -686,7 +649,7 @@
             <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvSubsOff" title="This folder only — S toggles subfolders"
               ><i class="fa-solid fa-folder fa-fw" aria-hidden="true"></i></label>
           </div>
-          <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair tagfox-content-trio tagfox-rv-smart-secondary flex-shrink-0" role="group" aria-label="Content filter">
+          <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair tagfox-content-trio flex-shrink-0" role="group" aria-label="Content filter">
             <input type="radio" class="btn-check" name="rvContent" id="optRvAll" value="all" autocomplete="off" checked />
             <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvAll" title="Files and folders — F cycles files/folders"
               ><i class="fa-solid fa-copy fa-fw" aria-hidden="true"></i></label>
@@ -753,23 +716,22 @@
                 <input type="checkbox" class="form-check-input m-0 results-cb" id="chkSelectAllResults" autocomplete="off" aria-label="Select all in list" />
               </th>
               <th class="sortable-th" data-sort="name" title="Sort by name — n">
-                <span class="th-resize" data-resize-left="0" data-resize-right="1" data-resize-mode="always" title="Drag to resize"></span>
+                <span class="th-resize" data-resize-left="0" data-resize-right="1" title="Drag to resize"></span>
                 <span class="sort-label">Name</span>
               </th>
               <th class="sortable-th" data-sort="path" title="Sort by path">
-                <span class="th-resize" data-resize-left="1" data-resize-right="2" data-resize-mode="flat" title="Drag to resize"></span>
+                <span class="th-resize" data-resize-left="1" data-resize-right="2" title="Drag to resize"></span>
                 <span class="sort-label">Path</span>
               </th>
-              <!-- 2|3 serves both views: in tree view Path is hidden and its weight folds into Name, so this is still the boundary left of Actions. -->
               <th class="align-middle" aria-label="Row actions">
-                <span class="th-resize" data-resize-left="2" data-resize-right="3" data-resize-mode="always" title="Drag to resize"></span>
+                <span class="th-resize" data-resize-left="2" data-resize-right="3" title="Drag to resize"></span>
               </th>
               <th class="sortable-th text-end" data-sort="size" title="Sort by size — z">
-                <span class="th-resize" data-resize-left="3" data-resize-right="4" data-resize-mode="always" title="Drag to resize"></span>
+                <span class="th-resize" data-resize-left="3" data-resize-right="4" title="Drag to resize"></span>
                 <span class="sort-label">Size</span>
               </th>
               <th class="sortable-th" data-sort="date_modified" title="Sort by modified — m">
-                <span class="th-resize" data-resize-left="4" data-resize-right="5" data-resize-mode="always" title="Drag to resize"></span>
+                <span class="th-resize" data-resize-left="4" data-resize-right="5" title="Drag to resize"></span>
                 <span class="sort-label">Modified</span>
               </th>
             </tr>
@@ -1114,7 +1076,6 @@
   >
     <i class="fa-solid fa-circle-info tagfox-runner-only tagfox-runner-status-icon" aria-hidden="true"></i>
     <span id="statusMain" class="min-w-0"></span>
-    <span id="statusSmartNote" class="d-none tagfox-status-hidden-hint flex-shrink-0"></span>
   </footer>
 
   <!-- Quick TODO: fixed strip (z-index in styles.css — below modal backdrop 1100 so #tagModal stays on top). -->
