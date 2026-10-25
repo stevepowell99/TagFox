@@ -77,6 +77,7 @@
       runnerStarredOnly: 'tagBrowserRunnerStarredOnly',
       runnerThisFolderOnly: 'tagBrowserRunnerThisFolderOnly',
       runnerViewerOff: 'tagBrowserRunnerViewerOff',
+      runnerViewerWidthPx: 'tagBrowserRunnerViewerW',
       runnerWordStarts: 'tagBrowserRunnerWordStarts',
       /* Set once Runner's old hide-~ default has been carried over to showing ~ paths ranked down. */
       runnerTildeShownMoved: 'tagBrowserRunnerTildeShownMoved',
@@ -228,6 +229,8 @@
     }
 
     let propsPanePx = 300;
+    /** Runner's Viewer width once its divider has been dragged; null keeps it at a third of the window. */
+    let runnerViewerPx = null;
     const PROPS_PANE_MIN_PX = 200;
     const PROPS_PANE_MAX_PX = 1600;
     /* The results pane keeps this much whatever the Viewer asks for, so a drag cannot crush it. */
@@ -2592,9 +2595,18 @@
       return Math.max(PROPS_PANE_MIN_PX, Math.min(PROPS_PANE_MAX_PX, room));
     }
 
+    function clampPropsPaneWidthPx(px) {
+      return Math.max(PROPS_PANE_MIN_PX, Math.min(maxPropsPaneWidthPx(), px));
+    }
+
     function applyPaneWidths() {
-      const w = Math.max(PROPS_PANE_MIN_PX, Math.min(maxPropsPaneWidthPx(), propsPanePx));
-      document.getElementById('propsAside').style.width = w + 'px';
+      const aside = document.getElementById('propsAside');
+      if (!aside) return;
+      /* Runner's CSS holds the Viewer at a third until the divider is dragged; the class lets the inline width through. */
+      const runnerSized = isRunnerMode() && runnerViewerPx != null;
+      document.body.classList.toggle('tagfox-runner-viewer-sized', runnerSized);
+      if (isRunnerMode()) aside.style.width = runnerSized ? clampPropsPaneWidthPx(runnerViewerPx) + 'px' : '';
+      else aside.style.width = clampPropsPaneWidthPx(propsPanePx) + 'px';
     }
 
     function applyViewerDocSplitSizes() {
@@ -2661,11 +2673,15 @@
     function loadPaneWidthsFromStorage() {
       const pw = parseInt(localStorage.getItem(LS.propsWidthPx) || '', 10);
       if (Number.isFinite(pw) && pw >= PROPS_PANE_MIN_PX && pw <= PROPS_PANE_MAX_PX) propsPanePx = pw;
+      const rw = parseInt(localStorage.getItem(LS.runnerViewerWidthPx) || '', 10);
+      runnerViewerPx = Number.isFinite(rw) && rw >= PROPS_PANE_MIN_PX && rw <= PROPS_PANE_MAX_PX ? rw : null;
       applyPaneWidths();
     }
 
     function persistPaneWidths() {
       localStorage.setItem(LS.propsWidthPx, String(propsPanePx));
+      if (runnerViewerPx == null) localStorage.removeItem(LS.runnerViewerWidthPx);
+      else localStorage.setItem(LS.runnerViewerWidthPx, String(runnerViewerPx));
     }
 
     /**
@@ -2708,7 +2724,9 @@
           split.setPointerCapture(e.pointerId);
         } catch (_) {}
         const startX = e.clientX;
-        const startW = propsPanePx;
+        /* The width on screen, not the stored one: Runner's third has no stored width until this drag. */
+        const startW = Math.round(document.getElementById('propsAside').getBoundingClientRect().width);
+        let moved = false;
         /* Measured once per drag: past this the panel stops growing, and counting past it would
            buy dead travel that has to be dragged back before the divider moves again. */
         const maxW = maxPropsPaneWidthPx();
@@ -2719,7 +2737,10 @@
         }
         function move(ev) {
           // Dragging the handle right widens the left (results) pane; inverted delta matches that motion.
-          propsPanePx = Math.min(maxW, Math.max(PROPS_PANE_MIN_PX, startW - (ev.clientX - startX)));
+          const w = Math.min(maxW, Math.max(PROPS_PANE_MIN_PX, startW - (ev.clientX - startX)));
+          if (isRunnerMode()) runnerViewerPx = w;
+          else propsPanePx = w;
+          moved = true;
           if (!raf) raf = requestAnimationFrame(flushPaneWidth);
         }
         function up() {
@@ -2735,12 +2756,19 @@
           flushPaneWidth();
           split.classList.remove('is-dragging');
           document.body.classList.remove('tagfox-props-split-drag');
-          persistPaneWidths();
+          if (moved) persistPaneWidths();
         }
         split.addEventListener('pointermove', move);
         split.addEventListener('pointerup', up);
         split.addEventListener('pointercancel', up);
         split.addEventListener('lostpointercapture', up);
+      });
+      /* Runner: a double-click puts the Viewer back to a third of the window. */
+      split.addEventListener('dblclick', () => {
+        if (!isRunnerMode()) return;
+        runnerViewerPx = null;
+        applyPaneWidths();
+        persistPaneWidths();
       });
     }
 
@@ -3214,6 +3242,9 @@
       renderRunnerScopeChip();
       renderRunnerFilterChips();
       applyRunnerViewerOff();
+      applyPaneWidths();
+      const split = document.getElementById('splitProps');
+      if (split) split.title = on ? 'Drag to resize the Viewer; double-click for a third of the window' : 'Drag';
       scheduleSyncShelfAsideWidth();
       refreshRunnerWindowsRecent();
     }

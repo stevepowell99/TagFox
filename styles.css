@@ -2257,7 +2257,7 @@ body:not(.tagfox-runner) .tagfox-runner-only {
 body.tagfox-runner .tagfox-app-header,
 body.tagfox-runner .tag-toolbar-row,
 body.tagfox-runner .tagfox-status-view-opts,
-body.tagfox-runner #splitProps,
+body.tagfox-runner.tagfox-runner-viewer-off #splitProps,
 body.tagfox-runner #resultsTable thead {
   display: none !important;
 }
@@ -3019,9 +3019,44 @@ body.tagfox-runner #propsAside {
   color: var(--runner-ink);
 }
 body.tagfox-runner #propsAside:not(.props-theater) {
+  margin: 1rem 1.25rem 0.5rem 0;
+}
+body.tagfox-runner:not(.tagfox-runner-viewer-sized) #propsAside:not(.props-theater) {
   width: calc(33.333% - 1.25rem) !important;
   flex: 0 0 calc(33.333% - 1.25rem);
-  margin: 1rem 1.25rem 0.5rem 0;
+}
+/* Dragged: the width applyPaneWidths sets inline. */
+body.tagfox-runner.tagfox-runner-viewer-sized #propsAside:not(.props-theater) {
+  flex: 0 0 auto;
+}
+/* The divider takes no width of its own, so the gap between the two cards stays as it was: its grab band
+   covers that gap (the centre panel's right padding) and a thin bar lights up in it on hover. */
+body.tagfox-runner #splitProps {
+  width: 0;
+  background: transparent;
+  z-index: 5;
+}
+body.tagfox-runner #splitProps::before {
+  left: -1.25rem;
+  right: 0;
+}
+body.tagfox-runner #splitProps::after {
+  content: '';
+  position: absolute;
+  top: 1rem;
+  bottom: 0.5rem;
+  left: calc(-0.625rem - 2px);
+  width: 4px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+body.tagfox-frameless.tagfox-runner #splitProps::after {
+  top: 0.35rem;
+}
+body.tagfox-runner #splitProps:hover::after,
+body.tagfox-runner #splitProps.is-dragging::after {
+  background: var(--tb-accent);
 }
 body.tagfox-frameless.tagfox-runner #propsAside:not(.props-theater) {
   margin-top: 0.35rem;

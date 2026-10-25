@@ -44,7 +44,7 @@ History back/forward (Runner: Alt+←/→), Undo (Ctrl+Z), Restart (Runner: the 
 
 ### Viewer, Settings, global shortcuts
 
-- Viewer modes are shared; only the splitter `#splitProps` and its remembered width are Classic's (Runner: a fixed third, Alt+P).
+- Viewer modes and the splitter `#splitProps` are shared; only Classic's remembered width (`LS.propsWidthPx`, `propsPanePx`) is Classic's. Runner keeps its own (`LS.runnerViewerWidthPx`) and holds the Viewer at a third until the divider is dragged.
 - Settings: only "Open the shelf folder" and the tree-performance option are Classic's.
 - Ctrl+Alt+Space and Quick TODO are shared. **Ctrl+Shift+Space** (`openRecentTab`) resets the search in place in both layouts; Runner's branch is guarded in `runner-layout.cjs`, and Classic's reset (every option off but Match path, smart view) in `recent-tab.cjs`.
 
