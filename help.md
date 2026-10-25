@@ -79,7 +79,7 @@ Meanwhile, tools like Google Drive train you to type a word and expect the right
 <!-- help:tab {"id":"features","label":"✨ Features"} -->
 
 - ⌨️ **Keyboard-first** — navigate, tag, rename, bulk-edit and search without touching the mouse. See **⌨️ Shortcuts**.
-- ⭐ **Favourite folders & saved searches** — drag chips to reorder; folders: `Ctrl`+`Shift`+`1`…`9`; saved searches: `Ctrl`+`1`…`9` (or click).
+- ⭐ **Favourite folders** — drag chips to reorder; `Ctrl`+`Shift`+`1`…`9` (or click).
 - 🔍 **Three view switches** — Flat/Tree, Subfolders on/off, Files+folders/Folders only (combine freely). Plus recency buttons (1h, 1d, 1w, 1m, 1y) to filter “what changed recently”.
 - 👁️ **Fast previews** — images, PDFs, Word, Excel, PowerPoint, text, JSON, markdown and more, right in the Viewer panel.
 - 🏷️ **Filename tags** — add, remove and filter by `xk`/`xp`/`xx` tags. Tags scan your folder automatically; click them to filter results.
@@ -228,11 +228,6 @@ Type to search. With the search box empty you see the current folder's own conte
 - In **Peek Mode**, the sidebar also peeks open while you drag files onto it. That lets you reach the folder pills and their ▾ menus during a drag, and while it is peeked open the full names are shown instead of being truncated.
 - **Drag** a favourite folder pill (grab anywhere except the subfolder ▾ control or ×) to reorder. While dragging, the **gaps** between pills widen and the **active gap** highlights — drop there (not on a pill). `Ctrl`+`Shift`+`1`…`9` follows *top-to-bottom* order.
 
-### 🔖 Saved searches
-
-- The 💾 on the **saved searches** row saves your entire search state — query, folder, tags, filters, sort, and view mode.
-- **Drag** a numbered chip (not ×) to reorder; the **highlighted gap** is the drop target. `Ctrl`+`1`…`9` restores the search in that slot, or click the chip.
-
 <!-- help:tab {"id":"shelf","label":"📦 Shelf"} -->
 
 ### 📦 What is the Shelf?
@@ -353,7 +348,6 @@ Things that might trip you up:
 <div class="table-responsive">
 <table class="table table-sm table-striped mb-0"><thead><tr><th scope="col" style="width:40%">Shortcut</th><th scope="col">Action</th></tr></thead><tbody>
 <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>…<kbd>9</kbd></td><td>Favourite folder 1-9</td></tr>
-<tr><td><kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>9</kbd></td><td>Saved search 1-9</td></tr>
 <tr><td><kbd>Shift</kbd>+<kbd>Space</kbd></td><td>Toggle Viewer fullscreen</td></tr>
 <tr><td><kbd>F1</kbd> or <kbd>Ctrl</kbd>+<kbd>/</kbd></td><td>Open this help</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>,</kbd></td><td>Open / close Settings</td></tr>

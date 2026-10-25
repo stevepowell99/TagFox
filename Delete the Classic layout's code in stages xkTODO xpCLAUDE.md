@@ -7,7 +7,7 @@ Steve decided on 24 October 2026 to keep only Runner: hide Classic first, then d
 
 Read-only survey by a subagent at main `74c8ac1`; line numbers are approximate. Since then Runner has gained chips for the deadline and hide-until filters (the hazard the survey found).
 
-**Summary.** Runner would lose Smart view, Tree view, the favourites column, saved searches, Windows Recent, the deadline filters and the tag bar's counts. Classic cannot be cut out cleanly, because Runner keeps its state in Classic's hidden controls. Classic is about a fifth of `renderer.js` (4,000 to 4,500 of 20,759 lines) and about a quarter of `styles.css` and `index.html`.
+**Summary.** Runner would lose Smart view, Tree view, the favourites column, Windows Recent, the deadline filters and the tag bar's counts. Classic cannot be cut out cleanly, because Runner keeps its state in Classic's hidden controls. Classic is about a fifth of `renderer.js` (4,000 to 4,500 of 20,759 lines) and about a quarter of `styles.css` and `index.html`.
 
 ## What only Classic does
 
@@ -30,13 +30,12 @@ Read-only survey by a subagent at main `74c8ac1`; line numbers are approximate. 
 | Status line with hit count and filter hints | standing line | None: Runner shows no count except "N of M ranked" | `formatResultsStatusMainHtml`, `hiddenDueToStatusHtml` |
 | Empty-result pulse hints | toolbar pulses | Partial: only the box pulses | `updateEmptyResultsPulseHints` |
 
-### Favourites, recents, saved searches
+### Favourites and recents
 
 | Feature | Runner? | Code |
 |---|---|---|
 | Favourites column (up to 30): fixed or peek rail, splitter, ▾ subfolder menus, drag to reorder, drop files on a pill to move or copy, save current folder | Partial: the store is shared (Ctrl+D stars, Ctrl+Shift+1..9 opens the Nth star, stars rank higher, "Show only starred items" lists them), but there is no reorder and no way to star the current folder | `renderFavFoldersBar` and friends (~1,160 lines in all) |
 | Windows Recent folders and files | A ranking boost (`RUNNER_RANK.windowsRecent`), no list | `renderRecentFoldersBar`, `renderRecentFilesBar` go; IPC `windows-recent-folders`/`-files` and `scanWindowsRecentLnkTargets` in `main.js` stay for the boost |
-| Saved searches (Ctrl+1..9) | None; in Runner Ctrl+1..9 opens row n | `renderFavSearchesBar`, `applyFavouriteSearchState` |
 
 ### Shelf
 
@@ -73,7 +72,7 @@ History back/forward (Runner: Alt+←/→), Undo (Ctrl+Z), Restart (Runner: the 
 ## Classic-only keys
 
 - Bare letters outside a text field: `i`, `f`, `s`, `w`, `p`, `.`, `t`, `r`, `z`, `m`, `n`, `j`, `k`, `+`, `-`, Home, End, and `/` (focus toggle).
-- Ctrl+I layout cycle, Ctrl+F content cycle, Ctrl+S subfolders, Ctrl+L recent folders, Ctrl+1..9 saved searches, Ctrl+Home clear folder, Ctrl+Enter scope to the parent, Ctrl+U unfocus search.
+- Ctrl+I layout cycle, Ctrl+F content cycle, Ctrl+S subfolders, Ctrl+L recent folders, Ctrl+Home clear folder, Ctrl+Enter scope to the parent, Ctrl+U unfocus search.
 - Left from the results can scope to the first subfolder towards a deeper item; Runner's Left only goes up.
 
 ## Tests

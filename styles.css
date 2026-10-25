@@ -850,11 +850,6 @@ body > .offcanvas-backdrop.show {
   opacity: 0.55;
 }
 /* While dragging: strip Bootstrap gap so spacer “slots” sit between chips; highlight slots only (not pills). */
-#favSearchesBar.tagfox-fav-bar--dnd {
-  gap: 0 !important;
-  column-gap: 0 !important;
-  row-gap: 0.25rem !important;
-}
 #favFoldersBar.tagfox-fav-bar--vertical.tagfox-fav-bar--dnd {
   gap: 0 !important;
   row-gap: 0 !important;
@@ -888,8 +883,7 @@ body > .offcanvas-backdrop.show {
   min-height: 14px;
 }
 /* After last chip: grow so “drop at end” hits gap n, not dead flex space past a 14px slot */
-#favFoldersBar.tagfox-fav-bar--vertical.tagfox-fav-bar--dnd > .tagfox-fav-drop-gap:last-child,
-#favSearchesBar.tagfox-fav-bar--dnd > .tagfox-fav-drop-gap:last-child {
+#favFoldersBar.tagfox-fav-bar--vertical.tagfox-fav-bar--dnd > .tagfox-fav-drop-gap:last-child {
   flex: 1 1 14px;
   max-width: none;
 }
@@ -2346,64 +2340,6 @@ ul.breadcrumb-folder-flyout .dropdown-item,
   background-color: #e4e4e7;
   border-color: #a1a1aa;
 }
-/* Saved search chips: same pill palette as folder favs; slot + inline × (no ▾ on this bar). */
-#favSearchesBar .fav-search-chip-group {
-  --fav-search-fg: #3f3f46;
-  --fav-search-bg: #fafafa;
-  --fav-search-border: #e4e4e7;
-  align-items: stretch;
-}
-#favSearchesBar .fav-search-chip-group > .fav-search-chip-go {
-  color: var(--fav-search-fg);
-  background-color: var(--fav-search-bg);
-  border-color: var(--fav-search-border);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  justify-content: center;
-  min-width: 1.75rem;
-  padding: 0.2rem 0.45rem;
-  border-radius: 999px;
-  position: relative;
-}
-#favSearchesBar .fav-search-chip-group > .fav-search-chip-go:hover {
-  color: #27272a;
-  background-color: #f4f4f5;
-  border-color: #d4d4d8;
-}
-#favSearchesBar .fav-search-chip-group > .fav-search-chip-go:active {
-  color: #18181b;
-  background-color: #e4e4e7;
-  border-color: #a1a1aa;
-}
-#favSearchesBar .fav-search-chip-remove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  /* Extra gap so the × is harder to hit while aiming for the number */
-  margin-left: 0.35rem;
-  padding: 0 0.15rem;
-  border-radius: 0.25rem;
-  color: var(--fav-search-fg);
-  opacity: 0.5;
-  cursor: pointer;
-  flex-shrink: 0;
-  line-height: 1;
-}
-#favSearchesBar .fav-search-chip-remove:hover {
-  opacity: 1;
-  color: #18181b;
-  background-color: rgba(0, 0, 0, 0.07);
-}
-#favSearchesBar .fav-search-chip-remove:focus-visible {
-  outline: 2px solid rgba(var(--bs-primary-rgb), 0.45);
-  outline-offset: 1px;
-  position: relative;
-  z-index: 1;
-}
-#favSearchesBar .fav-search-chip-group > .fav-search-chip-go:focus,
-#favSearchesBar .fav-search-chip-group > .fav-search-chip-go:focus-visible {
-  z-index: 1;
-}
 .tag-toolbar-row {
   position: relative;
   z-index: 1045;
@@ -2684,18 +2620,6 @@ body > .tooltip {
   color: #fafafa;
   background-color: rgba(255, 255, 255, 0.1);
 }
-[data-bs-theme="dark"] #favSearchesBar .fav-search-chip-group {
-  --fav-search-fg: #d4d4d8;
-  --fav-search-bg: #27272a;
-  --fav-search-border: #3f3f46;
-}
-[data-bs-theme="dark"] #favSearchesBar .fav-search-chip-group > .fav-search-chip-go:hover {
-  color: #e4e4e7; background-color: #3f3f46; border-color: #52525b;
-}
-[data-bs-theme="dark"] #favSearchesBar .fav-search-chip-remove:hover {
-  color: #fafafa;
-  background-color: rgba(255, 255, 255, 0.1);
-}
 [data-bs-theme="dark"] ul.breadcrumb-folder-flyout {
   background-color: #27272a;
   border-color: #3f3f46;
@@ -2728,7 +2652,6 @@ body.tagfox-runner .tagfox-app-header,
 body.tagfox-runner #favFoldersColumn,
 body.tagfox-runner #splitFavFolders,
 body.tagfox-runner .tag-toolbar-row,
-body.tagfox-runner .tagfox-search-toolbar-row > .d-flex:has(#favSearchesBar),
 body.tagfox-runner .tagfox-status-view-opts,
 body.tagfox-runner #splitProps,
 body.tagfox-runner #resultsTable thead {

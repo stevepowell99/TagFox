@@ -37,7 +37,6 @@
       favFolders: 'tagBrowserFavFolders',
       folderFocusStats: 'tagBrowserFolderFocusStats',
       fileFocusStats: 'tagBrowserFileFocusStats',
-      favSearches: 'tagBrowserFavSearches',
       scopeFolderHistory: 'tagBrowserScopeFolderHist',
       searchScopeCeilings: 'tagBrowserSearchScopeCeilings',
       searchScopeMax: 'tagBrowserSearchScopeMax',
@@ -7198,7 +7197,6 @@
 
     function clearAllFavBarDropGaps() {
       clearFavBarDropGaps(document.getElementById('favFoldersBar'));
-      clearFavBarDropGaps(document.getElementById('favSearchesBar'));
     }
 
     function setActiveFavDropGap(barEl, gapIdx) {
@@ -7271,7 +7269,6 @@
       return nearestFavGapIndex(barEl, clientX, clientY);
     }
 
-    let favouriteBarsReorderBound = false;
     let suppressNextFavGoClick = false;
     let favFolderPointerState = null;
     /** Favourite folders (LHS column): pointer-driven reorder — HTML5 drag/drop fails in Electron here. */
@@ -7374,347 +7371,6 @@
         },
         true
       );
-    }
-
-    /** One-time: HTML5 drag-drop reorder on #favSearchesBar only (#favFoldersBar uses pointer reorder). */
-    function bindFavouriteBarsDragReorderOnce() {
-      if (favouriteBarsReorderBound) return;
-      favouriteBarsReorderBound = true;
-
-      function wire(barEl, kind) {
-        if (!barEl) return;
-        const dndKey = kind === 'folder' ? 'tagfox-fav:folder' : 'tagfox-fav:search';
-        let lastLoggedGapIdx = -1;
-        const dropEl = barEl;
-
-        barEl.addEventListener(
-          'dragstart',
-          (e) => {
-            if (document.querySelector('.modal.show')) {
-              e.preventDefault();
-              searchDebugLog('favBar.dnd.dragstart', { bar: barEl.id, kind, phase: 'blocked', reason: 'modal' });
-              return;
-            }
-            const t = e.target && e.target.nodeType === 3 ? e.target.parentElement : e.target;
-            if (!t || typeof t.closest !== 'function') {
-              searchDebugLog('favBar.dnd.dragstart', { bar: barEl.id, kind, phase: 'blocked', reason: 'noTargetElement' });
-              return;
-            }
-            const row = t.closest('.tagfox-fav-chip-row');
-            if (!row || !barEl.contains(row)) {
-              searchDebugLog('favBar.dnd.dragstart', {
-                bar: barEl.id,
-                kind,
-                phase: 'blocked',
-                reason: 'noChipRow',
-                tag: t.tagName,
-                inBar: !!(row && barEl.contains(row)),
-              });
-              return;
-            }
-            if (t.closest('[data-fav-no-drag="1"]')) {
-              e.preventDefault();
-              searchDebugLog('favBar.dnd.dragstart', { bar: barEl.id, kind, phase: 'blocked', reason: 'noDragZone', tag: t.tagName });
-              return;
-            }
-            const idx = +row.dataset.favIdx;
-            if (!Number.isFinite(idx) || idx < 0) {
-              searchDebugLog('favBar.dnd.dragstart', { bar: barEl.id, kind, phase: 'blocked', reason: 'badFavIdx', raw: row.dataset.favIdx });
-              return;
-            }
-            const rr = row.getBoundingClientRect();
-            searchDebugLog('favBar.dnd.dragstart', {
-              bar: barEl.id,
-              kind,
-              phase: 'ok',
-              favIdx: idx,
-              targetTag: t.tagName,
-              targetClass: t.className && String(t.className).slice(0, 160),
-              clientX: e.clientX,
-              clientY: e.clientY,
-              rowLeft: Math.round(rr.left),
-              rowRight: Math.round(rr.right),
-              rowWidth: Math.round(rr.width),
-            });
-            favListDragKind = kind;
-            e.dataTransfer.setData('text/plain', dndKey + ':' + idx);
-            e.dataTransfer.effectAllowed = 'move';
-            row.classList.add('tagfox-fav-chip-row--dragging');
-            clearAllFavBarDropGaps();
-            injectFavBarDropGaps(barEl);
-          },
-          true
-        );
-
-        barEl.addEventListener('dragend', () => {
-          searchDebugLog('favBar.dnd.dragend', { bar: barEl.id, kind, lastGapHover: lastLoggedGapIdx });
-          lastLoggedGapIdx = -1;
-          favListDragKind = null;
-          document.querySelectorAll('.tagfox-fav-chip-row--dragging').forEach((n) => n.classList.remove('tagfox-fav-chip-row--dragging'));
-          clearAllFavBarDropGaps();
-        });
-
-        dropEl.addEventListener('dragover', (e) => {
-          if (favListDragKind !== kind) return;
-          e.preventDefault();
-          e.dataTransfer.dropEffect = 'move';
-          if (barEl.dataset.tagfoxGapsInjected !== '1') injectFavBarDropGaps(barEl);
-          const gapIdx = favGapIndexFromBarPointer(barEl, e.clientX, e.clientY, e);
-          if (gapIdx !== lastLoggedGapIdx) {
-            lastLoggedGapIdx = gapIdx;
-            searchDebugLog('favBar.dnd.gapHover', { bar: barEl.id, kind, gapIdx, clientX: e.clientX, clientY: e.clientY });
-          }
-          setActiveFavDropGap(barEl, gapIdx);
-        });
-
-        dropEl.addEventListener('drop', (e) => {
-          if (favListDragKind !== kind) {
-            searchDebugLog('favBar.dnd.drop', {
-              bar: barEl.id,
-              kind,
-              phase: 'ignored',
-              reason: 'favListDragKindMismatch',
-              favListDragKind,
-            });
-            return;
-          }
-          e.preventDefault();
-          const raw = e.dataTransfer.getData('text/plain');
-          const re = kind === 'folder' ? /^tagfox-fav:folder:(\d+)$/ : /^tagfox-fav:search:(\d+)$/;
-          const m = raw.match(re);
-          if (!m) {
-            searchDebugLog('favBar.dnd.drop', {
-              bar: barEl.id,
-              kind,
-              phase: 'blocked',
-              reason: 'badPlaintext',
-              raw: String(raw).slice(0, 120),
-              clientX: e.clientX,
-              clientY: e.clientY,
-            });
-            clearAllFavBarDropGaps();
-            return;
-          }
-          const fromIdx = +m[1];
-          if (!Number.isFinite(fromIdx)) {
-            searchDebugLog('favBar.dnd.drop', { bar: barEl.id, kind, phase: 'blocked', reason: 'badFromIdx' });
-            clearAllFavBarDropGaps();
-            return;
-          }
-          const gapIdx = favGapIndexFromBarPointer(barEl, e.clientX, e.clientY, e);
-          const tgt = e.target && e.target.nodeType === 3 ? e.target.parentElement : e.target;
-          const tgtTag = tgt && tgt.tagName;
-          const hitGap = tgt && tgt.closest && tgt.closest('.tagfox-fav-drop-gap');
-          if (!Number.isFinite(gapIdx)) {
-            searchDebugLog('favBar.dnd.drop', { bar: barEl.id, kind, phase: 'blocked', reason: 'badGapIdx', fromIdx, clientX: e.clientX });
-            clearAllFavBarDropGaps();
-            return;
-          }
-
-          if (kind === 'folder') {
-            const list = loadFavouriteFolders();
-            if (fromIdx >= list.length) {
-              searchDebugLog('favBar.dnd.drop', { bar: barEl.id, kind, phase: 'blocked', reason: 'fromIdxOOB', fromIdx, listLen: list.length });
-              clearAllFavBarDropGaps();
-              return;
-            }
-            const next = reorderFavListByGap(list, fromIdx, gapIdx);
-            searchDebugLog('favBar.dnd.drop', {
-              bar: barEl.id,
-              kind,
-              phase: 'ok',
-              fromIdx,
-              gapIdx,
-              listLen: list.length,
-              hitGap: !!hitGap,
-              dropTargetTag: tgtTag,
-              clientX: e.clientX,
-              clientY: e.clientY,
-            });
-            saveFavouriteFolders(next);
-            renderFavFoldersBar();
-          } else {
-            const list = loadFavouriteSearches();
-            if (fromIdx >= list.length) {
-              searchDebugLog('favBar.dnd.drop', { bar: barEl.id, kind, phase: 'blocked', reason: 'fromIdxOOB', fromIdx, listLen: list.length });
-              clearAllFavBarDropGaps();
-              return;
-            }
-            const next = reorderFavListByGap(list, fromIdx, gapIdx);
-            searchDebugLog('favBar.dnd.drop', {
-              bar: barEl.id,
-              kind,
-              phase: 'ok',
-              fromIdx,
-              gapIdx,
-              listLen: list.length,
-              hitGap: !!hitGap,
-              dropTargetTag: tgtTag,
-              clientX: e.clientX,
-              clientY: e.clientY,
-            });
-            saveFavouriteSearches(next);
-            renderFavSearchesBar();
-          }
-          clearAllFavBarDropGaps();
-          const st = document.getElementById('statusMain');
-          if (st) setStatusMain(kind === 'folder' ? 'Favourite folders reordered.' : 'Saved searches reordered.');
-        });
-      }
-
-      wire(document.getElementById('favSearchesBar'), 'search');
-    }
-
-    function loadFavouriteSearches() {
-      const arr = lsGetJson(LS.favSearches, []);
-      return Array.isArray(arr) ? arr.filter((x) => x && typeof x === 'object' && !Array.isArray(x)) : [];
-    }
-
-    function saveFavouriteSearches(entries) {
-      localStorage.setItem(LS.favSearches, JSON.stringify(entries.slice(0, 30)));
-    }
-
-    /* Index for deleteSavedSearchModal confirm; cleared when modal closes. */
-    let pendingRemoveFavSearchIdx = null;
-
-    /** Open Bootstrap confirm before removing slot idx from saved searches. */
-    function openRemoveSavedSearchConfirm(idx) {
-      const list = loadFavouriteSearches();
-      if (idx < 0 || idx >= list.length) return;
-      pendingRemoveFavSearchIdx = idx;
-      const n = idx + 1;
-      const q = list[idx].query != null ? String(list[idx].query).trim() : '';
-      const bodyEl = document.getElementById('deleteSavedSearchModalBody');
-      const modalEl = document.getElementById('deleteSavedSearchModal');
-      if (bodyEl) {
-        let msg = 'Remove saved search #' + n + ' from the bar? This only removes the shortcut, not any files.';
-        if (q) {
-          const short = q.length > 80 ? q.slice(0, 77) + '…' : q;
-          msg = 'Remove saved search #' + n + ' (“' + short + '”)? This only removes the shortcut, not any files.';
-        }
-        bodyEl.textContent = msg;
-      }
-      if (modalEl) bootstrap.Modal.getOrCreateInstance(modalEl).show();
-    }
-
-    /** Tooltip: full snapshot summary (same fields as search history). slotIdx 0–8 → Ctrl+1…9 in the shortcuts table. */
-    function favouriteSearchTooltip(s, slotIdx) {
-      const q = s.query != null ? String(s.query) : '';
-      const sc = (s.rootFolder != null ? String(s.rootFolder) : '').trim();
-      const ceilOne =
-        s.searchScopeMax != null && String(s.searchScopeMax).trim()
-          ? String(s.searchScopeMax).trim()
-          : Array.isArray(s.searchScopeCeilings) && s.searchScopeCeilings.length
-            ? String(s.searchScopeCeilings[0]).trim()
-            : '';
-      const tags = Array.isArray(s.activeTagKeys) ? [...s.activeTagKeys].filter(Boolean).sort() : [];
-      const lines = [];
-      if (slotIdx >= 0 && slotIdx < 9) {
-        lines.push('Shortcut: Ctrl+' + (slotIdx + 1));
-        lines.push('');
-      }
-      lines.push(
-        'Click to restore this search. Drag chip on bar to reorder (Ctrl+1…9 follow left-to-right order).',
-        '',
-        'Query: ' + (q.trim() || '(empty)'),
-        'Search scope folder (Settings): ' + (ceilOne || '(none)'),
-        'Current folder: ' + (sc || '(entire index)'),
-      );
-      if (tags.length) lines.push('Tags: ' + tags.join(', '));
-      lines.push('Tag combine: ' + (s.tagFilterCombineOr ? 'OR' : 'AND'));
-      lines.push(
-        'Layout: ' +
-          (s.resultsLayout || (s.flatView ? 'flat' : s.smartView ? 'smart' : 'tree')) +
-          ' | Subfolders: ' +
-          (s.showSubfolders ? 'on' : 'off') +
-          ' | Content: ' +
-          (s.resultsContent || (s.hideFiles ? 'folders' : 'all')),
-      );
-      lines.push(
-        'Match: case=' +
-          !!s.optCase +
-          ' path=' +
-          !!s.optPath +
-          ' whole=' +
-          !!s.optWholeWord +
-          ' diacritics=' +
-          !!s.optDiacritics +
-          ' hideSpecial=' +
-          !!s.optHideSpecial
-      );
-      lines.push(
-        'Recency: ' +
-          (s.recencyFilter && s.recencyFilter !== 'all' ? String(s.recencyFilter) + ' (modified)' : 'all')
-      );
-      lines.push('Sort: ' + (s.sortColumn || 'name') + ' ' + (s.sortAsc !== false ? 'asc' : 'desc'));
-      lines.push('Advanced panel: ' + (s.advancedPanelOpen ? 'open' : 'closed'));
-      return lines.join('\n');
-    }
-
-    function renderFavSearchesBar() {
-      const el = document.getElementById('favSearchesBar');
-      if (!el) return;
-      el.innerHTML = '';
-      const entries = loadFavouriteSearches();
-      if (!entries.length) {
-        el.innerHTML = '<span class="text-muted small fst-italic px-2">Click <i class="fa-solid fa-floppy-disk"></i> to save the current search</span>';
-        return;
-      }
-      entries.forEach((s, idx) => {
-        const row = document.createElement('span');
-        row.className = 'd-inline-flex align-items-stretch tagfox-fav-chip-row';
-        row.dataset.favIdx = String(idx);
-        /* Same as folder chips: no row-level tooltip (would overlap ✕). Drag line prepended onto go below. */
-        const grp = document.createElement('div');
-        grp.className = 'btn-group btn-group-sm fav-search-chip-group';
-        const n = idx + 1;
-        const go = document.createElement('span');
-        go.setAttribute('role', 'button');
-        go.tabIndex = 0;
-        go.draggable = true;
-        go.className = 'btn btn-sm fav-search-chip-go d-inline-flex align-items-center gap-1';
-        const slotNum = document.createElement('span');
-        slotNum.textContent = String(n);
-        go.appendChild(slotNum);
-        /* × inside pill (after slot #); span + role=button — cannot nest <button> in .fav-search-chip-go. */
-        const rm = document.createElement('span');
-        rm.className = 'fav-search-chip-remove';
-        rm.setAttribute('role', 'button');
-        rm.tabIndex = 0;
-        rm.setAttribute('data-fav-no-drag', '1');
-        rm.setAttribute('aria-label', 'Remove saved search');
-        rm.title = 'Remove saved search';
-        rm.innerHTML = '<i class="fa-solid fa-xmark fa-sm" aria-hidden="true"></i>';
-        rm.addEventListener('click', (e) => {
-          e.stopPropagation();
-          e.preventDefault();
-          openRemoveSavedSearchConfirm(idx);
-        });
-        rm.addEventListener('keydown', (e) => {
-          if (e.key !== 'Enter' && e.key !== ' ') return;
-          e.preventDefault();
-          e.stopPropagation();
-          openRemoveSavedSearchConfirm(idx);
-        });
-        go.appendChild(rm);
-        const a11y =
-          'Restore saved search ' +
-          n +
-          (idx < 9 ? ' (keyboard Ctrl+' + n + ')' : '') +
-          '. Hover for query, current folder, and filters.';
-        go.setAttribute('aria-label', a11y);
-        go.title = 'Drag to reorder.\n\n' + favouriteSearchTooltip(s, idx);
-        go.addEventListener('click', () => void applyFavouriteSearchState(s));
-        go.addEventListener('keydown', (ev) => {
-          if (ev.key !== 'Enter' && ev.key !== ' ') return;
-          ev.preventDefault();
-          void applyFavouriteSearchState(s);
-        });
-        grp.appendChild(go);
-        row.appendChild(grp);
-        el.appendChild(row);
-      });
-      refreshTagFoxChromeTooltips(el);
     }
 
     /** Search box hint: last segment of scope (pretty title), or entire-index wording when scope empty. */
@@ -14377,26 +14033,6 @@
       }
     }
 
-    /** Apply one saved favourite search — same side effects as stepping history, but also append to search history when changed. */
-    async function applyFavouriteSearchState(s) {
-      if (searchHistNavigating) return;
-      searchHistNavigating = true;
-      try {
-        applySearchState(s);
-        updateQueryPlaceholder();
-        persistActiveTagFilter();
-        saveSettings();
-        updateSortHeaders();
-        renderScopeBreadcrumb();
-        renderTagBar();
-        await runSearchNow();
-      } finally {
-        searchHistNavigating = false;
-        updateSearchHistoryNavUI();
-      }
-      commitSearchHistoryNow();
-    }
-
     function seedSearchHistoryFromCurrent() {
       searchHist = [{ ...serializeSearchState(), runner: isRunnerMode() }];
       searchHistIdx = 0;
@@ -17865,20 +17501,6 @@
       setStatusMain('Favourite saved.');
     });
 
-    document.getElementById('btnSaveFavouriteSearch').addEventListener('click', () => {
-      const status = document.getElementById('statusMain');
-      const snap = serializeSearchState();
-      const list = loadFavouriteSearches();
-      if (list.some((x) => searchStatesEqual(x, snap))) {
-        setStatusMain('Already saved this search.');
-        return;
-      }
-      list.push(snap);
-      saveFavouriteSearches(list);
-      renderFavSearchesBar();
-      setStatusMain('Search saved.');
-    });
-
     document.getElementById('btnReadmeFolderDocTags').addEventListener('click', () => openTagModalFolderDocDraft());
     document.getElementById('readmeFolderDocStemInput').addEventListener('input', () => folderDocOnFilenameUiChanged());
 
@@ -19932,16 +19554,6 @@
         openFavouritePath(list[idx]);
         return;
       }
-      if (modC && !e.shiftKey && /^[1-9]$/.test(e.key)) {
-        if (document.querySelector('.modal.show')) return;
-        if (blockAppShortcutInTextField(e.target)) return;
-        const list = loadFavouriteSearches();
-        const idx = e.key.charCodeAt(0) - 49;
-        if (!list[idx]) return;
-        e.preventDefault();
-        void applyFavouriteSearchState(list[idx]);
-        return;
-      }
       if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === ' ' || e.code === 'Space')) {
         if (document.querySelector('.modal.show')) return;
         if (blockAppShortcutInTextField(e.target)) return;
@@ -20676,36 +20288,12 @@
     document.getElementById('btnPropsTheaterToggle').addEventListener('click', () => togglePropsTheaterMode());
     syncViewerDocDividerOrientation();
     updateSortHeaders();
-    bindFavouriteBarsDragReorderOnce();
     bindFavFoldersPointerReorderOnce();
-    (function wireDeleteSavedSearchModal() {
-      const modalEl = document.getElementById('deleteSavedSearchModal');
-      const btn = document.getElementById('deleteSavedSearchModalConfirm');
-      if (!modalEl || !btn) return;
-      const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-      modalEl.addEventListener('hidden.bs.modal', () => {
-        pendingRemoveFavSearchIdx = null;
-      });
-      btn.addEventListener('click', () => {
-        const idx = pendingRemoveFavSearchIdx;
-        pendingRemoveFavSearchIdx = null;
-        if (idx != null && idx >= 0) {
-          const next = loadFavouriteSearches();
-          if (idx < next.length) {
-            next.splice(idx, 1);
-            saveFavouriteSearches(next);
-            renderFavSearchesBar();
-          }
-        }
-        modal.hide();
-      });
-    })();
     bindFolderPathDropTargetBarsOnce();
     bindScopeFolderDropdownDragCaptureOnce();
     installLongTaskMonitor();
     installRendererPerfProbe();
     renderFavFoldersBar();
-    renderFavSearchesBar();
     renderTagBar();
     renderTable();
     bindRunnerChromeOnce();

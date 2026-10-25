@@ -14,7 +14,7 @@ It runs on top of [Voidtools Everything](https://www.voidtools.com/), which inde
 - **Tags** you add right in the filename, like `Report xkdraft xkurgent.docx`. Click a tag to filter; the tags travel with the file into Explorer, Google Drive and zip files because they are part of the name.
 - **Previews** of images, PDFs, Word, Excel, PowerPoint, markdown, text, audio and video, in a side panel.
 - **A folder tree** so you see results in context, not as a flat list.
-- **Favourites and saved searches** you reach with one click or a number key.
+- **Favourites** you reach with one click or a number key.
 
 ### Install in three steps
 
@@ -48,7 +48,7 @@ If search feels slow, open **Advanced** and turn off **Folder-contents highlight
 - **Runner layout.** The window is one large search box over a ranked list, with the Viewer on the right third: arrows to move, right and left to go into a folder and back up, `/` for commands and tag filters, `Ctrl`+`D` to star, `Ctrl`+`T` to tag. Name matches rank above path matches, then recent, starred and often-used items. Runner is the only layout on screen; the Classic layout this list otherwise describes is hidden while its code is deleted in stages.
 - **The toggle shortcut selects the search text.** Raising TagFox with the global toggle key (set in Settings) puts the cursor in the search box with its text selected, so typing replaces it and an arrow key steps out of it. Alt-tab and a click into the window leave the cursor where it was.
 - **Hide the window's title bar.** A Settings box, off by default, applied on the next start. Windows then draws only the minimise, maximise and close buttons, over the top right of the page, and you drag the window by its top strip (Runner) or its header row (Classic). Double-clicking there maximises and restores as before.
-- **Favourite folders and saved searches.** Bookmark a folder or a whole search, reorder by drag, and jump back with `Ctrl`+`1` to `9` (searches) or `Ctrl`+`Shift`+`1` to `9` (folders). These are your persistent bookmarks.
+- **Favourite folders.** Bookmark a folder, reorder by drag, and jump back with `Ctrl`+`Shift`+`1` to `9`. These are your persistent bookmarks.
 - **The Shelf.** A staging strip under the results (beside them in Classic), one line high while empty. Drag files onto it from several folders, go elsewhere, then drag them onto a folder row or into the list. A drag moves and `Shift` copies, both onto the Shelf and off it. An item taken off with its × goes to the Recycle Bin. A clipboard for files that does not empty when you move.
 - **Bulk rename.** Check several files, press `Ctrl`+`H`, and use wildcards on the last path segment with a live preview.
 - **Open and Save dialogs.** With another app's Open or Save dialog in front, the toggle shortcut raises TagFox with a strip saying where the next pick goes. Enter sends the selected row to the dialog: in an Open dialog a file opens and a folder is shown; a Save dialog gets the folder, keeps its file name and leaves Save to you.
