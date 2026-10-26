@@ -269,7 +269,7 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
 }
 .form-check-input:checked { background-color: var(--tb-accent); border-color: var(--tb-accent); }
-/* Widths from <colgroup> only — auto layout re-measures every cell on each pane resize (splitter jank). */
+/* Fixed layout: auto layout re-measures every cell on each pane resize (splitter jank). */
 #resultsTable { table-layout: fixed; border-collapse: separate; border-spacing: 0; }
 #resultsTable tbody tr { border-bottom-color: #f0f0f3; }
 /* Size column heat: ≥1 GB .text-danger; ≥100 MB orange; ≥10 MB amber; ≥1 MB teal; ≥100 KB lime (renderer.js). */
@@ -1191,19 +1191,13 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-#resultsTable col:nth-child(5),
 #resultsTable tbody td.results-td-size {
   min-width: 6.75rem;
 }
-/* Row icon strip (col 4): min = six compact btns; max = don’t waste horizontal space on wide windows */
-#resultsTable col:nth-child(4),
+/* Row icon strip: min = six compact btns; max = don’t waste horizontal space on wide windows */
 #resultsTable tbody td.results-td-actions {
   min-width: 13rem;
   max-width: 17rem;
-}
-/* Checkbox only: keep a small but stable first column so narrow panes do not crush the checkbox. */
-#resultsTable col:first-child {
-  min-width: 1.85rem;
 }
 /* Denser than Bootstrap table-sm (row height driver with middle vertical-align) */
 #resultsTable.table-sm > :not(caption) > * > * {
@@ -2267,9 +2261,6 @@ body.tagfox-runner #resultsTable,
 body.tagfox-runner #resultsTable > tbody {
   display: block;
   width: 100%;
-}
-body.tagfox-runner #resultsTable > colgroup {
-  display: none;
 }
 body.tagfox-runner #resultsTable > tbody > tr {
   position: relative;

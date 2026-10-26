@@ -44,7 +44,6 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 
 - **Runner:** a test instance opens in Runner from its first load, as every start does, so every test that opens a window runs in Runner without switching.
 - **No layout:** `restart-in-terminal`, `help-build` and `tags-dates` do not go through the harness's `connect`.
-- `test/README.md` omits tags-dates and repro-crash.
 
 ## Decisions before any deletion
 
