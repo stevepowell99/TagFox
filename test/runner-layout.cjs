@@ -355,8 +355,12 @@ async function main() {
           right: Math.round(r.right),
           dateBox: Math.round(dr.left) + '-' + Math.round(dr.right),
           overflow: sz.scrollWidth > sz.clientWidth + 1 || date.scrollWidth > date.clientWidth + 1,
-          color: cs.color,
-          opacity: parseFloat(cs.opacity),
+          barW: sz.querySelector('.tagfox-runner-size-bar') ? sz.querySelector('.tagfox-runner-size-bar').getBoundingClientRect().width : -1,
+          barLeft: sz.querySelector('.tagfox-runner-size-bar') ? Math.round(sz.querySelector('.tagfox-runner-size-bar').getBoundingClientRect().left) : -1,
+          barColor: sz.querySelector('.tagfox-runner-size-bar') ? getComputedStyle(sz.querySelector('.tagfox-runner-size-bar')).backgroundColor : '',
+          cellW: r.width,
+          figShown: !!sz.querySelector('.tagfox-runner-size-fig') && getComputedStyle(sz.querySelector('.tagfox-runner-size-fig')).display !== 'none',
+          selected: tr.classList.contains('table-active'),
           px: parseFloat(cs.fontSize),
           datePx: parseFloat(getComputedStyle(date).fontSize),
           tips: { name: tip(tr.querySelector('td:nth-child(2)')), path: tip(tr.querySelector('td.col-path')), size: tip(sz), date: tip(date) },
@@ -372,10 +376,20 @@ async function main() {
       cells.every((c) => c.left === cells[0].left && c.right === cells[0].right && c.dateBox === cells[0].dateBox && !c.overflow),
       `the sizes and the dates each sit in one column, nothing cut off (${cells.map((c) => c.left + '-' + c.right + ' ' + c.dateBox + (c.overflow ? ' cut' : ''))})`
     );
-    check(new Set(cells.map((c) => c.color)).size === 1 && cells.every((c) => c.px < c.datePx), `the sizes share one muted colour, smaller than the date (${cells[0] && cells[0].color}, ${cells[0] && cells[0].px}px)`);
-    // Largest first: MB, KB, KB, B. Each unit down is fainter, so 10 B, with as many digits as some larger sizes, reads lightest.
-    const op = cells.map((c) => c.opacity);
-    check(op.length === 4 && op[0] > op[1] && op[1] === op[2] && op[2] > op[3], `a smaller unit is fainter (opacity ${op})`);
+    // The bars: a fixed log scale from 1 KB to 10 GB, drawn from one left edge, in one muted colour below 1 GB.
+    const sizeBytes = [1.44 * 1024 * 1024, 300 * 1024, 40 * 1024, 10];
+    const want = sizeBytes.map((b) => Math.min(1, Math.max(0.04, (Math.log10(b) - 3) / 7)));
+    check(
+      cells.length === 4 && cells.every((c, i) => c.selected || (c.barW > 0 && Math.abs(c.barW - want[i] * c.cellW) <= 1)),
+      `each size but the selected row's is a bar on the log scale, largest first (${cells.map((c, i) => (c.selected ? 'selected' : Math.round(c.barW) + 'px of ' + Math.round(want[i] * c.cellW)))})`
+    );
+    const barred = cells.filter((c) => !c.selected);
+    check(barred.length >= 3 && new Set(barred.map((c) => c.barLeft)).size === 1 && new Set(barred.map((c) => c.barColor)).size === 1, `the bars start at one edge in one colour (${cells.map((c) => c.barLeft)}, ${cells[0] && cells[0].barColor})`);
+    const sizeSel = cells.filter((c) => c.selected);
+    check(
+      sizeSel.length === 1 && sizeSel[0].figShown && cells.filter((c) => !c.selected).every((c) => !c.figShown) && sizeSel[0].px < sizeSel[0].datePx,
+      `only the selected row shows its figure, smaller than the date (${cells.map((c) => (c.selected ? 'selected ' : '') + (c.figShown ? 'figure' : 'bar'))})`
+    );
     check(cells.every((c) => !c.tips.path && !c.tips.size && c.tips.date), `no tooltip on the path or the size, one on the time (${JSON.stringify(cells.map((c) => c.tips))})`);
     check(tagged && tagged.tips.name && cells.filter((c) => c !== tagged).every((c) => !c.tips.name), 'only the tagged name, whose name on disk differs, has a name tooltip');
     await drv.T('setRunnerSort', 'size-asc');

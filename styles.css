@@ -275,19 +275,6 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 /* Fixed layout: auto layout re-measures every cell on each pane resize (splitter jank). */
 #resultsTable { table-layout: fixed; border-collapse: separate; border-spacing: 0; }
 #resultsTable tbody tr { border-bottom-color: #f0f0f3; }
-/* Size column heat: ≥1 GB .text-danger; ≥100 MB orange; ≥10 MB amber; ≥1 MB teal; ≥100 KB lime (renderer.js). */
-#resultsTable tbody td.results-td-size.tagfox-size-heat-orange {
-  color: #ea580c;
-}
-#resultsTable tbody td.results-td-size.tagfox-size-heat-amber {
-  color: #d97706;
-}
-#resultsTable tbody td.results-td-size.tagfox-size-heat-mb1 {
-  color: #0e7490;
-}
-#resultsTable tbody td.results-td-size.tagfox-size-heat-kb100 {
-  color: #4d7c0f;
-}
 /* Hover: a light tint so the row under the pointer is obvious. Selection keeps its own stronger cue
    (tint + left bar + dotted ring), so the hover fill stands down on an already selected row rather
    than painting over it. */
@@ -1652,18 +1639,6 @@ body > .tooltip {
   background-color: rgba(248, 113, 113, 0.16);
   color: #fecdd3 !important;
 }
-[data-bs-theme="dark"] #resultsTable tbody td.results-td-size.tagfox-size-heat-orange {
-  color: #fb923c;
-}
-[data-bs-theme="dark"] #resultsTable tbody td.results-td-size.tagfox-size-heat-amber {
-  color: #fbbf24;
-}
-[data-bs-theme="dark"] #resultsTable tbody td.results-td-size.tagfox-size-heat-mb1 {
-  color: #2dd4bf;
-}
-[data-bs-theme="dark"] #resultsTable tbody td.results-td-size.tagfox-size-heat-kb100 {
-  color: #bef264;
-}
 [data-bs-theme="dark"] .results-wrap.card {
   border-color: #3f3f46;
   box-shadow: 0 1px 3px rgba(0,0,0,0.2);
@@ -2334,9 +2309,9 @@ body.tagfox-runner #resultsTable > tbody > tr > td.col-path { grid-area: path; }
 body.tagfox-runner #resultsTable > tbody > tr > td.results-td-actions { grid-area: act; }
 body.tagfox-runner #resultsTable > tbody > tr > td.results-td-size { grid-area: size; }
 body.tagfox-runner #resultsTable > tbody > tr > td:last-child { grid-area: date; }
-/* Size: smaller than the date, without the base rules' heat colours, and toned by its unit so a large file
-   reads heavier than a small one whatever its digits ("999 B" has more of them than "17 GB"): bytes
-   faintest, then KB, MB in the muted colour, and GB in the ink colour. The unit is fainter still. */
+/* Size: a bar on a fixed log scale (runnerSizeBarFraction), drawn from the left of the column so the bars
+   compare along one edge; muted, and in the ink colour from 1 GB. The figure takes the bar's place on the
+   row under the pointer and the selected row, smaller than the date, with its unit fainter still. */
 body.tagfox-runner #resultsTable > tbody > tr > td.results-td-size {
   color: var(--runner-muted) !important;
   font-size: 0.72rem;
@@ -2345,15 +2320,27 @@ body.tagfox-runner #resultsTable > tbody > tr > td.results-td-size {
   text-align: right;
   white-space: nowrap;
 }
-body.tagfox-runner #resultsTable > tbody > tr > td.results-td-size.tagfox-runner-size--b {
-  opacity: 0.45;
+body.tagfox-runner #resultsTable .tagfox-runner-size-bar {
+  display: block;
+  height: 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--runner-muted) 60%, transparent);
 }
-body.tagfox-runner #resultsTable > tbody > tr > td.results-td-size.tagfox-runner-size--kb {
-  opacity: 0.7;
+body.tagfox-runner #resultsTable .tagfox-runner-size--gb .tagfox-runner-size-bar {
+  background: var(--runner-ink);
 }
-body.tagfox-runner #resultsTable > tbody > tr > td.results-td-size.tagfox-runner-size--gb {
-  color: var(--runner-ink) !important;
-  font-weight: 600 !important;
+body.tagfox-runner #resultsTable .tagfox-runner-size-fig {
+  display: none;
+}
+body.tagfox-runner #resultsTable > tbody > tr:is(:hover, .table-active) .tagfox-runner-size-bar {
+  display: none;
+}
+body.tagfox-runner #resultsTable > tbody > tr:is(:hover, .table-active) .tagfox-runner-size-fig {
+  display: inline;
+}
+body.tagfox-runner #resultsTable .tagfox-runner-size--gb .tagfox-runner-size-fig {
+  color: var(--runner-ink);
+  font-weight: 600;
 }
 body.tagfox-runner #resultsTable .tagfox-runner-size-unit {
   margin-left: 0.2em;

@@ -9558,30 +9558,12 @@
       return { num: String(num), unit: units[i] };
     }
 
-    const SIZE_HEAT_GB = 1024 * 1024 * 1024;
-    const SIZE_HEAT_MB100 = 100 * 1024 * 1024;
-    const SIZE_HEAT_MB10 = 10 * 1024 * 1024;
-    const SIZE_HEAT_MB1 = 1024 * 1024;
-    const SIZE_HEAT_KB100 = 100 * 1024;
-
-    const SIZE_HEAT_CLASSES = [
-      'tagfox-size-heat-orange',
-      'tagfox-size-heat-amber',
-      'tagfox-size-heat-mb1',
-      'tagfox-size-heat-kb100',
-    ];
-
-    /** Size column: accent by magnitude (Everything gives size for many folder rows too; synthetic folder rows stay —). */
-    function applySizeHeatToElement(el, row) {
-      if (!el) return;
-      el.classList.remove('text-danger', 'fw-semibold', ...SIZE_HEAT_CLASSES);
-      const n = rowSizeBytes(row);
-      if (n == null) return;
-      if (n >= SIZE_HEAT_GB) el.classList.add('text-danger', 'fw-semibold');
-      else if (n >= SIZE_HEAT_MB100) el.classList.add('tagfox-size-heat-orange');
-      else if (n >= SIZE_HEAT_MB10) el.classList.add('tagfox-size-heat-amber');
-      else if (n >= SIZE_HEAT_MB1) el.classList.add('tagfox-size-heat-mb1');
-      else if (n >= SIZE_HEAT_KB100) el.classList.add('tagfox-size-heat-kb100');
+    /** How much of the size bar a size fills: a fixed log scale from 1 KB (empty) to 10 GB (full), each
+        seventh of the bar ten times the size before it, so a bar means the same size in every list. Anything
+        under 1 KB keeps a sliver, so a file never reads as having no size. */
+    function runnerSizeBarFraction(bytes) {
+      if (!(bytes > 0)) return 0;
+      return Math.min(1, Math.max(0.04, (Math.log10(bytes) - 3) / 7));
     }
 
     function formatModified(v) {
@@ -12644,17 +12626,24 @@
 
         const tdSize = document.createElement('td');
         tdSize.className = 'text-end text-nowrap small results-td-size';
-        /* Blank where the size is unknown, rather than a column of dashes. */
-        const sp = runnerSizeParts(rowSizeBytes(row));
+        /* A bar (runnerSizeBarFraction), with the figure in its place on the row under the pointer and the
+           selected row. Blank where the size is unknown, rather than a column of dashes. */
+        const sizeBytes = rowSizeBytes(row);
+        const sp = runnerSizeParts(sizeBytes);
         if (sp) {
-          tdSize.classList.add('tagfox-runner-size--' + (sp.unit === 'TB' ? 'gb' : sp.unit.toLowerCase()));
-          tdSize.textContent = sp.num;
+          if (sp.unit === 'GB' || sp.unit === 'TB') tdSize.classList.add('tagfox-runner-size--gb');
+          const bar = document.createElement('span');
+          bar.className = 'tagfox-runner-size-bar';
+          bar.style.width = (runnerSizeBarFraction(sizeBytes) * 100).toFixed(1) + '%';
+          const fig = document.createElement('span');
+          fig.className = 'tagfox-runner-size-fig';
+          fig.textContent = sp.num;
           const unit = document.createElement('span');
           unit.className = 'tagfox-runner-size-unit';
           unit.textContent = sp.unit;
-          tdSize.appendChild(unit);
+          fig.appendChild(unit);
+          tdSize.append(bar, fig);
         }
-        applySizeHeatToElement(tdSize, row);
 
         const tdDate = document.createElement('td');
         tdDate.className = 'text-nowrap small';
