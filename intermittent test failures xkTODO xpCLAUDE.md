@@ -3,7 +3,10 @@
 Faults that fail a run of the full suite now and then and pass when the test is rerun alone. The record is the `runner` session's full suites in `C:\dev\TagFox-runner` on 25 and 26 October 2026: 20 suites of 39 to 41 runs each.
 
 - **`a test Electron outliving its test ends itself` failed "with its parent gone, it ends by itself within 8 seconds"** once (25 October 2026, evening).
-- **`option, dialog and folder keys` (`runner-key-actions.cjs`) once received no key at all**: from its first set-up step every keypress left the page unchanged (26 October 2026, with about 1GB of RAM free). It had lost its test TagFox mid-run once before ("CDP connection closed", 03:25 on 26 October). It passed alone after each.
+- **A test TagFox now and then acts on no key at all, with under 1GB of RAM free.** Neither test can tell a key that never arrived from a handler that did nothing.
+  - `option, dialog and folder keys` (`runner-key-actions.cjs`): from its first set-up step every keypress left the page unchanged (26 October 2026, with about 1GB free). It had lost its test TagFox mid-run once before ("CDP connection closed", 03:25 on 26 October).
+  - `runner stars open in order` (`runner-stars.cjs`): Ctrl+Shift+1 and Ctrl+Shift+2 each left the folder unchanged for the full 8 seconds, though both stars were listed with their numbers just before (26 October 2026, 20:21 UTC, 0.8GB free, in a suite on `b65d2d3`).
+  - Each passed alone afterwards, `runner-stars` three times out of three.
 - **`viewer in runner` fails "and closes the box" after a Quick TODO save**: twice on 25 October 2026, passing alone each time.
 - **`runner status line` failed "with no message it shows a tip"** once (25 October 2026, evening).
 - **Two checks fail while Everything is slow.** With about 1GB of RAM free on 24 October 2026, Everything's index was paged out and a search that finds nothing took 1.7s. `refresh visibility` then read "60 hits" where the "Refreshed …" report should be, so a later search (probably Smart's narrow or probe) writes its hits line over the report; `runner tags` failed "removing it with the chip's x renames it back to beta.txt" and "adding LATER renames both files on disk". Both passed alone once the machine recovered, and neither has failed in a suite since.
