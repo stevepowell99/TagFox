@@ -91,6 +91,29 @@ function mainPerfLog(line) {
   } catch (_) {}
 }
 
+/* A renderer that grows past each further 500MB of private memory says so, with the last search main ran.
+   On 26 October 2026 Steve's page reached 2GB private, most of it paged out, within eight minutes of a
+   restart, and froze for 30s at a time; searching the same folders in a test instance stayed at 120MB, so
+   the next growth has to say when it happened. */
+let lastEverythingSearchText = '';
+{
+  const STEP_MB = 500;
+  const loggedStep = new Map();
+  setInterval(() => {
+    if (!app.isReady()) return;
+    try {
+      for (const m of app.getAppMetrics()) {
+        if (m.type !== 'Tab') continue;
+        const mb = Math.round((m.memory?.privateBytes || 0) / 1024);
+        const step = Math.floor(mb / STEP_MB);
+        if (step <= (loggedStep.get(m.pid) || 0)) continue;
+        loggedStep.set(m.pid, step);
+        mainPerfLog(`memory rend${m.pid} private=${mb}MB resident=${Math.round((m.memory?.workingSetSize || 0) / 1024)}MB last-search=${JSON.stringify(lastEverythingSearchText.slice(0, 100))}`);
+      }
+    } catch (_) {}
+  }, 30000).unref();
+}
+
 /* A test instance ends itself once the node test process that started it has gone. One the harness spawned
    dies with that process anyway, through the job object libuv puts it in, but one relaunched by
    app.relaunch is outside that job and would outlive its test. The harness passes its own PID, and a
@@ -3169,6 +3192,7 @@ ipcMain.handle('everything-search', async (_event, payload) => {
   const tParsed = Date.now();
   const rows = rowsFromEverythingJson(data);
   const total = Date.now() - tStart;
+  lastEverythingSearchText = String(searchText || '');
   if (total >= 800) {
     mainPerfLog(
       'everything-search ' + total + 'ms fetch=' + (tFetched - tStart) + ' body=' + (tText - tFetched) +
