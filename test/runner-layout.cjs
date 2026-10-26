@@ -325,6 +325,13 @@ async function main() {
       if (!sizesSeen) await sleep(400);
     }
     check(sizesSeen, 'the four size files are listed (positive control)');
+    // The listing from disk that stands in for Everything on Google Drive folders carries size and date too.
+    const listed = await drv.ev(`window.tagBrowser.listFolderEntries({ parentPath: ${JSON.stringify(extra)} })`);
+    const big = (listed.entries || []).find((e) => e.name === 'sizecheck large.bin');
+    check(
+      !!big && big.size === Math.round(1.44 * 1024 * 1024) && Math.abs(big.date_modified - fs.statSync(sizeFiles[0]).mtimeMs) < 1000,
+      `a folder listed from disk gives each file its size and modified time (${JSON.stringify(big)})`
+    );
     await focusBox();
     await key('/', 'Slash', 191, 0, '/');
     for (const ch of 'size') await key(ch, 'Key' + ch.toUpperCase(), ch.toUpperCase().charCodeAt(0), 0, ch);
