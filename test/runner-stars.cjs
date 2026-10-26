@@ -81,7 +81,7 @@ async function main() {
     failures.push('threw: ' + (e.stack || e.message || String(e)));
     console.log('  FAIL threw: ' + (e.stack || e.message));
   } finally {
-    if (drv) drv.close();
+    if (drv) await drv.close();
     try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {}
   }
   console.log(failures.length ? `runner-stars: ${failures.length} failure(s)` : 'runner-stars: all checks passed');

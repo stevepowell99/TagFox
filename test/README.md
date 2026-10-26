@@ -69,13 +69,22 @@ and a test that ends without closing its driver prints `FAIL the test ended befo
 Without both, node ran out of work with a call unsettled and exited 0 before printing any result.
 `connect()` returns the test Electron's `pid`, for tests that talk to its window directly.
 
+`close()` kills the test Electron and resolves only once the process has ended, which it learns from the
+child's exit event. A killed Electron goes on being listed by Windows, holding its profile's `lockfile`, for
+a second or more while it is torn down (seconds more on a loaded machine), although node's own liveness check
+calls it gone within a millisecond. So every test awaits `close()`, and a test that exits while `close()` is
+still waiting prints `FAIL the test exited before close() had finished` and exits 1. An Electron that has not
+ended 30 seconds after the kill gets `taskkill /T /F`, and one still there 10 seconds later fails the test.
+
 `run-all.cjs` gives each run five minutes. A run that overstays is killed along with the Electron it
 launched and counted as failed, so one hung test cannot stall the suite. Each run's time is printed after
 it. After every run it also looks for an Electron still running on a test profile (a folder in the temp
 directory whose name starts `tagfox-test-`, found by `test-processes.cjs`, never by image name) and stops
-it by PID, failing that run with `LEFT RUNNING by …`. It looks again for up to about 9 seconds first,
-since a killed Electron can take a few seconds to go on a loaded machine. A relaunched TagFox is outside the process tree a
-kill reaches, which is how one was once left open on Steve's screen. Only Electrons started from this
+it by PID, failing that run with `LEFT RUNNING by …`, which says whether each one was still running or
+had already been killed and was still being torn down. It looks again for up to about 9 seconds first,
+since a test that stops part-way never closes its driver, and its Electron, killed when the test's node
+exits, takes seconds to be torn down. A relaunched TagFox is outside the process tree a kill reaches, which
+is how one was once left open on Steve's screen. Only Electrons started from this
 checkout's own `node_modules` count, so a suite in a worktree and one in `C:\dev\TagFox` leave each other's
 instances alone.
 
@@ -86,7 +95,7 @@ instances alone.
 | `harness.cjs` | Shared library: launch Electron under CDP, the `#tagfoxtest` driver, `settle()`, and `structuralProblems()` (the invariants below). Not a test itself. |
 | `help-build.cjs` | No Electron. Builds a copy of the working `help.md` in a temp folder, once with LF and once with CRLF line endings, and checks that each build writes one line ending (the one `help.md` had) and says exactly what the working `help.html` says. So a start on a CRLF checkout leaves `help.html` unmodified in `git status`, and a `help.md` edited without rebuilding fails here. It fails on the build script from before 23 October 2026, which turned a CRLF blank line into an indented one. |
 | `tags-dates.cjs` | No Electron. The two date families in `tags.js`, `xd-` deadlines and `xh-` hide-until dates: a filename parsed, edited and rebuilt parses the same way, and a deadline never becomes a hide-until or the reverse. First in `run-all.cjs`, since it takes milliseconds. |
-| `smoke.cjs` | Startup, a 10x F5 refresh loop, type+refresh races, and searching two other scope folders, one of them while a search is running. Checks the structural invariants after each step. |
+| `smoke.cjs` | Startup, a 10x F5 refresh loop, type+refresh races, and searching two other scope folders, one of them while a search is running. Checks the structural invariants after each step, and that the profile's `lockfile` is gone once `close()` has resolved, which fails on a `close()` that returns straight after the kill. |
 | `delete-hides-row.cjs` | The renderer side of a delete (`removeGonePathsFromUiNow`, through the `tombstone` driver; nothing on disk is touched): the row drops out of the list at once and a refresh does not bring it back, checked by count and by path. The positive control is that the search had rows to start with. |
 | `loadmore-regression.cjs` | In Runner, whose pages are at least 300 rows, a `.js` search under the repo loads two extra pages, and an auto-refresh tick then leaves the grown rows on screen. The positive control comes first: on the first page a tick runs a search. |
 | `refresh-visible.cjs` | Runner's options panel carries Refresh, nothing covers it, and a real mouse click on it refreshes. Every explicit refresh route (that click, F5) writes a `Refreshed hh:mm:ss — N row(s), …` status. Guards the answer to "F5 sometimes does not refresh": a refresh that finds nothing new must still prove it ran. |

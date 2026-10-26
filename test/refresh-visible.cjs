@@ -69,7 +69,7 @@ async function main() {
   } catch (e) {
     failures.push('ERROR: ' + (e.stack || e.message || String(e)));
   } finally {
-    if (drv) drv.close();
+    if (drv) await drv.close();
   }
 
   console.log('\n========== REFRESH VISIBILITY RESULT ==========');

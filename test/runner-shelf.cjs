@@ -156,7 +156,7 @@ async function main() {
     failures.push('threw: ' + (e && e.stack ? e.stack : e));
     console.error(e);
   } finally {
-    if (drv) drv.close();
+    if (drv) await drv.close();
     for (const ent of recycled) {
       for (const p of [ent.info, ent.data]) {
         try {

@@ -91,10 +91,10 @@ function mainPerfLog(line) {
   } catch (_) {}
 }
 
-/* A test instance ends itself once the node test process that started it has gone. The harness kills it at
-   the end of a test, but under a loaded suite one was still running nine seconds after that kill, three
-   times on 25 October 2026, failing runs that had passed; a test that dies part-way would strand one for
-   good. The harness passes its own PID, and a relaunch inherits the environment, so watches the same one. */
+/* A test instance ends itself once the node test process that started it has gone. One the harness spawned
+   dies with that process anyway, through the job object libuv puts it in, but one relaunched by
+   app.relaunch is outside that job and would outlive its test. The harness passes its own PID, and a
+   relaunch inherits the environment, so watches the same one. */
 {
   const testParent = process.env.TAGFOX_TEST_HIDDEN === '1' ? Number(process.env.TAGFOX_TEST_PARENT_PID) : 0;
   if (testParent > 0) {

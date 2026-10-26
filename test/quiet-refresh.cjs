@@ -129,7 +129,7 @@ async function main() {
   } catch (e) {
     failures.push('ERROR: ' + (e && e.stack ? e.stack : e));
   } finally {
-    if (drv) drv.close();
+    if (drv) await drv.close();
     cleanup();
   }
 

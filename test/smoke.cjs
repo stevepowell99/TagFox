@@ -3,6 +3,8 @@
 // Each step settles, then checks the structural invariants.
 // Run: node test/smoke.cjs
 
+const fs = require('fs');
+const path = require('path');
 const { connect, structuralProblems, SCOPES } = require('./harness.cjs');
 
 async function main() {
@@ -31,7 +33,13 @@ async function main() {
   } catch (e) {
     failures.push('ERROR: ' + (e.stack || e.message || String(e)));
   } finally {
-    if (drv) drv.close();
+    if (drv) {
+      await drv.close();
+      // close() resolves only once the test Electron has ended, so the lockfile it holds open in its profile
+      // is gone. One that resolved straight after the kill would leave the process being torn down for
+      // seconds, which run-all.cjs reports as LEFT RUNNING.
+      if (fs.existsSync(path.join(drv.userData, 'lockfile'))) failures.push('close() resolved while the test Electron still held its profile (lockfile)');
+    }
   }
 
   console.log('\n========== SMOKE RESULT ==========');

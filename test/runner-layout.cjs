@@ -620,7 +620,7 @@ async function main() {
     failures.push('threw: ' + (e && e.stack ? e.stack : e));
     console.error(e);
   } finally {
-    if (drv) drv.close();
+    if (drv) await drv.close();
     try {
       fs.rmSync(root, { recursive: true, force: true });
       if (tempFile) fs.rmSync(tempFile, { force: true });

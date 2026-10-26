@@ -64,7 +64,7 @@ async function main() {
   } catch (e) {
     failures.push('ERROR: ' + (e.stack || e.message || String(e)));
   } finally {
-    if (drv) drv.close();
+    if (drv) await drv.close();
   }
   console.log('\n========== RECENT CHANGES RESULT ==========');
   if (!failures.length) console.log('PASS: Ctrl+Shift+Space resets the search to the last hour anywhere');

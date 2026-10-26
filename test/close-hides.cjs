@@ -71,7 +71,7 @@ async function main() {
     failures.push('threw: ' + (e && e.message));
     console.log('  FAIL threw:', e && e.message);
   } finally {
-    if (drv) drv.close();
+    if (drv) await drv.close();
   }
   if (failures.length) {
     console.log(`\nclose-hides: ${failures.length} failure(s)`);

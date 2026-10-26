@@ -1,6 +1,4 @@
 // A test Electron whose node test process has gone ends itself (main.js, TAGFOX_TEST_PARENT_PID).
-// Under a loaded suite a test Electron was sometimes still running nine seconds after the harness killed
-// it, which failed runs that had passed; a test that dies part-way would strand one for good.
 // A spawned child normally dies with its node parent anyway: libuv puts it in a job object that closes with
 // the parent. What outlives the parent is a process outside that job, such as one relaunched by app.relaunch.
 // So this starts a node process that launches a test Electron detached (outside the job) and with no pipes
@@ -16,6 +14,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { sleep, APP_DIR, testProfileDir } = require('./harness.cjs');
+const { killTestElectron } = require('./test-processes.cjs');
 
 const ELECTRON = path.join(APP_DIR, 'node_modules', 'electron', 'dist', 'electron.exe');
 const LOG = path.join(os.tmpdir(), 'tagfox-mainperf-test.log');
@@ -38,6 +37,8 @@ const logText = () => {
 /** Start a node parent that launches a test Electron and stays up; resolve { parent, pid }. */
 async function launch(watch) {
   const userData = testProfileDir('tagfox-test-orphan');
+  // The watched run's Electron, which ended itself, may still be being torn down and holding this profile.
+  killTestElectron(userData);
   try {
     fs.rmSync(userData, { recursive: true, force: true });
   } catch (_) {}
@@ -70,11 +71,9 @@ async function main() {
     console.log(`  ${ok ? 'PASS' : 'FAIL'} ${label}`);
     if (!ok) failures.push(label);
   };
-  const started = [];
   try {
     for (const watch of [true, false]) {
       const { parent, pid } = await launch(watch);
-      started.push(pid);
       await sleep(4000); // past startup, so the watcher has been armed
       check(pid > 0 && alive(pid), `set up (${watch ? 'watched' : 'control'}): the test Electron is running (pid ${pid || 'none'})`);
       spawnSync('taskkill', ['/PID', String(parent.pid), '/F'], { stdio: 'ignore', windowsHide: true });
@@ -87,7 +86,7 @@ async function main() {
       }
     }
   } finally {
-    for (const pid of started) if (pid && alive(pid)) spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+    killTestElectron(testProfileDir('tagfox-test-orphan'));
   }
   if (failures.length) {
     console.log(`\norphan-exits: ${failures.length} failure(s)`);

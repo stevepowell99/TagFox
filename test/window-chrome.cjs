@@ -84,7 +84,7 @@ async function main() {
     check(/^#[0-9a-f]{6}$/i.test(light.overlayColor || '') && /^#[0-9a-f]{6}$/i.test(dark.overlayColor || '') && light.overlayColor !== dark.overlayColor,
       `window buttons follow the theme (light ${light.overlayColor}/${light.overlaySymbolColor}, dark ${dark.overlayColor}/${dark.overlaySymbolColor})`);
     await drv.T('runCommand', 'dark');
-    drv.close();
+    await drv.close();
     drv = null;
 
     // Positive control: the same checks' premise is false on a framed window. Its own port and profile, so
@@ -97,7 +97,7 @@ async function main() {
     failures.push(String((e && e.stack) || e));
     console.log('  ERROR ' + ((e && e.stack) || e));
   } finally {
-    if (drv) drv.close();
+    if (drv) await drv.close();
   }
   console.log(failures.length ? `\nwindow-chrome: ${failures.length} FAILED` : '\nwindow-chrome: all passed');
   process.exit(failures.length ? 1 : 0);

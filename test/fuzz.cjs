@@ -233,7 +233,7 @@ async function main() {
   } catch (e) {
     failures.push('ERROR: ' + (e.stack || e.message || String(e)));
   } finally {
-    if (drv) drv.close();
+    if (drv) await drv.close();
     fs.rmSync(DIR, { recursive: true, force: true });
   }
 

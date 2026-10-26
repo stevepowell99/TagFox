@@ -49,7 +49,7 @@ async function main() {
     let r = await rowButtons(drv);
     check(r.features && r.features.gmist === true, `main finds a gmist here (${JSON.stringify(r.features)})`);
     check(r.labels && r.labels.includes('Open in local gmist'), `the markdown row carries the local gmist pen (positive control): ${JSON.stringify(r.labels)}`);
-    drv.close();
+    await drv.close();
     drv = null;
 
     const bundled = ['_gmist', path.join('node_modules', 'electron', 'dist', 'resources', 'gmist')].some((p) => fs.existsSync(path.join(APP_DIR, p)));
@@ -69,7 +69,7 @@ async function main() {
     failures.push('threw: ' + (e && e.stack ? e.stack : e));
     console.error(e);
   } finally {
-    if (drv) drv.close();
+    if (drv) await drv.close();
     delete process.env.TAGFOX_GMIST_FORCE_BUNDLED;
     try {
       fs.rmSync(root, { recursive: true, force: true });

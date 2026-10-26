@@ -2,7 +2,7 @@
 // Protocol and drives the real renderer through the #tagfoxtest hook (renderer.js). No extra deps:
 // raw CDP over Node's global WebSocket (Node 18+). Used by the dual-pane / refresh regression tests.
 
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -124,6 +124,7 @@ async function connect({ profile, maxResults = 60, scope = SCOPES.repo, disableA
   });
   let stderr = '';
   child.stderr.on('data', (d) => (stderr += d.toString()));
+  const exited = new Promise((resolve) => child.once('exit', resolve));
 
   const page = await findPageTarget(port);
   const cdp = makeCdp(page.webSocketDebuggerUrl);
@@ -200,8 +201,38 @@ async function connect({ profile, maxResults = 60, scope = SCOPES.repo, disableA
   await T('setScope', scope);
   await settle('scope');
 
+  // A killed Electron is not gone when kill() returns: Windows lists it, with its profile's lockfile held,
+  // until it has been torn down, which took up to 5s with two test instances running and can outlast
+  // run-all.cjs's 9-second look on a loaded machine. Node's own liveness check (process.kill(pid, 0)) fails
+  // within a millisecond of the kill, so close() waits for the child's exit event, which fires only once the
+  // process has ended. Every test awaits it before exiting.
   let closed = false;
-  const close = () => { closed = true; try { cdp.close(); } catch (_) {} try { child.kill('SIGKILL'); } catch (_) {} };
+  let closeDone = false;
+  const exitedWithin = (ms) =>
+    new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(false), ms);
+      exited.then(() => { clearTimeout(timer); resolve(true); });
+    });
+  const close = async () => {
+    closed = true;
+    try { cdp.close(); } catch (_) {}
+    try { child.kill('SIGKILL'); } catch (_) {}
+    if (!(await exitedWithin(30000))) {
+      spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+      if (await exitedWithin(10000)) console.log(`  (the test Electron, PID ${child.pid}, ended only after taskkill)`);
+      else {
+        console.log(`  FAIL the test Electron (PID ${child.pid}) had not ended 40s after it was killed`);
+        process.exitCode = 1;
+      }
+    }
+    closeDone = true;
+  };
+  // A test that exits while close() is still waiting has not awaited it, and leaves its Electron being torn down.
+  process.on('exit', () => {
+    if (!closed || closeDone) return;
+    console.log('  FAIL the test exited before close() had finished (await drv.close())');
+    process.exitCode = 1;
+  });
   // Node running out of work before the test closed its driver means the test stopped part-way, so it must
   // not exit 0 (a test whose TagFox died mid-run used to end silently with success).
   process.on('beforeExit', () => {

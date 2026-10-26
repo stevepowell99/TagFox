@@ -46,11 +46,18 @@ function testElectronProcesses(profile) {
   return found;
 }
 
-/** Stop every test Electron on `profile` (or on any test profile), by PID. Returns what it stopped. */
-function killTestElectron(profile) {
-  const found = testElectronProcesses(profile);
-  for (const p of found) spawnSync('taskkill', ['/PID', String(p.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
-  return found;
+/** Stop every test Electron on `profile` (or on any test profile), by PID, and wait up to `waitMs` until Windows
+    no longer lists them: a killed Electron is listed, holding its profile, for seconds while it is torn down.
+    Returns { stopped, stillListed }, the second being what was still there when the wait ran out. */
+function killTestElectron(profile, waitMs = 20000) {
+  const stopped = testElectronProcesses(profile);
+  for (const p of stopped) spawnSync('taskkill', ['/PID', String(p.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+  let stillListed = stopped;
+  for (const t0 = Date.now(); stillListed.length && Date.now() - t0 < waitMs; ) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
+    stillListed = testElectronProcesses(profile).filter((p) => stopped.some((s) => s.pid === p.pid));
+  }
+  return { stopped, stillListed };
 }
 
 module.exports = { testElectronProcesses, killTestElectron };

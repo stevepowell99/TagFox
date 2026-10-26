@@ -55,6 +55,19 @@ const runs = [
   { name: 'fuzz seed 2024', args: ['fuzz.cjs', '40', '2024'] },
 ];
 
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+/** Which kind of leftover a listed Electron is. Node's liveness check fails as soon as a process has been
+    killed, while Windows still lists it until it has been torn down, so the two tell those cases apart. */
+function runState(pid) {
+  try {
+    process.kill(pid, 0);
+    return 'still running';
+  } catch (e) {
+    return e.code === 'EPERM' ? 'still running' : 'already killed, still being torn down';
+  }
+}
+
 function runOne(r) {
   return new Promise((resolve) => {
     const t0 = Date.now();
@@ -81,18 +94,21 @@ function runOne(r) {
     let ok = await runOne(r);
     // A test that leaves a TagFox running (a relaunch escapes the killed process tree) fails, and the
     // TagFox is stopped, so it can neither sit on Steve's screen nor hold a port the next test wants.
-    // A killed Electron can take a few seconds to go on a loaded machine, so look again for up to 8s
-    // before calling it left running; an escaped relaunch is still there after any wait.
+    // A test's close() waits for its Electron to end, but one that stops part-way leaves an Electron that
+    // its node's exit has only just killed, and Windows lists that until it has been torn down, which takes
+    // seconds on a loaded machine. So look again for up to 9s before calling it left running; an escaped
+    // relaunch is still there after any wait.
     let left = [];
     for (let t0 = Date.now(); ; ) {
-      await new Promise((res) => setTimeout(res, left.length ? 1000 : 1500));
+      await sleep(left.length ? 1000 : 1500);
       left = testElectronProcesses();
       if (!left.length || Date.now() - t0 > 9500) break;
     }
-    if (left.length) left = killTestElectron();
     if (left.length) {
       ok = false;
-      console.log(`LEFT RUNNING by ${r.name}, now stopped: ` + left.map((p) => `pid ${p.pid} (${p.profile})`).join(', '));
+      console.log(`LEFT RUNNING by ${r.name}: ` + left.map((p) => `pid ${p.pid} (${p.profile}, ${runState(p.pid)})`).join(', '));
+      const { stillListed } = killTestElectron();
+      console.log(stillListed.length ? `  still listed 20s after taskkill: ${stillListed.map((p) => `pid ${p.pid}`).join(', ')}` : '  now stopped');
     }
     if (!ok) failed++;
   }

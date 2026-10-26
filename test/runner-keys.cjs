@@ -427,7 +427,7 @@ async function main() {
     failures.push('threw: ' + (e && e.stack ? e.stack : e));
     console.error(e);
   } finally {
-    if (drv) drv.close();
+    if (drv) await drv.close();
     for (const d of [root, appDir, progDir]) {
       try {
         fs.rmSync(d, { recursive: true, force: true });

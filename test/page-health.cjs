@@ -16,7 +16,8 @@ const { connect, sleep } = require('./harness.cjs');
 const LOG = path.join(os.tmpdir(), 'tagfox-mainperf-test.log');
 const logSince = (offset) => {
   try {
-    return fs.readFileSync(LOG, 'utf8').slice(offset);
+    // A byte offset (from statSync), so slice the bytes: the log holds multi-byte characters such as "—".
+    return fs.readFileSync(LOG).subarray(offset).toString('utf8');
   } catch (_) {
     return '';
   }
@@ -102,7 +103,7 @@ async function main() {
     failures.push('threw: ' + (e && e.message));
     console.log('  FAIL threw:', e && e.message);
   } finally {
-    if (drv) drv.close();
+    if (drv) await drv.close();
   }
   if (failures.length) {
     console.log(`\npage-health: ${failures.length} failure(s)`);

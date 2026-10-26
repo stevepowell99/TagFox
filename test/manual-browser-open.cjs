@@ -41,6 +41,6 @@ srv.listen(0, '127.0.0.1', async () => {
   console.log('browser   :', got ? got.browser : '(n/a)');
   const ok = Boolean(got) && got.path === sent;
   console.log(ok ? 'PASS: the link arrived whole, in ' + got.browser : 'FAIL: see above');
-  drv.close();
+  await drv.close();
   process.exit(ok ? 0 : 1);
 });

@@ -146,8 +146,8 @@ async function evaluateOnce(expr) {
   } catch (e) {
     failure = e.message;
   } finally {
-    for (const p of killTestElectron(orphanProfile)) console.log('     stopped test TagFox pid ' + p.pid + ' (' + p.profile + ')');
-    spawn('taskkill', ['/PID', String(orphan.pid), '/T', '/F']);
+    // Every Electron on the orphan's profile, the relaunched one and the orphan itself, gone before this exits.
+    for (const p of killTestElectron(orphanProfile).stopped) console.log('     stopped test TagFox pid ' + p.pid + ' (' + p.profile + ')');
   }
   if (failure) {
     console.error('FAIL ' + failure);
