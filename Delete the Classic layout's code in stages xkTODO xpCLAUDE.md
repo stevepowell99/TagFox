@@ -56,7 +56,7 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 
 ## Stages named so far
 
-- **The layout switch in CSS:** every page carries `body.tagfox-runner`, so its 171 uses in `styles.css` add nothing, and `body:not(.tagfox-runner) .tagfox-runner-only` (with the `tagfox-runner-only` class, nine uses in `index.html` and three in `renderer.js`) matches nothing. Dropping the prefix lowers each rule's specificity, and Classic's base rules still sit under the Runner rules that override them, so check each area by comparing every element's box and computed style before and after, in each state it can be in (empty, full, light, dark, hover, drag-over).
+- **Classic's base rules under Runner's:** many base rules in `styles.css` set what a `body.tagfox-runner` rule then overrides, so their declarations are dead. Delete them area by area (the search box and breadcrumb, the status line and chips, the result rows, the Viewer card), checking each by comparing every element's box and computed style before and after in each state it can be in: empty and full, light and dark, and hover, `:active`, `:focus-visible` and `:disabled` forced over CDP. The `body.tagfox-runner` prefix stays: it selects nothing extra, but its specificity is what lets Runner's rules beat Bootstrap's state rules (`.btn:active`, `.btn:focus-visible`).
 
 ## Decisions before any deletion
 

@@ -2558,11 +2558,10 @@
     }
 
     // -------------------------------------------------------------------------
-    // Runner: a second layout of this same renderer (Settings, "Toggle key opens"). One large search
-    // box, a flat ranked list and the Viewer on the right third. It reuses runSearch, renderTableImpl,
-    // the Viewer and the favourites store; body.tagfox-runner does the layout in styles.css. Runner and
-    // Classic each keep their own search state: switching saves the one being left and restores the
-    // other, so Runner's flat list and sort order never leak into Classic.
+    // Runner: the layout on screen. One large search box, a flat ranked list and the Viewer on the right
+    // third. It runs through runSearch, renderTableImpl, the Viewer and the favourites store;
+    // applyRunnerAtStartup puts body.tagfox-runner on the page, which styles.css lays out, and restores
+    // the search state Runner keeps in LS.runnerState.
     // -------------------------------------------------------------------------
 
     /** Every ranking weight is here. Everything does not score relevance, so the smart order is a
@@ -6574,7 +6573,7 @@
       let more = bar.querySelector(':scope > .tagfox-runner-crumb-more');
       if (!more) {
         more = document.createElement('span');
-        more.className = 'tagfox-runner-only tagfox-runner-crumb-more';
+        more.className = 'tagfox-runner-crumb-more';
         more.textContent = '…';
         bar.insertBefore(more, pills[0]);
       }
@@ -10170,7 +10169,7 @@
         chip.className = 'badge bg-secondary shelf-chip align-middle';
         if (ent.isDirectory) {
           const ic = document.createElement('i');
-          ic.className = 'fa-solid fa-folder tagfox-runner-only me-1';
+          ic.className = 'fa-solid fa-folder me-1';
           ic.setAttribute('aria-hidden', 'true');
           chip.appendChild(ic);
         }
@@ -12859,7 +12858,7 @@
         const starred = starKeys.has(pathNormKey(fp));
         const btnStar = document.createElement('button');
         btnStar.type = 'button';
-        btnStar.className = 'results-row-star tagfox-runner-only' + (starred ? ' results-row-star--on' : '');
+        btnStar.className = 'results-row-star' + (starred ? ' results-row-star--on' : '');
         btnStar.title = starred ? 'Unstar (Ctrl+D)' : 'Star: keeps it near the top of searches (Ctrl+D)';
         btnStar.setAttribute('aria-label', starred ? 'Unstar' : 'Star');
         btnStar.setAttribute('aria-pressed', starred ? 'true' : 'false');

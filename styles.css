@@ -1844,12 +1844,11 @@ body > .tooltip {
 }
 /* ─── End dark theme ─── */
 
-/* ─── Runner layout (body.tagfox-runner; Settings → "Toggle key opens") ───
-   A second layout of the same page: one large search box, the results under it, the Viewer on the
-   right third. Everything Classic shows is still in the DOM; this block only hides and restyles it. */
-body:not(.tagfox-runner) .tagfox-runner-only {
-  display: none !important;
-}
+/* ─── Runner layout (body.tagfox-runner, which applyRunnerAtStartup puts on every page) ───
+   One large search box, the results under it, the Viewer on the right third. Classic's markup that is left
+   is still in the DOM, and this block hides and restyles it. The prefix selects nothing extra; it stays for
+   its specificity, which lets these rules beat Bootstrap's state rules (.btn:active, .btn:focus-visible)
+   and Classic's base rules. */
 body.tagfox-runner .tag-toolbar-row,
 body.tagfox-runner .tagfox-status-view-opts,
 body.tagfox-runner.tagfox-runner-viewer-off #splitProps {

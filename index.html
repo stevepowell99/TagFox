@@ -500,7 +500,7 @@
             <i class="fa-solid fa-xmark" aria-hidden="true"></i>
           </button>
           <!-- Runner only: the current folder, as a chip at the start of the box. -->
-          <span id="runnerScopeChip" class="tagfox-runner-only tagfox-runner-scope-chip d-none" role="button" tabindex="-1" title=""></span>
+          <span id="runnerScopeChip" class="tagfox-runner-scope-chip d-none" role="button" tabindex="-1" title=""></span>
           <div class="position-relative tagfox-query-field-wrap">
             <div id="queryGhostHint" class="tagfox-query-ghost-hint" aria-hidden="true"></div>
             <input type="text" id="query" class="form-control tagfox-query-empty" placeholder="" autocomplete="off" />
@@ -508,9 +508,9 @@
           <!-- Shown only once TagFox's own code has changed since it started (refreshRunningNow). -->
           <button type="button" class="btn btn-sm btn-warning d-none" id="btnRestartTagFox" title="TagFox's own code has changed since it started. Restart to run it." aria-label="Restart TagFox"><i class="fa-solid fa-power-off" aria-hidden="true"></i> Restart</button>
           <!-- Runner only: shown when the smart order ranked only part of the matches (renderRunnerRankNote). -->
-          <span id="runnerRankNote" class="tagfox-runner-only tagfox-runner-rank-note d-none"></span>
+          <span id="runnerRankNote" class="tagfox-runner-rank-note d-none"></span>
           <!-- Runner only: the Viewer toggle, and the options, one low-contrast control that opens on click. -->
-          <div class="tagfox-runner-only position-relative d-flex align-self-stretch">
+          <div class="position-relative d-flex align-self-stretch">
             <!-- The Viewer on or off (Alt+P); not faint while the Viewer is hidden, so the way back shows. -->
             <button type="button" id="btnRunnerViewer" class="btn tagfox-runner-opts-btn" aria-pressed="true" aria-controls="propsAside" title="Hide the Viewer (Alt+P)" aria-label="Viewer">
               <i class="fa-solid fa-table-columns" aria-hidden="true"></i>
@@ -522,10 +522,10 @@
         </div>
         <!-- Runner only: the / command list and the options panel, both filled from RUNNER_COMMANDS. They sit
              outside #queryInputGroup, whose overflow: hidden (for its rounded corners) would clip them. -->
-        <div id="runnerCmdList" class="tagfox-runner-only tagfox-runner-cmd-list shadow d-none" role="listbox" aria-label="Commands"></div>
-        <div id="runnerOptsPanel" class="tagfox-runner-only tagfox-runner-opts-panel border rounded bg-body shadow-sm" role="menu" aria-label="Options" hidden></div>
+        <div id="runnerCmdList" class="tagfox-runner-cmd-list shadow d-none" role="listbox" aria-label="Commands"></div>
+        <div id="runnerOptsPanel" class="tagfox-runner-opts-panel border rounded bg-body shadow-sm" role="menu" aria-label="Options" hidden></div>
         <!-- Runner only: one chip per setting that differs from Runner's defaults (RUNNER_FILTER_CHIPS). -->
-        <div id="runnerFilterChips" class="tagfox-runner-only tagfox-runner-filter-chips d-none" aria-label="Filters in use"></div>
+        <div id="runnerFilterChips" class="tagfox-runner-filter-chips d-none" aria-label="Filters in use"></div>
         <div class="d-flex align-items-center flex-shrink-0 flex-wrap gap-2 tagfox-search-opts-rhs tagfox-status-view-opts">
           <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair flex-shrink-0" role="group" aria-label="Subfolders">
             <input type="radio" class="btn-check" name="rvSubfolders" id="optRvSubsOn" value="on" autocomplete="off" checked />
@@ -590,7 +590,7 @@
           </colgroup>
           <tbody id="tbody"></tbody>
         </table>
-        <div id="runnerEmptyNote" class="tagfox-runner-only tagfox-runner-empty-note d-none" role="status"></div>
+        <div id="runnerEmptyNote" class="tagfox-runner-empty-note d-none" role="status"></div>
         <div
           id="resultsLoadMoreWrap"
           class="results-load-more-wrap border-top px-2 py-2 bg-body-secondary d-none"
@@ -637,7 +637,7 @@
             </button>
             <div class="shelf-drop-main d-flex flex-wrap gap-1 align-items-center min-w-0 flex-grow-1">
               <span id="shelfEmptyHint" class="text-muted fw-semibold"
-                ><i class="fa-solid fa-box-open tagfox-runner-only me-2" aria-hidden="true"></i>Shelf<span class="tagfox-runner-only fw-normal"
+                ><i class="fa-solid fa-box-open me-2" aria-hidden="true"></i>Shelf<span class="fw-normal"
                   >: drop files or folders here, then drag them into another folder. Shift copies.</span
                 ></span
               >
@@ -921,7 +921,7 @@
     role="status"
     aria-live="polite"
   >
-    <i class="fa-solid fa-circle-info tagfox-runner-only tagfox-runner-status-icon" aria-hidden="true"></i>
+    <i class="fa-solid fa-circle-info tagfox-runner-status-icon" aria-hidden="true"></i>
     <span id="statusMain" class="min-w-0"></span>
     <span id="navbarDidYouKnow" class="tagfox-navbar-dyk-wrap min-w-0 flex-grow-1 small ms-2 rounded px-2 py-1 border" aria-live="polite"></span>
   </footer>
