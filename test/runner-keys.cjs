@@ -11,7 +11,7 @@
 //   - Tab and Shift+Tab move between the box and the list, as in Everything, and Space in the list toggles
 //     the row's check; Right and Left still go into a folder and back;
 //   - Alt+P, the Viewer button and the options panel's The Viewer hide and show the Viewer; ? in an empty box opens Help at Runner's keys, drawn from the table;
-//   - Alt+Home clears the text, the folder and every filter;
+//   - Alt+Home clears the text, the folder and every filter; Ctrl+Shift+Home clears the folder and every filter but keeps the text;
 //   - Ctrl+M sorts by date and again back to smart;
 //   - F1 and the / command Help open Help on Get started, ? on the Keys tab, the Settings link on Setting up;
 //   - an AppData or ProgramData file ranks below an equally named file elsewhere;
@@ -390,6 +390,16 @@ async function main() {
     await drv.settle('alt home');
     s = await R();
     check(s.query === '' && !s.scope && !s.chips.length && s.sort === 'smart', `Alt+Home clears the text, the folder and the filters (${s.chips.join(', ')})`);
+
+    // Ctrl+Shift+Home: the same text, everywhere, with no filters.
+    await go(alpha, 'qq');
+    await focusBox();
+    await letter('m', 2);
+    await drv.settle('sort for ctrl shift home');
+    await key('Home', 'Home', 36, 2 | 8);
+    await drv.settle('ctrl shift home');
+    s = await R();
+    check(s.query === 'qq' && !s.scope && !s.chips.length && s.sort === 'smart', `Ctrl+Shift+Home keeps the text and clears the folder and the filters (box "${s.query}", ${s.chips.join(', ')})`);
 
     // Esc: text, folder, then hide.
     await go(alpha, 'qq');

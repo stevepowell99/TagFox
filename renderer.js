@@ -4239,6 +4239,10 @@
     /** Alt+Home: no text, no folder, every filter at its default. */
     function runnerStartAgain() {
       clearSearchQueryInputOnly();
+      runnerClearFolderAndFilters();
+    }
+    /** Ctrl+Shift+Home: the text stays; no folder, every filter at its default. */
+    function runnerClearFolderAndFilters() {
       currentFolderPath = '';
       renderScopeBreadcrumb();
       renderRunnerScopeChip();
@@ -4317,6 +4321,7 @@
       },
       { group: 'Search', keys: ['Ctrl+M'], does: 'Sort by date; again for the smart order', cmd: 'sort-date', when: (c) => c.ctrl('m'), run: () => setRunnerSort(runnerSort === 'date' ? 'smart' : 'date') },
       { group: 'Search', keys: ['Alt+Home'], does: 'Start again: no text, no folder, every filter at its default', when: (c) => c.alt && !c.mod && c.key === 'Home', run: () => runnerStartAgain() },
+      { group: 'Search', keys: ['Ctrl+Shift+Home'], does: 'The same text, everywhere: no folder, every filter at its default', when: (c) => c.mod && !c.alt && c.shift && c.key === 'Home', menus: true, run: () => runnerClearFolderAndFilters() },
       { group: 'Search', keys: ['Alt+←', 'Alt+→'], does: 'Back and forward through earlier searches', when: (c) => c.alt && !c.mod && (c.key === 'ArrowLeft' || c.key === 'ArrowRight'), menus: true, run: (c) => void goSearchHistory(c.key === 'ArrowLeft' ? -1 : 1) },
       { group: 'Search', keys: ['Ctrl+S'], does: 'Save this search: its folder, text and filters', cmd: 'save-search', when: (c) => c.ctrl('s'), menus: true, run: () => saveCurrentSearchFromKey() },
       { group: 'Search', keys: ['Alt+1…9'], does: 'Saved search 1 to 9', when: (c) => c.alt && !c.mod && !c.shift && /^Digit[1-9]$/.test(c.code), run: (c) => void runSavedSearch(Number(c.code.slice(5))) },
@@ -4396,9 +4401,11 @@
       },
       {
         group: 'Folders',
-        keys: ['←', 'Alt+↑'],
+        keys: ['←', 'Alt+↑', 'Ctrl+↑'],
         does: 'Up to the parent folder, with the one you left selected (← from the search box: with the caret at the start)',
-        when: (c) => (c.plain && !c.shift && c.key === 'ArrowLeft' && (!c.inBox || c.caretStart)) || (c.alt && !c.mod && !c.shift && c.key === 'ArrowUp'),
+        when: (c) =>
+          (c.plain && !c.shift && c.key === 'ArrowLeft' && (!c.inBox || c.caretStart)) ||
+          (c.mod !== c.alt && !c.shift && c.key === 'ArrowUp'),
         run: (c) => {
           if (!c.held) runnerGoUp();
         },

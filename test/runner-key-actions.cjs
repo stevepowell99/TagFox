@@ -11,7 +11,7 @@
 //   - the / list shows each command's key beside it (Ctrl+B by Whole words only);
 //   - Ctrl+, opens Settings, and Esc closes it without unchecking the selected row;
 //   - Shift+Space shows the Viewer full screen and Esc puts it back;
-//   - Alt+↑ from the box, with text typed, goes up a folder with the one left selected, as ← does, and
+//   - Alt+↑ and Ctrl+↑ from the box, with text typed, go up a folder with the one left selected, as ← does, and
 //     Ctrl+Shift+1…9 goes into a starred folder;
 //   - Ctrl+Z with nothing to undo says so;
 // Ctrl+W is not driven: it hides the window, which a test window already is, through the call Esc's last
@@ -225,6 +225,15 @@ async function main() {
     await drv.settle('alt up done');
     s = await R();
     check(norm(s.scope) === norm(root) && norm(s.selected) === norm(alpha), `Alt+↑ from the box, with text typed, goes up a folder with the one left selected (${path.basename(s.scope)}, ${path.basename(s.selected || '-')})`);
+    s = await goTo(alpha);
+    await drv.T('setQuery', 'inn');
+    await focusBox();
+    await key('ArrowUp', 'ArrowUp', 38, CTRL);
+    await drv.settle('ctrl up');
+    await waitFor(`(currentFolderPath || '').replace(/[\\\\/]+$/, '').toLowerCase() === ${JSON.stringify(norm(root))}`);
+    await drv.settle('ctrl up done');
+    s = await R();
+    check(norm(s.scope) === norm(root) && norm(s.selected) === norm(alpha), `and so does Ctrl+↑ (${path.basename(s.scope)}, ${path.basename(s.selected || '-')})`);
     await drv.T('toggleStar', beta);
     s = await goTo(root, 'alpha');
     const n = s.stars.findIndex((p) => norm(p) === norm(beta)) + 1;

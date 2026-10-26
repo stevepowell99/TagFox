@@ -80,14 +80,14 @@ TagFox does not search the disk itself. It asks [Everything](https://www.voidtoo
 
 ### Moving between folders
 
-- `→`, or `Enter` on a folder, goes into the selected folder. `←`, or `Alt`+`↑` as in File Explorer, goes up to the parent, with the folder you left selected.
+- `→`, or `Enter` on a folder, goes into the selected folder. `←`, `Alt`+`↑` as in File Explorer, or `Ctrl`+`↑` as in a Mac's Finder, goes up to the parent, with the folder you left selected.
 - Inside a folder, with the search box empty, the folder itself is selected: its name at the start of the box lights up, and the Viewer shows the folder, with its folder doc. `↓` goes to the first row, and `↑` from the first row comes back to the folder. `Ctrl`+`Shift`+`C` copies the folder's path, and `Ctrl`+`C` copies the folder for pasting in Explorer. Once you type, the best match is selected, so `Enter` opens it.
 - `Backspace` in an empty search box leaves the folder, so you search everywhere. So does the × on the folder's name at the start of the box.
 - Click any name in the path above the search box to go there, or the › after it to choose one of the folders inside.
 - `Shift`+`Enter` goes to the folder holding the selected row.
 - Paste a folder's path into the search box to go straight there, or a file's path to go to its folder with the file selected. A typed path goes there when you press `Enter`.
 - Point at the folder's name at the start of the search box for its buttons: show it in File Explorer, copy it, edit its tags, open a terminal there, copy its full path in quotes, and the full menu.
-- `Alt`+`←` and `Alt`+`→` go back and forward through your earlier searches, as in a browser. `Alt`+`Home` starts again, with no text, no folder and every filter at its default.
+- `Alt`+`←` and `Alt`+`→` go back and forward through your earlier searches, as in a browser. `Alt`+`Home` starts again, with no text, no folder and every filter at its default. `Ctrl`+`Shift`+`Home` does the same but keeps the text, so the same words are searched everywhere.
 
 ### Commands and options
 
