@@ -3368,8 +3368,8 @@
       void runSearchNow();
     }
 
-    /** Ctrl+V in Runner's box: files or an image on the clipboard go into the current folder, as Classic's
-        paste does; text goes into the box. With no current folder there is no target, and it says so. */
+    /** Ctrl+V in Runner's box: files or an image on the clipboard go into the current folder; text goes
+        into the box. With no current folder there is no target, and it says so. */
     async function runnerPaste() {
       const q = document.getElementById('query');
       let kind = null;
@@ -3433,7 +3433,7 @@
       void runSearchNow();
     }
 
-    /** A tag command: Classic's include (or exclude) toggle, then the search. */
+    /** A tag command: the include (or exclude) toggle, then the search. */
     function runnerToggleTag(word, exclude) {
       (exclude ? toggleTagFilterExclude : toggleTagFilterInclude)(word.toLowerCase(), word);
       persistActiveTagFilter();
@@ -3441,7 +3441,7 @@
       void runSearchNow();
     }
 
-    /** Ctrl+T: Classic's tag editor, on the checked rows, else the selected one. */
+    /** Ctrl+T: the tag editor, on the checked rows, else the selected one. */
     function runnerEditTags() {
       if (getCheckedPathsArr().length) keyboardOpenTagsModal();
       else if (selectedFullPath) openTagModal(selectedFullPath);
@@ -3479,7 +3479,7 @@
         isOn: () => excludedTagKeys.has(word.toLowerCase()),
         run: () => runnerToggleTag(word, true),
       })),
-      /* Classic's deadline panel, as commands; each shows as a chip. */
+      /* The deadline filters, as commands; each shows as a chip. */
       { id: 'due-overdue', group: 'Due', label: 'Overdue (deadline passed)', isOn: () => activeDeadlineRange === 'overdue', run: () => runnerToggleDeadline('overdue') },
       { id: 'due-today', group: 'Due', label: 'Due today', isOn: () => activeDeadlineRange === 'today', run: () => runnerToggleDeadline('today') },
       { id: 'due-thisweek', group: 'Due', label: 'Due this week', isOn: () => activeDeadlineRange === 'thisweek', run: () => runnerToggleDeadline('thisweek') },
@@ -3802,7 +3802,7 @@
         label: () => 'Starred only',
         reset: () => runnerToggleStarredOnly(),
       },
-      /* Set by the / due commands, and kept across layouts with Classic's deadline panel. */
+      /* Set by the / due commands. */
       {
         id: 'deadline',
         icon: 'fa-calendar-day',
@@ -4663,7 +4663,7 @@
       bootstrap.Modal.getOrCreateInstance(hm).show();
     }
 
-    /** Current folder as a chip at the start of the box; its x searches everywhere again. Classic's folder
+    /** Current folder as a chip at the start of the box; its x searches everywhere again. The folder
         buttons (#tagfoxScopeBarRowActions) are placed in it by renderScopeBreadcrumb and survive this rebuild. */
     function renderRunnerScopeChip() {
       const chip = document.getElementById('runnerScopeChip');
@@ -15672,8 +15672,7 @@
       return '#' + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, '0')).join('');
     }
 
-    /** The window buttons take the colours of whatever page sits under them: Runner's strip or Classic's
-        header, light or dark. */
+    /** The window buttons take the colours of the page under them, light or dark. */
     function syncTitleBarOverlayColors() {
       if (!windowChromeState || (!windowChromeState.active && !windowChromeState.hideTitleBar)) return;
       let el = document.elementFromPoint(Math.max(0, window.innerWidth - 12), 8) || document.body;

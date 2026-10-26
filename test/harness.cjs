@@ -218,7 +218,7 @@ function structuralProblems(s) {
   if (!s) return ['no state'];
   if (s.dupBaseIds && s.dupBaseIds.length) probs.push(`dup/missing base ids: ${s.dupBaseIds.join(',')}`);
   if (s.searchFlowRunning || s.searchInFlight) probs.push(`not settled flowRunning=${s.searchFlowRunning} inFlight=${s.searchInFlight}`);
-  // What is on screen is what the rows say should be: every listed row in Classic, the render window in Runner.
+  // What is on screen is what the rows say should be: the render window of the listed rows.
   if (s.tbodyBase !== s.renderedRows) probs.push(`render!=data tbody=${s.tbodyBase} rows to draw=${s.renderedRows} lastRows=${s.lastRows}`);
   return probs;
 }

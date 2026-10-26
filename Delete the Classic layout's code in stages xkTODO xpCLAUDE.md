@@ -38,7 +38,7 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 - **Favourites store (the stars):** `loadFavouriteFolders`, `saveFavouriteFolders`, `toggleStarPath`, `openFavouritePath` (Ctrl+Shift+1..9, which asks IPC `path-kinds` whether a star is a file or a folder); `fuzzyPathScore` (used by Runner's `/` list) lives in the favourites code. IPC `windows-recent-folders`/`-files` and `scanWindowsRecentLnkTargets` in `main.js` feed Runner's ranking boost and are not Classic's.
 - **History and undo:** `searchHist`, `goSearchHistory`, `runUndo`.
 - **Clicked hidden controls:** `#helpModal`, `#settingsPanel`; `#statusMain` and `setStatusMain`.
-- **Keys:** every key is a `RUNNER_KEYS` entry, and the key map was rationalised on 25 October 2026 (Ctrl+J/K, Ctrl+↑, Ctrl+P and Ctrl+Shift+Home dropped; Alt+↑ is ←). `runnerGoUp` still calls Classic's `goToParentScopeFolder`, and Ctrl+Z calls `runUndo`.
+- **Keys:** every key is a `RUNNER_KEYS` entry; CLAUDE.md has the rule for how many keys an action takes. `runnerGoUp` still calls Classic's `goToParentScopeFolder`, and Ctrl+Z calls `runUndo`.
 
 ## Tests
 

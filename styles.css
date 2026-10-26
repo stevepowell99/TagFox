@@ -1111,7 +1111,7 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
 .tagfox-navbar-tip-text {
   min-width: 0;
 }
-/* Classic status bar: full-width strip at bottom of the window. */
+/* Status bar (#tagfoxNavbarStatus): placeStatusLine moves it above the Shelf, and the Runner block docks it on the list's card. */
 .tagfox-app-statusbar {
   position: relative;
   z-index: 1038;
@@ -1709,10 +1709,9 @@ body > .tooltip {
 /* ─── End dark theme ─── */
 
 /* ─── Runner layout (body.tagfox-runner, which applyRunnerAtStartup puts on every page) ───
-   One large search box, the results under it, the Viewer on the right third. Classic's markup that is left
-   is still in the DOM, and this block hides and restyles it. The prefix selects nothing extra; it stays for
-   its specificity, which lets these rules beat Bootstrap's state rules (.btn:active, .btn:focus-visible)
-   and Classic's base rules. */
+   One large search box, the results under it, the Viewer on the right third. This block restyles the shared
+   markup over the base rules above. The prefix selects nothing extra; it stays for its specificity, which
+   lets these rules beat Bootstrap's state rules (.btn:active, .btn:focus-visible) and the base rules. */
 body.tagfox-runner.tagfox-runner-viewer-off #splitProps {
   display: none !important;
 }
@@ -1740,8 +1739,8 @@ body.tagfox-runner #queryInputGroup .tagfox-query-ghost-folder {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* The current folder's path as one line of tiny muted text above the box, each name clickable: Classic's
-   #breadcrumbBar without its tray, pill fills, icons, buttons and dropdowns. It never wraps; fitRunnerBreadcrumb
+/* The current folder's path as one line of tiny muted text above the box, each name clickable:
+   #breadcrumbBar without the base rules' tray, pill fills, icons, buttons and dropdowns. It never wraps; fitRunnerBreadcrumb
    hides leading names behind "…" instead. */
 /* contain: the names never shrink, so without it their total width would widen the page instead of the row
    overflowing for the fit to see. */
@@ -1788,7 +1787,7 @@ body.tagfox-runner #breadcrumbBar .tagfox-breadcrumb-folder-chip {
   max-width: 100%;
   margin: 0 !important;
 }
-/* Each name's ▾ (the folders inside it, as in Classic) is the separator: a faint › that turns down when open. */
+/* Each name's ▾ (the folders inside it) is the separator: a faint › that turns down when open. */
 body.tagfox-runner #breadcrumbBar .tagfox-breadcrumb-folder-chip .breadcrumb-scope-dd {
   margin: 0;
 }
@@ -2332,7 +2331,7 @@ body.tagfox-runner #resultsTable > tbody > tr > td.col-path { grid-area: path; }
 body.tagfox-runner #resultsTable > tbody > tr > td.results-td-actions { grid-area: act; }
 body.tagfox-runner #resultsTable > tbody > tr > td.results-td-size { grid-area: size; }
 body.tagfox-runner #resultsTable > tbody > tr > td:last-child { grid-area: date; }
-/* Size: smaller than the date, with none of Classic's heat colours, and toned by its unit so a large file
+/* Size: smaller than the date, without the base rules' heat colours, and toned by its unit so a large file
    reads heavier than a small one whatever its digits ("999 B" has more of them than "17 GB"): bytes
    faintest, then KB, MB in the muted colour, and GB in the ink colour. The unit is fainter still. */
 body.tagfox-runner #resultsTable > tbody > tr > td.results-td-size {
@@ -2590,7 +2589,7 @@ body.tagfox-runner #propsScroll {
 body.tagfox-runner #propsAside.tagfox-viewer--empty #propsChromeStack {
   display: none !important;
 }
-/* Documents sit on the card itself, without Classic's grey box. */
+/* Documents sit on the card itself, without the base rules' grey box. */
 body.tagfox-runner #mdFilePreview.prop-md-preview,
 body.tagfox-runner #readmePreview.prop-md-preview,
 body.tagfox-runner #textPreviewPre.prop-md-preview,
