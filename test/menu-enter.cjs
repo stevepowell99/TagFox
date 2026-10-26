@@ -69,7 +69,7 @@ async function main() {
 
     await key('Enter', 'Enter', 13);
     await drv.settle('after Enter');
-    const scope = await drv.ev(`document.getElementById('rootFolder').value`);
+    const scope = await drv.ev(`currentFolderPath`);
     const open = await drv.ev(`!!document.querySelector('#breadcrumbBar .dropdown-menu.show')`);
     const norm = (p) => String(p || '').replace(/[\\/]+$/, '').toLowerCase();
     const ok = !!focused.path && norm(scope) === norm(focused.path) && !open;

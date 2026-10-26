@@ -221,7 +221,7 @@ async function main() {
     await focusBox();
     await key('ArrowUp', 'ArrowUp', 38, ALT);
     await drv.settle('alt up');
-    await waitFor(`(document.getElementById('rootFolder').value || '').replace(/[\\\\/]+$/, '').toLowerCase() === ${JSON.stringify(norm(root))}`);
+    await waitFor(`(currentFolderPath || '').replace(/[\\\\/]+$/, '').toLowerCase() === ${JSON.stringify(norm(root))}`);
     await drv.settle('alt up done');
     s = await R();
     check(norm(s.scope) === norm(root) && norm(s.selected) === norm(alpha), `Alt+↑ from the box, with text typed, goes up a folder with the one left selected (${path.basename(s.scope)}, ${path.basename(s.selected || '-')})`);
@@ -231,7 +231,7 @@ async function main() {
     check(n >= 1 && n <= 9, `set up: beta is starred, number ${n}`);
     await key('!@#$%^&*('[n - 1], 'Digit' + n, 48 + n, CTRL | SHIFT);
     await drv.settle('star');
-    await waitFor(`(document.getElementById('rootFolder').value || '').toLowerCase().endsWith('beta')`);
+    await waitFor(`(currentFolderPath || '').toLowerCase().endsWith('beta')`);
     check(norm((await R()).scope) === norm(beta), `Ctrl+Shift+${n} goes into the starred folder (${path.basename((await R()).scope)})`);
     await drv.T('toggleStar', beta);
 

@@ -141,7 +141,7 @@
           <div class="d-flex flex-wrap gap-1 mb-2">
             <button type="button" class="btn btn-sm btn-outline-primary" id="btnSearchScopeAddFolder">Choose folder…</button>
             <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSearchScopeAddProfile">Use my Windows profile folder</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSearchScopeAddCurrent" title="Uses the breadcrumb current folder (#rootFolder)">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSearchScopeAddCurrent" title="Uses the folder TagFox is showing">
               Use current folder
             </button>
             <button type="button" class="btn btn-sm btn-outline-danger d-none" id="btnSearchScopeClearMax">Remove limit</button>
@@ -224,7 +224,7 @@
         <input type="hidden" id="quickTodoFolder" autocomplete="off" />
         <div class="d-flex flex-wrap gap-1 mb-2">
           <button type="button" class="btn btn-sm btn-outline-primary" id="btnQuickTodoPickFolder">Choose folder…</button>
-          <button type="button" class="btn btn-sm btn-outline-secondary" id="btnQuickTodoSetCurrent" title="Uses the breadcrumb current folder (#rootFolder)">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="btnQuickTodoSetCurrent" title="Uses the folder TagFox is showing">
             Use current folder
           </button>
           <button type="button" class="btn btn-sm btn-outline-danger" id="btnQuickTodoClearFolder">Clear</button>
@@ -390,8 +390,6 @@
     <!-- Wrapper: results + viewer. Row by default; stacks to column on narrow screens (see @media in styles.css). -->
     <div class="results-viewer-wrap">
     <div class="center-panel">
-      <!-- Hidden: persisted current folder path (same id as before — loaders/savers unchanged). -->
-      <input type="hidden" id="rootFolder" autocomplete="off" />
 
       <!-- Breadcrumb: the current folder's path, each name a button. -->
       <div class="d-flex flex-wrap align-items-center gap-1 scope-breadcrumb-row">

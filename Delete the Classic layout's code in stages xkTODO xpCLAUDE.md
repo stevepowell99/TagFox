@@ -7,7 +7,7 @@ Steve decided on 24 October 2026 to keep only Runner: hide Classic first, then d
 
 Read-only survey by a subagent at main `74c8ac1`; line numbers are approximate. Since then Runner has gained chips for the deadline and hide-until filters (the hazard the survey found).
 
-**Summary.** Classic cannot be cut out cleanly, because Runner keeps the current folder in Classic's hidden `#rootFolder`.
+**Summary.** Runner's state is its own: the current folder (`currentFolderPath`), the search options (`searchOpts`, `recencyMode`) and the view (`viewShowSubfolders`, `viewContent`) are renderer variables. What is left of Classic is code Runner still calls, listed under "Classic code Runner depends on".
 
 ## What only Classic does
 
@@ -31,7 +31,6 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 
 ## Classic code Runner depends on
 
-- **A hidden control as Runner's state store:** `#rootFolder` holds the current folder (about 80 uses in `renderer.js`, 18 test files). The match options, the hides, the recency window and the view are renderer variables (`searchOpts`, `recencyMode`, `viewShowSubfolders`, `viewContent`).
 - **Breadcrumb:** `#breadcrumbBar`, `renderScopeBreadcrumb`, `goToBreadcrumbFolder`, the flyout and dropdown helpers, the six `btnScopeBar*` buttons.
 - **Tags:** the filter state and functions (`tagFilterCombineOr` included, which nothing on screen sets now: only a stored value turns OR on), `appendTagFiltersToEverythingQuery`, the tag store and modal, and the rename, new-folder, paste-target, bulk-rename and recycle modals.
 - **Results table:** `renderTableImpl` (including Classic's row buttons), `#bulkBar`, `loadMoreResults`, `rowActionStripHandleKeydown`.

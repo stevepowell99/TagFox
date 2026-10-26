@@ -130,7 +130,7 @@ async function main() {
     // up: the first arrow after a raise must only collapse the selection, and the second (the positive
     // control) must do what it does in an ordinary box.
     const norm = (p) => String(p || '').replace(/[\\/]+$/, '').toLowerCase();
-    const scope = () => ev(`document.getElementById('rootFolder').value`);
+    const scope = () => ev(`currentFolderPath`);
     // The index may take a moment to see the new folder, so search again until it is listed.
     const folderSearch = async () => {
       let st;

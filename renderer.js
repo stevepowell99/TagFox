@@ -383,6 +383,8 @@
        recency window, and the view (subfolders; files and folders, folders only or files only). */
     const searchOpts = { optCase: false, optWholeWord: false, optPath: false, optDiacritics: false, optHideSpecial: false, optHideTilde: false };
     let recencyMode = 'all';
+    /** The folder on screen (LS.rootFolder, and rootFolder in the saved search state); empty means everywhere. */
+    let currentFolderPath = '';
     let viewShowSubfolders = true;
     /** @type {'all'|'folders'|'files'} */
     let viewContent = 'all';
@@ -2128,12 +2130,10 @@
     function clampRootFolderUnderSearchScopeMax() {
       const max = getSearchScopeMaxFolderNorm();
       if (!max) return;
-      const inp = document.getElementById('rootFolder');
-      if (!inp) return;
-      const raw = inp.value.trim();
+      const raw = currentFolderPath.trim();
       if (!raw) return;
       const fixed = clampFolderPathToSearchMax(raw);
-      if (pathNormKey(fixed) !== pathNormKey(raw)) inp.value = fixed;
+      if (pathNormKey(fixed) !== pathNormKey(raw)) currentFolderPath = fixed;
     }
 
     /** @returns {string[]} 0 or 1 path for combineFolderScopeGroup (Everything ceiling). */
@@ -2273,11 +2273,11 @@
     function setSearchScopeFolder(folderAbsPath) {
       const folder = normalizeFolderPathForEverything(folderAbsPath);
       if (!folder) return;
-      document.getElementById('rootFolder').value = folder;
+      currentFolderPath = folder;
     }
 
     function clearSearchScope() {
-      document.getElementById('rootFolder').value = '';
+      currentFolderPath = '';
       saveSettings();
       renderScopeBreadcrumb();
       scheduleSearch();
@@ -2531,7 +2531,7 @@
      */
     async function applySearchScopeAndRefresh(folderAbsPath) {
       setSearchScopeFolder(clampFolderPathToSearchMax(folderAbsPath));
-      const scopeNorm = normalizeFolderPathForEverything(document.getElementById('rootFolder').value.trim());
+      const scopeNorm = normalizeFolderPathForEverything(currentFolderPath.trim());
       if (scopeNorm) bumpFolderFocusVisit(scopeNorm);
       saveSettings();
       renderScopeBreadcrumb();
@@ -2544,7 +2544,7 @@
      *  no tags, 1 hour recency. Reached only by the global Ctrl+Shift+Space (main.js RECENT_CHANGES_ACCEL),
      *  so it works while TagFox is hidden. */
     async function openRecentChanges() {
-      document.getElementById('rootFolder').value = '';
+      currentFolderPath = '';
       clearSearchQueryInputOnly();
       renderRunnerScopeChip();
       renderScopeBreadcrumb();
@@ -2860,7 +2860,7 @@
       const use = runnerUseStats();
       const now = Date.now();
       const day = 864e5;
-      const scope = String(document.getElementById('rootFolder')?.value || '').trim();
+      const scope = currentFolderPath.trim();
       const rankedDown = RUNNER_RANKED_DOWN.filter((f) => !f.re.test(scope + '\\') && !words.some((w) => w.includes(f.name)));
       const tildePenalty = pathUnderTildeSegment(scope) || String(qText || '').includes('~') ? 0 : RUNNER_RANK.tilde;
       const scored = rows.map((r) => {
@@ -3016,7 +3016,7 @@
     }
 
     function runnerListKey() {
-      return selectAfterSearchKeyFor(document.getElementById('query')?.value, document.getElementById('rootFolder').value);
+      return selectAfterSearchKeyFor(document.getElementById('query')?.value, currentFolderPath);
     }
 
     /** A new list (scope or query changed) starts with one window of rows drawn. */
@@ -3207,7 +3207,7 @@
 
     /** Left: the current folder's parent, or with no current folder the folder holding the selected row. */
     function runnerGoUp() {
-      const scope = normalizeFolderPathForEverything(document.getElementById('rootFolder').value.trim());
+      const scope = normalizeFolderPathForEverything(currentFolderPath.trim());
       if (scope) {
         void runnerNavigate(() => goToParentScopeFolder(), scope);
         return;
@@ -4206,7 +4206,7 @@
         runnerEscapeLastStep = 'text';
         return true;
       }
-      if (document.getElementById('rootFolder').value.trim()) {
+      if (currentFolderPath.trim()) {
         clearSearchScope();
         runnerEscapeLastStep = 'folder';
         return true;
@@ -4239,7 +4239,7 @@
     /** Alt+Home: no text, no folder, every filter at its default. */
     function runnerStartAgain() {
       clearSearchQueryInputOnly();
-      document.getElementById('rootFolder').value = '';
+      currentFolderPath = '';
       renderScopeBreadcrumb();
       renderRunnerScopeChip();
       runnerResetAllFilters();
@@ -4661,7 +4661,7 @@
     function renderRunnerScopeChip() {
       const chip = document.getElementById('runnerScopeChip');
       if (!chip) return;
-      const scope = normalizeFolderPathForEverything(document.getElementById('rootFolder').value.trim());
+      const scope = normalizeFolderPathForEverything(currentFolderPath.trim());
       const acts = chip.querySelector('#tagfoxScopeBarRowActions');
       for (const n of [...chip.childNodes]) if (n !== acts) n.remove();
       chip.classList.toggle('d-none', !scope);
@@ -5359,7 +5359,7 @@
 
     /** Folder that scopes the search (Settings “Scope folder” field). */
     function currentScopeFolderPath() {
-      const rootRaw = document.getElementById('rootFolder').value.trim();
+      const rootRaw = currentFolderPath.trim();
       return rootRaw ? normalizeFolderPathForEverything(rootRaw) : '';
     }
 
@@ -5717,7 +5717,7 @@
       const ghost = document.getElementById('queryGhostHint');
       if (!q) return;
       const max = getSearchScopeMaxFolderNorm();
-      const scopeRaw = document.getElementById('rootFolder').value.trim();
+      const scopeRaw = currentFolderPath.trim();
       q.placeholder = '';
       if (!scopeRaw && !max) {
         q.setAttribute('aria-label', 'Search inside entire index');
@@ -5756,7 +5756,7 @@
     let renderedScopeBreadcrumbKey = null;
 
     function currentScopeBreadcrumbKey() {
-      return getSearchScopeMaxFolderNorm() + '\n' + document.getElementById('rootFolder').value.trim();
+      return getSearchScopeMaxFolderNorm() + '\n' + currentFolderPath.trim();
     }
 
     /** Avoid rebuilding breadcrumb when selection/table updates would destroy open ▾ + flyouts for nothing. */
@@ -6118,7 +6118,7 @@
 
     /** Normalized (trim trail sep, lower) child of `parentPath` that continues toward current scope, or '' if none. */
     function breadcrumbHighlightChildPathNorm(parentPath) {
-      let scopeRaw = document.getElementById('rootFolder').value.trim();
+      let scopeRaw = currentFolderPath.trim();
       if (!scopeRaw) scopeRaw = getSearchScopeMaxFolderNorm() || '';
       if (!scopeRaw) return '';
       const scopeNorm = normalizeFolderPathForEverything(scopeRaw).replace(/[/\\]+$/, '').toLowerCase();
@@ -6279,7 +6279,7 @@
       if (scopeRowActs) scopeRowActs.remove();
       el.innerHTML = '';
       const maxNorm = getSearchScopeMaxFolderNorm();
-      const scopeRaw = document.getElementById('rootFolder').value.trim();
+      const scopeRaw = currentFolderPath.trim();
       if (!maxNorm && !scopeRaw) {
         el.classList.add('d-none');
         el.classList.remove('d-flex', 'align-items-center', 'flex-wrap', 'gap-0');
@@ -6300,14 +6300,13 @@
       el.classList.remove('d-none');
       el.classList.add('d-flex', 'align-items-center', 'flex-wrap', 'gap-0');
 
-      const rfEl = document.getElementById('rootFolder');
       let norm = '';
       if (scopeRaw) {
         norm = normalizeFolderPathForEverything(scopeRaw).replace(/[/\\]+$/, '');
         if (maxNorm) {
           const clamped = clampFolderPathToSearchMax(norm);
           if (pathNormKey(clamped) !== pathNormKey(norm)) {
-            rfEl.value = clamped;
+            currentFolderPath = clamped;
             norm = clamped;
           }
         }
@@ -7097,7 +7096,7 @@
         if (fb) fb.textContent = 'Invalid pattern.';
         return;
       }
-      const rootPrefix = T.normalizeRootPrefix(getSearchScopeMaxFolderNorm() || document.getElementById('rootFolder').value);
+      const rootPrefix = T.normalizeRootPrefix(getSearchScopeMaxFolderNorm() || currentFolderPath);
       const pathPairs = [];
       renameItemBusy = true;
       if (fb) fb.textContent = '';
@@ -7580,7 +7579,7 @@
         await refreshPropsPanel();
         return;
       }
-      const scope = normalizeFolderPathForEverything(document.getElementById('rootFolder').value.trim()).replace(/[/\\]+$/, '');
+      const scope = normalizeFolderPathForEverything(currentFolderPath.trim()).replace(/[/\\]+$/, '');
       const selNorm = selectedFullPath.replace(/[/\\]+$/, '');
       if (scope && selNorm.toLowerCase() === scope.toLowerCase()) {
         const syn = syntheticFolderRow(selectedFullPath);
@@ -11106,7 +11105,7 @@
       loadKnownBracketTags();
       document.getElementById('baseUrl').value =
         localStorage.getItem(LS.baseUrl) || 'http://127.0.0.1';
-      document.getElementById('rootFolder').value = localStorage.getItem(LS.rootFolder) || '';
+      currentFolderPath = localStorage.getItem(LS.rootFolder) || '';
       {
         const qf = document.getElementById('quickTodoFolder');
         if (qf) qf.value = localStorage.getItem(LS.quickTodoFolder) || '';
@@ -11189,7 +11188,7 @@
       /* Runner's own search state is applied at every start, so it is kept current here. */
       lsSetJson(LS.runnerState, serializeSearchState());
       localStorage.setItem(LS.baseUrl, document.getElementById('baseUrl').value.trim());
-      localStorage.setItem(LS.rootFolder, document.getElementById('rootFolder').value.trim());
+      localStorage.setItem(LS.rootFolder, currentFolderPath.trim());
       {
         const qf = document.getElementById('quickTodoFolder');
         if (qf) localStorage.setItem(LS.quickTodoFolder, qf.value.trim());
@@ -11530,7 +11529,7 @@
     function serializeSearchState() {
       return {
         query: document.getElementById('query').value,
-        rootFolder: document.getElementById('rootFolder').value,
+        rootFolder: currentFolderPath,
         searchScopeMax: getSearchScopeMaxFolderNorm(),
         activeTagKeys: [...activeTagKeys].sort(),
         excludedTagKeys: [...excludedTagKeys].sort(),
@@ -11584,7 +11583,7 @@
     function applySearchState(s) {
       document.getElementById('query').value = s.query != null ? String(s.query) : '';
       syncQueryGhostUi();
-      document.getElementById('rootFolder').value = s.rootFolder != null ? String(s.rootFolder) : '';
+      currentFolderPath = s.rootFolder != null ? String(s.rootFolder) : '';
       if (Object.prototype.hasOwnProperty.call(s, 'searchScopeMax')) {
         setSearchScopeMaxFolderFromString(s.searchScopeMax);
         renderSearchScopeMaxUi();
@@ -12495,7 +12494,7 @@
     async function openResultsRowItemActionsMenu(fp, clientX, clientY, row) {
       const res = await window.tagBrowser.showItemActionsMenu({
         filePath: fp,
-        scopeFolder: document.getElementById('rootFolder').value.trim(),
+        scopeFolder: currentFolderPath.trim(),
         inObsidianVault: pathInObsidianVault(fp),
         underGoogleDrive: pathUnderGoogleDrive(fp),
         x: Math.round(clientX),
@@ -13897,7 +13896,7 @@
       saveSettings();
       const { baseUrl, httpUser, httpPassword } = readEverythingConnection();
       const ceilingNorms = getSearchScopeCeilingFoldersNorms();
-      const rootFolder = document.getElementById('rootFolder').value.trim();
+      const rootFolder = currentFolderPath.trim();
       const query = document.getElementById('query').value;
       const hasBread = !!normalizeFolderPathForEverything(rootFolder);
       const hasCeil = ceilingNorms.length > 0;
@@ -14138,41 +14137,41 @@
     });
     document.getElementById('btnScopeBarOpen')?.addEventListener('click', async (e) => {
       e.preventDefault();
-      const raw = document.getElementById('rootFolder').value.trim();
+      const raw = currentFolderPath.trim();
       if (!raw) return;
       await window.tagBrowser.showInFolder(normalizeFolderPathForEverything(raw));
     });
     document.getElementById('btnScopeBarClip')?.addEventListener('click', async (e) => {
       e.preventDefault();
       const status = document.getElementById('statusMain');
-      const raw = document.getElementById('rootFolder').value.trim();
+      const raw = currentFolderPath.trim();
       if (!raw) return;
       const r = await window.tagBrowser.copyExplorerPaste([normalizeFolderPathForEverything(raw)]);
       if (!r || !r.ok) setStatusMain((r && r.error) || 'Copy for Explorer failed');
     });
     document.getElementById('btnScopeBarTags')?.addEventListener('click', (e) => {
       e.preventDefault();
-      const raw = document.getElementById('rootFolder').value.trim();
+      const raw = currentFolderPath.trim();
       if (!raw) return;
       openTagModal(normalizeFolderPathForEverything(raw));
     });
     document.getElementById('btnScopeBarTerminal')?.addEventListener('click', async (e) => {
       e.preventDefault();
-      const raw = document.getElementById('rootFolder').value.trim();
+      const raw = currentFolderPath.trim();
       if (!raw) return;
       const r = await window.tagBrowser.openTerminalAt(normalizeFolderPathForEverything(raw));
       if (!r || !r.ok) setStatusMain((r && r.error) || 'Open in Terminal failed');
     });
     document.getElementById('btnScopeBarCopyQuoted')?.addEventListener('click', async (e) => {
       e.preventDefault();
-      const raw = document.getElementById('rootFolder').value.trim();
+      const raw = currentFolderPath.trim();
       if (!raw) return;
       const r = await window.tagBrowser.clipboardWriteText('"' + normalizeFolderPathForEverything(raw) + '"');
       if (!r || !r.ok) setStatusMain((r && r.error) || 'Copy quoted path failed');
     });
     document.getElementById('btnScopeBarMore')?.addEventListener('click', async (e) => {
       e.preventDefault();
-      const raw = document.getElementById('rootFolder').value.trim();
+      const raw = currentFolderPath.trim();
       if (!raw) return;
       const fp = normalizeFolderPathForEverything(raw);
       const rect = e.currentTarget.getBoundingClientRect();
@@ -15090,7 +15089,7 @@
 
     /** The folder buttons (Explorer, copy, tags, terminal, quoted path, more) need a current folder. */
     function syncScopeBarButtons() {
-      const raw = document.getElementById('rootFolder').value.trim();
+      const raw = currentFolderPath.trim();
       const hasScope = !!normalizeFolderPathForEverything(raw);
       for (const id of ['btnScopeBarOpen', 'btnScopeBarClip', 'btnScopeBarTags', 'btnScopeBarTerminal', 'btnScopeBarCopyQuoted', 'btnScopeBarMore']) {
         const el = document.getElementById(id);
@@ -15101,7 +15100,7 @@
     /** Move scope folder to parent (toolbar scope / Settings field). */
     async function goToParentScopeFolder() {
       const status = document.getElementById('statusMain');
-      const raw = document.getElementById('rootFolder').value.trim();
+      const raw = currentFolderPath.trim();
       if (!raw) {
         setStatusMain('No current folder set.');
         return;
@@ -15109,7 +15108,7 @@
       const norm = normalizeFolderPathForEverything(raw);
       // Alt+↑ on C:\: clear current folder so the query is not limited to that drive (Settings scope ceiling unchanged).
       if (isWindowsDriveRootNorm(norm)) {
-        document.getElementById('rootFolder').value = '';
+        currentFolderPath = '';
         saveSettings();
         renderScopeBreadcrumb();
         await runSearchNow();
@@ -15784,7 +15783,7 @@
         },
         setRecency: (mode) => { setRecencyFilterMode(mode); void runSearchNow(); },
         setView: (subsOn, content) => { setResultsView(!!subsOn, content || 'all'); void runSearchNow(); },
-        setScope: (root) => { const e = document.getElementById('rootFolder'); if (e) e.value = String(root || ''); void runSearchNow(); },
+        setScope: (root) => { currentFolderPath = String(root || ''); void runSearchNow(); },
         autoTick: () => maybeAutoRefreshSearchTick(),
         loadMore: () => loadMoreResults(),
         /* What main's tagfox-open-recent-changes and tagfox-hotkey-raised messages call; a test cannot press the
@@ -15843,7 +15842,7 @@
           bodyClass: document.body.classList.contains('tagfox-runner'),
           sort: runnerSort,
           query: document.getElementById('query')?.value || '',
-          scope: document.getElementById('rootFolder')?.value || '',
+          scope: currentFolderPath,
           subfolders: isShowSubfolders(),
           selected: selectedFullPath || '',
           rows: listRowsForUi().map((r) => fullPathForRow(r)),
@@ -15871,7 +15870,7 @@
         configure: (cfg) => {
           const c = cfg || {};
           if (c.baseUrl != null) { const e = document.getElementById('baseUrl'); if (e) e.value = c.baseUrl; }
-          if (c.rootFolder != null) { const e = document.getElementById('rootFolder'); if (e) e.value = c.rootFolder; }
+          if (c.rootFolder != null) currentFolderPath = String(c.rootFolder);
           if (c.maxResults != null) { const e = document.getElementById('maxResults'); if (e) e.value = String(c.maxResults); }
           saveSettings();
         },
