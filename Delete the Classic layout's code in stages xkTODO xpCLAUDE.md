@@ -7,20 +7,13 @@ Steve decided on 24 October 2026 to keep only Runner: hide Classic first, then d
 
 Read-only survey by a subagent at main `74c8ac1`; line numbers are approximate. Since then Runner has gained chips for the deadline and hide-until filters (the hazard the survey found).
 
-**Summary.** Classic cannot be cut out cleanly, because Runner keeps its state in Classic's hidden controls.
+**Summary.** Classic cannot be cut out cleanly, because Runner keeps the current folder in Classic's hidden `#rootFolder`.
 
 ## What only Classic does
 
-"Runner?" says whether Runner has an equivalent.
-
 ### Views and search
 
-| Feature | In Classic | Runner? | Code |
-|---|---|---|---|
-| Subfolders on/off | `optRvSubsOn/Off` radios | Yes: the `/` command "Search this folder only" and its chip | `applyResultsViewRadiosToDom`, `isShowSubfolders` |
-| Files and folders / folders only / files only | `optRvAll`, `optRvDirsOnly`, `optRvFilesOnly` radios | Partial: `/folders`, `/files` | `resultsContentMode` |
-| Match options | toolbar | Partial: `/` commands and Ctrl keys | `searchOptionsFromUI`, `toggleSearchOptCheckbox` |
-| Recency 1h / 1d / 1w / 1m / 1y / All | toolbar radios | Partial: `/` has all, 1h, 1d, 1w; 1m and 1y only by Ctrl+R cycling | `setRecencyFilterMode` |
+Classic's toolbar (the recency radios, the match options with their Advanced popover, and the view radios) is gone. Runner sets the same state from `/` commands, chips and keys: subfolders through "Search this folder only", folders only and files only, the match options, and the recency window, whose 1m and 1y are reached only by Ctrl+R cycling (`/` has any time, 1h, 1d and 1w).
 
 ### Shelf
 
@@ -38,7 +31,7 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 
 ## Classic code Runner depends on
 
-- **Hidden controls as Runner's state store (the main obstacle):** `#rootFolder` (current folder); `#optPath`, `#optHideSpecial`, `#optHideTilde`, `#optCase`, `#optWholeWord`, `#optDiacritics`; the recency radios; the `optRvSubs*` and content (`optRvAll`, `optRvDirsOnly`, `optRvFilesOnly`) radios.
+- **A hidden control as Runner's state store:** `#rootFolder` holds the current folder (about 80 uses in `renderer.js`, 18 test files). The match options, the hides, the recency window and the view are renderer variables (`searchOpts`, `recencyMode`, `viewShowSubfolders`, `viewContent`).
 - **Breadcrumb:** `#breadcrumbBar`, `renderScopeBreadcrumb`, `goToBreadcrumbFolder`, the flyout and dropdown helpers, the six `btnScopeBar*` buttons.
 - **Tags:** the filter state and functions (`tagFilterCombineOr` included, which nothing on screen sets now: only a stored value turns OR on), `appendTagFiltersToEverythingQuery`, the tag store and modal, and the rename, new-folder, paste-target, bulk-rename and recycle modals.
 - **Results table:** `renderTableImpl` (including Classic's row buttons), `#bulkBar`, `loadMoreResults`, `rowActionStripHandleKeydown`.
@@ -54,10 +47,7 @@ Runner keeps the names and ▾ menus; Left, Backspace, Esc and the chip's × go 
 - **No layout:** `restart-in-terminal`, `help-build` and `tags-dates` do not go through the harness's `connect`.
 - `test/README.md` omits tags-dates and repro-crash.
 
-## Stages named so far
-
-- **Classic's base rules under Runner's:** many base rules in `styles.css` set what a `body.tagfox-runner` rule then overrides, so their declarations are dead. Delete them area by area (the search box and breadcrumb, the status line and chips, the result rows, the Viewer card), checking each by comparing every element's box and computed style before and after in each state it can be in: empty and full, light and dark, and hover, `:active`, `:focus-visible` and `:disabled` forced over CDP. The `body.tagfox-runner` prefix stays: it selects nothing extra, but its specificity is what lets Runner's rules beat Bootstrap's state rules (`.btn:active`, `.btn:focus-visible`).
-
 ## Decisions before any deletion
 
 - None left: deadlines, the star list, Restart, Windows Recent, Ctrl+Shift+Space and Subfolders are all settled above.
+- **Classic's base rules under Runner's stay (Steve, 26 October 2026).** Many base rules in `styles.css` set what a `body.tagfox-runner` rule then overrides, but proving a rule dead means reaching every state it applies in and comparing every element's box and computed style. For the result rows that took longer than Steve allowed, and two rules a first pass had called dead were live: the 1d recency colour and the row buttons' hover. The `body.tagfox-runner` prefix stays too: it selects nothing extra, but its specificity is what lets Runner's rules beat Bootstrap's state rules (`.btn:active`, `.btn:focus-visible`).

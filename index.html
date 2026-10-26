@@ -392,55 +392,6 @@
     <div class="center-panel">
       <!-- Hidden: persisted current folder path (same id as before — loaders/savers unchanged). -->
       <input type="hidden" id="rootFolder" autocomplete="off" />
-      <div class="tag-toolbar-row d-flex flex-wrap gap-1 align-items-center small">
-        <div class="d-flex align-items-center flex-shrink-0 flex-wrap tagfox-search-opts-rhs ms-auto">
-          <div class="d-flex align-items-center flex-shrink-0 flex-wrap tagfox-recency-filter-wrap rounded px-1">
-            <span
-              class="tagfox-recency-lead text-muted flex-shrink-0 d-inline-flex align-items-center me-1"
-              title="Recency — filter by modified time (client and/or Everything)"
-              aria-hidden="true"
-            >
-              <i class="fa-solid fa-clock"></i>
-            </span>
-            <div class="btn-group tagfox-segmented flex-shrink-0" role="group" aria-label="Recency">
-              <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecency1h" value="1h" autocomplete="off" />
-              <label class="btn btn-outline-secondary btn-sm" for="optRecency1h" title="Modified within the last hour">1h</label>
-              <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecency1d" value="1d" autocomplete="off" />
-              <label class="btn btn-outline-secondary btn-sm" for="optRecency1d" title="Modified within the last 24 hours">1d</label>
-              <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecency1w" value="1w" autocomplete="off" />
-              <label class="btn btn-outline-secondary btn-sm" for="optRecency1w" title="Modified within the last 7 days">1w</label>
-              <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecency1m" value="1m" autocomplete="off" />
-              <label class="btn btn-outline-secondary btn-sm" for="optRecency1m" title="Modified within the last 30 days">1m</label>
-              <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecency1y" value="1y" autocomplete="off" />
-              <label class="btn btn-outline-secondary btn-sm" for="optRecency1y" title="Modified within the last 365 days">1y</label>
-              <input type="radio" class="btn-check" name="tagFoxRecencyFilter" id="optRecencyAll" value="all" autocomplete="off" checked />
-              <label class="btn btn-outline-secondary btn-sm" for="optRecencyAll" title="No recency filter">All</label>
-            </div>
-          </div>
-          <!-- All match options grouped in one tray: Match path / Hide special / Hide ~ (own shortcuts p, ., t) plus More match options. -->
-          <div class="d-inline-flex align-items-center flex-shrink-0 tagfox-match-opts-group" role="group" aria-label="Match options">
-            <input type="checkbox" class="btn-check" id="optPath" autocomplete="off" />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center px-0 tagfox-search-opt-icon" style="width: 2rem; min-width: 2rem; height: 2rem" for="optPath" title="Match path (Ctrl+U): match the whole path, not just the file name." aria-label="Match path"><i class="fa-solid fa-route fa-fw" aria-hidden="true"></i></label>
-            <input type="checkbox" class="btn-check" id="optHideSpecial" autocomplete="off" />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center px-0 tagfox-search-opt-icon" style="width: 2rem; min-width: 2rem; height: 2rem" for="optHideSpecial" title="Hide special (Ctrl+.): hide from the table only any path segment starting with . or $, plus desktop.ini (.shortcut-targets-by-id kept). Does not change Everything — raise Results per page if the list looks empty." aria-label="Hide special"><i class="fa-solid fa-eye-slash fa-fw" aria-hidden="true"></i></label>
-            <input type="checkbox" class="btn-check" id="optHideTilde" autocomplete="off" />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center px-0 tagfox-search-opt-icon" style="width: 2rem; min-width: 2rem; height: 2rem" for="optHideTilde" title="Hide ~ (t / Ctrl+T): hide from the table only any path segment starting with ~ (e.g. profile junctions). Client-side only; same paging caveats as Hide special." aria-label="Hide ~"><span class="tagfox-search-opt-glyph" aria-hidden="true">~</span></label>
-            <div class="position-relative d-inline-flex tagfox-advanced-wrap">
-            <button type="button" class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center px-0 tagfox-advanced-icon-btn tagfox-search-opt-icon" style="width: 2rem; min-width: 2rem; height: 2rem" id="btnToggleSearchOptsAdvanced" aria-expanded="false" aria-controls="searchOptsAdvancedPanel" title="More match options: case, whole word, respect accents" aria-label="More match options">
-              <i class="fa-solid fa-font fa-fw" aria-hidden="true"></i>
-            </button>
-            <div id="searchOptsAdvancedPanel" class="search-opts-advanced-popover border rounded px-2 py-2 bg-body shadow-sm d-flex flex-wrap align-items-center gap-1" role="group" aria-label="More match options" hidden>
-              <input type="checkbox" class="btn-check" id="optCase" autocomplete="off" />
-              <label class="btn btn-outline-secondary btn-sm" for="optCase" title="Match case: Everything case-sensitive matching.">Match case</label>
-              <input type="checkbox" class="btn-check" id="optWholeWord" autocomplete="off" />
-              <label class="btn btn-outline-secondary btn-sm" for="optWholeWord" title="Whole word (Ctrl+B).">Whole word</label>
-              <input type="checkbox" class="btn-check" id="optDiacritics" autocomplete="off" />
-              <label class="btn btn-outline-secondary btn-sm" for="optDiacritics" title="Respect accents: match diacritics exactly.">Respect accents</label>
-            </div>
-          </div>
-          </div>
-        </div>
-      </div>
 
       <!-- Breadcrumb: the current folder's path, each name a button. -->
       <div class="d-flex flex-wrap align-items-center gap-1 scope-breadcrumb-row">
@@ -493,7 +444,7 @@
         </button>
       </div>
 
-      <!-- Search row: query + view (subfolders, content); recency + Advanced on tag row RHS -->
+      <!-- Search row: the box, and Runner's command list, options panel and filter chips. -->
       <div class="tagfox-search-toolbar-row d-flex align-items-center gap-2 min-w-0 flex-wrap">
         <div id="queryInputGroup" class="input-group input-group-sm tagfox-query-input min-w-0">
           <button type="button" class="btn btn-sm d-inline-flex align-items-center justify-content-center p-0 flex-shrink-0 align-self-stretch tagfox-toolbar-clear tagfox-query-clear" style="width: 2rem; min-width: 2rem" id="btnClearQuery" title="Clear search text" aria-label="Clear search text">
@@ -526,27 +477,6 @@
         <div id="runnerOptsPanel" class="tagfox-runner-opts-panel border rounded bg-body shadow-sm" role="menu" aria-label="Options" hidden></div>
         <!-- Runner only: one chip per setting that differs from Runner's defaults (RUNNER_FILTER_CHIPS). -->
         <div id="runnerFilterChips" class="tagfox-runner-filter-chips d-none" aria-label="Filters in use"></div>
-        <div class="d-flex align-items-center flex-shrink-0 flex-wrap gap-2 tagfox-search-opts-rhs tagfox-status-view-opts">
-          <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair flex-shrink-0" role="group" aria-label="Subfolders">
-            <input type="radio" class="btn-check" name="rvSubfolders" id="optRvSubsOn" value="on" autocomplete="off" checked />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvSubsOn" title="Include subfolders — S toggles subfolders"
-              ><i class="fa-solid fa-folder-tree fa-fw" aria-hidden="true"></i></label>
-            <input type="radio" class="btn-check" name="rvSubfolders" id="optRvSubsOff" value="off" autocomplete="off" />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvSubsOff" title="This folder only — S toggles subfolders"
-              ><i class="fa-solid fa-folder fa-fw" aria-hidden="true"></i></label>
-          </div>
-          <div class="btn-group tagfox-segmented tagfox-results-view-mode tagfox-view-pair tagfox-content-trio flex-shrink-0" role="group" aria-label="Content filter">
-            <input type="radio" class="btn-check" name="rvContent" id="optRvAll" value="all" autocomplete="off" checked />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvAll" title="Files and folders — F cycles files/folders"
-              ><i class="fa-solid fa-copy fa-fw" aria-hidden="true"></i></label>
-            <input type="radio" class="btn-check" name="rvContent" id="optRvDirsOnly" value="dirs" autocomplete="off" />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvDirsOnly" title="Folders only — F cycles files/folders"
-              ><i class="fa-solid fa-folder fa-fw" aria-hidden="true"></i></label>
-            <input type="radio" class="btn-check" name="rvContent" id="optRvFilesOnly" value="files" autocomplete="off" />
-            <label class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center tagfox-results-view-icon" for="optRvFilesOnly" title="Files only — F cycles files/folders"
-              ><i class="fa-solid fa-file-lines fa-fw" aria-hidden="true"></i></label>
-          </div>
-        </div>
       </div>
 
       <div class="results-shelf-stack">

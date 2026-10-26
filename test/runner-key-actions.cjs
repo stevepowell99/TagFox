@@ -100,7 +100,7 @@ async function main() {
 
     // Options, from the list.
     await focusList();
-    const opt = (id) => drv.ev(`document.getElementById('${id}').checked`);
+    const opt = (id) => drv.ev(`searchOpts['${id}']`);
     const ww = await opt('optWholeWord');
     await key('b', 'KeyB', 66, CTRL);
     const ww1 = await opt('optWholeWord');

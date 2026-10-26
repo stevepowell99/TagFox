@@ -614,7 +614,7 @@ async function main() {
     if (!hook) throw new Error('the test hook never came back after the reload');
     await drv.T('autoStop');
     await drv.settle('restarted');
-    const carried = await drv.ev(`JSON.stringify({ live: document.getElementById('optHideTilde').checked, saved: JSON.parse(localStorage.getItem('tagBrowserRunnerState')).optHideTilde })`);
+    const carried = await drv.ev(`JSON.stringify({ live: searchOpts.optHideTilde, saved: JSON.parse(localStorage.getItem('tagBrowserRunnerState')).optHideTilde })`);
     check(carried === '{"live":false,"saved":false}', `an old saved hide-~ is carried over to showing ~ paths (${carried})`);
   } catch (e) {
     failures.push('threw: ' + (e && e.stack ? e.stack : e));

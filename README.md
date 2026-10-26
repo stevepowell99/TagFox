@@ -31,11 +31,9 @@ TagFox relies on the `sort-mix:` feature, so Everything 1.5a is the supported ve
 
 - **Set a search scope (recommended on a new PC).** In **Settings**, set one **search scope folder**, for example your profile or a projects root. Everything then only returns paths under that root.
 - **Pick a current folder** from the breadcrumb. Search, paste and new files use the current folder.
-- **Switch views** with the buttons by the search box: subfolders on or off, files and folders or folders only.
+- **Narrow the list** from the `/` list or the options panel: folders only, files only, or this folder only.
 - **Tag a file.** Select a row, press `Ctrl`+`T`, and add a tag like `draft` or `2026`. The file is renamed on disk straight away.
 - **Press `F1` or `Ctrl`+`/`** any time for the full in-app guide.
-
-If search feels slow, open **Advanced** and turn off **Folder-contents highlight** and **Hide special**.
 
 ## Features
 

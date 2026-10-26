@@ -65,16 +65,14 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   background-color: var(--bs-btn-active-bg);
   border-color: var(--bs-btn-active-border-color);
 }
-/* Vertical gap between tags / breadcrumb / search rows; whiteish rule shows on grey secondary bg. */
-.tag-toolbar-row,
+/* Vertical gap between the breadcrumb and search rows; whiteish rule shows on grey secondary bg. */
 .scope-breadcrumb-row,
 .tagfox-search-toolbar-row {
   margin-bottom: 0.75rem;
   padding-bottom: 0.3rem;
   border-bottom: 1px solid var(--tagfox-toolbar-row-rule);
 }
-/* Breadcrumb row: no rule above (tag row) or below (before search) — those borders sandwich the strip. */
-.tag-toolbar-row,
+/* Breadcrumb row: no rule below it, before the search row. */
 .scope-breadcrumb-row {
   border-bottom: none;
 }
@@ -82,7 +80,7 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 .tagfox-search-toolbar-row {
   row-gap: 0.35rem;
 }
-/* Grow to fill row so tree / recency / Advanced / current-folder nav sit flush right */
+/* The box grows to fill the row. */
 .tagfox-search-toolbar-row .tagfox-query-input {
   flex: 1 1 0;
   min-width: 7rem;
@@ -93,33 +91,6 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
     flex: 1 1 100%;
     min-width: 0;
   }
-}
-/* Gaps between control groups (view mode on .tagfox-search-toolbar-row; recency + Advanced on tag row). */
-.tagfox-search-opts-rhs {
-  column-gap: 0.65rem;
-  row-gap: 0.35rem;
-}
-/* Recency ≠ All: quiet red tray so the time bucket is visibly “on”. */
-.tagfox-recency-filter-wrap--active {
-  background-color: rgba(185, 28, 28, 0.1);
-  box-shadow: inset 0 0 0 1px rgba(185, 28, 28, 0.28);
-}
-.tagfox-recency-filter-wrap--active .tagfox-recency-lead {
-  color: rgba(153, 27, 27, 0.85) !important;
-}
-[data-bs-theme="dark"] .tagfox-recency-filter-wrap--active {
-  background-color: rgba(248, 113, 113, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.32);
-}
-[data-bs-theme="dark"] .tagfox-recency-filter-wrap--active .tagfox-recency-lead {
-  color: rgba(252, 165, 165, 0.9) !important;
-}
-/* Recency = All: quieter until a time bucket is chosen (clock + buttons). */
-.tagfox-recency-filter-wrap {
-  transition: opacity 0.15s ease;
-}
-.tagfox-recency-filter-wrap:not(.tagfox-recency-filter-wrap--active) {
-  opacity: 0.55;
 }
 /* Scope strip after breadcrumb: pills on folder-tint tray; row gutter matches body surface */
 .tagfox-scope-bar-row-actions {
@@ -259,79 +230,6 @@ body { letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
   border: 1px solid var(--bs-border-color);
   position: relative;
   z-index: 0;
-}
-.tagfox-search-toolbar-row .tagfox-segmented > .btn-check + .btn,
-.tag-toolbar-row .tagfox-segmented > .btn-check + .btn {
-  border-radius: 0;
-}
-.tagfox-search-toolbar-row .tagfox-segmented > .btn-check:first-child + .btn,
-.tag-toolbar-row .tagfox-segmented > .btn-check:first-child + .btn {
-  border-top-left-radius: var(--bs-border-radius-sm);
-  border-bottom-left-radius: var(--bs-border-radius-sm);
-}
-.tagfox-search-toolbar-row .tagfox-segmented > .btn-check:last-of-type + .btn,
-.tag-toolbar-row .tagfox-segmented > .btn-check:last-of-type + .btn {
-  border-top-right-radius: var(--bs-border-radius-sm);
-  border-bottom-right-radius: var(--bs-border-radius-sm);
-}
-/* View radio pairs: icon-only (titles on labels). */
-.tagfox-search-toolbar-row .tagfox-results-view-mode > .btn-check + .btn.tagfox-results-view-icon,
-.tag-toolbar-row .tagfox-results-view-mode > .btn-check + .btn.tagfox-results-view-icon {
-  width: 2rem;
-  min-width: 2rem;
-  padding-left: 0;
-  padding-right: 0;
-  line-height: 1;
-}
-.tagfox-search-toolbar-row .tagfox-results-view-mode > .btn-check + .btn .fa-fw,
-.tag-toolbar-row .tagfox-results-view-mode > .btn-check + .btn .fa-fw {
-  margin: 0;
-}
-.tag-toolbar-row .tagfox-advanced-icon-btn .fa-fw {
-  margin: 0;
-}
-/* Eye / Advanced: same filled chip as segmented `.btn-check:checked + .outline` (plain `.active` had no theme rules). */
-.tagfox-advanced-icon-btn.btn-outline-secondary.tagfox-advanced-filled {
-  color: var(--bs-btn-active-color);
-  background-color: var(--bs-btn-active-bg);
-  border-color: var(--bs-btn-active-border-color);
-}
-.tagfox-advanced-icon-btn.btn-outline-secondary.tagfox-advanced-filled:hover {
-  color: var(--bs-btn-active-color);
-  background-color: var(--bs-btn-active-bg);
-  border-color: var(--bs-btn-active-border-color);
-}
-/* Faint background groups the four search-option icon toggles (match path, hide special, hide ~, more options); overridden by checked / filled / hover states. */
-.tagfox-search-opt-icon {
-  background-color: var(--bs-secondary-bg);
-}
-/* Literal ~ glyph styled to sit like a Font Awesome icon in its 2rem button. */
-.tagfox-search-opt-glyph {
-  font-weight: 700;
-  font-size: 1.05rem;
-  line-height: 1;
-}
-/* Tinted background to visually group each icon pair. */
-.tagfox-view-pair {
-  background: var(--bs-secondary-bg);
-  border-radius: var(--bs-border-radius);
-  padding: 2px;
-  gap: 0;
-}
-.tagfox-search-toolbar-row .tagfox-view-pair + .tagfox-view-pair,
-.tag-toolbar-row .tagfox-view-pair + .tagfox-view-pair {
-  margin-left: 0.25rem;
-}
-/* Group the match-option toggles (match path / hide special / hide ~ / more) into one tray. */
-.tagfox-match-opts-group {
-  background: var(--bs-secondary-bg);
-  border-radius: var(--bs-border-radius);
-  padding: 2px;
-  gap: 2px;
-}
-/* Inside the tray the shared background does the grouping, so drop each toggle's own faint fill (checked / hover / filled states still stand out). */
-.tagfox-match-opts-group .tagfox-search-opt-icon {
-  background-color: transparent;
 }
 /* Row recency dot (same buckets as 1h / 1d / 1w / 1m / 1y); slightly larger + more gap from checkbox in #resultsTable rules. */
 .recency-blob {
@@ -1454,8 +1352,7 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
 }
 /*
   Stacking (low → high): .tagfox-search-toolbar-row 1040;
-  .scope-breadcrumb-row 1043 (above search row menus only — must stay below .tag-toolbar-row so Advanced panel overlaps breadcrumb);
-  .tag-toolbar-row 1045 (+ .tagfox-advanced-wrap 1041);
+  .scope-breadcrumb-row 1043 (above the search row's menus);
   #quickTodoPop 1098; body ul.breadcrumb-folder-flyout 1092–1099 (renderer.js; below .modal-backdrop 1100);
   .modal-backdrop 1100; .modal 1110; #propsTheater* 1990+; body > .tooltip 50000 (above all app flyouts).
 */
@@ -1550,8 +1447,7 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
 /* Modal open: drop back so backdrop + dimmer cover the bar (was stacking “above” the overlay). */
 body.modal-open .tagfox-app-statusbar,
 body.modal-open .scope-breadcrumb-row,
-body.modal-open .tagfox-search-toolbar-row,
-body.modal-open .tag-toolbar-row {
+body.modal-open .tagfox-search-toolbar-row {
   z-index: 0;
 }
 #breadcrumbBar .dropdown-menu {
@@ -1593,22 +1489,13 @@ ul.breadcrumb-folder-flyout .dropdown-item {
   min-width: 100%;
   white-space: nowrap;
 }
-.tag-toolbar-row {
-  position: relative;
-  z-index: 1045;
-}
-/* Above status bar (1038); below tag (1045) / breadcrumb (1043) rows for menu overlap. */
+/* Above the status bar (1038); below the breadcrumb row (1043) for menu overlap. */
 .tagfox-search-toolbar-row {
   position: relative;
   z-index: 1040;
 }
-.tagfox-search-toolbar-row .dropdown-menu,
-.tag-toolbar-row .dropdown-menu {
+.tagfox-search-toolbar-row .dropdown-menu {
   z-index: 1060;
-}
-.tagfox-advanced-wrap {
-  position: relative;
-  z-index: 1041;
 }
 /* Modals + backdrop: above app toolbars (≤1099). Bootstrap default ~1055. */
 .modal-backdrop {
@@ -1616,23 +1503,6 @@ ul.breadcrumb-folder-flyout .dropdown-item {
 }
 .modal {
   z-index: 1110;
-}
-/* Advanced: popover below the Advanced button (not inline in the toolbar row). */
-.search-opts-advanced-popover {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  left: auto;
-  margin-top: 0.35rem;
-  min-width: min(13rem, calc(100vw - 2rem));
-  max-width: min(34rem, calc(100vw - 1rem));
-  z-index: 1055;
-}
-.search-opts-advanced-popover[hidden] {
-  display: none !important;
-}
-.search-opts-advanced-popover:not([hidden]) {
-  display: flex;
 }
 /* Keyboard focus lands here after list selection / chrome clicks (see focusQueryBox / focusMainWorkingArea). */
 #resultsWrap:focus {
@@ -1849,8 +1719,6 @@ body > .tooltip {
    is still in the DOM, and this block hides and restyles it. The prefix selects nothing extra; it stays for
    its specificity, which lets these rules beat Bootstrap's state rules (.btn:active, .btn:focus-visible)
    and Classic's base rules. */
-body.tagfox-runner .tag-toolbar-row,
-body.tagfox-runner .tagfox-status-view-opts,
 body.tagfox-runner.tagfox-runner-viewer-off #splitProps {
   display: none !important;
 }

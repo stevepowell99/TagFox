@@ -378,42 +378,36 @@
     /** Key: folderChildCountCacheKey; value: { kind: 'exact', n } | { kind: 'over', cap }. */
     const folderChildCountCache = new Map();
 
-    /* View: Subfolders (on first); Content: all | folders | files. */
-    function isShowSubfolders() { return !!document.getElementById('optRvSubsOn')?.checked; }
+    /* The search's options, which Runner's / commands, chips and keys set and the search state saves: the
+       match options and the system and ~ hides (searchOpts, keyed as LS and the saved state name them), the
+       recency window, and the view (subfolders; files and folders, folders only or files only). */
+    const searchOpts = { optCase: false, optWholeWord: false, optPath: false, optDiacritics: false, optHideSpecial: false, optHideTilde: false };
+    let recencyMode = 'all';
+    let viewShowSubfolders = true;
+    /** @type {'all'|'folders'|'files'} */
+    let viewContent = 'all';
+
+    function isShowSubfolders() { return viewShowSubfolders; }
     /** @returns {'all'|'folders'|'files'} */
-    function resultsContentMode() {
-      if (document.getElementById('optRvDirsOnly')?.checked) return 'folders';
-      if (document.getElementById('optRvFilesOnly')?.checked) return 'files';
-      return 'all';
-    }
+    function resultsContentMode() { return viewContent; }
     function isFoldersOnly() { return resultsContentMode() === 'folders'; }
     function isFilesOnly() { return resultsContentMode() === 'files'; }
     function isAllContent() { return resultsContentMode() === 'all'; }
 
-    /** Apply the subfolders and content radios only (no save/search). */
-    function applyResultsViewRadiosToDom(showSubs, content) {
-      document.getElementById('optRvSubsOn').checked = !!showSubs;
-      document.getElementById('optRvSubsOff').checked = !showSubs;
-      const c = content === 'folders' ? 'folders' : content === 'files' ? 'files' : 'all';
-      document.getElementById('optRvDirsOnly').checked = c === 'folders';
-      document.getElementById('optRvAll').checked = c === 'all';
-      document.getElementById('optRvFilesOnly').checked = c === 'files';
+    /** Subfolders on or off, content all|folders|files; no save, no search. */
+    function setResultsView(showSubs, content) {
+      viewShowSubfolders = !!showSubs;
+      viewContent = content === 'folders' ? 'folders' : content === 'files' ? 'files' : 'all';
     }
 
-    /** Restore: subfolders on or off, content all|folders|files; no save, no search. */
-    function setResultsViewRadios(showSubs, content) {
-      applyResultsViewRadiosToDom(showSubs, content);
-      syncViewRadioActiveFromDom();
-    }
-
-    /** Advanced: drop dot/$/desktop.ini paths from the table only (~ has its own toggle). */
+    /** Drop dot/$/desktop.ini paths from the table only (~ has its own toggle). */
     function isHideSpecialPaths() {
-      return !!document.getElementById('optHideSpecial')?.checked;
+      return searchOpts.optHideSpecial;
     }
 
-    /** Advanced: drop paths with a ~ segment (client-side; table only). */
+    /** Drop paths with a ~ segment (client-side; table only). */
     function isHideTildePaths() {
-      return !!document.getElementById('optHideTilde')?.checked;
+      return searchOpts.optHideTilde;
     }
 
     /** Settings: a selected folder is framed together with the rows under it that follow it. */
@@ -2642,7 +2636,6 @@
         /* ~ paths are listed and ranked down (RUNNER_RANK.tilde), not hidden. */
         optHideTilde: false,
         recencyFilter: 'all',
-        advancedPanelOpen: false,
       };
     }
 
@@ -2914,7 +2907,7 @@
         .trim();
       const plain = /^[\p{L}\p{N}\s._!-]*$/u.test(nameTerms);
       const words = plain ? runnerQueryWords(nameTerms) : [];
-      const pathOn = !!document.getElementById('optPath')?.checked;
+      const pathOn = searchOpts.optPath;
       const out = [];
       for (const [k, p] of byKey) {
         if (scope) {
@@ -3264,8 +3257,7 @@
     }
 
     function runnerSetOpt(id, on) {
-      const el = document.getElementById(id);
-      if (el) el.checked = !!on;
+      searchOpts[id] = !!on;
     }
 
     function runnerToggleSystemFiles() {
@@ -3425,14 +3417,13 @@
     }
 
     function runnerSetContent(cm) {
-      applyResultsViewRadiosToDom(isShowSubfolders(), cm);
-      syncViewRadioActiveFromDom();
+      setResultsView(isShowSubfolders(), cm);
       saveSettings();
       void runSearchNow();
     }
 
     function runnerToggleMatchPath() {
-      runnerSetOpt('optPath', !document.getElementById('optPath')?.checked);
+      runnerSetOpt('optPath', !searchOpts.optPath);
       saveSettings();
       void runSearchNow();
     }
@@ -3502,11 +3493,11 @@
       { id: 'files', group: 'Show', label: 'Files only', isOn: () => isFilesOnly(), run: () => runnerSetContent(isFilesOnly() ? 'all' : 'files') },
       { id: 'viewer', group: 'Show', label: 'The Viewer', isOn: () => !runnerViewerOff(), run: () => runnerToggleViewer() },
       { id: 'this-folder', group: 'Match', label: 'Search this folder only (not its subfolders)', isOn: () => runnerThisFolderOnlyOn(), run: () => runnerToggleThisFolderOnly() },
-      { id: 'path', group: 'Match', label: 'Match path (off: names only)', isOn: () => !!document.getElementById('optPath')?.checked, run: () => runnerToggleMatchPath() },
-      { id: 'word', group: 'Match', label: 'Whole words only', isOn: () => runnerOptOn('optWholeWord'), run: () => toggleSearchOptCheckbox('optWholeWord') },
-      { id: 'case', group: 'Match', label: 'Match case', isOn: () => runnerOptOn('optCase'), run: () => toggleSearchOptCheckbox('optCase') },
+      { id: 'path', group: 'Match', label: 'Match path (off: names only)', isOn: () => runnerOptOn('optPath'), run: () => runnerToggleMatchPath() },
+      { id: 'word', group: 'Match', label: 'Whole words only', isOn: () => runnerOptOn('optWholeWord'), run: () => toggleMatchOption('optWholeWord') },
+      { id: 'case', group: 'Match', label: 'Match case', isOn: () => runnerOptOn('optCase'), run: () => toggleMatchOption('optCase') },
       { id: 'word-starts', group: 'Match', label: 'Word starts only (one word: type ^word)', isOn: () => runnerWordStartsOnly(), run: () => runnerToggleWordStarts() },
-      { id: 'accents', group: 'Match', label: 'Accents must match', isOn: () => runnerOptOn('optDiacritics'), run: () => toggleSearchOptCheckbox('optDiacritics') },
+      { id: 'accents', group: 'Match', label: 'Accents must match', isOn: () => runnerOptOn('optDiacritics'), run: () => toggleMatchOption('optDiacritics') },
       { id: 'recent-all', group: 'Modified', label: 'Modified: any time', isOn: () => recencyFilterMode() === 'all', run: () => runnerSetRecency('all') },
       { id: 'recent-1h', group: 'Modified', label: 'Modified in the last hour', isOn: () => recencyFilterMode() === '1h', run: () => runnerSetRecency('1h') },
       { id: 'recent-1d', group: 'Modified', label: 'Modified in the last day', isOn: () => recencyFilterMode() === '1d', run: () => runnerSetRecency('1d') },
@@ -3521,7 +3512,7 @@
     ];
 
     function runnerOptOn(id) {
-      return !!document.getElementById(id)?.checked;
+      return !!searchOpts[id];
     }
 
     /* Saved searches (LS.favSearches): the folder, the text and every filter, run from a / command or
@@ -3777,11 +3768,11 @@
         label: () => 'Hiding temp files',
         reset: () => runnerToggleTemp(),
       },
-      { id: 'word', icon: 'fa-spell-check', on: () => runnerOptOn('optWholeWord'), label: () => 'Whole words only', reset: () => toggleSearchOptCheckbox('optWholeWord') },
-      { id: 'case', icon: 'fa-font', on: () => runnerOptOn('optCase'), label: () => 'Match case', reset: () => toggleSearchOptCheckbox('optCase') },
+      { id: 'word', icon: 'fa-spell-check', on: () => runnerOptOn('optWholeWord'), label: () => 'Whole words only', reset: () => toggleMatchOption('optWholeWord') },
+      { id: 'case', icon: 'fa-font', on: () => runnerOptOn('optCase'), label: () => 'Match case', reset: () => toggleMatchOption('optCase') },
       { id: 'word-starts', icon: 'fa-i-cursor', on: () => runnerWordStartsOnly(), label: () => 'Word starts only', reset: () => runnerToggleWordStarts() },
       { id: 'this-folder', icon: 'fa-folder', on: () => runnerThisFolderOnlyOn(), label: () => 'This folder only', reset: () => runnerToggleThisFolderOnly() },
-      { id: 'accents', icon: 'fa-language', on: () => runnerOptOn('optDiacritics'), label: () => 'Accents must match', reset: () => toggleSearchOptCheckbox('optDiacritics') },
+      { id: 'accents', icon: 'fa-language', on: () => runnerOptOn('optDiacritics'), label: () => 'Accents must match', reset: () => toggleMatchOption('optDiacritics') },
       {
         id: 'tags',
         icon: 'fa-tags',
@@ -3933,18 +3924,9 @@
       localStorage.setItem(LS.runnerSort, 'smart');
       selectAfterSearchKey = null;
       setRecencyFilterMode(recency);
-      applyResultsViewRadiosToDom(isShowSubfolders(), 'all');
-      syncViewRadioActiveFromDom();
+      setResultsView(isShowSubfolders(), 'all');
       const d = runnerDefaultSearchState();
-      for (const [id, key] of [
-        ['optPath', 'optPath'],
-        ['optHideSpecial', 'optHideSpecial'],
-        ['optHideTilde', 'optHideTilde'],
-        ['optWholeWord', 'optWholeWord'],
-        ['optCase', 'optCase'],
-        ['optDiacritics', 'optDiacritics'],
-      ])
-        runnerSetOpt(id, d[key]);
+      for (const k of Object.keys(searchOpts)) runnerSetOpt(k, d[k]);
       localStorage.removeItem(LS.runnerHideTemp);
       localStorage.removeItem(LS.runnerWordStarts);
       localStorage.removeItem(LS.runnerStarredOnly);
@@ -5441,8 +5423,8 @@
       }
       const esc = (p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const escaped = parts.map(esc);
-      const matchCase = !!document.getElementById('optCase')?.checked;
-      const wholeWord = !!document.getElementById('optWholeWord')?.checked;
+      const matchCase = searchOpts.optCase;
+      const wholeWord = searchOpts.optWholeWord;
       const wrapWw = (e) => (wholeWord ? '\\b' + e + '\\b' : e);
       const flags = matchCase ? 'g' : 'gi';
 
@@ -6759,7 +6741,7 @@
     function bulkRenameRegexFromFind(findRaw) {
       const raw = String(findRaw ?? '');
       if (!raw.trim()) return null;
-      const matchCase = document.getElementById('optCase') && document.getElementById('optCase').checked;
+      const matchCase = searchOpts.optCase;
       try {
         return new RegExp(wildcardPatternToRegExpSource(raw), matchCase ? 'g' : 'gi');
       } catch (_) {
@@ -9226,7 +9208,7 @@
     function filenameOnlyUserQueryForScopedSearch(qRaw) {
       const raw = String(qRaw || '').trim();
       if (!raw) return raw;
-      if (document.getElementById('optPath').checked) return raw;
+      if (searchOpts.optPath) return raw;
       if (/^nopath:/i.test(raw)) return raw;
       if (/<|>/.test(raw)) return raw;
       return 'nopath:<' + raw + '>';
@@ -10988,32 +10970,11 @@
     }
 
     function recencyFilterMode() {
-      const el = document.querySelector('input[name="tagFoxRecencyFilter"]:checked');
-      const v = el && el.value;
-      return v && ['all', '1h', '1d', '1w', '1m', '1y'].includes(v) ? v : 'all';
-    }
-
-    /** Muted red tray on the recency control when a bucket other than All is selected. */
-    function syncRecencyFilterActiveHighlight() {
-      const wrap = document.querySelector('.tagfox-recency-filter-wrap');
-      if (!wrap) return;
-      wrap.classList.toggle('tagfox-recency-filter-wrap--active', recencyFilterMode() !== 'all');
+      return recencyMode;
     }
 
     function setRecencyFilterMode(mode) {
-      const id =
-        {
-          all: 'optRecencyAll',
-          '1h': 'optRecency1h',
-          '1d': 'optRecency1d',
-          '1w': 'optRecency1w',
-          '1m': 'optRecency1m',
-          '1y': 'optRecency1y',
-        }[mode] || 'optRecencyAll';
-      const r = document.getElementById(id);
-      if (!r || r.name !== 'tagFoxRecencyFilter') return;
-      r.checked = true;
-      syncRecencyFilterActiveHighlight();
+      recencyMode = ['all', '1h', '1d', '1w', '1m', '1y'].includes(mode) ? mode : 'all';
     }
 
     /** Ctrl+R: the next recency window, from the last hour round to any time; Ctrl+Shift+R (dir -1) goes back. */
@@ -11021,7 +10982,10 @@
       const order = ['1h', '1d', '1w', '1m', '1y', 'all'];
       const next = order[(order.indexOf(recencyFilterMode()) + (dir < 0 ? -1 : 1) + order.length) % order.length];
       setRecencyFilterMode(next);
-      document.querySelector('input[name="tagFoxRecencyFilter"][value="' + next + '"]')?.dispatchEvent(new Event('change', { bubbles: true }));
+      saveSettings();
+      commitSearchHistoryNow();
+      /* dm: is baked into the HTTP search, so Everything is asked again. */
+      void runSearchNow();
     }
 
     /** Settings → global shortcut capture: require modifiers (Electron globalShortcut). */
@@ -11153,13 +11117,13 @@
       document.getElementById('maxResults').value =
         localStorage.getItem(LS.maxResults) || '60';
       document.getElementById('httpUser').value = localStorage.getItem(LS.httpUser) || '';
-      document.getElementById('optCase').checked = localStorage.getItem(LS.optCase) === '1';
-      document.getElementById('optWholeWord').checked = localStorage.getItem(LS.optWholeWord) === '1';
+      searchOpts.optCase = localStorage.getItem(LS.optCase) === '1';
+      searchOpts.optWholeWord = localStorage.getItem(LS.optWholeWord) === '1';
       if (localStorage.getItem(LS.optPathDefaultMoved) !== '1') { localStorage.setItem(LS.optPathDefaultMoved, '1'); localStorage.setItem(LS.optPath, '1'); }
-      document.getElementById('optPath').checked = localStorage.getItem(LS.optPath) !== '0';
-      document.getElementById('optDiacritics').checked = localStorage.getItem(LS.optDiacritics) === '1';
-      document.getElementById('optHideSpecial').checked = localStorage.getItem(LS.optHideSpecial) === '1';
-      document.getElementById('optHideTilde').checked = localStorage.getItem(LS.optHideTilde) === '1';
+      searchOpts.optPath = localStorage.getItem(LS.optPath) !== '0';
+      searchOpts.optDiacritics = localStorage.getItem(LS.optDiacritics) === '1';
+      searchOpts.optHideSpecial = localStorage.getItem(LS.optHideSpecial) === '1';
+      searchOpts.optHideTilde = localStorage.getItem(LS.optHideTilde) === '1';
       {
         const showSubs = localStorage.getItem(LS.showSubfolders) !== '0';
         let content = localStorage.getItem(LS.resultsContent);
@@ -11167,7 +11131,7 @@
           content = localStorage.getItem(LS.hideFiles) === '1' ? 'folders' : 'all';
           localStorage.setItem(LS.resultsContent, content);
         }
-        setResultsViewRadios(showSubs, content);
+        setResultsView(showSubs, content);
       }
       /* Recency is a "right now" filter: always launch at All rather than restoring a persisted time window.
          A stale 1h/1d would otherwise silently cap every search after a restart (looks like search is broken). */
@@ -11217,7 +11181,6 @@
       void refreshGlobalToggleHotkeyFromMain();
       void refreshQuickTodoHotkeyFromMain();
       renderQuickTodoFolderUi();
-      syncAdvancedSearchIconFilledState();
       settingsLoadCompleted = true;
     }
 
@@ -11237,12 +11200,7 @@
         localStorage.setItem(LS.autoRefreshSec, sel ? String(sel.value || '0') : '0');
       }
       localStorage.setItem(LS.httpUser, document.getElementById('httpUser').value.trim());
-      localStorage.setItem(LS.optCase, document.getElementById('optCase').checked ? '1' : '0');
-      localStorage.setItem(LS.optWholeWord, document.getElementById('optWholeWord').checked ? '1' : '0');
-      localStorage.setItem(LS.optPath, document.getElementById('optPath').checked ? '1' : '0');
-      localStorage.setItem(LS.optDiacritics, document.getElementById('optDiacritics').checked ? '1' : '0');
-      localStorage.setItem(LS.optHideSpecial, document.getElementById('optHideSpecial').checked ? '1' : '0');
-      localStorage.setItem(LS.optHideTilde, document.getElementById('optHideTilde').checked ? '1' : '0');
+      for (const k of Object.keys(searchOpts)) localStorage.setItem(LS[k], searchOpts[k] ? '1' : '0');
       localStorage.setItem(LS.resultsContent, resultsContentMode());
       localStorage.setItem(LS.showSubfolders, isShowSubfolders() ? '1' : '0');
       localStorage.setItem(LS.hideFiles, isFoldersOnly() ? '1' : '0');
@@ -11265,11 +11223,11 @@
     function searchOptionsFromUI() {
       const sc = runnerSortColumnFor(runnerSort);
       return {
-        case: document.getElementById('optCase').checked,
-        wholeword: document.getElementById('optWholeWord').checked,
-        pathSearch: document.getElementById('optPath').checked,
+        case: searchOpts.optCase,
+        wholeword: searchOpts.optWholeWord,
+        pathSearch: searchOpts.optPath,
         regex: false,
-        diacritics: document.getElementById('optDiacritics').checked,
+        diacritics: searchOpts.optDiacritics,
         sort: sc.col,
         ascending: sc.asc,
       };
@@ -11570,7 +11528,6 @@
     }
 
     function serializeSearchState() {
-      const advPanel = document.getElementById('searchOptsAdvancedPanel');
       return {
         query: document.getElementById('query').value,
         rootFolder: document.getElementById('rootFolder').value,
@@ -11581,14 +11538,8 @@
         resultsContent: resultsContentMode(),
         showSubfolders: isShowSubfolders(),
         hideFiles: isFoldersOnly(),
-        optCase: document.getElementById('optCase').checked,
-        optWholeWord: document.getElementById('optWholeWord').checked,
-        optPath: document.getElementById('optPath').checked,
-        optDiacritics: document.getElementById('optDiacritics').checked,
-        optHideSpecial: document.getElementById('optHideSpecial').checked,
-        optHideTilde: document.getElementById('optHideTilde').checked,
+        ...searchOpts,
         recencyFilter: recencyFilterMode(),
-        advancedPanelOpen: !!(advPanel && !advPanel.hasAttribute('hidden')),
       };
     }
 
@@ -11659,26 +11610,10 @@
             : s.hideFiles
               ? 'folders'
               : 'all';
-        setResultsViewRadios(s.showSubfolders !== false, rc);
+        setResultsView(s.showSubfolders !== false, rc);
       }
-      document.getElementById('optCase').checked = !!s.optCase;
-      document.getElementById('optWholeWord').checked = !!s.optWholeWord;
-      document.getElementById('optPath').checked = !!s.optPath;
-      document.getElementById('optDiacritics').checked = !!s.optDiacritics;
-      document.getElementById('optHideSpecial').checked = !!s.optHideSpecial;
-      document.getElementById('optHideTilde').checked = !!s.optHideTilde;
-      setRecencyFilterMode(
-        s.recencyFilter && ['all', '1h', '1d', '1w', '1m', '1y'].includes(s.recencyFilter) ? s.recencyFilter : 'all'
-      );
-      const panel = document.getElementById('searchOptsAdvancedPanel');
-      const advBtn = document.getElementById('btnToggleSearchOptsAdvanced');
-      if (panel && advBtn) {
-        const open = !!s.advancedPanelOpen;
-        if (open) panel.removeAttribute('hidden');
-        else panel.setAttribute('hidden', '');
-        advBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-        syncAdvancedSearchIconFilledState();
-      }
+      for (const k of Object.keys(searchOpts)) searchOpts[k] = !!s[k];
+      setRecencyFilterMode(s.recencyFilter);
     }
 
     async function goSearchHistory(delta) {
@@ -12208,22 +12143,6 @@
     /** The rows the list shows: lastRows after the tag, recency and path filters. */
     function listRowsForUi() {
       return applyAdvancedPathHides(filteredRowsBeforeAdvancedPathHides());
-    }
-
-    /** True when a popover-only toggle (case / whole-word / diacritics) is checked. Path + hide are exposed icons with their own active state. */
-    function anyAdvancedSwitchOn() {
-      return ['optCase', 'optWholeWord', 'optDiacritics'].some(
-        (id) => document.getElementById(id)?.checked
-      );
-    }
-
-    /** Filled chip on Advanced (eye) when popover open and/or any advanced checkbox is on. */
-    function syncAdvancedSearchIconFilledState() {
-      const btn = document.getElementById('btnToggleSearchOptsAdvanced');
-      const panel = document.getElementById('searchOptsAdvancedPanel');
-      if (!btn || !panel) return;
-      const open = !panel.hasAttribute('hidden');
-      btn.classList.toggle('tagfox-advanced-filled', open || anyAdvancedSwitchOn());
     }
 
     function clearEmptyResultsPulseHintClasses() {
@@ -13974,8 +13893,7 @@
       const q = (document.getElementById('query')?.value || '').trim();
       const wantsTag = [...activeTagKeys].some((k) => !excludedTagKeys.has(k));
       const below = !!(q || wantsTag || deadlineFilterActive() || runnerStarredOnlyOn()) && !runnerThisFolderOnlyOn();
-      applyResultsViewRadiosToDom(below, resultsContentMode());
-      syncViewRadioActiveFromDom();
+      setResultsView(below, resultsContentMode());
       saveSettings();
       const { baseUrl, httpUser, httpPassword } = readEverythingConnection();
       const ceilingNorms = getSearchScopeCeilingFoldersNorms();
@@ -14215,55 +14133,6 @@
     document.getElementById('btnReadmeFolderDocTags').addEventListener('click', () => openTagModalFolderDocDraft());
     document.getElementById('readmeFolderDocStemInput').addEventListener('input', () => folderDocOnFilenameUiChanged());
 
-    document.querySelectorAll('input[name="tagFoxRecencyFilter"]').forEach((el) => {
-      el.addEventListener('change', () => {
-        syncRecencyFilterActiveHighlight();
-        saveSettings();
-        commitSearchHistoryNow();
-        /* dm: is baked into the HTTP search — must re-run Everything or lastRows stays stale. */
-        void runSearchNow();
-      });
-    });
-    ['optCase', 'optWholeWord', 'optPath', 'optDiacritics', 'optHideSpecial', 'optHideTilde'].forEach((id) => {
-      document.getElementById(id).addEventListener('change', () => {
-        saveSettings();
-        if (id === 'optCase' && document.getElementById('bulkRenameModal')?.classList.contains('show')) {
-          updateBulkRenamePreview();
-        }
-        if (id === 'optHideSpecial' || id === 'optHideTilde') {
-          renderTable();
-          updateEmptyResultsPulseHints(listRowsForUi().length, { forceRestart: true });
-          syncResultsSelectionHighlight();
-          updateResultsLoadMoreUi();
-        } else {
-          scheduleSearch();
-        }
-        commitSearchHistoryNow();
-        syncAdvancedSearchIconFilledState();
-      });
-    });
-
-    document.getElementById('btnToggleSearchOptsAdvanced').addEventListener('click', () => {
-      const panel = document.getElementById('searchOptsAdvancedPanel');
-      const btn = document.getElementById('btnToggleSearchOptsAdvanced');
-      const open = panel.hasAttribute('hidden');
-      if (open) panel.removeAttribute('hidden');
-      else panel.setAttribute('hidden', '');
-      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-      syncAdvancedSearchIconFilledState();
-    });
-    document.addEventListener('pointerdown', (e) => {
-      const panel = document.getElementById('searchOptsAdvancedPanel');
-      if (panel?.hasAttribute('hidden')) return;
-      const wrap = document.querySelector('.tagfox-advanced-wrap');
-      if (wrap && !wrap.contains(e.target)) {
-        panel.setAttribute('hidden', '');
-        const btn = document.getElementById('btnToggleSearchOptsAdvanced');
-        btn?.setAttribute('aria-expanded', 'false');
-        syncAdvancedSearchIconFilledState();
-      }
-    });
-
     ['baseUrl', 'maxResults'].forEach((id) => {
       document.getElementById(id).addEventListener('input', scheduleSearch);
     });
@@ -14309,75 +14178,6 @@
       const rect = e.currentTarget.getBoundingClientRect();
       await openResultsRowItemActionsMenu(fp, rect.left, rect.bottom, null);
     });
-    /* Re-click active segment cycles. */
-    const contentTrioIds = ['optRvAll', 'optRvDirsOnly', 'optRvFilesOnly'];
-    const viewPairs = [['optRvSubsOn', 'optRvSubsOff']];
-    const viewRadioActive = {};
-    /** Mirror checked state for toggle-on-reclick (loadSettings, setResultsViewRadios). */
-    function syncViewRadioActiveFromDom() {
-      for (const id of contentTrioIds) {
-        const el = document.getElementById(id);
-        if (el) viewRadioActive[id] = !!el.checked;
-      }
-      for (const [x, y] of viewPairs) {
-        const ex = document.getElementById(x);
-        const ey = document.getElementById(y);
-        if (ex) viewRadioActive[x] = !!ex.checked;
-        if (ey) viewRadioActive[y] = !!ey.checked;
-      }
-    }
-    function bindResultsViewRadiosChanged() {
-      saveSettings();
-      void runSearchNow();
-      commitSearchHistoryNow();
-    }
-    function wireViewTrioClickCycle(ids) {
-      for (const id of ids) {
-        const el = document.getElementById(id);
-        if (!el) continue;
-        el.addEventListener('click', () => {
-          if (viewRadioActive[id]) {
-            const idx = ids.indexOf(id);
-            const nextId = ids[(idx + 1) % ids.length];
-            const next = document.getElementById(nextId);
-            if (next) {
-              next.checked = true;
-              syncViewRadioActiveFromDom();
-              next.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-          } else {
-            syncViewRadioActiveFromDom();
-          }
-        });
-        el.addEventListener('change', () => {
-          syncViewRadioActiveFromDom();
-          bindResultsViewRadiosChanged();
-        });
-      }
-    }
-    wireViewTrioClickCycle(contentTrioIds);
-    for (const [a, b] of viewPairs) {
-      for (const id of [a, b]) {
-        const el = document.getElementById(id);
-        if (!el) continue;
-        const other = id === a ? b : a;
-        el.addEventListener('click', () => {
-          if (viewRadioActive[id]) {
-            document.getElementById(other).checked = true;
-            viewRadioActive[other] = true;
-            viewRadioActive[id] = false;
-            document.getElementById(other).dispatchEvent(new Event('change', { bubbles: true }));
-          } else {
-            syncViewRadioActiveFromDom();
-          }
-        });
-        el.addEventListener('change', () => {
-          syncViewRadioActiveFromDom();
-          bindResultsViewRadiosChanged();
-        });
-      }
-    }
-    syncViewRadioActiveFromDom();
     document.getElementById('btnClearQuery').addEventListener('click', () => clearSearchQuery());
     document.getElementById('httpUser').addEventListener('input', scheduleSearch);
     document.getElementById('httpPassword').addEventListener('input', scheduleSearch);
@@ -15279,12 +15079,13 @@
       });
     }
 
-    /** Flip a search-option checkbox and fire its change handler (whole word, match path, hide special, hide ~). */
-    function toggleSearchOptCheckbox(id) {
-      const el = document.getElementById(id);
-      if (!el) return;
-      el.checked = !el.checked;
-      el.dispatchEvent(new Event('change', { bubbles: true }));
+    /** Flip a match option (whole words, match case, accents) and search again. */
+    function toggleMatchOption(id) {
+      runnerSetOpt(id, !searchOpts[id]);
+      saveSettings();
+      if (id === 'optCase' && document.getElementById('bulkRenameModal')?.classList.contains('show')) updateBulkRenamePreview();
+      scheduleSearch();
+      commitSearchHistoryNow();
     }
 
     /** The folder buttons (Explorer, copy, tags, terminal, quoted path, more) need a current folder. */
@@ -15982,7 +15783,7 @@
           if (el) { el.value = String(q == null ? '' : q); el.dispatchEvent(new Event('input', { bubbles: true })); }
         },
         setRecency: (mode) => { setRecencyFilterMode(mode); void runSearchNow(); },
-        setView: (subsOn, content) => { applyResultsViewRadiosToDom(!!subsOn, content || 'all'); syncViewRadioActiveFromDom(); void runSearchNow(); },
+        setView: (subsOn, content) => { setResultsView(!!subsOn, content || 'all'); void runSearchNow(); },
         setScope: (root) => { const e = document.getElementById('rootFolder'); if (e) e.value = String(root || ''); void runSearchNow(); },
         autoTick: () => maybeAutoRefreshSearchTick(),
         loadMore: () => loadMoreResults(),

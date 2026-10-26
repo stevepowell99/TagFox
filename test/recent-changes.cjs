@@ -33,9 +33,9 @@ async function main() {
     await ev(`(() => {
       runnerSort = 'name';
       setRecencyFilterMode('1d');
-      applyResultsViewRadiosToDom(isShowSubfolders(), 'files');
-      for (const id of ['optCase', 'optWholeWord', 'optDiacritics', 'optHideTilde']) document.getElementById(id).checked = true;
-      for (const id of ['optPath', 'optHideSpecial']) document.getElementById(id).checked = false;
+      setResultsView(isShowSubfolders(), 'files');
+      for (const id of ['optCase', 'optWholeWord', 'optDiacritics', 'optHideTilde']) searchOpts[id] = true;
+      for (const id of ['optPath', 'optHideSpecial']) searchOpts[id] = false;
       for (const k of [LS.runnerHideTemp, LS.runnerWordStarts, LS.runnerThisFolderOnly, LS.runnerStarredOnly]) localStorage.setItem(k, '1');
       activeTagKeys.add('TODO');
       setDeadlineRange('overdue');
