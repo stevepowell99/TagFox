@@ -165,8 +165,15 @@ exposes `window.__tagfoxTest` with:
   `mdOpenEditor`, `mdCloseEditor`, `mdSetBuffer(text)`, `mdFlush`, and the `mdState()` inspector.
 - inspectors: `state()` (row counts, the rows on screen against the rows to draw, whether a search is running or in flight, id integrity, status)
   and `diag()` (filter-stage counts and the current rows).
+- the page's record of its keys: `keysSeenCount()` and `keysSeen(from)`, every keydown that reached the page,
+  where it landed, whether it reached Runner's key table and which entry it ran. The harness's `drv.key()`
+  presses a key over CDP, `drv.keyFate(note)` turns the record into "never reached the page", "no entry
+  matched" or "entry ran (…)", and `drv.takeKeys()` hands a check the keys pressed since the last one, so a
+  check whose keys changed nothing can say which (`runner-stars.cjs` and `runner-key-actions.cjs` do).
+  `drv.keyRecorderWorks()` is the positive control: a key raised inside the page must be recorded.
 
-The hook is the only test-specific code in the shipped app and adds no behaviour to normal runs.
+The hook, with the one `runnerKeyTrace` call it arms in the key handler (null otherwise), is the only
+test-specific code in the shipped app and adds no behaviour to normal runs.
 
 ## Adding a test
 

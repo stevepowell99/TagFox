@@ -201,6 +201,44 @@ async function connect({ profile, maxResults = 60, scope = SCOPES.repo, disableA
   await T('setScope', scope);
   await settle('scope');
 
+  // A key pressed as a user presses it, keydown then keyup over CDP. A key that changed nothing either never reached
+  // the page, reached it and matched no entry in Runner's key table, or ran its entry to no effect, and only the
+  // page's own record of its keys (the #tagfoxtest hook's keysSeen) tells those apart. So key() returns a note of
+  // where that record stood, keyFate(note) reads what became of the key, and takeKeys() hands a check the keys
+  // pressed since the last one, so that a failed check can say.
+  let pressed = [];
+  const key = async (k, code, vk, mods = 0, text, extra) => {
+    const from = await T('keysSeenCount');
+    await cdp.send('Input.dispatchKeyEvent', { type: text ? 'keyDown' : 'rawKeyDown', key: k, code, windowsVirtualKeyCode: vk, modifiers: mods, text, ...extra });
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code, windowsVirtualKeyCode: vk, modifiers: mods });
+    const name = (mods & 2 ? 'Ctrl+' : '') + (mods & 1 ? 'Alt+' : '') + (mods & 8 ? 'Shift+' : '') + (/^(Digit|Key)./.test(code) ? code.replace(/^(Digit|Key)/, '') : k === ' ' ? 'Space' : k);
+    const note = { name, code, from };
+    pressed.push(note);
+    return note;
+  };
+  const takeKeys = () => { const k = pressed; pressed = []; return k; };
+  const keyFate = async (note) => {
+    let seen;
+    try {
+      seen = (await T('keysSeen', note.from)).find((n) => n.code === note.code);
+    } catch (e) {
+      return `${note.name}: unknown, the page could not be asked (${e.message})`;
+    }
+    if (!seen) return `${note.name}: never reached the page`;
+    const at = `${note.name}: reached the page at ${seen.at}`;
+    if (!seen.table) return `${at}, and was taken before the key table`;
+    if (!seen.entry) return `${at}, no entry matched`;
+    return `${at}, entry ran (${seen.entry})${seen.consumed ? '' : ' and passed the key on'}`;
+  };
+  // Positive control for keyFate: a key raised inside the page must be recorded as reaching the key table and
+  // matching no entry, or a broken record would report every key as never having arrived.
+  const keyRecorderWorks = async () => {
+    const from = await T('keysSeenCount');
+    await ev(`(document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'F24', code: 'F24', bubbles: true })), 1)`);
+    const seen = (await T('keysSeen', from)).find((n) => n.code === 'F24');
+    return { ok: !!seen && seen.table && !seen.entry, seen };
+  };
+
   // A killed Electron is not gone when kill() returns: Windows lists it, with its profile's lockfile held,
   // until it has been torn down, which took up to 5s with two test instances running and can outlast
   // run-all.cjs's 9-second look on a loaded machine. Node's own liveness check (process.kill(pid, 0)) fails
@@ -208,6 +246,13 @@ async function connect({ profile, maxResults = 60, scope = SCOPES.repo, disableA
   // process has ended. Every test awaits it before exiting.
   let closed = false;
   let closeDone = false;
+  // A test Electron that ends before close() says how, since a main process that dies writes nothing to the perf
+  // log and the test sees only its CDP connection close. close-hides.cjs ends one on purpose, with Quit TagFox.
+  child.once('exit', (code, signal) => {
+    if (closed) return;
+    const hex = code > 255 ? ` (0x${(code >>> 0).toString(16)})` : '';
+    console.log(`  (the test Electron, PID ${child.pid}, ended before the test closed it: exit code ${code}${hex}, signal ${signal}; stderr tail: ${stderr.slice(-400).trim() || '(empty)'})`);
+  });
   const exitedWithin = (ms) =>
     new Promise((resolve) => {
       const timer = setTimeout(() => resolve(false), ms);
@@ -240,7 +285,7 @@ async function connect({ profile, maxResults = 60, scope = SCOPES.repo, disableA
     console.log('  FAIL the test ended before it finished (its driver was never closed)');
     process.exitCode = 1;
   });
-  return { baseUrl, userData, port, pid: child.pid, ev, T, state, diag, settle, send: cdp.send, stderr: () => stderr, close };
+  return { baseUrl, userData, port, pid: child.pid, ev, T, state, diag, settle, send: cdp.send, key, takeKeys, keyFate, keyRecorderWorks, stderr: () => stderr, close };
 }
 
 // Standard structural invariants every settled state must satisfy. Returns an array of problem strings.

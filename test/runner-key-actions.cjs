@@ -28,9 +28,13 @@ const { connect, APP_DIR, sleep } = require('./harness.cjs');
 
 async function main() {
   const failures = [];
+  const keysOf = new Map(); // a failure's index → the keys pressed for its check
   const check = (ok, label) => {
     console.log(`  ${ok ? 'PASS' : 'FAIL'} ${label}`);
-    if (!ok) failures.push(label);
+    const keys = drv ? drv.takeKeys() : [];
+    if (ok) return;
+    if (keys.length) keysOf.set(failures.length, keys);
+    failures.push(label);
   };
   const root = path.join(APP_DIR, '_tmp', 'runner-key-actions-' + process.pid);
   const alpha = path.join(root, 'alpha');
@@ -46,9 +50,9 @@ async function main() {
     const CTRL = 2;
     const SHIFT = 8;
     const key = async (k, code, vk, mods = 0, text) => {
-      await drv.send('Input.dispatchKeyEvent', { type: text ? 'keyDown' : 'rawKeyDown', key: k, code, windowsVirtualKeyCode: vk, modifiers: mods, text });
-      await drv.send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code, windowsVirtualKeyCode: vk, modifiers: mods });
+      const note = await drv.key(k, code, vk, mods, text);
       await sleep(150);
+      return note;
     };
     const R = () => drv.T('runnerState');
     const norm = (p) => String(p || '').replace(/[\\/]+$/, '').toLowerCase();
@@ -94,6 +98,8 @@ async function main() {
       return R();
     };
 
+    const ctl = await drv.keyRecorderWorks();
+    check(ctl.ok, `the page records a key raised in it, and that no key-table entry matched (positive control)${ctl.ok ? '' : ': ' + JSON.stringify(ctl.seen)}`);
     await key('Shift', 'ShiftLeft', 16); // a hidden window runs no frames until its first input
     let s = await goTo(root, 'alpha');
     check(norm(s.selected) === norm(alpha), `set up: alpha is selected (${path.basename(s.selected)})`);
@@ -102,10 +108,12 @@ async function main() {
     await focusList();
     const opt = (id) => drv.ev(`searchOpts['${id}']`);
     const ww = await opt('optWholeWord');
-    await key('b', 'KeyB', 66, CTRL);
+    const ctrlB = await key('b', 'KeyB', 66, CTRL);
     const ww1 = await opt('optWholeWord');
     await key('b', 'KeyB', 66, CTRL);
     check(ww1 === !ww && (await opt('optWholeWord')) === ww, `Ctrl+B switches whole words and back (${ww} → ${ww1})`);
+    const fateB = await drv.keyFate(ctrlB);
+    check(fateB.includes('entry ran (Ctrl+B)'), `the page records the key-table entry Ctrl+B ran (positive control: ${fateB})`);
     const sys = await opt('optHideSpecial');
     await key('.', 'Period', 190, CTRL);
     const sys1 = await opt('optHideSpecial');
@@ -268,6 +276,8 @@ async function main() {
     failures.push('threw: ' + (e && e.stack ? e.stack : e));
     console.error(e);
   } finally {
+    // What became of the keys behind each failed check, asked of the page before it closes.
+    if (drv) for (const [i, keys] of keysOf) failures[i] += ` [${(await Promise.all(keys.map(drv.keyFate))).join('; ')}]`;
     if (drv) await drv.close();
     try {
       fs.rmSync(root, { recursive: true, force: true });

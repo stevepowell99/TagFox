@@ -12,9 +12,13 @@ const { connect, APP_DIR, sleep } = require('./harness.cjs');
 
 async function main() {
   const failures = [];
+  const keysOf = new Map(); // a failure's index → the keys pressed for its check
   const check = (ok, label) => {
     console.log(`  ${ok ? 'PASS' : 'FAIL'} ${label}`);
-    if (!ok) failures.push(label);
+    const keys = drv ? drv.takeKeys() : [];
+    if (ok) return;
+    if (keys.length) keysOf.set(failures.length, keys);
+    failures.push(label);
   };
   const root = path.join(APP_DIR, '_tmp', 'runner-stars-' + process.pid);
   const start = path.join(root, 'start here');
@@ -33,6 +37,8 @@ async function main() {
     drv = await connect({ profile: 'tagfox-test-runner-stars', scope: start });
     console.log('Hook ready.');
     await drv.settle('startup');
+    const ctl = await drv.keyRecorderWorks();
+    check(ctl.ok, `the page records a key raised in it, and that no key-table entry matched (positive control)${ctl.ok ? '' : ': ' + JSON.stringify(ctl.seen)}`);
 
     const R = () => drv.T('runnerState');
     const same = (a, b) => path.resolve(String(a || '')).toLowerCase() === path.resolve(String(b || '')).toLowerCase();
@@ -40,11 +46,10 @@ async function main() {
     // loaded machine needs) rather than a fixed pause.
     const ctrlShiftDigit = async (n, want) => {
       await drv.ev(`(() => { document.getElementById('query').focus(); return 1; })()`);
-      const ev = { key: String(n), code: 'Digit' + n, windowsVirtualKeyCode: 48 + n, modifiers: 2 | 8 };
-      await drv.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...ev });
-      await drv.send('Input.dispatchKeyEvent', { type: 'keyUp', ...ev });
+      const note = await drv.key(String(n), 'Digit' + n, 48 + n, 2 | 8);
       for (let i = 0; i < 32 && !same((await R()).scope, want); i++) await sleep(250);
       await drv.settle('star ' + n);
+      return note;
     };
 
     // The profile outlives a run, and a run that failed part-way left its stars behind, so start with none.
@@ -69,18 +74,22 @@ async function main() {
     await drv.T('runSearchNow');
     await drv.settle('back to start');
 
-    await ctrlShiftDigit(1, starredFolder);
+    const star1 = await ctrlShiftDigit(1, starredFolder);
     s = await R();
-    check(same(s.scope, starredFolder), `Ctrl+Shift+1 makes the starred folder the current folder (folder "${s.scope}")`);
+    check(same(s.scope, starredFolder), `Ctrl+Shift+1 makes the starred folder the current folder (folder "${s.scope}", status "${s.status}")`);
+    const fate1 = await drv.keyFate(star1);
+    check(fate1.includes('entry ran (Ctrl+Shift+1…9)'), `the page records the key-table entry Ctrl+Shift+1 ran (positive control: ${fate1})`);
 
     await ctrlShiftDigit(2, target);
     s = await R();
-    check(same(s.scope, target), `Ctrl+Shift+2 opens the starred file: the shortcut is followed to its target (folder "${s.scope}")`);
+    check(same(s.scope, target), `Ctrl+Shift+2 opens the starred file: the shortcut is followed to its target (folder "${s.scope}", status "${s.status}")`);
     check(!same(s.scope, lnk), 'the starred file is not taken for a folder');
   } catch (e) {
     failures.push('threw: ' + (e.stack || e.message || String(e)));
     console.log('  FAIL threw: ' + (e.stack || e.message));
   } finally {
+    // What became of the keys behind each failed check, asked of the page before it closes.
+    if (drv) for (const [i, keys] of keysOf) failures[i] += ` [${(await Promise.all(keys.map(drv.keyFate))).join('; ')}]`;
     if (drv) await drv.close();
     try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {}
   }

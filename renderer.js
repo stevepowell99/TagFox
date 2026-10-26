@@ -4538,6 +4538,9 @@
       };
     }
 
+    /** Set by the #tagfoxtest hook alone: told which RUNNER_KEYS entry, if any, each key reaching the table matched. */
+    let runnerKeyTrace = null;
+
     /** The window's keys: the / list and the options panel while one is open, then RUNNER_KEYS, then typing
         into the box from anywhere else. True: handled. */
     function runnerHandleKeydown(e) {
@@ -4594,6 +4597,7 @@
          marked to run there. */
       const fits = (x) => (!c.inField || x.fields) && (!c.inMenu || x.menus) && x.when(c);
       const entry = RUNNER_KEYS.find((x) => x.first && fits(x)) || RUNNER_KEYS.find(fits);
+      runnerKeyTrace?.(e, entry);
       if (entry) {
         const out = entry.run ? entry.run(c) : runRunnerCommand(runnerCommands().find((x) => x.id === entry.cmd));
         if (out === 'native') return true;
@@ -15745,6 +15749,35 @@
         const el = document.getElementById(id);
         return el ? el.querySelectorAll('tr').length : -1;
       };
+      /* Every keydown that reaches the page, oldest first, with the RUNNER_KEYS entry it matched, so a test whose key
+         changed nothing can say whether the key never arrived, matched no entry or ran one. On the window in the
+         capture phase, after the key handler, whose stopPropagation does not stop a listener on the same target. */
+      const keysSeen = [];
+      const keyNotes = new WeakMap();
+      const keyNote = (e) => {
+        let n = keyNotes.get(e);
+        if (!n) {
+          const t = e.target;
+          n = {
+            key: e.key,
+            code: e.code,
+            mods: (e.ctrlKey ? 'Ctrl+' : '') + (e.altKey ? 'Alt+' : '') + (e.shiftKey ? 'Shift+' : ''),
+            at: t === window ? 'window' : t && t.id ? '#' + t.id : String((t && t.tagName) || '?').toLowerCase(),
+            table: false,
+            entry: '',
+            consumed: false,
+          };
+          keyNotes.set(e, n);
+          keysSeen.push(n);
+        }
+        return n;
+      };
+      window.addEventListener('keydown', (e) => { keyNote(e).consumed = e.defaultPrevented; }, true);
+      runnerKeyTrace = (e, entry) => {
+        const n = keyNote(e);
+        n.table = true;
+        n.entry = entry ? entry.keys.join(', ') : '';
+      };
       window.__tagfoxTest = {
         runSearchNow: (opts) => runSearchNow(opts),
         /* Asks for one search per text in a single task, as fast typing does on a slow day, and returns at once. */
@@ -15784,6 +15817,9 @@
         renderShelf: () => renderShelf().then(() => true),
         /* Every key Runner's key table names, as it spells them, and the next tip shown now. */
         runnerKeyNames: () => RUNNER_KEYS.flatMap((k) => k.keys),
+        /* The keys recorded above: how many so far, and those from the nth on. */
+        keysSeenCount: () => keysSeen.length,
+        keysSeen: (from) => keysSeen.slice(Number(from) || 0),
         showNextTip: () => (showNextDidYouKnowTip(), true),
         /* Drive the real disk-mutation handler (the IPC callback) so tests can assert refresh behaviour. */
         mutate: (payload) => onPathsMutated(payload),
