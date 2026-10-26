@@ -61,7 +61,7 @@ TagFox does not search the disk itself. It asks [Everything](https://www.voidtoo
 - The **list** shows what was found: each row's name, the folder it is in, its size and when it last changed.
 - The **Viewer**, on the right, previews whatever is selected (see **The Viewer**).
 - The **Shelf**, under the list, holds files while you find the folder they belong in (see **Working with files**).
-- A line at the bottom of the list shows a tip. A message, such as what an action did or why it failed, takes its place for a few seconds; point at it to keep it there.
+- Every few minutes a line at the bottom of the list shows a tip for ten seconds. A message, such as what an action did or why it failed, takes its place for a few seconds; point at it to keep it there.
 - Two faint buttons sit at the right of the search box. The first hides and shows the Viewer. The second, **Options**, lists the sort orders, filters and tags as buttons.
 
 ### Help and keys

@@ -1,6 +1,7 @@
 // Runner's status line: a bar docked along the bottom of the list's card, full width, over the list's foot, with
-// the list running down to the Shelf. It holds the rotating tip until a message comes. A message shows as a box, hides the tip, keeps the list where it was,
-// and gives the line back to the tip once it has gone. Then the tips themselves: every key a tip names is a
+// the list running down to the Shelf. It holds the rotating tip until a message comes; a tip glows as it arrives
+// and fades after its ten seconds. A message shows as a box, hides the tip, keeps the list where it was, and
+// leaves the line to the tip once it has gone. Then the tips themselves: every key a tip names is a
 // key Runner's key table lists (or a global shortcut), and every `/` command a tip names finds that command,
 // so a tip cannot describe a key or a command that does not exist.
 //
@@ -81,14 +82,29 @@ async function main() {
     check(docked(g), `still docked along the bottom of the list (line ${g.bar && Math.round(g.bar.left)}-${g.bar && Math.round(g.bar.bottom)})`);
     check(g.list && Math.abs(g.list.bottom - idle.list.bottom) <= 1, `the list does not move (${g.list && Math.round(g.list.bottom)} against ${Math.round(idle.list.bottom)})`);
 
-    // Once the message has had its few seconds, the tip comes back.
-    let back = false;
-    for (let i = 0; i < 40 && !back; i++) {
+    // Once the message has had its few seconds, the line is the tip's again.
+    let gone = false;
+    for (let i = 0; i < 40 && !gone; i++) {
       await sleep(250);
       g = await geo();
-      back = !g.on && g.tipShown;
+      gone = !g.on && !g.msgShown;
     }
-    check(back, `when the message has gone the tip is back (message shown ${g.on}, tip shown ${g.tipShown})`);
+    check(gone, `the message goes after its few seconds (message shown ${g.on})`);
+
+    // A new tip glows as it arrives, and fades after its ten seconds.
+    const tipAt = Date.now();
+    await drv.T('showNextTip');
+    await sleep(200);
+    const arriving = await drv.ev(`document.getElementById('navbarDidYouKnow').classList.contains('tagfox-navbar-dyk-arrive')`);
+    g = await geo();
+    check(arriving && g.tipShown, `a new tip shows, glowing as it arrives (arriving ${arriving}, shown ${g.tipShown})`);
+    let faded = false;
+    for (let i = 0; i < 60 && !faded; i++) {
+      await sleep(250);
+      faded = !(await geo()).tipShown;
+    }
+    const shownFor = Math.round((Date.now() - tipAt) / 1000);
+    check(faded && shownFor >= 9, `and fades after its ten seconds (gone after ${shownFor}s)`);
 
     // Every key a tip names is in Runner's key table, or is a global shortcut or a held modifier.
     const tips = await drv.ev('window.TagFoxDidYouKnowTips');

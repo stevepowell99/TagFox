@@ -357,8 +357,8 @@
     let searchHistDebounceTimer = null;
     let searchHistNavigating = false;
     const DID_YOU_KNOW_ROTATE_MS = 4 * 60 * 1000;
-    /** Fade the tip out this long after it updates; the next rotation shows it again. */
-    const DID_YOU_KNOW_FADE_MS = 60 * 1000;
+    /** A tip is shown this long and then fades, so the line is empty most of the time; the next rotation shows a new one. */
+    const DID_YOU_KNOW_FADE_MS = 10 * 1000;
     /** Tips + scores: did-you-know-tips.js → window.TagFoxDidYouKnowTips (empty array if load failed). */
     const DID_YOU_KNOW_TIPS = window.TagFoxDidYouKnowTips || Object.freeze([]);
     let didYouKnowBag = [];
@@ -5209,12 +5209,15 @@
       renderDidYouKnowTip(nextDidYouKnowTip());
       scheduleDidYouKnowFade();
     }
-    /* Make the tip visible on update, then fade it out a minute later. */
+    /* Make the tip visible on update, glowing as it arrives, then fade it out DID_YOU_KNOW_FADE_MS later. */
     function scheduleDidYouKnowFade() {
       const mount = document.getElementById('navbarDidYouKnow');
       if (!mount) return;
       if (didYouKnowFadeTimerId) { clearTimeout(didYouKnowFadeTimerId); didYouKnowFadeTimerId = null; }
-      mount.classList.remove('tagfox-navbar-dyk-faded');
+      mount.classList.remove('tagfox-navbar-dyk-faded', 'tagfox-navbar-dyk-arrive');
+      void mount.offsetWidth;
+      mount.classList.add('tagfox-navbar-dyk-arrive');
+      mount.addEventListener('animationend', () => mount.classList.remove('tagfox-navbar-dyk-arrive'), { once: true });
       didYouKnowFadeTimerId = setTimeout(() => {
         mount.classList.add('tagfox-navbar-dyk-faded');
         didYouKnowFadeTimerId = null;

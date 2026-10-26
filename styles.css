@@ -1167,7 +1167,7 @@ body.tagfox-internal-path-drag #appShelf:not(.shelf-aside-drag-over) {
   color: var(--bs-body-color);
   transition: opacity 1.2s ease;
 }
-/* Tip fades out a minute after it updates; the next rotation makes it visible again. */
+/* Tip fades out ten seconds after it updates (DID_YOU_KNOW_FADE_MS); the next rotation makes it visible again. */
 .tagfox-navbar-dyk-wrap.tagfox-navbar-dyk-faded {
   opacity: 0;
   pointer-events: none;
@@ -2143,6 +2143,26 @@ body.tagfox-runner #navbarDidYouKnow {
 }
 body.tagfox-runner #navbarDidYouKnow .fa-lightbulb {
   color: var(--runner-muted) !important;
+}
+/* A new tip glows as it arrives (scheduleDidYouKnowFade), then settles to the muted line. */
+@keyframes tagfox-tip-arrive {
+  0%,
+  35% {
+    color: var(--runner-ink);
+    text-shadow: 0 0 10px color-mix(in srgb, var(--tb-accent) 60%, transparent);
+  }
+  100% {
+    color: var(--runner-muted);
+    text-shadow: none;
+  }
+}
+body.tagfox-runner #navbarDidYouKnow.tagfox-navbar-dyk-arrive {
+  animation: tagfox-tip-arrive 2.5s ease-out 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  body.tagfox-runner #navbarDidYouKnow.tagfox-navbar-dyk-arrive {
+    animation: none;
+  }
 }
 body.tagfox-runner #navbarDidYouKnow .tagfox-navbar-tip-label {
   font-weight: 600;
