@@ -56,6 +56,8 @@ async function main() {
           msgShown: main.offsetHeight > 0,
           msgText: main.textContent.trim(),
           bg: cs.backgroundColor,
+          /* The opacity the bar settles at: a hidden test window draws no frames, so a transition never ends there. */
+          barFaded: (() => { bar.style.transition = 'none'; const o = getComputedStyle(bar).opacity; bar.style.transition = ''; return o === '0'; })(),
           boxed: cs.backgroundColor !== 'rgba(0, 0, 0, 0)' && parseFloat(cs.borderTopWidth) >= 2,
         };
       })()`);
@@ -97,7 +99,7 @@ async function main() {
     await sleep(200);
     const arriving = await drv.ev(`document.getElementById('navbarDidYouKnow').classList.contains('tagfox-navbar-dyk-arrive')`);
     g = await geo();
-    check(arriving && g.tipShown, `a new tip shows, glowing as it arrives (arriving ${arriving}, shown ${g.tipShown})`);
+    check(arriving && g.tipShown && !g.barFaded, `a new tip shows in the bar, glowing as it arrives (arriving ${arriving}, shown ${g.tipShown}, bar faded ${g.barFaded})`);
     let faded = false;
     for (let i = 0; i < 60 && !faded; i++) {
       await sleep(250);
@@ -105,6 +107,12 @@ async function main() {
     }
     const shownFor = Math.round((Date.now() - tipAt) / 1000);
     check(faded && shownFor >= 9, `and fades after its ten seconds (gone after ${shownFor}s)`);
+    g = await geo();
+    check(g.barFaded, 'with neither a tip nor a message the bar fades out too');
+    await drv.T('refreshNow');
+    await drv.settle('refresh after fade');
+    g = await geo();
+    check(g.on && g.msgShown && !g.barFaded, `a message brings the bar back (shown ${g.msgShown}, faded ${g.barFaded})`);
 
     // Every key a tip names is in Runner's key table, or is a global shortcut or a held modifier.
     const tips = await drv.ev('window.TagFoxDidYouKnowTips');

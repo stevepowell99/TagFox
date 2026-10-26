@@ -2090,7 +2090,8 @@ body.tagfox-runner #queryInputGroup #btnRestartTagFox {
    (placeStatusLineForLayout puts it in the column, the grid rules below pin it over the list's foot). The
    canvas tone and a top rule set it apart from the rows, which scroll under it. It holds the rotating tip,
    muted, and lets clicks through to the rows, until a message comes; the message tints the bar for a few
-   seconds (flashRunnerStatus) and takes the pointer, and the tip comes back. */
+   seconds (flashRunnerStatus) and takes the pointer. With neither a tip nor a message the bar fades out
+   altogether, leaving the rows under it in view. */
 body.tagfox-runner #tagfoxNavbarStatus {
   min-height: 1.9rem;
   padding: 0.2rem 0.9rem;
@@ -2101,6 +2102,13 @@ body.tagfox-runner #tagfoxNavbarStatus {
   flex-wrap: nowrap;
   font-size: 0.8rem;
   pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+/* Fades out slowly, with the tip, and comes back at once for a message or the next tip. */
+body.tagfox-runner:not(.tagfox-runner-status-on) #tagfoxNavbarStatus:has(#navbarDidYouKnow.tagfox-navbar-dyk-faded),
+body.tagfox-runner:not(.tagfox-runner-status-on) #tagfoxNavbarStatus:has(#navbarDidYouKnow:empty) {
+  opacity: 0;
+  transition: opacity 1.2s ease;
 }
 body.tagfox-runner.tagfox-runner-status-on #tagfoxNavbarStatus {
   pointer-events: auto;
