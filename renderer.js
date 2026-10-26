@@ -15708,7 +15708,7 @@
     installLongTaskMonitor();
     installRendererPerfProbe();
     bindRunnerChromeOnce();
-    /* Runner is the only layout (Steve, 24 October 2026). Classic's code that is left is deleted in stages. */
+    /* Runner is the only layout (Steve, 24 October 2026). */
     applyRunnerAtStartup();
     seedSearchHistoryFromCurrent();
     updateQueryPlaceholder();
