@@ -4249,7 +4249,7 @@
       runnerResetAllFilters();
     }
 
-    /** Tab and Shift+Tab: between the box and the list, as in Everything. */
+    /** Tab and Shift+Tab: between the box and the list, as in Everything; Ctrl+↓ and Alt+↓ from the box into it. */
     function runnerSwitchBoxAndList(inBox) {
       if (!inBox) {
         focusQueryBox(false);
@@ -4372,9 +4372,9 @@
       },
       {
         group: 'Move and select',
-        keys: ['Tab', 'Shift+Tab'],
-        does: "Between the search box and the list. Tab in the list steps along the selected row's buttons: Enter or Space presses one, Esc goes back to the list",
-        when: (c) => c.plain && c.key === 'Tab' && (c.inBox || c.inList),
+        keys: ['Tab', 'Shift+Tab', 'Ctrl+↓', 'Alt+↓'],
+        does: "Between the search box and the list; Ctrl+↓ and Alt+↓ go from the box into the list too. Tab in the list steps along the selected row's buttons: Enter or Space presses one, Esc goes back to the list",
+        when: (c) => (c.plain && c.key === 'Tab' && (c.inBox || c.inList)) || (c.inBox && c.key === 'ArrowDown' && (c.mod || c.alt)),
         run: (c) => runnerSwitchBoxAndList(c.inBox),
       },
       { group: 'Move and select', keys: ['Space'], does: 'In the list: check or uncheck the selected row', when: (c) => c.plain && !c.shift && c.key === ' ' && !c.inBox && !c.onControl, run: () => toggleKeyboardRowCheckbox() },
@@ -14126,15 +14126,6 @@
     });
     document.getElementById('query').addEventListener('focus', () => {
       pullWebContentsKeyboardFocus();
-    });
-    document.getElementById('query').addEventListener('keydown', (e) => {
-      // Ctrl+↓ or Alt+↓ (a plain ↓ is a table entry): into the list, keeping the current row so ↑/↓/Enter
-      // continue from it (not the first row).
-      if (e.key === 'ArrowDown' && listRowsForUi().length) {
-        e.preventDefault();
-        enterResultsListKeepingSelection();
-        e.target.blur();
-      }
     });
     document.getElementById('btnReadmeFolderDocTags').addEventListener('click', () => openTagModalFolderDocDraft());
     document.getElementById('readmeFolderDocStemInput').addEventListener('input', () => folderDocOnFilenameUiChanged());

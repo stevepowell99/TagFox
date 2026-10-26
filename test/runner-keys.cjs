@@ -230,6 +230,15 @@ async function main() {
     await key('Tab', 'Tab', 9, 8);
     s = await R();
     check(s.focusInBox, 'Shift+Tab goes back to the box');
+    // Ctrl+↓ and Alt+↓ go from the box into the list as well, keeping the selection.
+    for (const [name, mods] of [['Ctrl+↓', 2], ['Alt+↓', 1]]) {
+      const sel = (await R()).selected;
+      await key('ArrowDown', 'ArrowDown', 40, mods);
+      s = await R();
+      check(s.focusInList && norm(s.selected) === norm(sel), `${name} moves the focus to the list, keeping the selection`);
+      await key('Tab', 'Tab', 9, 8);
+    }
+    check((await R()).focusInBox, 'and Shift+Tab goes back to the box');
     // Into a folder and back with the arrows still works from the box.
     await key('ArrowRight', 'ArrowRight', 39);
     await drv.settle('right');
