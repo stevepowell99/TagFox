@@ -1,6 +1,6 @@
 // Runner's status line: a bar docked along the bottom of the list's card, full width, over the list's foot, with
 // the list running down to the Shelf. It holds the rotating tip until a message comes; a tip glows as it arrives
-// and fades after its ten seconds. A message shows as a box, hides the tip, keeps the list where it was, and
+// and fades after its ten seconds. A message shows as a box that flashes as each message arrives, hides the tip, keeps the list where it was, and
 // leaves the line to the tip once it has gone. Then the tips themselves: every key a tip names is a
 // key Runner's key table lists (or a global shortcut), and every `/` command a tip names finds that command,
 // so a tip cannot describe a key or a command that does not exist.
@@ -83,6 +83,13 @@ async function main() {
     check(g.boxed && g.bg !== idle.bg, `and tints the bar with an accent edge, so it does not read as a tip (${g.bg} against ${idle.bg})`);
     check(docked(g), `still docked along the bottom of the list (line ${g.bar && Math.round(g.bar.left)}-${g.bar && Math.round(g.bar.bottom)})`);
     check(g.list && Math.abs(g.list.bottom - idle.list.bottom) <= 1, `the list does not move (${g.list && Math.round(g.list.bottom)} against ${Math.round(idle.list.bottom)})`);
+    // Each message flashes the bar as it arrives: a fresh animation per message, not only the first.
+    const freshFlash = () =>
+      drv.ev(`(() => { const a = document.getElementById('tagfoxNavbarStatus').getAnimations().find((x) => x.animationName === 'tagfox-status-arrive'); const fresh = !!a && a !== window.__tfLastFlash; window.__tfLastFlash = a || null; return fresh; })()`);
+    check(await freshFlash(), 'the message flashes the bar as it arrives');
+    await drv.T('refreshNow');
+    await drv.settle('second refresh');
+    check(await freshFlash(), 'and the next message, arriving while the bar is up, flashes it again');
 
     // Once the message has had its few seconds, the line is the tip's again.
     let gone = false;

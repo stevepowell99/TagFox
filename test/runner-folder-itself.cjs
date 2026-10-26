@@ -5,8 +5,8 @@
 //   - ↓ selects the first row and puts out the chip; ↑ from the first row comes back to the folder, and ↑ again
 //     stays there;
 //   - typing selects the top match, which Enter would open;
-//   - with the folder itself selected, Del asks nothing and recycles nothing (the folder and its rows are all
-//     still on disk), and Enter opens nothing and says how to reach a row;
+//   - with the folder itself selected, Ctrl+Shift+C copies the folder's path, Del asks nothing and recycles
+//     nothing (the folder and its rows are all still on disk), and Enter opens nothing and says how to reach a row;
 //   - ← from a subfolder selects the subfolder you came up from, not the folder itself.
 // The positive control for Del is the same key on a selected row, which does ask.
 //
@@ -50,6 +50,10 @@ async function main() {
         viewerName: (document.getElementById('propDisplayName')?.textContent || '').trim(),
         doc: (document.getElementById('readmePreview')?.textContent || '').includes('What this folder is for'),
         modal: document.querySelector('.modal.show')?.id || '',
+        chipShape: (() => {
+          const c = document.getElementById('runnerScopeChip');
+          return { radius: parseFloat(getComputedStyle(c).borderTopLeftRadius), gap: Math.round(c.getBoundingClientRect().left - c.previousElementSibling.getBoundingClientRect().right) };
+        })(),
       }))()`);
     const waitFor = async (fn, ms = 6000) => {
       for (const t0 = Date.now(); Date.now() - t0 < ms; ) {
@@ -74,7 +78,8 @@ async function main() {
     await waitFor(async () => (await view()).doc);
     let v = await view();
     check(s.selected === '' && v.chipLit, `going into a folder selects no row and lights the folder chip (selected "${path.basename(s.selected)}", chip ${v.chipLit})`);
-    check(v.viewerName === 'proj folder' && v.doc, `the Viewer shows the folder and its folder doc ("${v.viewerName}", doc ${v.doc})`);
+    check(v.chipShape.radius >= 10 && v.chipShape.gap >= 4, `the lit chip is a pill clear of the box's divider, not squared onto it by the input group (radius ${v.chipShape.radius}px, gap ${v.chipShape.gap}px)`);
+    check(v.viewerName === 'proj folder' && v.doc,`the Viewer shows the folder and its folder doc ("${v.viewerName}", doc ${v.doc})`);
 
     await key('ArrowDown', 'ArrowDown', 40);
     s = await R();
@@ -88,6 +93,17 @@ async function main() {
     s = await R();
     check(s.selected === '', `↑ again stays on the folder (selected "${path.basename(s.selected)}")`);
 
+    // Ctrl+Shift+C copies the folder's path. The clipboard write is caught in the page, so Steve's clipboard is left alone.
+    await ev(`(window.__copied = null, navigator.clipboard.writeText = async (t) => { window.__copied = t; }, 1)`);
+    const copyPath = async () => {
+      await ev(`(window.__copied = null, 1)`);
+      await key('C', 'KeyC', 67, 2 | 8);
+      await waitFor(async () => (await ev(`window.__copied`)) != null, 2000);
+      return String((await ev(`window.__copied`)) || '');
+    };
+    let copied = await copyPath();
+    check(norm(copied) === norm(proj), `Ctrl+Shift+C with the folder itself selected copies the folder's path ("${copied}")`);
+
     // Del and Enter on the folder itself.
     await key('Delete', 'Delete', 46);
     await sleep(600);
@@ -98,8 +114,11 @@ async function main() {
     await sleep(500);
     s = await R();
     check(norm(s.scope) === norm(proj) && /↓ chooses a row/.test(s.status), `Enter opens nothing and says how to reach a row ("${s.status.slice(0, 60)}")`);
-    // Positive control: Del on a selected row does ask.
+    // On a row, Ctrl+Shift+C copies the row's path; and the positive control: Del on a selected row does ask.
     await key('ArrowDown', 'ArrowDown', 40);
+    s = await R();
+    copied = await copyPath();
+    check(!!s.selected && norm(copied) === norm(s.selected), `and on a row copies the row's path ("${path.basename(copied)}")`);
     await key('Delete', 'Delete', 46);
     const asked = await waitFor(async () => !!(await view()).modal, 3000);
     check(asked, 'positive control: Del on a selected row does ask');

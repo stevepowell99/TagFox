@@ -5299,6 +5299,12 @@
     let runnerStatusTimer = null;
     function flashRunnerStatus() {
       document.body.classList.add('tagfox-runner-status-on');
+      const bar = document.getElementById('tagfoxNavbarStatus');
+      if (bar) {
+        bar.classList.remove('tagfox-runner-status-arrive');
+        void bar.offsetWidth;
+        bar.classList.add('tagfox-runner-status-arrive'); // restarts the flash, so every message gets one
+      }
       clearTimeout(runnerStatusTimer);
       const hide = () => {
         if (document.getElementById('tagfoxNavbarStatus')?.matches(':hover')) {
@@ -9727,6 +9733,13 @@
 
     function getCheckedPathsArr() {
       return [...checkedPathsMap.values()];
+    }
+    /** What a copy acts on: the checked rows, else the folder itself when it is the selection (folderItselfSelectable).
+        Only the copies take the folder; every other row action still finds nothing there. */
+    function copyTargetPaths() {
+      const paths = getCheckedPathsArr();
+      if (paths.length || selectedFullPath || !folderItselfSelectable()) return paths;
+      return [currentScopeFolderPath()];
     }
 
     /** Checked row by path in the current table render. */
@@ -15393,7 +15406,7 @@
 
     async function copyShortcutExplorerFiles() {
       const status = document.getElementById('statusMain');
-      const paths = getCheckedPathsArr();
+      const paths = copyTargetPaths();
       if (!paths.length) return;
       const r = await window.tagBrowser.copyExplorerPaste(paths);
       if (!r || !r.ok) setStatusMain((r && r.error) || 'Copy for Explorer failed');
@@ -15408,7 +15421,7 @@
     /** Ctrl+Shift+C / ⌘+Shift+C: plain-text full paths (same strings as ⋯ → Full path); multiple checked → newline-separated. */
     async function keyboardCopyFullPathsText() {
       const status = document.getElementById('statusMain');
-      const paths = getCheckedPathsArr();
+      const paths = copyTargetPaths();
       if (!paths.length) return;
       const text = paths.join('\n');
       try {

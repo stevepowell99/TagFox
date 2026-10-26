@@ -2002,15 +2002,19 @@ body.tagfox-runner #queryInputGroup .tagfox-query-clear.btn {
   align-items: center;
   gap: 0.35rem;
   max-width: 40%;
-  margin-left: 0.5rem;
   padding: 0.2rem 0.6rem;
-  border-radius: 999px;
   background-color: var(--tagfox-folder-row-bg, var(--bs-secondary-bg));
   font-size: 1rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: default;
+}
+/* The box is a Bootstrap input group, whose joining rules square a child's corners and pull it 1px over the
+   divider before it; the chip is a pill clear of the divider, so these outrank them. */
+#queryInputGroup > .tagfox-runner-scope-chip {
+  margin-left: 0.5rem;
+  border-radius: 999px;
 }
 /* The folder itself is the selection (folderItselfSelectable): lit as a selected row is. */
 .tagfox-runner-scope-chip.tagfox-runner-scope-chip--selected {
@@ -2094,8 +2098,8 @@ body.tagfox-runner #queryInputGroup #btnRestartTagFox {
 /* Status line: a bar docked along the bottom of the list's card, full width, with the card's lower corners
    (placeStatusLineForLayout puts it in the column, the grid rules below pin it over the list's foot). The
    canvas tone and a top rule set it apart from the rows, which scroll under it. It holds the rotating tip,
-   muted, and lets clicks through to the rows, until a message comes; the message tints the bar for a few
-   seconds (flashRunnerStatus) and takes the pointer. With neither a tip nor a message the bar fades out
+   muted, and lets clicks through to the rows, until a message comes; the message flashes the bar, tints it
+   for a few seconds (flashRunnerStatus) and takes the pointer. With neither a tip nor a message the bar fades out
    altogether, leaving the rows under it in view. */
 body.tagfox-runner #tagfoxNavbarStatus {
   min-height: 1.9rem;
@@ -2126,6 +2130,19 @@ body.tagfox-runner.tagfox-runner-status-on #tagfoxNavbarStatus {
   border-top: 2px solid var(--tb-accent);
   background: color-mix(in srgb, var(--tb-accent) 12%, var(--runner-canvas));
   font-size: 0.85rem;
+}
+/* Each message flashes the bar as it arrives (flashRunnerStatus), then settles to the tint above. */
+@keyframes tagfox-status-arrive {
+  0%,
+  25% {
+    background-color: color-mix(in srgb, var(--tb-accent) 42%, var(--runner-canvas));
+  }
+  100% {
+    background-color: color-mix(in srgb, var(--tb-accent) 12%, var(--runner-canvas));
+  }
+}
+body.tagfox-runner.tagfox-runner-status-on #tagfoxNavbarStatus.tagfox-runner-status-arrive {
+  animation: tagfox-status-arrive 1.4s ease-out 1;
 }
 body.tagfox-runner.tagfox-runner-status-on #statusMain {
   display: inline !important;
