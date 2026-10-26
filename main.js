@@ -5067,10 +5067,12 @@ async function startLocalGmist() {
       error:
         'A localfs sidecar from an earlier gmist is still on port ' + LOCAL_GMIST_SIDECAR_PORT +
         (pids.length ? ' (PID ' + pids.join(', ') + ')' : '') +
-        ', and dev:local will not start while it is there. Stop it with: ' +
+        ', and dev:local will not start while it is there. ' +
         (pids.length
-          ? 'taskkill /PID ' + pids.join(' /PID ') + ' /F'
-          : 'taskkill /F /IM node.exe (or close the dev:local window)'),
+          ? 'Stop it with: taskkill /PID ' + pids.join(' /PID ') + ' /F'
+          : 'Close the dev:local window, or find its PID with netstat -ano | findstr :' +
+            LOCAL_GMIST_SIDECAR_PORT +
+            ' and stop that process alone with taskkill /PID <PID> /F'),
     };
   }
   /* Both ports free means nothing is listening, so gmist is not running and no HTTP request could

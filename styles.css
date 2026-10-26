@@ -1,5 +1,8 @@
 /* TagFox app styles (Bootstrap loaded from index.html before this file). */
 html, body { height: 100%; margin: 0; }
+/* A flex child that may shrink below its content, so a long name truncates instead of pushing its row wider than
+   its pane (Bootstrap does not ship this utility). */
+.min-w-0 { min-width: 0 !important; }
 /* ─── Theme overrides ─── */
 :root, [data-bs-theme="light"] {
   --bs-primary: #6366f1;

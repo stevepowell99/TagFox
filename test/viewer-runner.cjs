@@ -11,6 +11,7 @@
 //   - a markdown file's Edit becomes Done while the editor is open, and an autosave reports Saved beside it;
 //   - a kind with no preview names its extension and offers Open and Show in folder;
 //   - no mode block carries a heading of its own;
+//   - a long name truncates in the header, which keeps its buttons inside the pane;
 //   - a PDF in the side pane loads with no plugin toolbar and fitted to the width, and expanded at 150%.
 //
 // Run: node test/viewer-runner.cjs
@@ -37,6 +38,8 @@ async function main() {
   fs.writeFileSync(note, '# Note\n\nBody.\n');
   const bin = path.join(root, 'blob.qqz');
   fs.writeFileSync(bin, Buffer.alloc(64, 1));
+  const longName = path.join(root, 'No 26 Steve Powell, Fiona Remnant and James Copestake, reviewer notes for the conference panel.qqz');
+  fs.writeFileSync(longName, Buffer.alloc(64, 1));
   // A one-page PDF.
   const objs = [
     '<< /Type /Catalog /Pages 2 0 R >>',
@@ -155,6 +158,19 @@ async function main() {
       (await ev(`['officeTitle', 'textPreviewTitle', 'gdocWorkspaceTitle', 'propsPanelSectionTitle'].filter((id) => document.getElementById(id)).length`)) === 0 &&
         (await ev(`document.querySelectorAll('#propsDetails .fw-semibold.mb-1').length`)) === 0,
       'no mode block carries a heading of its own'
+    );
+
+    // A long name truncates inside the header and leaves the header's buttons in the pane.
+    await select(longName);
+    const head = await ev(`(() => {
+      const a = document.getElementById('propsAside').getBoundingClientRect();
+      const n = document.getElementById('propDisplayName');
+      const b = document.getElementById('btnPropsTheaterToggle').getBoundingClientRect();
+      return { paneRight: Math.round(a.right), btnRight: Math.round(b.right), btnW: Math.round(b.width), clipped: n.scrollWidth > n.clientWidth, text: n.textContent };
+    })()`);
+    check(
+      head.text.includes('Copestake') && head.clipped && head.btnW > 0 && head.btnRight <= head.paneRight,
+      `a long name truncates and the header's buttons stay in the pane (expand button ends at ${head.btnRight}px, pane at ${head.paneRight}px)`
     );
 
     // PDF fragments.
