@@ -2616,6 +2616,10 @@ body.tagfox-runner #resultsTable tbody tr.results-row-actions-kbd .results-td-ac
   opacity: 1 !important;
 }
 /* The first nine stars carry their Ctrl+Shift number on the star itself. */
+/* Deeper amber under a white number, for contrast (about 5:1, where white on #d97706 is 3:1). */
+.results-row-star.results-row-star--on:has(.results-row-star-num) {
+  color: #b45309;
+}
 .results-row-star:has(.results-row-star-num) {
   position: relative;
   padding-top: 0.1rem;
@@ -2632,7 +2636,8 @@ body.tagfox-runner #resultsTable tbody tr.results-row-actions-kbd .results-td-ac
   font-size: 0.56em;
   font-weight: 700;
   line-height: 1;
-  color: #1c1917;
+  color: #fff;
+  text-shadow: 0 0 1px rgba(0, 0, 0, 0.45);
   pointer-events: none;
 }
 .results-row-star:hover,
