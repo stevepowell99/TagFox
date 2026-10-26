@@ -324,12 +324,14 @@ async function main() {
     // The tags button is the one pressed, since its effect is visible and it leaves the clipboard alone.
     await drv.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 400 });
     const chipActs = () =>
-      drv.ev(`(() => { const chip = document.getElementById('runnerScopeChip'); const a = document.getElementById('tagfoxScopeBarRowActions'); const r = chip.getBoundingClientRect(); return { inChip: !!a && chip.contains(a), shown: !!a && getComputedStyle(a).display !== 'none' && a.getBoundingClientRect().width > 0, x: r.left + 12, y: r.top + r.height / 2 }; })()`);
+      drv.ev(`(() => { const chip = document.getElementById('runnerScopeChip'); const a = document.getElementById('tagfoxScopeBarRowActions'); const r = chip.getBoundingClientRect(); const xr = chip.querySelector('.tagfox-runner-scope-chip-x')?.getBoundingClientRect(); return { inChip: !!a && chip.contains(a), shown: !!a && getComputedStyle(a).display !== 'none' && a.getBoundingClientRect().width > 0, x: r.left + 12, y: r.top + r.height / 2, xLeft: xr ? Math.round(xr.left) : null }; })()`);
     let ca = await chipActs();
     check(ca.inChip && !ca.shown, `the folder's buttons sit in the box's folder chip, out of sight (${JSON.stringify(ca)})`);
     await drv.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: ca.x, y: ca.y });
     await sleep(150);
-    check((await chipActs()).shown, 'hovering the chip shows them');
+    const hovered = await chipActs();
+    check(hovered.shown, 'hovering the chip shows them');
+    check(ca.xLeft !== null && hovered.xLeft === ca.xLeft, `and the chip's × stays where it was, so it can be hit (${ca.xLeft}px, then ${hovered.xLeft}px)`);
     await click('#btnScopeBarTags');
     m = (await waitModal(true)) && (await modal());
     check(!!m && m.shown && norm(m.path) === norm(third), `its tags button opens the tag editor on the folder (${m && m.path})`);

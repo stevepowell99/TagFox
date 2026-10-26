@@ -4646,7 +4646,7 @@
         clearSearchScope();
         focusQueryBox(false);
       });
-      chip.appendChild(x);
+      chip.insertBefore(x, acts);
     }
 
     function bindRunnerChromeOnce() {
@@ -6540,11 +6540,10 @@
         el.appendChild(subWrap);
         if (scopeRowActs) el.insertBefore(scopeRowActs, subWrap);
       }
-      /* Runner: the buttons go in the box's folder chip instead, before its x, shown while it is hovered. */
+      /* Runner: the buttons go in the box's folder chip instead, after its x, shown while it is hovered: before
+         the x, they pushed it away as the pointer reached it. */
       const runnerChip = document.getElementById('runnerScopeChip');
-      if (scopeRowActs && runnerChip && !runnerChip.classList.contains('d-none')) {
-        runnerChip.insertBefore(scopeRowActs, runnerChip.querySelector('.tagfox-runner-scope-chip-x'));
-      }
+      if (scopeRowActs && runnerChip && !runnerChip.classList.contains('d-none')) runnerChip.appendChild(scopeRowActs);
       syncScopeBarButtons();
       renderedScopeBreadcrumbKey = currentScopeBreadcrumbKey();
       refreshTagFoxChromeTooltips(document.getElementById('breadcrumbBar'));
