@@ -45,6 +45,17 @@ async function portIsFree(port) {
   return true;
 }
 
+/** How long the error path's own subprocesses take on this machine right now: netstat, and the same
+    PowerShell WMI query main.js makes about the sidecar holder and its parent. */
+function referenceWorkMs() {
+  const t = Date.now();
+  spawnSync('netstat', ['-ano'], { stdio: 'ignore', windowsHide: true, timeout: 30000 });
+  spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command',
+    `$c = Get-CimInstance Win32_Process -Filter "ProcessId=${process.pid}"; if ($c) { Get-CimInstance Win32_Process -Filter "ProcessId=$($c.ParentProcessId)" | Out-Null }`,
+  ], { stdio: 'ignore', windowsHide: true, timeout: 30000 });
+  return Date.now() - t;
+}
+
 async function main() {
   const failures = [];
 
@@ -82,6 +93,7 @@ async function main() {
 
     /* Case 2: the dev port is free but the localfs sidecar from an earlier run is not. dev:local
        refuses on exactly this, so TagFox must say so instead of spawning and reading a log tail. */
+    const refMs = referenceWorkMs();
     held.push(await holdPort(SIDECAR_PORT, '127.0.0.1'));
     const t1 = Date.now();
     const r2 = await drv.ev(`window.tagBrowser.startLocalGmist()`);
@@ -91,12 +103,17 @@ async function main() {
     } else if (!/5199/.test(String(r2.error || '')) || !/taskkill/i.test(String(r2.error || ''))) {
       failures.push(`sidecar port held: the error must name port 5199 and how to stop it, got: ${r2.error}`);
     } else {
-      console.log(`  PASS sidecar port held -> named the holder, did not spawn (${ms2}ms)`);
+      console.log(`  PASS sidecar port held -> named the holder, did not spawn (${ms2}ms; netstat and PowerShell took ${refMs}ms just before)`);
     }
-    /* Wider than case 1 on purpose: this path now answers a second question (who owns the sidecar)
-       on top of the netstat it already ran, and netstat alone measured 2.2s on a loaded machine. It
-       is still bounded, because an error the user is waiting on must arrive rather than hang. */
-    if (ms2 > 8000) failures.push(`sidecar port held: took ${ms2}ms, expected under 8s (no spawn, no HTTP probe)`);
+    /* Wider than case 1 on purpose: this path answers a second question (who owns the sidecar) on
+       top of netstat, and both are subprocesses whose cost follows the machine's load, so the budget
+       is twice what the same two take here just before, and never under 8s. It is still bounded,
+       because an error the user is waiting on must arrive rather than hang. What tells the old code
+       from the new is the answer above, not the time. */
+    const budget2 = Math.max(8000, 2 * refMs + 2000);
+    if (ms2 > budget2) {
+      failures.push(`sidecar port held: took ${ms2}ms, expected under ${budget2}ms (twice the ${refMs}ms netstat and PowerShell took here just before)`);
+    }
     for (const s of held.splice(0)) await new Promise((r) => s.close(r));
 
     /* Case 3: the same two ports, the opposite situation. dev:local brings the sidecar up first and
@@ -116,19 +133,25 @@ async function main() {
     let runner = null;
     try {
       runner = spawn(process.execPath, [runnerPath], { stdio: 'ignore' });
-      /* Wait for the fake sidecar to actually be listening, or the case tests nothing. */
-      for (let i = 0; i < 40 && (await portIsFree(SIDECAR_PORT)); i++) await new Promise((r) => setTimeout(r, 100));
-      if (await portIsFree(SIDECAR_PORT)) throw new Error('the fake sidecar never took port ' + SIDECAR_PORT);
+      /* Wait for the fake sidecar to actually be listening, or the case tests nothing. This is set-up
+         rather than a measurement, so it allows a loaded machine its time to start two node processes. */
+      for (const t = Date.now(); Date.now() - t < 30000 && (await portIsFree(SIDECAR_PORT)); ) await new Promise((r) => setTimeout(r, 100));
+      if (await portIsFree(SIDECAR_PORT)) throw new Error('the fake sidecar never took port ' + SIDECAR_PORT + ' in 30s');
 
       const call = drv.ev(`window.tagBrowser.startLocalGmist()`);
-      /* Let it sit in the wait, then bring the dev port up the way a real vite finally would. */
-      await new Promise((r) => setTimeout(r, 2000));
+      /* Let it reach the wait, then bring the dev port up the way a real vite finally would. Case 2
+         took ms2 to get as far as this wait does, so give it at least that. */
+      await new Promise((r) => setTimeout(r, Math.max(2000, ms2)));
       held.push(await holdPort(DEV_PORT, '127.0.0.1'));
       const r3 = await call;
       if (!r3 || r3.up !== true || r3.alreadyRunning !== true) {
         failures.push(`sidecar held by a live dev:local: expected {up:true, alreadyRunning:true}, got ${JSON.stringify(r3)}`);
       } else if (/taskkill/i.test(String(r3.error || ''))) {
         failures.push(`sidecar held by a live dev:local: must not tell Steve to kill a gmist that is starting: ${r3.error}`);
+      } else if (r3.waitedForStartup !== true) {
+        /* The dev port came up before main read the ports, so main answered from it and this case
+           tested nothing. */
+        failures.push(`sidecar held by a live dev:local: main never reached the wait (got ${JSON.stringify(r3)})`);
       } else {
         console.log('  PASS sidecar held by a live dev:local -> waited for the dev port instead of reporting an orphan');
       }
