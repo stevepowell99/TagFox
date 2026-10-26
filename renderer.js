@@ -12579,7 +12579,8 @@
       /* Highlight #query in name/path when enabled (Settings). */
       const qTrim = (document.getElementById('query')?.value || '').trim();
       const queryNeedle = isHighlightMatchedNamesOn() && qTrim ? qTrim : null;
-      const starKeys = new Set(loadFavouriteFolders().map((p) => pathNormKey(p)));
+      /* Each star's place in the stars list, 1-based: the first nine carry their Ctrl+Shift number on the star. */
+      const starPlace = new Map(loadFavouriteFolders().map((p, i) => [pathNormKey(p), i + 1]));
       const renderN = renderedRowCount(rowsForDisplay.length);
       for (let rowIdx = 0; rowIdx < renderN; rowIdx++) {
         const row = rowsForDisplay[rowIdx];
@@ -12857,14 +12858,22 @@
         tdActInner.appendChild(btnDelete);
         tdActInner.appendChild(btnMore);
         tdAct.appendChild(tdActInner);
-        const starred = starKeys.has(pathNormKey(fp));
+        const place = starPlace.get(pathNormKey(fp)) || 0;
+        const starred = place > 0;
+        const numbered = place >= 1 && place <= 9;
         const btnStar = document.createElement('button');
         btnStar.type = 'button';
         btnStar.className = 'results-row-star' + (starred ? ' results-row-star--on' : '');
-        btnStar.title = starred ? 'Unstar (Ctrl+D)' : 'Star: keeps it near the top of searches (Ctrl+D)';
-        btnStar.setAttribute('aria-label', starred ? 'Unstar' : 'Star');
+        btnStar.title = numbered
+          ? 'Star ' + place + ': Ctrl+Shift+' + place + ' opens it from anywhere in TagFox. Click to unstar (Ctrl+D)'
+          : starred
+            ? 'Unstar (Ctrl+D)'
+            : 'Star: keeps it near the top of searches (Ctrl+D)';
+        btnStar.setAttribute('aria-label', numbered ? 'Unstar (star ' + place + ')' : starred ? 'Unstar' : 'Star');
         btnStar.setAttribute('aria-pressed', starred ? 'true' : 'false');
-        btnStar.innerHTML = '<i class="fa-' + (starred ? 'solid' : 'regular') + ' fa-star" aria-hidden="true"></i>';
+        btnStar.innerHTML =
+          '<i class="fa-' + (starred ? 'solid' : 'regular') + ' fa-star" aria-hidden="true"></i>' +
+          (numbered ? '<span class="results-row-star-num" aria-hidden="true">' + place + '</span>' : '');
         btnStar.addEventListener('click', (e) => {
           e.stopPropagation();
           toggleStarPath(fp);

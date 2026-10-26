@@ -2615,6 +2615,26 @@ body.tagfox-runner #resultsTable tbody tr.results-row-actions-kbd .results-td-ac
   color: #d97706;
   opacity: 1 !important;
 }
+/* The first nine stars carry their Ctrl+Shift number on the star itself. */
+.results-row-star:has(.results-row-star-num) {
+  position: relative;
+  padding-top: 0.1rem;
+  padding-bottom: 0.1rem;
+  font-size: 1.3rem;
+}
+.results-row-star-num {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 0.16em;
+  font-size: 0.56em;
+  font-weight: 700;
+  line-height: 1;
+  color: #1c1917;
+  pointer-events: none;
+}
 .results-row-star:hover,
 .results-row-star:focus-visible {
   opacity: 1;

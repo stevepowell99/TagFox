@@ -36,25 +36,44 @@ async function main() {
 
     const R = () => drv.T('runnerState');
     const same = (a, b) => path.resolve(String(a || '')).toLowerCase() === path.resolve(String(b || '')).toLowerCase();
-    const ctrlShiftDigit = async (n) => {
+    // The key asks main whether the star is a file or a folder, so wait for the folder to change (up to 8s, as a
+    // loaded machine needs) rather than a fixed pause.
+    const ctrlShiftDigit = async (n, want) => {
       await drv.ev(`(() => { document.getElementById('query').focus(); return 1; })()`);
       const ev = { key: String(n), code: 'Digit' + n, windowsVirtualKeyCode: 48 + n, modifiers: 2 | 8 };
       await drv.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...ev });
       await drv.send('Input.dispatchKeyEvent', { type: 'keyUp', ...ev });
-      await sleep(600);
+      for (let i = 0; i < 32 && !same((await R()).scope, want); i++) await sleep(250);
       await drv.settle('star ' + n);
     };
 
+    // The profile outlives a run, and a run that failed part-way left its stars behind, so start with none.
+    await drv.ev(`(localStorage.removeItem('tagBrowserFavFolders'), 1)`);
     await drv.T('toggleStar', starredFolder);
     await drv.T('toggleStar', lnk);
     let s = await R();
     check(s.stars.length === 2 && same(s.stars[0], starredFolder) && same(s.stars[1], lnk), `two stars, the folder first (${s.stars})`);
 
-    await ctrlShiftDigit(1);
+    // The first nine stars carry their number on the star, and its tooltip names the key. They are listed in root.
+    await drv.T('configure', { rootFolder: root });
+    for (let i = 0; i < 10; i++) {
+      await drv.T('runSearchNow');
+      await drv.settle('numbers');
+      if ((await R()).rows.some((r) => same(r, starredFolder))) break;
+      await sleep(400);
+    }
+    const nums = await drv.ev(`(() => { const out = {}; for (const tr of document.querySelectorAll('#resultsTable tbody tr')) { const b = tr.querySelector('.results-row-star'); const name = tr.querySelector('.results-td-name, td:nth-child(2)')?.textContent || tr.textContent; if (b) out[(/starred folder|to the target|start here|shortcut target/.exec(name) || ['?'])[0]] = { n: b.querySelector('.results-row-star-num')?.textContent || '', title: b.title }; } return out; })()`);
+    check(nums['starred folder']?.n === '1' && nums['to the target']?.n === '2' && nums['start here']?.n === '', `the stars show their numbers, 1 and 2, and an unstarred row none (${JSON.stringify(Object.fromEntries(Object.entries(nums).map(([k, v]) => [k, v.n])))})`);
+    check(/Ctrl\+Shift\+1/.test(nums['starred folder']?.title || ''), `the number's tooltip names its key ("${nums['starred folder']?.title}")`);
+    await drv.T('configure', { rootFolder: start });
+    await drv.T('runSearchNow');
+    await drv.settle('back to start');
+
+    await ctrlShiftDigit(1, starredFolder);
     s = await R();
     check(same(s.scope, starredFolder), `Ctrl+Shift+1 makes the starred folder the current folder (folder "${s.scope}")`);
 
-    await ctrlShiftDigit(2);
+    await ctrlShiftDigit(2, target);
     s = await R();
     check(same(s.scope, target), `Ctrl+Shift+2 opens the starred file: the shortcut is followed to its target (folder "${s.scope}")`);
     check(!same(s.scope, lnk), 'the starred file is not taken for a folder');
