@@ -2,7 +2,7 @@
 // This drives the real panel over CDP and checks:
 //   - a folder's header carries its name (it used to be squeezed to nothing beside a description), and a line
 //     under it gives the folder it is in;
-//   - a folder with no folder doc shows "No folder doc here yet" with the name field and Write it, and no bar;
+//   - a folder with no folder doc shows "No folder doc here" with the name field and Write it, and no bar;
 //     Write it opens the editor with the name field moved up into the bar, and Save creates the file on disk
 //     (positive control: the file exists with what was typed), after which the bar names the doc and offers Edit;
 //   - the Folder doc | Thumbnails tabs switch the body, and the Subfolders switch shows each subfolder's doc;
