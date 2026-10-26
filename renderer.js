@@ -3071,25 +3071,56 @@
         ' matches, plus name matches and every starred or used item that matches. Type more to narrow.';
     }
 
+    /** With the box empty inside a folder, the folder itself is the selection rather than a row (Steve, 26 October
+        2026): the Viewer shows the folder (propsTargetPath falls back to it), the box's folder chip is lit, and row
+        actions have nothing to act on. ↓ selects the first row, and ↑ from it comes back to the folder. */
+    function folderItselfSelectable() {
+      return !!currentScopeFolderPath() && !String(document.getElementById('query')?.value || '').trim();
+    }
+    function selectFolderItself() {
+      clearResultsRowUncheckPending();
+      resultsShiftRangeAnchorIdx = null;
+      checkedPathsMap.clear();
+      syncResultsRowCheckboxStates();
+      selectedRow = null;
+      selectedFullPath = null;
+      renderScopeBreadcrumbIfScopeChanged();
+      syncResultsSelectionHighlight();
+      syncRunnerScopeChipSelected();
+      refreshPropsPanelQuick();
+      schedulePropsPreviewHeavy();
+      const sc = document.getElementById('resultsScroll');
+      if (sc) sc.scrollTop = 0;
+    }
+    /** The folder chip is lit while the folder itself is the selection: no row selected, inside a folder. */
+    function syncRunnerScopeChipSelected() {
+      document.getElementById('runnerScopeChip')?.classList.toggle('tagfox-runner-scope-chip--selected', !selectedFullPath && !!currentScopeFolderPath());
+    }
+
     /** After a search: a new list (scope or query changed) selects its top row, or the folder just left, so ↓, Tab
-        and Enter start from it. Within the same list the selection stays, so rows unchecked by hand stay unchecked
-        through F5 and auto-refresh. `early` is the paint of the main rows before the merged list (runSearch): it
-        selects the same way but leaves the list unrecorded, so the merged list selects its own top row, unless the
-        selection has been moved by hand in between. */
+        and Enter start from it; with the box empty inside a folder it selects the folder itself (folderItselfSelectable).
+        Within the same list the selection stays, so rows unchecked by hand stay unchecked through F5 and
+        auto-refresh. `early` is the paint of the main rows before the merged list (runSearch): it selects the same
+        way but leaves the list unrecorded, so the merged list selects again, unless the selection has been moved by
+        hand in between. */
     function selectRowAfterSearch(query, rootFolder, { early = false } = {}) {
       const key = selectAfterSearchKeyFor(query, rootFolder);
       const rows = listRowsForUi();
-      const earlyPick = earlySelect && earlySelect.key === key ? earlySelect.path : null;
+      const earlyHere = earlySelect && earlySelect.key === key ? earlySelect : null;
       earlySelect = null;
+      const folderItself = folderItselfSelectable();
       if (!rows.length) {
         if (!early) selectAfterSearchKey = key;
+        if (folderItself && selectedFullPath) selectFolderItself();
+        else syncRunnerScopeChipSelected();
         return;
       }
       const idxOf = (p) => {
         const k = pathNormKey(p);
         return rows.findIndex((r) => pathNormKey(fullPathForRow(r)) === k);
       };
-      if (earlyPick && selectedFullPath && pathNormKey(selectedFullPath) !== pathNormKey(earlyPick) && idxOf(selectedFullPath) >= 0) {
+      /* Moved by hand since the early paint (its pick was a row, or the folder itself when `path` is null). */
+      if (earlyHere && selectedFullPath && (!earlyHere.path || pathNormKey(selectedFullPath) !== pathNormKey(earlyHere.path)) && idxOf(selectedFullPath) >= 0) {
         runnerPendingSelectPath = null;
         selectAfterSearchKey = key;
         return;
@@ -3101,6 +3132,13 @@
       }
       if (idx < 0) {
         if (key === selectAfterSearchKey && selectedFullPath && idxOf(selectedFullPath) >= 0) return;
+        if (folderItself) {
+          if (key === selectAfterSearchKey && !selectedFullPath) return;
+          if (early) earlySelect = { key, path: null };
+          else selectAfterSearchKey = key;
+          selectFolderItself();
+          return;
+        }
         idx = 0;
       }
       if (early) earlySelect = { key, path: fullPathForRow(rows[idx]) };
@@ -4111,7 +4149,21 @@
         if (searchInFlight) await searchMutex;
         if (runnerListKey() !== selectAfterSearchKey) await runSearchNow();
       }
-      if (!selectedFullPath) return;
+      /* The folder itself selected: Ctrl+Enter and Alt+Enter act on it, a waiting Open or Save dialog is sent it,
+         and Enter, having nowhere to go, says how to reach a row. */
+      if (!selectedFullPath) {
+        const folder = folderItselfSelectable() ? currentScopeFolderPath() : '';
+        if (!folder) return;
+        if (how === 'reveal') {
+          await window.tagBrowser.showInFolder(folder);
+          setStatusMain('Shown in File Explorer: ' + folder);
+        } else if (how === 'properties') {
+          const r = await window.tagBrowser.showProperties(folder);
+          if (r && !r.ok) setStatusMain('Properties: ' + (r.error || 'failed'));
+        } else if (how === 'open' && fileDialogTarget) await sendScopeFolderToFileDialog();
+        else if (how === 'open') setStatusMain('This folder is selected: ↓ chooses a row in it.');
+        return;
+      }
       const k = pathNormKey(selectedFullPath);
       if (!listRowsForUi().some((r) => pathNormKey(fullPathForRow(r)) === k)) return;
       if (how === 'reveal') {
@@ -4292,7 +4344,7 @@
       {
         group: 'Move and select',
         keys: ['↑', '↓'],
-        does: 'Move the selection, from the search box or the list. From the search box they leave the caret at the end of the text, so typing adds to it',
+        does: 'Move the selection, from the search box or the list. From the search box they leave the caret at the end of the text, so typing adds to it. Inside a folder with the box empty, the folder itself comes before the first row',
         when: (c) => c.plain && !c.shift && (c.key === 'ArrowDown' || c.key === 'ArrowUp'),
         run: (c) => {
           if (c.textSel) c.q.setSelectionRange(c.q.value.length, c.q.value.length);
@@ -4391,7 +4443,7 @@
       },
 
       /* Open and act */
-      { group: 'Open and act', keys: ['Enter'], does: 'Open the selected row; a folder opens here. With a path typed in the search box, go there; with nothing listed inside a folder, search everywhere', when: (c) => c.plain && !c.shift && c.key === 'Enter' && !c.onControl, run: (c) => void runnerEnter(c) },
+      { group: 'Open and act', keys: ['Enter'], does: 'Open the selected row; a folder opens here. With a path typed in the search box, go there; with nothing listed inside a folder, search everywhere. With the folder itself selected, nothing opens: ↓ chooses a row', when: (c) => c.plain && !c.shift && c.key === 'Enter' && !c.onControl, run: (c) => void runnerEnter(c) },
       { group: 'Open and act', keys: ['Ctrl+Enter'], does: 'Open its folder in File Explorer, with it selected', when: (c) => c.mod && !c.alt && !c.shift && c.key === 'Enter', run: () => void runnerActivateSelection('reveal') },
       { group: 'Open and act', keys: ['Alt+Enter'], does: 'Properties', when: (c) => c.alt && !c.mod && !c.shift && c.key === 'Enter', run: () => void runnerActivateSelection('properties') },
       /* Another app's Open or Save dialog, while the toggle shortcut has raised TagFox from one. `first`: these
@@ -4647,6 +4699,7 @@
         focusQueryBox(false);
       });
       chip.insertBefore(x, acts);
+      syncRunnerScopeChipSelected();
     }
 
     function bindRunnerChromeOnce() {
@@ -9147,6 +9200,7 @@
       selectedFullPath = fp;
       renderScopeBreadcrumbIfScopeChanged();
       syncResultsSelectionHighlight();
+      syncRunnerScopeChipSelected();
       refreshPropsPanelQuick();
       schedulePropsPreviewHeavy();
       focusResultsWrapAfterListSelection();
@@ -10348,6 +10402,7 @@
       selectedFullPath = null;
       renderScopeBreadcrumbIfScopeChanged();
       syncResultsSelectionHighlight();
+      syncRunnerScopeChipSelected();
       refreshPropsPanelQuick();
       schedulePropsPreviewHeavy();
       focusResultsWrapAfterListSelection();
@@ -14987,6 +15042,8 @@
     let hotkeyRaiseSelectUntil = 0;
     const HOTKEY_RAISE_FLAG_MS = 1500;
     function onHotkeyRaised() {
+      /* A fresh tip, glowing, on every raise (Steve, 26 October 2026); the four-minute rotation restarts from here. */
+      startDidYouKnowTips();
       if (document.querySelector('.dropdown-menu.show')) return;
       if (document.hasFocus()) focusQueryBox(true);
       else hotkeyRaiseSelectUntil = Date.now() + HOTKEY_RAISE_FLAG_MS;
@@ -15085,7 +15142,15 @@
       const rows = listRowsForUi();
       if (!rows.length) return;
       let idx = navFocusIndexInFilteredRows(rows);
-      if (idx < 0) idx = delta > 0 ? 0 : rows.length - 1;
+      /* The folder itself sits above the first row (folderItselfSelectable): ↑ from the first row selects it, and ↑
+         from it goes nowhere. */
+      if (folderItselfSelectable() && delta === -1 && idx <= 0) {
+        if (idx === 0) selectFolderItself();
+        return;
+      }
+      /* From the folder itself, a step down counts from just above the first row, so PgDn moves a page. */
+      if (idx < 0 && delta > 0 && folderItselfSelectable()) idx = Math.min(rows.length - 1, delta - 1);
+      else if (idx < 0) idx = delta > 0 ? 0 : rows.length - 1;
       else idx = Math.max(0, Math.min(rows.length - 1, idx + delta));
       const row = rows[idx];
       resultsExclusiveSelectRow(row, fullPathForRow(row));

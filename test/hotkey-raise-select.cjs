@@ -97,9 +97,13 @@ async function main() {
     await windowFocusEvent();
     b = await settleBox();
     check(caretAt(b, 3) && b.hasFocus, 'focus event first: the box has the focus and the caret is where it was', desc(b));
+    // Fade the tip first, so the raise has to bring one back.
+    await ev(`(document.getElementById('navbarDidYouKnow').classList.add('tagfox-navbar-dyk-faded'), document.getElementById('navbarDidYouKnow').classList.remove('tagfox-navbar-dyk-arrive'), 1)`);
     await T('hotkeyRaised');
     b = await box();
     check(whole(b), 'hotkey raise, message after the focus event: the whole query is selected', desc(b));
+    const tip = await ev(`(() => { const t = document.getElementById('navbarDidYouKnow'); return { shown: !t.classList.contains('tagfox-navbar-dyk-faded'), glowing: t.classList.contains('tagfox-navbar-dyk-arrive'), text: t.textContent.trim().length }; })()`);
+    check(tip.shown && tip.glowing && tip.text > 20, 'and a fresh tip shows, glowing', JSON.stringify(tip));
 
     // Positive: the focus event first, the message before its frame has run, so the frame must not undo it.
     await parkCaret(3);

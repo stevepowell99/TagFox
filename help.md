@@ -61,7 +61,7 @@ TagFox does not search the disk itself. It asks [Everything](https://www.voidtoo
 - The **list** shows what was found: each row's name, the folder it is in, its size and when it last changed.
 - The **Viewer**, on the right, previews whatever is selected (see **The Viewer**).
 - The **Shelf**, under the list, holds files while you find the folder they belong in (see **Working with files**).
-- Every few minutes a line at the bottom of the list shows a tip for ten seconds. A message, such as what an action did or why it failed, takes its place for a few seconds; point at it to keep it there.
+- Each time you bring TagFox up, and every few minutes while it is up, a line at the bottom of the list shows a tip for ten seconds. A message, such as what an action did or why it failed, takes its place for a few seconds; point at it to keep it there.
 - Two faint buttons sit at the right of the search box. The first hides and shows the Viewer. The second, **Options**, lists the sort orders, filters and tags as buttons.
 
 ### Help and keys
@@ -81,6 +81,7 @@ TagFox does not search the disk itself. It asks [Everything](https://www.voidtoo
 ### Moving between folders
 
 - `→`, or `Enter` on a folder, goes into the selected folder. `←`, or `Alt`+`↑` as in File Explorer, goes up to the parent, with the folder you left selected.
+- Inside a folder, with the search box empty, the folder itself is selected: its name at the start of the box lights up, and the Viewer shows the folder, with its folder doc. `↓` goes to the first row, and `↑` from the first row comes back to the folder. Once you type, the best match is selected, so `Enter` opens it.
 - `Backspace` in an empty search box leaves the folder, so you search everywhere. So does the × on the folder's name at the start of the box.
 - Click any name in the path above the search box to go there, or the › after it to choose one of the folders inside.
 - `Shift`+`Enter` goes to the folder holding the selected row.

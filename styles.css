@@ -2012,6 +2012,11 @@ body.tagfox-runner #queryInputGroup .tagfox-query-clear.btn {
   text-overflow: ellipsis;
   cursor: default;
 }
+/* The folder itself is the selection (folderItselfSelectable): lit as a selected row is. */
+.tagfox-runner-scope-chip.tagfox-runner-scope-chip--selected {
+  background-color: var(--tb-accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--tb-accent);
+}
 .tagfox-runner-scope-chip .tagfox-runner-scope-chip-x {
   opacity: 0.45;
   cursor: pointer;

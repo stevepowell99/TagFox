@@ -34,6 +34,7 @@ const runs = [
   { name: 'runner shelf', args: ['runner-shelf.cjs'] },
   { name: 'runner status line', args: ['runner-status.cjs'] },
   { name: 'runner go to a path', args: ['runner-go-to-path.cjs'] },
+  { name: 'an empty box inside a folder selects the folder', args: ['runner-folder-itself.cjs'] },
   { name: 'viewer in runner', args: ['viewer-runner.cjs'] },
   { name: 'runner viewer divider', args: ['runner-viewer-split.cjs'] },
   { name: 'window close hides', args: ['close-hides.cjs'] },
