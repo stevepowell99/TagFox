@@ -82,14 +82,14 @@ async function main() {
     check((await drv.ev(`localStorage.getItem('tagBrowserRunnerRankKnobs')`)) === null, 'Reset forgets the saved positions');
 
     // The / command opens Settings at the section, expanded.
-    await drv.T('runCommand', 'ranking');
+    await drv.T('runCommand', 'settings-ranking');
     let opened = null;
     for (let i = 0; i < 20; i++) {
       opened = await drv.ev(`(() => ({ panel: document.getElementById('settingsPanel').classList.contains('show'), section: document.getElementById('settingsRankingDetails').classList.contains('show') }))()`);
       if (opened.panel && opened.section) break;
       await sleep(150);
     }
-    check(opened.panel && opened.section, `the "ranking" command opens Settings with Ranking expanded (${JSON.stringify(opened)})`);
+    check(opened.panel && opened.section, `the "Settings: Ranking" command opens Settings with Ranking expanded (${JSON.stringify(opened)})`);
   } catch (e) {
     failures.push('threw: ' + (e.stack || e.message || String(e)));
     console.log('  FAIL threw: ' + (e.stack || e.message));

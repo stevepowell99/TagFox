@@ -3546,9 +3546,7 @@
       { id: 'sort-date', group: 'Sort', label: 'Sort by date, newest first', isOn: () => runnerSort === 'date', run: () => setRunnerSort('date') },
       { id: 'sort-name', group: 'Sort', label: 'Sort by name', isOn: () => runnerSort === 'name', run: () => setRunnerSort('name') },
       { id: 'sort-size', group: 'Sort', label: 'Sort by size, largest first', isOn: () => runnerSort === 'size', run: () => setRunnerSort('size') },
-      { id: 'sort-size-asc', group: 'Sort', label: 'Sort by size, smallest first', isOn: () => runnerSort === 'size-asc', run: () => setRunnerSort('size-asc') },
-      { id: 'ranking', group: 'Sort', label: 'Ranking: weigh what the smart order counts (Settings)', run: () => openSettingsSection('settingsRankingDetails') },
-      { id: 'edit-tags', group: 'Tags', label: 'Edit tags of the selected or checked rows', run: () => runnerEditTags() },
+      { id: 'sort-size-asc', group: 'Sort', label: 'Sort by size, smallest first', isOn: () => runnerSort === 'size-asc', run: () => setRunnerSort('size-asc') },      { id: 'edit-tags', group: 'Tags', label: 'Edit tags of the selected or checked rows', run: () => runnerEditTags() },
       /* One filter per vocabulary word; the options panel draws these as a row of small buttons. */
       ...Object.keys(T.TAG_VOCAB).map((word) => ({
         id: 'tag-' + word.toLowerCase(),
@@ -3769,13 +3767,55 @@
       setStatusMain('Saved search “' + savedSearchName(s) + '”.');
     }
 
-    /** The / list and the options panel: RUNNER_COMMANDS, then the saved searches. Built on each call, so the
-        save command reads Forget while the search on screen is a saved one. */
+    /** The Settings drawer as commands, read from its markup, so a section or control added there is listed
+        without being added here. Each section opens Settings at it; each checkbox is a switch; each choice in a
+        list sets it. A control the drawer hides (d-none) is left out. */
+    function runnerSettingsCommands() {
+      const body = document.querySelector('#settingsPanel .offcanvas-body');
+      if (!body) return [];
+      const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const text = (el) => (el?.textContent || '').replace(/\s+/g, ' ').trim();
+      const heads = new Map();
+      const out = [];
+      for (const btn of body.querySelectorAll('button[aria-controls]')) {
+        const sec = document.getElementById(btn.getAttribute('aria-controls'));
+        const name = text(btn.querySelector('.h6')) || text(btn);
+        if (!sec || !sec.classList.contains('collapse') || !name) continue;
+        heads.set(sec, name);
+        out.push({ id: 'settings-' + slug(name), group: 'Settings', label: 'Settings: ' + name, run: () => openSettingsSection(sec.id) });
+      }
+      const sectionOf = (el) => heads.get(el.closest('.collapse')) || 'Settings';
+      for (const el of body.querySelectorAll('input[type="checkbox"][id]')) {
+        const name = text(body.querySelector(`label[for="${el.id}"]`));
+        if (!name || el.closest('.d-none')) continue;
+        out.push({ id: 'setting-' + el.id, group: 'Settings', label: sectionOf(el) + ': ' + name, isOn: () => el.checked, run: () => el.click() });
+      }
+      for (const sel of body.querySelectorAll('select[id]')) {
+        if (sel.closest('.d-none')) continue;
+        for (const opt of sel.options) {
+          out.push({
+            id: 'setting-' + sel.id + '-' + slug(opt.value),
+            group: 'Settings',
+            label: sectionOf(sel) + ': ' + text(opt),
+            isOn: () => sel.value === opt.value,
+            run: () => {
+              sel.value = opt.value;
+              sel.dispatchEvent(new Event('change', { bubbles: true }));
+            },
+          });
+        }
+      }
+      return out;
+    }
+
+    /** The / list and the options panel: RUNNER_COMMANDS, the Settings drawer's, then the saved searches. Built
+        on each call, so the save command reads Forget while the search on screen is a saved one. */
     function runnerCommands() {
       const saved = loadSavedSearches();
       const current = savedSearchIndexOfCurrent();
       return [
         ...RUNNER_COMMANDS,
+        ...runnerSettingsCommands(),
         {
           id: 'save-search',
           group: 'Saved searches',

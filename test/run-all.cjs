@@ -43,6 +43,7 @@ const runs = [
   { name: 'runner empty list says why', args: ['runner-empty-list.cjs'] },
   { name: 'runner stars open in order', args: ['runner-stars.cjs'] },
   { name: 'ranking sliders', args: ['runner-rank-knobs.cjs'] },
+  { name: 'settings as / commands', args: ['runner-settings-commands.cjs'] },
   { name: 'runner saved searches', args: ['runner-saved-searches.cjs'] },
   { name: 'machine features', args: ['machine-features.cjs'] },
   { name: 'row buttons by keyboard', args: ['row-actions-keys.cjs'] },
