@@ -10,7 +10,8 @@ const { spawnSync } = require('child_process');
 const root = path.join(__dirname, '..');
 // e.g. C:\Users\<you>\AppData\Local\TagFox-dist — not OneDrive, not in workspace watchers
 const outDir = path.join(os.homedir(), 'AppData', 'Local', 'TagFox-dist');
-const copyDir = 'C:\\Users\\Zoom\\My Drive (hello@causalmap.app)\\Causal Map';
+// The download folder friends are given a link to, so it holds the current installer and nothing else.
+const copyDir = path.join(os.homedir(), 'My Drive (hello@causalmap.app)', 'Causal Map', 'TagFox download');
 const eb = path.join(root, 'node_modules', '.bin', 'electron-builder.cmd');
 
 console.log('electron-builder output directory:', outDir);
@@ -22,7 +23,8 @@ const r = spawnSync(
 );
 if (r.status !== 0) process.exit(r.status == null ? 1 : r.status);
 
-// Copy the built installer exe to the shared Drive root.
+// Copy the built installer exe to the download folder and remove older installers from it; each one is still
+// in outDir.
 try {
   const exeNames = fs
     .readdirSync(outDir, { withFileTypes: true })
@@ -39,6 +41,12 @@ try {
   const dest = path.join(copyDir, exeNames[0]);
   fs.copyFileSync(src, dest);
   console.log('Copied installer to:', dest);
+  for (const name of fs.readdirSync(copyDir)) {
+    if (name !== exeNames[0] && /^TagFox Setup .*\.exe$/i.test(name)) {
+      fs.unlinkSync(path.join(copyDir, name));
+      console.log('Removed older installer:', name);
+    }
+  }
 } catch (e) {
   console.error('Built OK but could not copy installer:', String(e.message || e));
   process.exit(1);
