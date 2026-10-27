@@ -8009,7 +8009,7 @@
           } else {
             urlEl.textContent =
               rPdf.code === 'not-pdf'
-                ? 'Google sent no preview of this ' + kindName + ', so TagFox is probably not signed in to it. Open it in TagFox once to sign in.'
+                ? 'Google sent no preview of this ' + kindName + ', so TagFox is probably not signed in to it. Open it in TagFox once to sign in, or open it in your browser.'
                 : 'No preview of this ' + kindName + ': ' + (rPdf.error || 'Google did not answer.');
           }
         }

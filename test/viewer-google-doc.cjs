@@ -115,6 +115,10 @@ async function main() {
     await select(signedOut);
     check(await waitFor(async () => /not signed in/.test(await text('gdocWorkspaceUrl'))), `no PDF: the block says TagFox is probably not signed in ("${await text('gdocWorkspaceUrl')}")`);
     check(await shown('btnOpenGoogleWorkspace'), 'no PDF: Open in TagFox is still offered');
+    check(
+      (await shown('btnGdocOpenBrowser')) && (await ev(`document.getElementById('btnGdocOpenBrowser').dataset.url === 'https://docs.google.com/document/d/signedOutDoc1234567890/edit'`)),
+      'no PDF: Open in browser is offered too, aimed at the document'
+    );
     check(!(await shown('pdfBlock')) && !(await shown('btnGdocEdit')), 'no PDF: the PDF pane and Edit stay hidden');
 
     // Word 97-2003.
