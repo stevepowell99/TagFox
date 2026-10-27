@@ -316,6 +316,37 @@
           type="button"
           class="btn btn-link text-body text-decoration-none p-0 d-flex align-items-center gap-2 w-100 text-start"
           aria-expanded="false"
+          aria-controls="settingsRankingDetails"
+          data-bs-toggle="collapse"
+          data-bs-target="#settingsRankingDetails"
+          data-tagfox-settings-collapse="settingsRankingDetails"
+          title="Show or hide the sliders that weigh the smart order"
+        >
+          <i
+            class="fa-solid fa-chevron-right tagfox-settings-section-chevron flex-shrink-0 d-inline-flex align-items-center justify-content-center"
+            style="width: 1.5rem"
+            aria-hidden="true"
+          ></i>
+          <span class="h6 fw-semibold mb-0">Ranking</span>
+        </button>
+      </div>
+      <div id="settingsRankingDetails" class="collapse">
+        <p class="text-muted small mb-2">
+          How much each thing counts in the smart order. The middle of each slider is TagFox's own weight; right counts it more (up to ×4),
+          left less, and the far left not at all. Rows with more of your words in their name still come first: these sliders order the rest.
+          The date, name and size orders ignore them.
+        </p>
+        <div id="runnerRankKnobs" class="tagfox-rank-knobs mb-2"></div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="btnRunnerRankReset" title="Put every slider back in the middle">
+          Reset to TagFox's weights
+        </button>
+      </div>
+
+      <div class="mb-3 pb-2 border-bottom tagfox-settings-section-title">
+        <button
+          type="button"
+          class="btn btn-link text-body text-decoration-none p-0 d-flex align-items-center gap-2 w-100 text-start"
+          aria-expanded="false"
           aria-controls="settingsViewerDocsDetails"
           data-bs-toggle="collapse"
           data-bs-target="#settingsViewerDocsDetails"

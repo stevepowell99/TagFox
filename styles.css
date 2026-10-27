@@ -380,6 +380,30 @@ body > .offcanvas-backdrop.show {
 .tagfox-settings-offcanvas .tagfox-settings-section-title--first {
   margin-top: 0;
 }
+/* Settings › Ranking: label, slider and its factor on one line per knob. */
+.tagfox-rank-knob {
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr) 2.75rem;
+  align-items: center;
+  gap: 0.75rem;
+}
+.tagfox-rank-knob .form-range {
+  height: 1.5rem;
+}
+/* A mark at the middle, TagFox's own weight. */
+.tagfox-rank-knob .form-range::-webkit-slider-runnable-track {
+  background-image: linear-gradient(
+    to right,
+    transparent calc(50% - 1px),
+    var(--bs-secondary-color) calc(50% - 1px),
+    var(--bs-secondary-color) calc(50% + 1px),
+    transparent calc(50% + 1px)
+  );
+}
+.tagfox-rank-knob-val {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
 .app-shell { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 .app-main { flex: 1; display: flex; min-height: 0; }
 /* Row: favourite folders | split | main panel (+ shelf beside results) */

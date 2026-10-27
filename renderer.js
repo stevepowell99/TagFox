@@ -55,6 +55,8 @@
       /* Runner's search state, applied at every start. */
       runnerState: 'tagBrowserRunnerState',
       runnerSort: 'tagBrowserRunnerSort',
+      /* Settings › Ranking: { knob id: slider position } (RUNNER_RANK_KNOBS). */
+      runnerRankKnobs: 'tagBrowserRunnerRankKnobs',
       /* Saved searches, run as / commands and Alt+1…9. Classic's list under the same key, so its entries carry on. */
       favSearches: 'tagBrowserFavSearches',
       runnerHideTemp: 'tagBrowserRunnerHideTemp',
@@ -2600,6 +2602,90 @@
       tilde: 45,
     });
 
+    /** Settings › Ranking: one slider per influence on the smart order, scaling the RUNNER_RANK weights it
+        names. The middle position is the weight as set above; each step either side multiplies or divides it
+        by √2, so the ends are ×4 and, one step in from the left, ×0.35. The far left turns it off. */
+    const RUNNER_RANK_KNOBS = Object.freeze([
+      { id: 'match', label: 'How well the name matches', weights: ['match'] },
+      { id: 'recency', label: 'Modified lately', weights: ['recency'] },
+      { id: 'star', label: 'Starred', weights: ['star'] },
+      { id: 'use', label: 'Opened or visited in TagFox', weights: ['use', 'lastUse'] },
+      { id: 'windowsRecent', label: 'Opened lately in any app', weights: ['windowsRecent'] },
+      { id: 'rankedDown', label: 'AppData and ProgramData ranked down', weights: ['rankedDown'] },
+      { id: 'tilde', label: '~ paths ranked down', weights: ['tilde'] },
+    ]);
+    const RUNNER_RANK_KNOB_MID = 4;
+    const RUNNER_RANK_KNOB_MAX = 8;
+
+    function runnerRankKnobFactor(pos) {
+      return pos <= 0 ? 0 : Math.pow(2, (pos - RUNNER_RANK_KNOB_MID) / 2);
+    }
+
+    /** { knob id: position } for every knob; a missing or unreadable saved position is the middle. */
+    function loadRunnerRankKnobs() {
+      const saved = lsGetJson(LS.runnerRankKnobs, null) || {};
+      const out = {};
+      for (const k of RUNNER_RANK_KNOBS) {
+        const p = Number(saved[k.id]);
+        out[k.id] = Number.isInteger(p) && p >= 0 && p <= RUNNER_RANK_KNOB_MAX ? p : RUNNER_RANK_KNOB_MID;
+      }
+      return out;
+    }
+
+    /** RUNNER_RANK with each weight scaled by its knob: what rankRowsForRunner scores with. */
+    function runnerRankWeights() {
+      const pos = loadRunnerRankKnobs();
+      const w = { ...RUNNER_RANK };
+      for (const k of RUNNER_RANK_KNOBS) {
+        for (const name of k.weights) w[name] = RUNNER_RANK[name] * runnerRankKnobFactor(pos[k.id]);
+      }
+      return w;
+    }
+
+    /** Draws the Settings › Ranking sliders; moving one re-ranks the list on screen without searching again. */
+    function initRunnerRankKnobsUi() {
+      const box = document.getElementById('runnerRankKnobs');
+      if (!box) return;
+      const fmt = (p) => (p <= 0 ? 'off' : '×' + Number(runnerRankKnobFactor(p).toPrecision(2)));
+      for (const k of RUNNER_RANK_KNOBS) {
+        const row = document.createElement('div');
+        row.className = 'tagfox-rank-knob';
+        const id = 'rankKnob-' + k.id;
+        row.innerHTML =
+          `<label class="small mb-0" for="${id}"></label>` +
+          `<input type="range" class="form-range" id="${id}" min="0" max="${RUNNER_RANK_KNOB_MAX}" step="1" data-knob="${k.id}" />` +
+          `<span class="tagfox-rank-knob-val small text-muted"></span>`;
+        row.querySelector('label').textContent = k.label;
+        box.appendChild(row);
+      }
+      const reset = document.getElementById('btnRunnerRankReset');
+      const sync = () => {
+        const pos = loadRunnerRankKnobs();
+        for (const el of box.querySelectorAll('input[data-knob]')) {
+          el.value = String(pos[el.dataset.knob]);
+          el.nextElementSibling.textContent = fmt(pos[el.dataset.knob]);
+        }
+        if (reset) reset.disabled = Object.values(pos).every((p) => p === RUNNER_RANK_KNOB_MID);
+      };
+      const rerank = () => {
+        sync();
+        if (runnerSort !== 'smart' || !lastRows.length) return;
+        sortLastRowsForDisplay();
+        renderTable();
+      };
+      box.addEventListener('input', (e) => {
+        const el = e.target.closest('input[data-knob]');
+        if (!el) return;
+        lsSetJson(LS.runnerRankKnobs, { ...loadRunnerRankKnobs(), [el.dataset.knob]: Number(el.value) });
+        rerank();
+      });
+      reset?.addEventListener('click', () => {
+        localStorage.removeItem(LS.runnerRankKnobs);
+        rerank();
+      });
+      sync();
+    }
+
     /** Runner draws this many ranked rows and more as you scroll or arrow down: the first layout of a
         results row costs about 1.6ms, so drawing a 575-row page took 0.9s (measured October 2026). */
     const RUNNER_RENDER_PAGE = 100;
@@ -2837,10 +2923,10 @@
     }
 
     /** The ranking boost for how often and how lately a path was opened or visited. */
-    function runnerUseBoost(u, now) {
+    function runnerUseBoost(u, now, W) {
       if (!u) return 0;
-      let s = RUNNER_RANK.use * Math.min(1, Math.log1p(u.visits) / Math.log1p(RUNNER_RANK.useSaturates));
-      if (u.lastTs) s += RUNNER_RANK.lastUse * Math.exp(-Math.max(0, now - u.lastTs) / (RUNNER_RANK.lastUseDays * 864e5));
+      let s = W.use * Math.min(1, Math.log1p(u.visits) / Math.log1p(W.useSaturates));
+      if (u.lastTs) s += W.lastUse * Math.exp(-Math.max(0, now - u.lastTs) / (W.lastUseDays * 864e5));
       return s;
     }
 
@@ -2856,13 +2942,14 @@
         rows.sort((a, b) => compareRowsBySort(a, b, 'date_modified', false));
         return;
       }
+      const W = runnerRankWeights();
       const stars = new Set(loadFavouriteFolders().map((p) => pathNormKey(p)));
       const use = runnerUseStats();
       const now = Date.now();
       const day = 864e5;
       const scope = currentFolderPath.trim();
       const rankedDown = RUNNER_RANKED_DOWN.filter((f) => !f.re.test(scope + '\\') && !words.some((w) => w.includes(f.name)));
-      const tildePenalty = pathUnderTildeSegment(scope) || String(qText || '').includes('~') ? 0 : RUNNER_RANK.tilde;
+      const tildePenalty = pathUnderTildeSegment(scope) || String(qText || '').includes('~') ? 0 : W.tilde;
       const scored = rows.map((r) => {
         const fp = fullPathForRow(r);
         const k = pathNormKey(fp);
@@ -2871,14 +2958,14 @@
         const dot = rowIsFolder(r) ? -1 : nameLc.lastIndexOf('.');
         const stemLc = dot > 0 ? nameLc.slice(0, dot) : nameLc;
         const m = runnerNameMatch(nameFold, stemLc, words);
-        let s = RUNNER_RANK.match * m.quality;
+        let s = W.match * m.quality;
         const mt = modifiedTimeMs(r);
-        if (mt) s += RUNNER_RANK.recency * Math.exp(-Math.max(0, now - mt) / (RUNNER_RANK.recencyDays * day));
-        if (stars.has(k)) s += RUNNER_RANK.star;
-        s += runnerUseBoost(use.get(k), now);
+        if (mt) s += W.recency * Math.exp(-Math.max(0, now - mt) / (W.recencyDays * day));
+        if (stars.has(k)) s += W.star;
+        s += runnerUseBoost(use.get(k), now, W);
         const win = runnerWindowsRecent.get(k);
-        if (win) s += RUNNER_RANK.windowsRecent * (win.at ? Math.exp(-Math.max(0, now - win.at) / (RUNNER_RANK.windowsRecentDays * day)) : 1);
-        if (rankedDown.some((f) => f.re.test(fp))) s -= RUNNER_RANK.rankedDown;
+        if (win) s += W.windowsRecent * (win.at ? Math.exp(-Math.max(0, now - win.at) / (W.windowsRecentDays * day)) : 1);
+        if (rankedDown.some((f) => f.re.test(fp))) s -= W.rankedDown;
         if (tildePenalty && m.quality < RUNNER_RANK.matchKind.exact && pathUnderTildeSegment(fp)) s -= tildePenalty;
         return { r, tier: m.inName, s };
       });
@@ -14252,6 +14339,7 @@
       saveSettings();
       syncResultsSelectionHighlight();
     });
+    initRunnerRankKnobsUi();
     /* Hover preview: delegated so it survives re-renders; anything other than resting on the icon closes it. */
     document.addEventListener('mouseover', onResultRowHoverOver);
     document.addEventListener('mouseout', onResultRowHoverOut);
