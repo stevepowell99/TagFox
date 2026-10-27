@@ -42,7 +42,6 @@
       optPathDefaultMoved: 'tagBrowserOptPathDefaultMoved',
       darkMode: 'tagBrowserDarkMode',
       pageZoom: 'tagBrowserPageZoom',
-      folderGroupHighlight: 'tagBrowserTreeGroupHL',
       highlightMatchedNames: 'tagBrowserHighlightMatchedNames',
       resultThumbnails: 'tagBrowserResultThumbnails',
       hoverPreview: 'tagBrowserHoverPreview',
@@ -413,9 +412,6 @@
     function isHideTildePaths() {
       return searchOpts.optHideTilde;
     }
-
-    /** Settings: a selected folder is framed together with the rows under it that follow it. */
-    function isFolderGroupHighlightOn() { return !!document.getElementById('optFolderGroupHighlight')?.checked; }
 
     /** Yellow markup for search terms in Name / Path cells (Settings → Search results). Default on. */
     function isHighlightMatchedNamesOn() {
@@ -11258,7 +11254,6 @@
       setRecencyFilterMode('all');
       restoreDeadlineFilter();
       restoreHideUntilFilter();
-      document.getElementById('optFolderGroupHighlight').checked = localStorage.getItem(LS.folderGroupHighlight) !== '0';
       {
         const hm = document.getElementById('optHighlightMatchedNames');
         if (hm) hm.checked = localStorage.getItem(LS.highlightMatchedNames) !== '0';
@@ -11325,7 +11320,6 @@
       localStorage.setItem(LS.showSubfolders, isShowSubfolders() ? '1' : '0');
       localStorage.setItem(LS.hideFiles, isFoldersOnly() ? '1' : '0');
       /* Recency intentionally not persisted (see loadSettings): it always launches at All. */
-      localStorage.setItem(LS.folderGroupHighlight, document.getElementById('optFolderGroupHighlight').checked ? '1' : '0');
       {
         const hm = document.getElementById('optHighlightMatchedNames');
         if (hm) localStorage.setItem(LS.highlightMatchedNames, hm.checked ? '1' : '0');
@@ -12517,42 +12511,20 @@
       const tbody = document.getElementById('tbody');
       if (!tbody) return;
       const want = selectedFullPath;
-      const groupHL = isFolderGroupHighlightOn();
 
-      /* 1. Clear previous highlights — only touches rows that had them */
+      /* 1. Clear the previous highlight — only touches the row that had it */
       const prev = tbody.querySelector('tr.table-active');
       if (prev) prev.classList.remove('table-active');
-      for (const tr of tbody.querySelectorAll('tr.table-active-child'))
-        tr.classList.remove('table-active-child');
-      for (const tr of tbody.querySelectorAll('tr.table-active-group-member'))
-        tr.classList.remove('table-active-group-member', 'table-active-group-top', 'table-active-group-bottom');
 
       if (!want) return;
 
       /* 2. Find and activate the new row */
-      let newActive = null;
       for (const tr of tbody.children) {
-        if (tr.dataset.rowPath === want) { newActive = tr; break; }
+        if (tr.dataset.rowPath === want) {
+          tr.classList.add('table-active');
+          return;
+        }
       }
-      if (!newActive) return;
-      newActive.classList.add('table-active');
-
-      if (!groupHL || !newActive.classList.contains('results-folder-row')) return;
-
-      /* 3. Walk forward from the active folder to mark consecutive children */
-      const cp = want.endsWith('\\') || want.endsWith('/') ? want : want + '\\';
-      const group = [newActive];
-      let sib = newActive.nextElementSibling;
-      while (sib) {
-        const p = sib.dataset.rowPath;
-        if (!p || !p.startsWith(cp)) break;
-        sib.classList.add('table-active-child');
-        group.push(sib);
-        sib = sib.nextElementSibling;
-      }
-      for (const tr of group) tr.classList.add('table-active-group-member');
-      group[0].classList.add('table-active-group-top');
-      group[group.length - 1].classList.add('table-active-group-bottom');
     }
 
     /** Shift+↑/↓ updates checkedPathsMap but not the row inputs; keep UI in sync without rebuilding the table. */
@@ -14375,10 +14347,6 @@
     document.getElementById('optHoverPreview')?.addEventListener('change', () => {
       saveSettings();
       if (!isHoverPreviewOn()) hideHoverPreview();
-    });
-    document.getElementById('optFolderGroupHighlight')?.addEventListener('change', () => {
-      saveSettings();
-      syncResultsSelectionHighlight();
     });
     initRunnerRankKnobsUi();
     /* Hover preview: delegated so it survives re-renders; anything other than resting on the icon closes it. */

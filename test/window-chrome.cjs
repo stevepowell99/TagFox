@@ -4,7 +4,8 @@
 //   - the page knows it is frameless, and the window buttons are really there (windowControlsOverlay);
 //   - the drag strip is the top strip, the content starts below it, and the 3px gradient that is
 //     .app-shell's own ::before stays 3px (the strip once took that pseudo-element and stretched it);
-//   - nothing clickable sits under the window buttons, in the list or in the expanded Viewer;
+//   - nothing clickable sits under the window buttons, in the list or in the expanded Viewer, and nothing in
+//     Settings sits in the drag strip, which takes clicks even under the panel;
 //   - the window buttons take the page's colours, light and dark;
 //   - with the setting off the window is framed as before (positive control: a test that never saw a
 //     frameless window would pass the rest of this file on a framed one).
@@ -71,6 +72,24 @@ async function main() {
     hits = await underButtons('#propsAside');
     check(hits.length === 0, `expanded Viewer: nothing clickable under the window buttons ${JSON.stringify(hits)}`);
     await drv.ev(`document.getElementById('btnPropsTheaterToggle').click(), 1`);
+
+    // Settings: a drag region takes the click even under a panel drawn over it, so no control of the panel may
+    // sit in the strip. Its x is the one that did (October 2026).
+    await drv.ev(`(bootstrap.Offcanvas.getOrCreateInstance(document.getElementById('settingsPanel')).show(), 1)`);
+    await sleep(600);
+    const inStrip = await drv.ev(`(() => {
+      const h = navigator.windowControlsOverlay.getTitlebarAreaRect().height;
+      const out = [];
+      for (const el of document.querySelectorAll('#settingsPanel :is(button, a[href], input, select, [role="button"])')) {
+        const r = el.getBoundingClientRect();
+        if (r.width && r.height && r.top < h - 0.5) out.push((el.id || el.className || el.tagName) + ' @' + Math.round(r.top));
+      }
+      const x = document.querySelector('#settingsPanel .btn-close').getBoundingClientRect();
+      return { out, xTop: x.top, xH: x.height };
+    })()`);
+    check(inStrip.xH > 0 && inStrip.out.length === 0, `Settings: nothing clickable in the drag strip, its x included (x at ${Math.round(inStrip.xTop)}) ${JSON.stringify(inStrip.out)}`);
+    await drv.ev(`(bootstrap.Offcanvas.getInstance(document.getElementById('settingsPanel'))?.hide(), 1)`);
+    await sleep(500);
 
     // Colours: the window buttons follow the page; main keeps them in the profile for the next start.
     const chromeFile = path.join(drv.userData, 'tagfox-window-chrome.json');
