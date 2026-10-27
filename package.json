@@ -67,6 +67,7 @@
     "@googleapis/drive": "^16.0.0",
     "@kenjiuno/msgreader": "^1.28.0",
     "google-auth-library": "^10.6.2",
-    "koffi": "^3.3.4"
+    "koffi": "^3.3.4",
+    "word-extractor": "^1.0.4"
   }
 }

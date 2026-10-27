@@ -7499,6 +7499,7 @@
       const audioBlock = document.getElementById('audioBlock');
       if (pdfBlock) pdfBlock.classList.add('d-none');
       document.getElementById('btnPdfRefresh')?.classList.add('d-none');
+      document.getElementById('btnGdocEdit')?.classList.add('d-none');
       if (htmlBlock) htmlBlock.classList.add('d-none');
       if (officeBlock) officeBlock.classList.add('d-none');
       if (imageBlock) imageBlock.classList.add('d-none');
@@ -7806,6 +7807,7 @@
       if (gdocWorkspaceBlock) gdocWorkspaceBlock.classList.add('d-none');
       if (pdfBlock) pdfBlock.classList.add('d-none');
       document.getElementById('btnPdfRefresh')?.classList.add('d-none');
+      document.getElementById('btnGdocEdit')?.classList.add('d-none');
       const htmlBlockQuick = document.getElementById('htmlBlock');
       if (htmlBlockQuick) htmlBlockQuick.classList.add('d-none');
       if (officeBlock) officeBlock.classList.add('d-none');
@@ -7990,6 +7992,26 @@
             if (btnGdocSearch) btnGdocSearch.onclick = null;
             if (btnGdocFolder) btnGdocFolder.onclick = null;
           }
+          // The block and its buttons stay up while Google makes the PDF (about a second), and if it sends none.
+          urlEl.textContent = 'Fetching the ' + kindName + ' from Google…';
+          const rPdf = await window.tagBrowser.googleShortcutPdf({ fullPath: targetFp }).catch((e) => ({ ok: false, error: String((e && e.message) || e) }));
+          if (!propsViewStill(targetFp)) return;
+          if (rPdf.ok) {
+            gdocWorkspaceBlock.classList.add('d-none');
+            pdfBlock.classList.remove('d-none');
+            const btnRefresh = document.getElementById('btnPdfRefresh');
+            if (btnRefresh) {
+              btnRefresh.classList.remove('d-none');
+              btnRefresh.title = 'Fetch it again from Google';
+            }
+            document.getElementById('btnGdocEdit')?.classList.remove('d-none');
+            setPdfFrameSrc(base64ToBlobUrl(rPdf.base64, 'application/pdf'));
+          } else {
+            urlEl.textContent =
+              rPdf.code === 'not-pdf'
+                ? 'Google sent no preview of this ' + kindName + ', so TagFox is probably not signed in to it. Open it in TagFox once to sign in.'
+                : 'No preview of this ' + kindName + ': ' + (rPdf.error || 'Google did not answer.');
+          }
         }
         return;
       }
@@ -8099,7 +8121,11 @@
         if (!propsViewStill(targetFp)) return;
         if (r.ok) {
           pdfBlock.classList.remove('d-none');
-          document.getElementById('btnPdfRefresh')?.classList.remove('d-none');
+          const btnRefresh = document.getElementById('btnPdfRefresh');
+          if (btnRefresh) {
+            btnRefresh.classList.remove('d-none');
+            btnRefresh.title = 'Reload the PDF from disk';
+          }
           setPdfFrameSrc(base64ToBlobUrl(r.base64, 'application/pdf'));
         } else {
           showPropsPlaceholder('Could not show this PDF. ' + (r.error || ''), { withOpen: true });
@@ -8111,12 +8137,27 @@
         activeReadmePath = null;
         activeMdPath = null;
         mdAutosaveTargetPath = null;
-        if (ext === 'doc') {
-          showPropsPlaceholder('TagFox shows .docx but not the older .doc. Open it in Word.', { withOpen: true });
-          return;
-        }
         officeBlock.classList.remove('d-none');
         const prev = document.getElementById('officePreview');
+        // Main reads the text of a Word 97-2003 or Word 2003 XML file, without its formatting; a .docx under a
+        // .doc name goes on to the .docx preview below.
+        const rDoc =
+          ext === 'doc'
+            ? await window.tagBrowser.readDocText({ fullPath: targetFp }).catch((e) => ({ ok: false, error: String((e && e.message) || e) }))
+            : null;
+        if (!propsViewStill(targetFp)) return;
+        if (rDoc && !rDoc.docx) {
+          if (!rDoc.ok) {
+            officeBlock.classList.add('d-none');
+            showPropsPlaceholder('Could not read this .doc. ' + (rDoc.error || ''), { withOpen: true });
+            return;
+          }
+          const paras = String(rDoc.text || '').slice(0, TEXT_PREVIEW_MAX_CHARS).split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+          prev.innerHTML = paras.length
+            ? paras.map((s) => '<p>' + escapeHtmlForPreview(s) + '</p>').join('')
+            : '<p class="text-muted">(empty)</p>';
+          return;
+        }
         const r = await window.tagBrowser.readFileBuffer({ fullPath: targetFp });
         if (!propsViewStill(targetFp)) return;
         if (!r.ok) {
@@ -14700,14 +14741,17 @@
       bind('mdFilePreview', 'mdFile');
     })();
 
-    document.getElementById('btnOpenGoogleWorkspace').addEventListener('click', async () => {
+    /** The shortcut on screen, in the Workspace window: the block's Open in TagFox and, over its PDF, the header's Edit. */
+    async function openViewerGdocInWorkspace() {
       const btn = document.getElementById('btnOpenGoogleWorkspace');
       const u = btn && btn.dataset && btn.dataset.url;
       const status = document.getElementById('statusMain');
       if (!u || !window.tagBrowser.openGoogleWorkspaceWindow) return;
       const r = await window.tagBrowser.openGoogleWorkspaceWindow({ url: u });
       if (status) setStatusMain(r.ok ? 'Opened in app window.' : (r.error || 'Open failed'));
-    });
+    }
+    document.getElementById('btnOpenGoogleWorkspace').addEventListener('click', () => void openViewerGdocInWorkspace());
+    document.getElementById('btnGdocEdit')?.addEventListener('click', () => void openViewerGdocInWorkspace());
     document.getElementById('btnGdocOpenBrowser')?.addEventListener('click', (e) => {
       const u = e.currentTarget.dataset.url;
       if (u && window.tagBrowser.openUrlDefaultBrowser) void window.tagBrowser.openUrlDefaultBrowser({ url: u });

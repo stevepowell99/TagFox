@@ -65,6 +65,8 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   writeTextFile: (payload) => ipcRenderer.invoke('write-text-file', payload),
   writeImageFilePng: (payload) => ipcRenderer.invoke('write-image-file-png', payload),
   googleWorkspaceShortcutUrl: (payload) => ipcRenderer.invoke('google-workspace-shortcut-url', payload),
+  googleShortcutPdf: (payload) => ipcRenderer.invoke('google-shortcut-pdf', payload),
+  readDocText: (payload) => ipcRenderer.invoke('read-doc-text', payload),
   openGoogleWorkspaceWindow: (payload) => ipcRenderer.invoke('open-google-workspace-window', payload),
   openUrlDefaultBrowser: (payload) => ipcRenderer.invoke('open-url-default-browser', payload),
   /** Obsidian's registered vault folders, from its obsidian.json: { ok, found, roots }. */

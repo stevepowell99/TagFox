@@ -11,6 +11,7 @@ const {
   nativeImage,
   globalShortcut,
   screen,
+  session,
 } = require('electron');
 
 /* Chromium demotes a window's renderer to background mode whenever that window is hidden OR merely
@@ -4482,6 +4483,95 @@ ipcMain.handle('google-workspace-shortcut-url', async (_event, { fullPath }) => 
     return { ok: false, error: 'Could not read Google link from shortcut.', diag: body.diag || null };
   }
   return { ok: true, url, diag: body.diag || null };
+});
+
+/* The Viewer's preview of a Google shortcut is the PDF Google exports, fetched with the cookies of the
+   Workspace window's own session: TagFox's OAuth scopes (drive.file, metadata) cannot export a file TagFox did
+   not create, and that window is where Steve signs in to Google anyway. A test instance points it at a local server, since it cannot sign in. */
+const GOOGLE_DOCS_ORIGIN =
+  (process.env.TAGFOX_TEST_HIDDEN === '1' && process.env.TAGFOX_TEST_GOOGLE_DOCS_ORIGIN) || 'https://docs.google.com';
+const GOOGLE_EXPORT_PDF_PATH = {
+  '.gdoc': (id) => `/document/d/${id}/export?format=pdf`,
+  '.gsheet': (id) => `/spreadsheets/d/${id}/export?format=pdf`,
+  '.gslides': (id) => `/presentation/d/${id}/export/pdf?`,
+};
+const GOOGLE_EXPORT_TIMEOUT_MS = 30000;
+
+ipcMain.handle('google-shortcut-pdf', async (_event, { fullPath }) => {
+  const fp = path.normalize(String(fullPath || ''));
+  const exportPath = GOOGLE_EXPORT_PDF_PATH[path.extname(fp).toLowerCase()];
+  if (!exportPath) return { ok: false, error: 'Not a Google Workspace shortcut.' };
+  const body = await readGoogleWorkspaceShortcutText(fp);
+  if (!body.ok) return { ok: false, error: body.code === 'ENOENT' ? 'File not found.' : body.error || 'Could not read shortcut.' };
+  const id = googleDriveFileIdFromUrl(targetUrlFromGoogleDriveShortcut(fp, body.raw));
+  if (!id) return { ok: false, error: 'Could not read Google link from shortcut.' };
+  // The shortcut names the account it belongs to; without authuser Google answers as the first signed-in account.
+  let email = '';
+  try {
+    email = String(JSON.parse(String(body.raw).replace(/^﻿/, '')).email || '').trim();
+  } catch (_) {}
+  const url = GOOGLE_DOCS_ORIGIN + exportPath(encodeURIComponent(id)) + (email ? '&authuser=' + encodeURIComponent(email) : '');
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), GOOGLE_EXPORT_TIMEOUT_MS);
+  try {
+    const r = await session.fromPartition(WEB_EDITOR_KINDS.googleWorkspace.partition).fetch(url, { signal: ac.signal });
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (r.ok && buf.subarray(0, 5).toString('latin1') === '%PDF-') return { ok: true, base64: buf.toString('base64') };
+    // Signed out, Google answers 200 with its sign-in page; without access, an error page.
+    return { ok: false, code: 'not-pdf', error: `Google sent no preview (HTTP ${r.status}).` };
+  } catch (e) {
+    if (e && e.name === 'AbortError') return { ok: false, error: `Google had not answered after ${GOOGLE_EXPORT_TIMEOUT_MS / 1000}s.` };
+    return { ok: false, error: String((e && e.message) || e) };
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
+/** Paragraph text of a Word 2003 XML document (WordML): each `w:p`'s `w:t` runs, one paragraph per line. */
+function wordMlToText(xml) {
+  const unescape = (s) =>
+    s
+      .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+      .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&amp;/g, '&');
+  return String(xml)
+    .split(/<\/w:p>/)
+    .map((p) => Array.from(p.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g), (m) => unescape(m[1])).join(''))
+    .join('\n');
+}
+
+/**
+ * Text of a `.doc`, for the Viewer, by what the file really is: Word 97-2003 binary (word-extractor, without
+ * its formatting) or Word 2003 XML. A `.docx` saved under a `.doc` name answers `docx`, for the renderer's own
+ * `.docx` preview. Measured October 2026 on STEVE-DELL: of 3,676 `.doc` files, 1,941 binary, 1,664 XML, 30 zip.
+ */
+ipcMain.handle('read-doc-text', async (_event, { fullPath }) => {
+  const fp = path.normalize(String(fullPath || ''));
+  if (!fp) return { ok: false, error: 'Missing path' };
+  try {
+    const fh = await fs.open(fp, 'r');
+    let head;
+    try {
+      const { buffer, bytesRead } = await fh.read(Buffer.alloc(512), 0, 512, 0);
+      head = buffer.subarray(0, bytesRead).toString('latin1').replace(/^\xEF\xBB\xBF/, '');
+    } finally {
+      await fh.close();
+    }
+    if (head.startsWith('PK')) return { ok: false, docx: true };
+    if (/^\s*</.test(head) && /w:wordDocument|progid="Word\.Document"/i.test(head)) {
+      if ((await fs.stat(fp)).size > 100 * 1024 * 1024) return { ok: false, error: 'File too large for preview (max 100 MB). Use Open.' };
+      return { ok: true, text: wordMlToText(await fs.readFile(fp, 'utf8')) };
+    }
+    const WordExtractor = require('word-extractor');
+    const doc = await new WordExtractor().extract(fp);
+    return { ok: true, text: String(doc.getBody() || '') };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
 });
 
 ipcMain.handle('open-google-workspace-window', async (event, { url, label }) => {

@@ -36,6 +36,7 @@ const runs = [
   { name: 'runner go to a path', args: ['runner-go-to-path.cjs'] },
   { name: 'an empty box inside a folder selects the folder', args: ['runner-folder-itself.cjs'] },
   { name: 'viewer in runner', args: ['viewer-runner.cjs'] },
+  { name: 'viewer: Google shortcuts and .doc', args: ['viewer-google-doc.cjs'] },
   { name: 'runner viewer divider', args: ['runner-viewer-split.cjs'] },
   { name: 'window close hides', args: ['close-hides.cjs'] },
   { name: 'page health logged and a crash recovered', args: ['page-health.cjs'] },

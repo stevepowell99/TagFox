@@ -191,7 +191,8 @@ TagFox can pick the file for a program that is asking you to open or save one.
 
 ### Previews
 
-- Select a file and the Viewer on the right shows it: pictures, PDFs, Word documents (`.docx`), web pages, text and markdown files, sound and video.
+- Select a file and the Viewer on the right shows it: pictures, PDFs, Word documents (the text only, for an old `.doc`), web pages, text and markdown files, sound and video.
+- A Google Doc, Sheet or Slides deck shows as the PDF Google makes of it, which takes about a second. TagFox uses the Google sign-in of its own Google window. If the Viewer says it is not signed in, click **Open in TagFox** to sign in there once. **Edit** at the top of the Viewer opens the document in that window.
 - Its top line shows the file's name. Under that are its tags, its size, when it last changed and the folder it is in; click the folder to copy the file's full path.
 - A file the Viewer cannot show says so, and offers **Open** and **Show in folder**.
 
