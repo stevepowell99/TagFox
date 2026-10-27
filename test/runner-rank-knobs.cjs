@@ -80,6 +80,16 @@ async function main() {
     check(o[1] < o[0], `Reset puts the default order back (${o})`);
     check(after.value === '4' && after.shows === '×1', `Reset puts the slider back in the middle (${JSON.stringify(after)})`);
     check((await drv.ev(`localStorage.getItem('tagBrowserRunnerRankKnobs')`)) === null, 'Reset forgets the saved positions');
+
+    // The / command opens Settings at the section, expanded.
+    await drv.T('runCommand', 'ranking');
+    let opened = null;
+    for (let i = 0; i < 20; i++) {
+      opened = await drv.ev(`(() => ({ panel: document.getElementById('settingsPanel').classList.contains('show'), section: document.getElementById('settingsRankingDetails').classList.contains('show') }))()`);
+      if (opened.panel && opened.section) break;
+      await sleep(150);
+    }
+    check(opened.panel && opened.section, `the "ranking" command opens Settings with Ranking expanded (${JSON.stringify(opened)})`);
   } catch (e) {
     failures.push('threw: ' + (e.stack || e.message || String(e)));
     console.log('  FAIL threw: ' + (e.stack || e.message));

@@ -3547,6 +3547,7 @@
       { id: 'sort-name', group: 'Sort', label: 'Sort by name', isOn: () => runnerSort === 'name', run: () => setRunnerSort('name') },
       { id: 'sort-size', group: 'Sort', label: 'Sort by size, largest first', isOn: () => runnerSort === 'size', run: () => setRunnerSort('size') },
       { id: 'sort-size-asc', group: 'Sort', label: 'Sort by size, smallest first', isOn: () => runnerSort === 'size-asc', run: () => setRunnerSort('size-asc') },
+      { id: 'ranking', group: 'Sort', label: 'Ranking: weigh what the smart order counts (Settings)', run: () => openSettingsSection('settingsRankingDetails') },
       { id: 'edit-tags', group: 'Tags', label: 'Edit tags of the selected or checked rows', run: () => runnerEditTags() },
       /* One filter per vocabulary word; the options panel draws these as a row of small buttons. */
       ...Object.keys(T.TAG_VOCAB).map((word) => ({
@@ -15775,6 +15776,20 @@
     function toggleSettingsPanel() {
       const el = document.getElementById('settingsPanel');
       if (el) bootstrap.Offcanvas.getOrCreateInstance(el).toggle();
+    }
+
+    /** Opens Settings with one section expanded and scrolled to its heading. */
+    function openSettingsSection(id) {
+      const el = document.getElementById('settingsPanel');
+      const sec = document.getElementById(id);
+      if (!el || !sec) return;
+      bootstrap.Collapse.getOrCreateInstance(sec, { toggle: false }).show();
+      const toHeading = () => sec.previousElementSibling?.scrollIntoView({ block: 'start' });
+      if (el.classList.contains('show')) toHeading();
+      else {
+        el.addEventListener('shown.bs.offcanvas', toHeading, { once: true });
+        bootstrap.Offcanvas.getOrCreateInstance(el).show();
+      }
     }
     if (localStorage.getItem(LS.darkMode) === '1') document.documentElement.setAttribute('data-bs-theme', 'dark');
     void initWindowChrome();
