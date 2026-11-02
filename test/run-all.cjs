@@ -6,6 +6,7 @@ const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 
 const { killTestElectron, testElectronProcesses } = require('./test-processes.cjs');
+const { keepAwake, lastSleepLine, sleptDuring } = require('./machine-sleep.cjs');
 
 const NODE = process.execPath;
 // One hung test must never stall the suite: past this, its whole process tree (the test, and the
@@ -92,8 +93,11 @@ function runOne(r) {
 
 (async () => {
   let failed = 0;
+  console.log(keepAwake());
+  console.log(lastSleepLine());
   for (const r of runs) {
     console.log(`\n########## ${r.name} ##########`);
+    const t0 = Date.now();
     let ok = await runOne(r);
     // A test that leaves a TagFox running (a relaunch escapes the killed process tree) fails, and the
     // TagFox is stopped, so it can neither sit on Steve's screen nor hold a port the next test wants.
@@ -113,7 +117,10 @@ function runOne(r) {
       const { stillListed } = killTestElectron();
       console.log(stillListed.length ? `  still listed 20s after taskkill: ${stillListed.map((p) => `pid ${p.pid}`).join(', ')}` : '  now stopped');
     }
-    if (!ok) failed++;
+    if (!ok) {
+      failed++;
+      console.log(`(${r.name}: ${sleptDuring(t0, Date.now())})`);
+    }
   }
   console.log(`\n==================================================`);
   console.log(failed === 0 ? `SUITE PASSED (${runs.length}/${runs.length})` : `SUITE FAILED: ${failed}/${runs.length} runs failed`);

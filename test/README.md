@@ -88,6 +88,15 @@ is how one was once left open on Steve's screen. Only Electrons started from thi
 checkout's own `node_modules` count, so a suite in a worktree and one in `C:\dev\TagFox` leave each other's
 instances alone.
 
+A suite left to run while the laptop is idle can meet its sleep: on battery it sleeps after six idle minutes,
+and twice a test TagFox was lost as the machine woke. So `run-all.cjs` asks Windows to keep the machine awake
+until it exits (`machine-sleep.cjs`, the request the pwsh `keepawake` makes), which holds for the whole suite on
+mains. On battery Windows drops that request five minutes after the sleep timeout, and a lid close sleeps the
+machine whatever is held, so the first line of a suite says when it is on battery. Every failed run then says
+whether the machine slept during it, from the System log's Kernel-Power events, with the times. The second line
+of a suite names the log's last sleep event, so a log that cannot be read shows there rather than as a failed
+run that "did not sleep".
+
 ## What each file covers
 
 | File | Covers |
@@ -136,6 +145,7 @@ instances alone.
 | `hover-preview.cjs` | Settings "Hover preview", with a real PNG and real pointer moves: resting on a row's name opens nothing; resting on its icon opens the preview (the positive control); a repaint that takes that row away from under the resting pointer closes the open preview, and stops one still on its way; a key press closes it. A repaint has no mouseout for the row it replaces, which is what left previews stuck over the list. |
 | `repro-crash.cjs` | Not in `run-all.cjs`: a diagnostic run by hand. It starts TagFox on a profile of its own, types three searches, and prints every renderer exception, console error or warning and crash it saw, with the lines of Electron's stderr that look like errors. |
 | `run-all.cjs` | Runs the above in sequence, each under a five-minute deadline, and prints a pass/fail summary. |
+| `machine-sleep.cjs` | Not a test: keeps the machine awake for `run-all.cjs`, and reads from the System log whether it slept during a run. |
 | `test-processes.cjs` | Not a test: finds and stops the Electron processes this checkout started on a test profile, for `run-all.cjs` and the restart test. Both quotings of `--user-data-dir` occur (`app.relaunch()` quotes the whole argument). |
 
 ## Invariants checked (`structuralProblems` in `harness.cjs`)
