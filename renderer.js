@@ -4572,14 +4572,25 @@
       { group: 'Open and act', keys: ['F2'], does: 'Rename', when: (c) => c.plain && c.key === 'F2', menus: true, run: () => void renameItemInteractive() },
       {
         group: 'Open and act',
-        keys: ['Del', 'Shift+Del'],
-        does: 'Move the checked rows to the Recycle Bin (from the search box: with it empty). TagFox never deletes for good, so Shift+Del recycles too',
-        when: (c) => c.plain && c.key === 'Delete' && (!c.inBox || c.empty),
+        keys: ['Del'],
+        does: "Move to the Recycle Bin, after asking: the row under the pointer, as its trash button does, else the checked rows (from the search box: with it empty, or with the caret at the end and the pointer on a row)",
+        when: (c) => c.plain && !c.shift && c.key === 'Delete' && deleteKeyApplies(c),
         menus: true,
         run: (c) => {
-          if (!c.e.repeat) void keyboardRecycleConfirm();
+          if (!c.e.repeat) void keyboardRecycleConfirm(false);
         },
       },
+      {
+        group: 'Open and act',
+        keys: ['Shift+Del'],
+        does: 'Delete for good, skipping the Recycle Bin, after asking: the same rows as Del. A folder goes with everything in it, and this cannot be undone',
+        when: (c) => c.plain && c.shift && c.key === 'Delete' && deleteKeyApplies(c),
+        menus: true,
+        run: (c) => {
+          if (!c.e.repeat) void keyboardRecycleConfirm(true);
+        },
+      },
+      { group: 'Open and act', keys: ['Ctrl+O'], does: 'Open the selected markdown file in Obsidian, when one of its vaults holds it', when: (c) => c.ctrl('o'), run: () => openSelectionInObsidian() },
       {
         group: 'Open and act',
         keys: ['Ctrl+C', 'Ctrl+X'],
@@ -9938,16 +9949,29 @@
       return tail || s || '(?)';
     }
 
-    /** Recycle confirm: title + bullet list (first maxShown names, then "and N more"). */
-    function recycleBinConfirmMessage(paths, maxShown) {
+    /** Recycle confirm: title + bullet list (first maxShown names, then "and N more"). `forGood`: Shift+Del's
+        wording, which says it cannot be undone and that a folder takes its contents with it. */
+    function recycleBinConfirmMessage(paths, maxShown, forGood) {
       const list = Array.isArray(paths) ? paths : [];
       const n = list.length;
       if (!n) return 'Delete these items? (They will be moved to the Recycle Bin.)';
       const cap = Math.max(1, Number(maxShown) || 8);
-      const head =
-        n === 1
-          ? 'Delete this item? (It will be moved to the Recycle Bin.)'
-          : 'Delete ' + n + ' items? (They will be moved to the Recycle Bin.)';
+      let head;
+      if (forGood) {
+        head =
+          (n === 1 ? 'Delete this item for good?' : 'Delete ' + n + ' items for good?') +
+          ' It skips the Recycle Bin and cannot be undone.';
+        const hasFolder = list.some((fp) => {
+          const row = findRowByFullPath(fp);
+          return !!row && rowIsFolder(row);
+        });
+        if (hasFolder) head += ' A folder goes with everything inside it.';
+      } else {
+        head =
+          n === 1
+            ? 'Delete this item? (It will be moved to the Recycle Bin.)'
+            : 'Delete ' + n + ' items? (They will be moved to the Recycle Bin.)';
+      }
       const lines = list.slice(0, cap).map((fp) => '• ' + pathBasenameForConfirm(fp));
       const more = n > cap ? '\n… and ' + (n - cap) + ' more' : '';
       return head + '\n\n' + lines.join('\n') + more;
@@ -9957,19 +9981,22 @@
     let skipDeleteConfirmThisSession = false;
     let recycleConfirmOpen = false;
 
-    /** Recycle confirm modal with a "don't ask again this session" option. Resolves true to proceed, false to cancel. */
-    function confirmRecycle(paths) {
-      if (skipDeleteConfirmThisSession) return Promise.resolve(true);
+    /** Recycle confirm modal with a "don't ask again this session" option. Resolves true to proceed, false to cancel.
+        `forGood` (Shift+Del) always asks, offers no "don't ask again", and labels the button to match. */
+    function confirmRecycle(paths, forGood) {
+      if (skipDeleteConfirmThisSession && !forGood) return Promise.resolve(true);
       if (recycleConfirmOpen) return Promise.resolve(false); // a confirm is already showing; ignore re-entry (e.g. Del pressed twice)
       return new Promise((resolve) => {
         const modalEl = document.getElementById('recycleConfirmModal');
         if (!modalEl || !window.bootstrap) {
-          resolve(confirm(recycleBinConfirmMessage(paths)));
+          resolve(confirm(recycleBinConfirmMessage(paths, 8, forGood)));
           return;
         }
-        document.getElementById('recycleConfirmMsg').textContent = recycleBinConfirmMessage(paths);
+        document.getElementById('recycleConfirmMsg').textContent = recycleBinConfirmMessage(paths, 8, forGood);
         const btnOk = document.getElementById('btnRecycleConfirmOk');
         const btnAlways = document.getElementById('btnRecycleConfirmAlways');
+        btnOk.textContent = forGood ? 'Delete for good' : 'Delete';
+        btnAlways.classList.toggle('d-none', !!forGood);
         const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
         recycleConfirmOpen = true;
         let decided = false;
@@ -10009,18 +10036,20 @@
       setStatusMain(n === 1 ? 'Deleting 1 item...' : 'Deleting ' + n + ' items...');
     }
 
-    /** One `trashPaths` IPC + paired search-debug lines (begin / batch | ipcReturn | invokeThrow). */
-    async function trashPathsInvokeWithSearchDebug(paths, source) {
+    /** One `trashPaths` IPC + paired search-debug lines (begin / batch | ipcReturn | invokeThrow). `permanent`:
+        delete for good instead of recycling (Shift+Del). */
+    async function trashPathsInvokeWithSearchDebug(paths, source, permanent) {
       const p = Array.isArray(paths) ? paths : [];
       const cap = 12;
       searchDebugLog('recycle.begin', {
         source,
+        permanent: !!permanent,
         count: p.length,
         paths: p.slice(0, cap),
         truncated: p.length > cap,
       });
       try {
-        const r = await window.tagBrowser.trashPaths(p, { debugSource: source });
+        const r = await window.tagBrowser.trashPaths(p, { debugSource: source, permanent: !!permanent });
         if (r && r.recycleLog) searchDebugLog('recycle.batch', r.recycleLog);
         else
           searchDebugLog('recycle.ipcReturn', {
@@ -15308,32 +15337,66 @@
       renderTable();
     }
 
-    async function keyboardRecycleConfirm() {
+    /** The results row under the pointer, or '' when the pointer is off the list. */
+    function hoveredResultsRowPath() {
+      const tr = document.querySelector('#resultsTable tbody tr:hover');
+      return (tr && tr.dataset.rowPath) || '';
+    }
+
+    /** What Del and Shift+Del act on: the row under the pointer, as its trash button does (with the checked
+        rows when it is one of them, as a drag takes them), else the checked rows. */
+    function deleteKeyTargetPaths() {
+      const hovered = hoveredResultsRowPath();
+      return hovered ? pathsForRowDrag(hovered) : getCheckedPathsArr();
+    }
+
+    /** Del and Shift+Del from the search box count only when they would do nothing to the text there: the box
+        empty, or the caret at the end with the pointer on a row. */
+    function deleteKeyApplies(c) {
+      return !c.inBox || c.empty || (c.caretEnd && !!hoveredResultsRowPath());
+    }
+
+    /** Del recycles, Shift+Del (`forGood`) deletes for good; both ask first. */
+    async function keyboardRecycleConfirm(forGood) {
       if (tagRenameBusy) return;
-      const status = document.getElementById('statusMain');
-      const p = getCheckedPathsArr();
-      searchDebugLog('recycle.ui', { source: 'deleteKey', phase: 'click', checked: p.length });
+      const p = deleteKeyTargetPaths();
+      searchDebugLog('recycle.ui', { source: 'deleteKey', phase: 'click', targets: p.length, forGood: !!forGood });
       if (!p.length) {
         searchDebugLog('recycle.ui', { source: 'deleteKey', phase: 'noopNoSelection' });
         return;
       }
-      if (!(await confirmRecycle(p))) {
+      if (!(await confirmRecycle(p, forGood))) {
         searchDebugLog('recycle.ui', { source: 'deleteKey', phase: 'confirmCancel', count: p.length });
         return;
       }
       detachViewerEditorsForTrashedPaths(p);
       setDeletingStatus(p.length);
-      const { r, threw } = await trashPathsInvokeWithSearchDebug(p, 'deleteKey');
+      const { r, threw } = await trashPathsInvokeWithSearchDebug(p, 'deleteKey', forGood);
       if (threw) {
         setStatusMain('Delete failed');
         return;
       }
       if (!r || !r.ok) setStatusMain((r && r.error) || 'Delete failed');
       else {
-        checkedPathsMap.clear();
+        for (const fp of p) toggleCheckPath(fp, false);
         updateBulkBar();
         void refreshAfterDiskMutation({ paths: p, trashed: true });
       }
+    }
+
+    /** Ctrl+O: the selected markdown file in Obsidian, when one of its vaults holds it (pathInObsidianVault,
+        the test the row's gem button uses). */
+    function openSelectionInObsidian() {
+      const fp = selectedFullPath;
+      if (!fp) {
+        setStatusMain('Select a markdown file to open it in Obsidian.');
+        return;
+      }
+      if (!pathInObsidianVault(fp)) {
+        setStatusMain('Not in an Obsidian vault, so Obsidian cannot open it: ' + pathBasenameForConfirm(fp));
+        return;
+      }
+      void openRowInObsidian(fp);
     }
 
     async function copyShortcutExplorerFiles() {

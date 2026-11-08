@@ -107,10 +107,11 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   forceFocusWebContents: () => ipcRenderer.send('tagbrowser-force-web-contents-focus'),
   /* Must be synchronous with dragstart or OS drag never starts (send is async). */
   startDragFiles: (paths) => ipcRenderer.sendSync('start-drag-files', paths),
+  /* opts.permanent: delete for good (Shift+Del) instead of recycling. */
   trashPaths: (paths, opts) => {
     const p = Array.isArray(paths) ? paths : [];
-    const src = opts && typeof opts === 'object' && opts.debugSource ? String(opts.debugSource) : '';
-    return ipcRenderer.invoke('trash-paths', src ? { paths: p, debugSource: src } : p);
+    const o = opts && typeof opts === 'object' ? opts : {};
+    return ipcRenderer.invoke('trash-paths', { paths: p, debugSource: o.debugSource ? String(o.debugSource) : 'trashPaths', permanent: o.permanent === true });
   },
   setSearchDebugFromMainHandler: (fn) => {
     onSearchDebugLine = typeof fn === 'function' ? fn : null;

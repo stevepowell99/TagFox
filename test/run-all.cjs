@@ -36,6 +36,7 @@ const runs = [
   { name: 'runner status line', args: ['runner-status.cjs'] },
   { name: 'runner go to a path', args: ['runner-go-to-path.cjs'] },
   { name: 'an empty box inside a folder selects the folder', args: ['runner-folder-itself.cjs'] },
+  { name: 'Del and Shift+Del take the row under the pointer; Ctrl+O to Obsidian', args: ['delete-key-hover.cjs'] },
   { name: 'viewer in runner', args: ['viewer-runner.cjs'] },
   { name: 'viewer: Google shortcuts and .doc', args: ['viewer-google-doc.cjs'] },
   { name: 'runner viewer divider', args: ['runner-viewer-split.cjs'] },

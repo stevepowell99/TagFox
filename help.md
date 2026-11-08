@@ -150,7 +150,9 @@ TagFox does not search the disk itself. It asks [Everything](https://www.voidtoo
 - `Ctrl`+`Z` undoes the last rename, tag change, move, paste or new folder.
 - `Ctrl`+`C` and `Ctrl`+`X` copy or cut the selected files, to paste in File Explorer. `Ctrl`+`V` pastes files copied in File Explorer into the folder you are in. If you copied a picture or a screenshot instead, `Ctrl`+`V` saves it there as `Clipboard image.png`.
 - `Ctrl`+`Shift`+`C` copies the selected files' full paths as text.
-- `Del` sends the checked rows to the Recycle Bin, after asking. TagFox never deletes anything for good, so `Shift`+`Del` recycles too.
+- `Del` sends the row under the pointer to the Recycle Bin, after asking, as its trash button does; with the pointer off the list it sends the checked rows. If the pointer is on one of several checked rows, they all go.
+- `Shift`+`Del` deletes the same rows for good, skipping the Recycle Bin, after asking. A folder goes with everything inside it. This cannot be undone.
+- `Ctrl`+`O` opens the selected markdown file in Obsidian, when it sits inside one of your Obsidian vaults.
 
 ### Dragging
 

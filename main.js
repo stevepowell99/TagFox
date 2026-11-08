@@ -6320,19 +6320,37 @@ async function recycleListBatched(list) {
   return { trashedPaths, errs };
 }
 
+/** Shift+Del: delete for good, skipping the Recycle Bin, as Explorer does. A folder goes with everything
+    in it; the renderer has already asked, naming that. */
+async function deleteListPermanently(list) {
+  const trashedPaths = [];
+  const errs = [];
+  for (const fp of list) {
+    try {
+      await fs.rm(fp, { recursive: true });
+      trashedPaths.push(fp);
+    } catch (e) {
+      errs.push(fp + ': ' + String((e && e.message) || e || 'delete failed'));
+    }
+  }
+  return { trashedPaths, errs };
+}
+
 ipcMain.handle('trash-paths', async (event, payload) => {
   let raw;
   let debugSource = 'trashPaths';
+  let permanent = false;
   if (Array.isArray(payload)) raw = payload;
   else if (payload && typeof payload === 'object' && Array.isArray(payload.paths)) {
     raw = payload.paths;
     if (payload.debugSource) debugSource = String(payload.debugSource);
+    permanent = payload.permanent === true;
   } else raw = [];
   const requested = raw.length;
   const list = collapseNestedTrashPaths(raw);
   // Deepest first: if a parent+child both slip through, recycling the child avoids a bogus path on the next call.
   list.sort((a, b) => trashPathComparable(b).length - trashPathComparable(a).length);
-  const { trashedPaths, errs } = await recycleListBatched(list);
+  const { trashedPaths, errs } = permanent ? await deleteListPermanently(list) : await recycleListBatched(list);
   const ok = errs.length === 0;
   const cap = 8;
   const requestedSample = raw
@@ -6341,6 +6359,7 @@ ipcMain.handle('trash-paths', async (event, payload) => {
     .filter(Boolean);
   const recycleLog = {
     source: debugSource,
+    permanent,
     requested,
     requestedSample,
     requestedTruncated: raw.length > cap,
