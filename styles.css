@@ -3095,17 +3095,17 @@ body.tagfox-runner .results-with-shelf {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   grid-template-rows: minmax(0, 1fr) auto;
   row-gap: 0.5rem;
 }
-body.tagfox-runner .results-with-shelf > :not(#tagfoxNavbarStatus):not(#appShelf) {
+body.tagfox-runner .results-with-shelf > :not(#tagfoxNavbarStatus):not(#appShelf):not(#docTray) {
   grid-row: 1;
-  grid-column: 1;
+  grid-column: 1 / -1;
 }
 body.tagfox-runner .results-with-shelf > #tagfoxNavbarStatus {
   grid-row: 1;
-  grid-column: 1;
+  grid-column: 1 / -1;
   align-self: end;
   justify-self: stretch;
   z-index: 5;
@@ -3201,6 +3201,83 @@ body.tagfox-runner .shelf-chip-with-remove .shelf-chip-remove {
 }
 body.tagfox-runner .shelf-chip-with-remove:hover .shelf-chip-remove {
   visibility: visible;
+}
+/* Doc tray: the Shelf row's second column, one pill per doc window minimised into Whippet. Hidden while
+   empty, so the column collapses and the Shelf keeps the whole row. */
+body.tagfox-runner .results-with-shelf > #docTray {
+  grid-row: 2;
+  grid-column: 2;
+}
+.tagfox-doc-tray {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-content: center;
+  gap: 0.25rem;
+  max-width: 45vw;
+  max-height: 6.5rem;
+  overflow-y: auto;
+  margin-left: 0.5rem;
+  font-size: 0.8rem;
+}
+.tagfox-doc-pill-row {
+  display: inline-flex;
+  align-items: center;
+  max-width: 14rem;
+  min-width: 0;
+  border-radius: 999px;
+  color: var(--runner-ink);
+  background: var(--runner-surface);
+  border: 1px solid color-mix(in srgb, var(--runner-muted) 45%, transparent);
+}
+.tagfox-doc-pill-row:hover {
+  border-color: color-mix(in srgb, var(--tb-accent) 55%, transparent);
+}
+.tagfox-doc-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.15rem 0.2rem 0.15rem 0.25rem;
+  border: 0;
+  border-radius: 999px 0 0 999px;
+  color: inherit;
+  background: transparent;
+  font-weight: 500;
+}
+.tagfox-doc-pill-badge {
+  flex-shrink: 0;
+  min-width: 1.4rem;
+  padding: 0 0.2rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.3rem;
+  text-align: center;
+  color: var(--runner-ink);
+  background: color-mix(in srgb, var(--tb-accent) 18%, transparent);
+}
+.tagfox-doc-pill-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tagfox-doc-pill-close {
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-right: 0.15rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  color: var(--runner-muted);
+  background: transparent;
+  font-size: 0.7rem;
+}
+.tagfox-doc-pill-close:hover {
+  color: var(--runner-ink);
+  background: color-mix(in srgb, var(--tb-accent) 18%, transparent);
 }
 /* ─── End Runner layout ─── */
 

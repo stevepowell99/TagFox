@@ -10475,6 +10475,59 @@
       refreshTagFoxChromeTooltips(chips);
     }
 
+    /* Doc tray: one pill per gmist or Workspace window minimised into Whippet (main's parkWebEditorWindow).
+       The badge repeats the window icon's two letters and ground, so a pill and its window read as one. */
+    function renderDocTray(entries) {
+      const tray = document.getElementById('docTray');
+      if (!tray) return;
+      const list = Array.isArray(entries) ? entries : [];
+      tray.innerHTML = '';
+      tray.classList.toggle('d-none', !list.length);
+      for (const ent of list) {
+        const name = segmentPretty(String(ent.name || '')) || String(ent.name || '') || ent.kind;
+        const row = document.createElement('span');
+        row.className = 'tagfox-doc-pill-row';
+        row.dataset.docWindowId = String(ent.id);
+        const pill = document.createElement('button');
+        pill.type = 'button';
+        pill.className = 'tagfox-doc-pill';
+        pill.title = (ent.name || ent.kind) + (ent.kind ? ' (' + ent.kind + ')' : '') + ' — click to restore';
+        if (ent.abbrev) {
+          const badge = document.createElement('span');
+          badge.className = 'tagfox-doc-pill-badge';
+          badge.textContent = ent.abbrev;
+          if (Number.isFinite(ent.hue)) {
+            badge.style.background = 'hsl(' + ent.hue + ', 72%, 84%)';
+            badge.style.color = 'hsl(' + ent.hue + ', 75%, 20%)';
+          }
+          pill.appendChild(badge);
+        }
+        const label = document.createElement('span');
+        label.className = 'tagfox-doc-pill-name';
+        label.textContent = name;
+        pill.appendChild(label);
+        pill.addEventListener('click', () => void window.tagBrowser.docTrayRestore(ent.id));
+        row.appendChild(pill);
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'tagfox-doc-pill-close';
+        close.title = 'Close this window';
+        close.setAttribute('aria-label', 'Close ' + name);
+        close.innerHTML = '<i class="fa-solid fa-xmark" aria-hidden="true"></i>';
+        close.addEventListener('click', () => void window.tagBrowser.docTrayClose(ent.id));
+        row.appendChild(close);
+        tray.appendChild(row);
+      }
+      refreshTagFoxChromeTooltips(tray);
+    }
+
+    function bindDocTray() {
+      if (!window.tagBrowser.docTrayState) return;
+      window.tagBrowser.setDocTrayHandler(renderDocTray);
+      /* A reload (the dev reloader) starts empty while parked windows still exist, so ask once. */
+      void window.tagBrowser.docTrayState().then(renderDocTray);
+    }
+
     function bindShelfDrop() {
       const aside = document.getElementById('appShelf');
       if (!aside || aside.dataset.shelfDropBound === '1') return;
@@ -16227,6 +16280,7 @@
     });
     installTagFoxTooltipGuardsOnce();
     bindShelfDrop();
+    bindDocTray();
     document.getElementById('btnEverythingHttpOpenSettings')?.addEventListener('click', () => {
       const el = document.getElementById('settingsPanel');
       if (el) bootstrap.Offcanvas.getOrCreateInstance(el).show();

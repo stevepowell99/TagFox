@@ -2410,12 +2410,69 @@ function setFileDialogTarget(target) {
 
 /** Doc windows (gmist, Workspace) are owned by the main window, and Windows keeps an owned window above
  *  its owner, so raising TagFox from a global shortcut left the results hidden underneath them.
- *  Minimise them on every shortcut raise; each leaves its lettered stub to restore from. */
+ *  Park them on every shortcut raise; each leaves its pill in the main window's doc tray to restore from. */
 function minimiseWebEditorWindows() {
   for (const x of BrowserWindow.getAllWindows()) {
-    if (x && !x.isDestroyed() && x.webEditKind && x.isVisible() && !x.isMinimized()) x.minimize();
+    if (x && !x.isDestroyed() && x.webEditKind && x.isVisible() && !x.isMinimized()) parkWebEditorWindow(x);
   }
 }
+
+/**
+ * A minimised doc window parks inside Whippet: it is hidden, and the main window's doc tray (beside the
+ * Shelf) shows a pill for it. Left to Windows, an owned window minimises to a caption stub along the
+ * bottom of the desktop, away from Whippet and over whatever sits there (Steve, 9 November 2026).
+ * `webEditParked` is the one record of which windows are in the tray.
+ */
+function parkWebEditorWindow(win) {
+  if (!win || win.isDestroyed() || !win.webEditKind) return;
+  win.webEditParked = true;
+  win.hide();
+  sendDocTray();
+}
+
+function unparkWebEditorWindow(win) {
+  if (!win || win.isDestroyed() || !win.webEditKind) return false;
+  win.webEditParked = false;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  sendDocTray();
+  return true;
+}
+
+function docTrayEntries() {
+  return BrowserWindow.getAllWindows()
+    .filter((w) => w && !w.isDestroyed() && !w.webEditClosed && w.webEditKind && w.webEditParked)
+    .map((w) => ({
+      id: w.id,
+      name: w.webEditLabel || w.webEditPageTitle || '',
+      kind: w.webEditKind.windowKindName || '',
+      abbrev: w.webEditIconAbbrev || '',
+      hue: w.webEditIconHue == null ? null : w.webEditIconHue,
+    }));
+}
+
+function sendDocTray() {
+  const m = mainWindowRef;
+  if (!m || m.isDestroyed()) return;
+  try {
+    m.webContents.send('tagfox-doc-tray', docTrayEntries());
+  } catch (_) {}
+}
+
+function webEditorWindowById(id) {
+  const w = BrowserWindow.fromId(Number(id));
+  return w && !w.isDestroyed() && w.webEditKind ? w : null;
+}
+
+ipcMain.handle('doc-tray-state', () => docTrayEntries());
+ipcMain.handle('doc-tray-restore', (_e, id) => ({ ok: unparkWebEditorWindow(webEditorWindowById(id)) }));
+ipcMain.handle('doc-tray-close', (_e, id) => {
+  const w = webEditorWindowById(id);
+  if (!w) return { ok: false };
+  w.close();
+  return { ok: true };
+});
 
 function toggleMainWindowFromGlobalShortcut() {
   const w =
@@ -4218,7 +4275,9 @@ function setWebEditorWindowTitle(win, { label, pageTitle } = {}) {
   } catch (_) {}
   const tb = win.webEditToolbarWc;
   if (tb && !tb.isDestroyed()) tb.send('webedit-toolbar-set-label', name);
+  /* Claims the abbreviation and hue before its first await, so the tray below already has them. */
   void applyWebEditorWindowIcon(win, name);
+  if (win.webEditParked) sendDocTray();
 }
 
 /**
@@ -4562,6 +4621,16 @@ function openWebEditorWindow(parentWin, targetUrl, kindKey, { label } = {}) {
   });
   win.webEditKind = kind;
   attachWebEditorWindowBoundsPersistence(win, kind);
+  win.on('minimize', () => parkWebEditorWindow(win));
+  win.on('show', () => {
+    if (!win.webEditParked) return;
+    win.webEditParked = false;
+    sendDocTray();
+  });
+  win.on('closed', () => {
+    win.webEditClosed = true;
+    sendDocTray();
+  });
   win.setMinimumSize(GOOGLE_WORKSPACE_WINDOW_MIN_W, GOOGLE_WORKSPACE_WINDOW_MIN_H);
   win.setMenuBarVisibility(false);
   setWebEditorWindowTitle(win, { label: String(label || '') || webEditorLabelFromUrl(url), pageTitle: '' });

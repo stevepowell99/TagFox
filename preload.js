@@ -43,6 +43,10 @@ ipcRenderer.on('tagfox-page-zoom-changed', (_e, factor) => {
 ipcRenderer.on('tagfox-app-restart-imminent', (_e, payload) => {
   if (onAppRestartHint) onAppRestartHint(payload && typeof payload === 'object' ? payload : {});
 });
+let onDocTray = null;
+ipcRenderer.on('tagfox-doc-tray', (_e, entries) => {
+  if (onDocTray) onDocTray(Array.isArray(entries) ? entries : []);
+});
 
 contextBridge.exposeInMainWorld('tagBrowser', {
   search: (payload) => ipcRenderer.invoke('everything-search', payload),
@@ -129,6 +133,13 @@ contextBridge.exposeInMainWorld('tagBrowser', {
     onAppRestartHint = typeof fn === 'function' ? fn : null;
   },
   createEmptyFolder: (payload) => ipcRenderer.invoke('create-empty-folder', payload),
+  /** Doc windows minimised into Whippet: [{ id, name, kind, abbrev, hue }], now and on every change. */
+  docTrayState: () => ipcRenderer.invoke('doc-tray-state'),
+  setDocTrayHandler: (fn) => {
+    onDocTray = typeof fn === 'function' ? fn : null;
+  },
+  docTrayRestore: (id) => ipcRenderer.invoke('doc-tray-restore', id),
+  docTrayClose: (id) => ipcRenderer.invoke('doc-tray-close', id),
   shelfState: () => ipcRenderer.invoke('shelf-state'),
   clearShelf: () => ipcRenderer.invoke('clear-shelf'),
   removeShelfPaths: (paths) => ipcRenderer.invoke('remove-shelf-paths', paths),

@@ -46,7 +46,7 @@ Do not duplicate these here; read them:
 - **Toggling TagFox in raises no overlay.** Do not reintroduce an on-show overlay.
 - **The window's × hides TagFox and never quits it** unless `appQuitting` is set (File → Quit TagFox, the `/` command, Windows' `query-session-end`). Guarded by `test/close-hides.cjs`, which posts a real `WM_CLOSE`.
 - **Ctrl+Shift+Space is a fixed third global shortcut** (`RECENT_CHANGES_ACCEL`, not in Settings): TagFox on the last hour's changes anywhere (`openRecentChanges()`).
-- **Every global-shortcut raise minimises the doc windows first** (`minimiseWebEditorWindows`), since an owned window always sits above the main window.
+- **Every global-shortcut raise parks the doc windows first** (`minimiseWebEditorWindows`), since an owned window always sits above the main window.
 - **The toggle shortcut pressed from another app's Open or Save dialog sends the next pick to that dialog** (`file-dialog-handoff.js`, `fileDialogTarget`; README "Sending a pick to a file dialog"). Four rules are load-bearing:
   - Text goes only to the file-name box of the same dialog (same handle and process, found again at the moment of sending, and inside that dialog), by `WM_SETTEXT`, and is read back before anything is pressed.
   - The dialog's button is pressed (`WM_COMMAND` `IDOK`) only when it reads Open.
@@ -85,7 +85,8 @@ README "Open in gmist and Google Workspace" describes the row's pen buttons and 
   - Start `preview:local`, a production build, never the dev server (`localGmistStartScript()`): React's dev build kills gmist on any deck with the slide pane open.
   - Find the repo, never hardcode it (`repoDir` in `tagfox-local-gmist.json`, else a sibling `mist`, else `C:\dev\mist`).
 - **One child-window mechanism serves both editors** (`openWebEditorWindow`); everything site-specific lives in `WEB_EDITOR_KINDS`.
-- **A minimised doc window's icon carries two letters (`webEditorIconAbbrev`), and two is the measured ceiling, not a compromise to revisit.** A `PrintWindow` capture misleads here; capture the live screen.
+- **A minimised doc window parks in Whippet's doc tray, never as Windows' desktop stub** (`parkWebEditorWindow`, Steve, 9 November 2026): hidden, with a pill on the Shelf's row that restores or closes it. `webEditParked` is the one record of what is in the tray. `test/manual-doc-tray.cjs`, by hand only.
+- **A doc window's icon carries two letters (`webEditorIconAbbrev`), and two is the measured ceiling, not a compromise to revisit.** A `PrintWindow` capture misleads here; capture the live screen.
 - **The row's cloud pen opens online gmist in the default browser; local gmist's own Online button asks** (`offerOnlineGmistTarget`).
 - **Ask the shell which browser, never the registry:** `openUrlInSystemDefaultBrowser` is `shell.openExternal`, with `rundll32 url.dll,FileProtocolHandler` behind it. `cmd /c start` is not a fallback: it truncates a URL at the first `&`. `test/manual-browser-open.cjs` opens a real tab, so it stays out of `npm test`.
 
