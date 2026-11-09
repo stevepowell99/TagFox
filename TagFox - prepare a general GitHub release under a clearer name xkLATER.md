@@ -1,0 +1,27 @@
+Steve, 8 and 9 November 2026: release TagFox more widely on GitHub under a clearer name ("FileCat or whatever"). Shipping gmist's editor inside TagFox was considered and dropped (9 November): it would duplicate gmist's file-sync rules and clash with TagFox's window keys.
+
+- **Already in good shape**
+  - Buttons that cannot work on a machine are hidden (`machine-features`): gmist, Print to PDF and Drive sign-in vanish where those are absent
+  - The repo is already public (0 stars), so nothing private is newly exposed
+- **Specific to us, by size**
+  - gmist: local and online pens, share link, local gmist start-up (~200 mentions in `main.js`, ~80 in `renderer.js`), plus the dormant bundled gmist (`serve-gmist.cjs`, `scripts/bundle-gmist.js`)
+  - Print to PDF runs JobCat's `make_pdf.py`, with "Causal Map branded" and "Steve" profiles; the JobCat lookup builds a `My Drive (hello@causalmap.app)` path
+  - `xk` tags: owners `GCC`, `STEVE`, `CLAUDE` are hard-coded in `TAG_VOCAB`, which the hub also treats as its single source
+  - Google Drive sign-in needs `google-oauth-client.json` from our Google Cloud project (gitignored)
+  - `scripts/run-dist.js` copies the installer into the hello@ Drive
+  - Comments, `CLAUDE.md`, `_role.md`, the README's developer history and the `xk` files at the root are written for us
+- **Limits any user meets**
+  - Windows only, and needs Everything 1.5a with its HTTP server
+- **Release basics missing**
+  - No `LICENSE`; `package.json` has no licence or author; it is named `tagbrowser`, app id `app.tagbrowser`
+- **Rename: what the name is tied to**
+  - User-facing: product name, window title, help, README, repo name (GitHub redirects the old one)
+  - Structural: Electron's settings folder follows the app name, `%LOCALAPPDATA%\TagFox` logs (gmist's `GmistLocal` task writes there too), the `TagFoxAutostart` task, `tagfox-local-gmist.json`, the `#tagfoxtest` hook, `tagfox-` CSS classes, `window.tagBrowser`, the hub's `projects.md`, skills and `machine-parity.ps1`
+  - gmist's precedent: rename the product, keep the structural names
+  - "FileCat" is already a Java file-merging tool on Softpedia; check GitHub, domains and trademarks before choosing
+- **Open decisions** (Steve)
+  - Strip the gmist and JobCat features from the public build, or keep them hidden behind `machine-features`
+  - Licence: MIT, or Causal Map's FSL-1.1-MIT default
+  - Owners in `xk` tags: a setting per user, or drop the owner family from the public build
+  - Name
+- `xkLATER` until Steve says go
