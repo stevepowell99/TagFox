@@ -998,6 +998,20 @@
       await navigateTagFoxToShortcutTarget(r.targetPath, r.isDirectory);
     }
 
+    /** A Start menu app row: switch to the app's latest window, or start it (main's app-switch-or-launch). */
+    async function openAppShortcut(fp) {
+      const r = await window.tagBrowser.appSwitchOrLaunch(fp);
+      const name = (r && r.name) || T.baseName(fp).replace(/\.lnk$/i, '');
+      if (!r || !r.ok) {
+        setStatusMain('Could not start ' + name + ': ' + ((r && r.error) || 'no answer from Whippet'));
+        return;
+      }
+      bumpFileFocusVisit(fp);
+      if (r.did !== 'switched') setStatusMain('Started ' + name);
+      else if (r.foreground) setStatusMain('Switched to ' + (r.title || name));
+      else setStatusMain(name + ' is open, but Windows kept it behind Whippet');
+    }
+
     /** File row: markdown → local gmist, shell open otherwise, or a Workspace child window for .gdoc / .gsheet / .gslides (same as Viewer button). */
     async function openFileDefaultOrGoogleWorkspace(fp) {
       const status = document.getElementById('statusMain');
@@ -1005,7 +1019,8 @@
       const dot = base.lastIndexOf('.');
       const ext = dot >= 0 ? base.slice(dot + 1).toLowerCase() : '';
       if (ext === 'lnk') {
-        await followShellShortcutInTagFox(fp);
+        if (runnerIsAppShortcut(fp) && window.tagBrowser.appSwitchOrLaunch) await openAppShortcut(fp);
+        else await followShellShortcutInTagFox(fp);
         return;
       }
       /* Markdown opens in a local gmist by default (August 2026), starting it if it is not up, so the
@@ -2602,6 +2617,14 @@
          query contains a ~, or inside a ~folder. Measured on Steve's keys.kdbx (test/runner-layout.cjs):
          without the whole-name exception an xk note that only mentions keys.kdbx ranks above it. */
       tilde: 45,
+      /* A Start menu app whose name holds every query word, scaled by how well it matches: an exact name gets
+         all of it and a word prefix (`exc` for Excel) about 0.7, so typing an app's name puts it first while a
+         word that merely occurs in an app's name ("Maps" for "map") does not bury the files. Apps are exempt
+         from rankedDown, since the shared Start menu is under ProgramData. Uninstallers get none. */
+      app: 35,
+      /* Apps come from a query of their own, the two Start menu folders and the Store app shortcuts, so the
+         main fetch's newest 300 cannot crowd them out. Only with no folder chosen. */
+      appFetch: 10,
     });
 
     /** Settings › Ranking: one slider per influence on the smart order, scaling the RUNNER_RANK weights it
@@ -2615,6 +2638,7 @@
       { id: 'windowsRecent', label: 'Opened lately in any app', weights: ['windowsRecent'] },
       { id: 'rankedDown', label: 'AppData and ProgramData ranked down', weights: ['rankedDown'] },
       { id: 'tilde', label: '~ paths ranked down', weights: ['tilde'] },
+      { id: 'app', label: 'Start menu apps ranked up', weights: ['app'] },
     ]);
     const RUNNER_RANK_KNOB_MID = 4;
     const RUNNER_RANK_KNOB_MAX = 8;
@@ -2961,13 +2985,15 @@
         const stemLc = dot > 0 ? nameLc.slice(0, dot) : nameLc;
         const m = runnerNameMatch(nameFold, stemLc, words);
         let s = W.match * m.quality;
+        const isApp = runnerIsAppShortcut(fp);
+        if (isApp && m.inName === words.length) s += W.app * m.quality;
         const mt = modifiedTimeMs(r);
         if (mt) s += W.recency * Math.exp(-Math.max(0, now - mt) / (W.recencyDays * day));
         if (stars.has(k)) s += W.star;
         s += runnerUseBoost(use.get(k), now, W);
         const win = runnerWindowsRecent.get(k);
         if (win) s += W.windowsRecent * (win.at ? Math.exp(-Math.max(0, now - win.at) / (W.windowsRecentDays * day)) : 1);
-        if (rankedDown.some((f) => f.re.test(fp))) s -= W.rankedDown;
+        if (!isApp && rankedDown.some((f) => f.re.test(fp))) s -= W.rankedDown;
         if (tildePenalty && m.quality < RUNNER_RANK.matchKind.exact && pathUnderTildeSegment(fp)) s -= tildePenalty;
         return { r, tier: m.inName, s };
       });
@@ -3071,6 +3097,12 @@
         const tempDir = await runnerUserTempDir();
         if (tempDir) ask(everythingSearchTextForUi(ceilingNorms, rootFolder, queryForEs, recursive, { tempDir }), RUNNER_RANK.tempFetch);
         else searchDebugLog('runner.extraRows.noTempDir', { runId });
+      }
+      /* Start menu apps, only with no folder chosen. Their query names the app folders itself, so a scope
+         ceiling (which is about where files are searched) does not hide them. */
+      if (runnerSort === 'smart' && positive && !normalizeFolderPathForEverything(String(rootFolder || '').trim())) {
+        const appRoots = await loadRunnerAppRoots();
+        if (appRoots.length) ask(everythingSearchTextForUi([], '', queryForEs, true, { appRoots }), RUNNER_RANK.appFetch);
       }
       if (!jobs.length) return [];
       /* Sent after the main query and one at a time, each only while this search is still the newest: costs
@@ -3426,6 +3458,35 @@
         }
         runnerWindowsRecent = m;
       });
+    }
+
+    /* Start menu apps: the folders whose shortcuts are apps (the two Start menu folders and the Store app
+       shortcuts main writes), asked of main once. Until the answer comes, nothing counts as an app. */
+    let runnerAppRoots = [];
+    let runnerAppRootsPromise = null;
+    function loadRunnerAppRoots() {
+      if (!runnerAppRootsPromise) {
+        runnerAppRootsPromise = Promise.resolve()
+          .then(() => window.tagBrowser.appShortcutRoots())
+          .then((r) => {
+            runnerAppRoots = r && r.ok && Array.isArray(r.roots) ? r.roots.map(String).filter(Boolean) : [];
+            if (!runnerAppRoots.length) runnerAppRootsPromise = null;
+            return runnerAppRoots;
+          })
+          .catch(() => {
+            runnerAppRootsPromise = null;
+            return [];
+          });
+      }
+      return runnerAppRootsPromise;
+    }
+
+    /** A Start menu app row: a shortcut in one of the app folders, other than an uninstaller. */
+    function runnerIsAppShortcut(fp) {
+      const p = String(fp || '');
+      if (!runnerAppRoots.length || !/\.lnk$/i.test(p) || /^uninstall\b/i.test(T.baseName(p))) return false;
+      const low = p.toLowerCase();
+      return runnerAppRoots.some((r) => low.startsWith(r.toLowerCase() + '\\'));
     }
 
     /* The Temp query names the user's own Temp folder: Everything answers a path prefix in about 0.06s,
@@ -14497,7 +14558,7 @@
 
     /** The Everything search text for the current filters: scope, query, tags, deadlines, content, recency.
         `tempDir` asks for Runner's Temp hits in that folder instead of leaving Temp out. */
-    function everythingSearchTextForUi(ceilingNorms, rootFolder, query, recursive, { tempDir = '' } = {}) {
+    function everythingSearchTextForUi(ceilingNorms, rootFolder, query, recursive, { tempDir = '', appRoots = null } = {}) {
       let searchText = composeScopedEverythingSearch(ceilingNorms, rootFolder, query, recursive);
       searchText = appendTagFiltersToEverythingQuery(searchText);
       /* Starred only: the stars as a filelist, first, so Everything tests the rest on those paths alone.
@@ -14508,7 +14569,12 @@
       }
       /* The Temp folder goes first, so the words are tested on Temp's items alone: 75-115ms against
          300-500ms with the folder after the words (2.4 million items, October 2026). */
-      if (tempDir) searchText = ('"' + tempDir + '\\" ' + String(searchText).trim()).trim();
+      if (appRoots && appRoots.length) {
+        /* Runner's app rows: shortcuts in the app folders, folders first so the words are tested on those alone.
+           A test instance's Store app folder is under Temp, so Temp is not left out here. */
+        const group = '<' + appRoots.map((r) => '"' + String(r).replace(/"/g, '') + '\\"').join('|') + '>';
+        searchText = (group + ' ext:lnk ' + String(searchText).trim()).trim();
+      } else if (tempDir) searchText = ('"' + tempDir + '\\" ' + String(searchText).trim()).trim();
       else if (runnerLeavesOutTemp(rootFolder)) searchText = (String(searchText).trim() + ' ' + RUNNER_TEMP_EXCLUDE).trim();
       if (isFoldersOnly()) searchText = (String(searchText).trim() + ' folder:').trim();
       else if (isFilesOnly()) searchText = (String(searchText).trim() + ' file: sort-mix:').trim();
@@ -16281,6 +16347,7 @@
     installTagFoxTooltipGuardsOnce();
     bindShelfDrop();
     bindDocTray();
+    void loadRunnerAppRoots();
     document.getElementById('btnEverythingHttpOpenSettings')?.addEventListener('click', () => {
       const el = document.getElementById('settingsPanel');
       if (el) bootstrap.Offcanvas.getOrCreateInstance(el).show();

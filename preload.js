@@ -94,6 +94,10 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   windowsRecentFolders: () => ipcRenderer.invoke('windows-recent-folders'),
   /** Windows: file targets from shell Recent (.lnk), newest first (empty on other OS). */
   windowsRecentFiles: () => ipcRenderer.invoke('windows-recent-files'),
+  /** The folders whose shortcuts are Start menu apps: { ok, roots }. */
+  appShortcutRoots: () => ipcRenderer.invoke('app-shortcut-roots'),
+  /** Switch to the app's latest window, or start it: { ok, did: 'switched' | 'started', name, title, foreground, error }. */
+  appSwitchOrLaunch: (fullPath) => ipcRenderer.invoke('app-switch-or-launch', { fullPath: String(fullPath || '') }),
   showItemActionsMenu: (payload) => ipcRenderer.invoke('show-item-actions-menu', payload),
   /** Profile picker for Print to PDF (markdown rows); resolves { ok, profile } or { ok, dismissed }. */
   showPrintPdfMenu: (payload) => ipcRenderer.invoke('show-print-pdf-menu', payload),

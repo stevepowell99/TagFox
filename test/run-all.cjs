@@ -36,6 +36,7 @@ const runs = [
   { name: 'task copies left out', args: ['task-copies.cjs'] },
   { name: 'runner query order', args: ['runner-query-order.cjs'] },
   { name: 'runner shelf', args: ['runner-shelf.cjs'] },
+  { name: 'runner start menu apps', args: ['runner-apps.cjs'] }, // Enter on an app, against real windows, is manual-app-switch.cjs, by hand
   { name: 'runner status line', args: ['runner-status.cjs'] },
   { name: 'runner go to a path', args: ['runner-go-to-path.cjs'] },
   { name: 'an empty box inside a folder selects the folder', args: ['runner-folder-itself.cjs'] },

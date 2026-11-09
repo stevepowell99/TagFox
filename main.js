@@ -163,6 +163,8 @@ const MsgReader = require('@kenjiuno/msgreader').default;
 
 // Another app's Open or Save dialog, which the toggle shortcut can raise TagFox from (user32 through koffi).
 const fileDialogHandoff = require(path.join(__dirname, 'file-dialog-handoff.js'));
+// An app's open windows, for Runner's app rows (switch to the latest, or start the app).
+const appWindows = require(path.join(__dirname, 'app-windows.js'));
 
 // Populates globalThis.TagBrowserTags (same xk/xp/xx tag rules as the renderer).
 require(path.join(__dirname, 'tags.js'));
@@ -3109,6 +3111,7 @@ app.whenReady().then(() => {
       if (!fileDialogHandoff.available()) console.warn('[TagFox] Open/Save dialog hand-off is off:', fileDialogHandoff.loadError());
     }, 3000);
   }
+  scheduleStoreAppShortcuts();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -5735,6 +5738,200 @@ ipcMain.handle('windows-recent-files', async () => {
   if (process.platform !== 'win32') return { ok: true, files: [] };
   const r = await scanWindowsRecentLnkTargets(false);
   return { ok: r.ok, error: r.error, files: r.items };
+});
+
+/* ─── Start menu apps, for Runner's app rows ───
+   Runner lists the Start menu's apps among the files and ranks them up (renderer, runnerIsAppShortcut).
+   They are the shortcuts in the two Start menu folders, which Everything already indexes (115 here, 96 of
+   them to a program, November 2026), plus one Whippet writes for each packaged app: a Store app has no
+   shortcut file for Everything to find, which on STEVE-DELL left out 43 of the Start menu's 162 apps,
+   Calculator, Notepad, Paint, Terminal and the new Outlook among them. Enter on one switches to the app's
+   most recently used window, or starts the app when it has none (`app-switch-or-launch`). */
+function startMenuProgramsDirs() {
+  /* A test instance names its own, so it neither reads nor ranks this machine's apps. */
+  if (process.env.TAGFOX_TEST_HIDDEN === '1' && process.env.TAGFOX_TEST_APP_ROOTS) {
+    return process.env.TAGFOX_TEST_APP_ROOTS.split(';').map((s) => s.trim()).filter(Boolean);
+  }
+  return [
+    path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+    path.join(process.env.ProgramData || 'C:\\ProgramData', 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+  ];
+}
+
+function storeAppShortcutsDir() {
+  return path.join(app.getPath('userData'), 'Store apps');
+}
+
+function appShortcutRoots() {
+  return [...startMenuProgramsDirs(), storeAppShortcutsDir()].map((d) => path.normalize(d).replace(/[\\/]+$/, ''));
+}
+
+function pathUnderAppShortcutRoot(p) {
+  const low = path.normalize(String(p || '')).toLowerCase();
+  return appShortcutRoots().some((r) => low.startsWith(r.toLowerCase() + '\\'));
+}
+
+/** `explorer.exe shell:AppsFolder\<AppUserModelID>` starts a packaged app; the id is also how its windows are found. */
+const STORE_APP_ARGS_RE = /^shell:AppsFolder\\(.+)$/i;
+
+/** The Start menu's packaged apps, [{ name, appId }], or null with the reason logged. */
+function listPackagedStartApps() {
+  const cmd =
+    "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-StartApps | Where-Object { $_.AppID -match '!' } | Select-Object Name, AppID | ConvertTo-Json -Compress";
+  return new Promise((resolve) => {
+    let out = '';
+    let err = '';
+    let child;
+    try {
+      child = spawn(windowsPowerShellExe(), ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', cmd], { windowsHide: true });
+    } catch (e) {
+      console.warn('[TagFox] Store app shortcuts: could not run PowerShell:', String((e && e.message) || e));
+      resolve(null);
+      return;
+    }
+    const timer = setTimeout(() => child.kill(), 60000);
+    child.stdout.on('data', (d) => (out += d.toString('utf8')));
+    child.stderr.on('data', (d) => (err += d.toString('utf8')));
+    child.on('error', (e) => {
+      clearTimeout(timer);
+      console.warn('[TagFox] Store app shortcuts: PowerShell failed:', String((e && e.message) || e));
+      resolve(null);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      try {
+        if (code !== 0) throw new Error(err.trim() || 'exit ' + code);
+        const j = JSON.parse(out.trim() || '[]');
+        const list = (Array.isArray(j) ? j : [j])
+          .map((a) => ({ name: String((a && a.Name) || '').trim(), appId: String((a && a.AppID) || '').trim() }))
+          .filter((a) => a.name && a.appId);
+        resolve(list);
+      } catch (e) {
+        console.warn('[TagFox] Store app shortcuts: Get-StartApps gave nothing usable:', String((e && e.message) || e));
+        resolve(null);
+      }
+    });
+  });
+}
+
+/** A file name for an app: Windows' forbidden characters out, no trailing dot or space. */
+function appShortcutFileStem(name) {
+  return String(name || '')
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/, '');
+}
+
+/**
+ * Write a shortcut for each packaged app into storeAppShortcutsDir, skipping a name the Start menu folders
+ * already have a shortcut for, and remove the ones whose app has gone. The folder is Whippet's own, written
+ * in place: an unchanged shortcut is left alone, so Everything sees no churn. Each write is read back.
+ */
+let storeAppShortcutsRunning = false;
+async function refreshStoreAppShortcuts() {
+  if (process.platform !== 'win32' || storeAppShortcutsRunning) return;
+  storeAppShortcutsRunning = true;
+  try {
+    const apps = await listPackagedStartApps();
+    if (!apps) return;
+    const dir = storeAppShortcutsDir();
+    await fs.mkdir(dir, { recursive: true });
+    const startMenuNames = new Set();
+    for (const root of startMenuProgramsDirs()) {
+      let names = [];
+      try {
+        names = await fs.readdir(root, { recursive: true });
+      } catch (_) {}
+      for (const n of names) if (/\.lnk$/i.test(n)) startMenuNames.add(path.basename(n, path.extname(n)).toLowerCase());
+    }
+    const want = new Map();
+    for (const a of apps) {
+      const stem = appShortcutFileStem(a.name);
+      if (!stem || startMenuNames.has(stem.toLowerCase())) continue;
+      let file = stem + '.lnk';
+      for (let i = 2; want.has(file.toLowerCase()); i++) file = `${stem} (${i}).lnk`;
+      want.set(file.toLowerCase(), { file, ...a });
+    }
+    const explorer = path.join(process.env.SystemRoot || 'C:\\Windows', 'explorer.exe');
+    let written = 0;
+    const failed = [];
+    for (const { file, name, appId } of want.values()) {
+      const p = path.join(dir, file);
+      const args = 'shell:AppsFolder\\' + appId;
+      let cur = null;
+      try {
+        cur = shell.readShortcutLink(p);
+      } catch (_) {}
+      if (cur && cur.args === args) continue;
+      shell.writeShortcutLink(p, cur ? 'replace' : 'create', { target: explorer, args, description: name });
+      let back = null;
+      try {
+        back = shell.readShortcutLink(p);
+      } catch (_) {}
+      if (back && back.args === args) written++;
+      else failed.push(file);
+    }
+    let removed = 0;
+    for (const f of await fs.readdir(dir)) {
+      if (!/\.lnk$/i.test(f) || want.has(f.toLowerCase())) continue;
+      try {
+        await fs.unlink(path.join(dir, f));
+        removed++;
+      } catch (_) {}
+    }
+    if (written || removed || failed.length) {
+      console.log(`[TagFox] Store app shortcuts: ${want.size} in ${dir} (${written} written, ${removed} removed)`);
+    }
+    if (failed.length) console.warn('[TagFox] Store app shortcuts not written:', failed.join(', '));
+  } catch (e) {
+    console.warn('[TagFox] Store app shortcuts:', String((e && e.message) || e));
+  } finally {
+    storeAppShortcutsRunning = false;
+  }
+}
+
+/** First run once the window is up and Everything has had its start; then often enough to catch a new install. */
+const STORE_APP_SHORTCUTS_FIRST_MS = 20000;
+const STORE_APP_SHORTCUTS_EVERY_MS = 6 * 3600 * 1000;
+function scheduleStoreAppShortcuts() {
+  if (process.platform !== 'win32') return;
+  if (process.env.TAGFOX_TEST_HIDDEN === '1' && process.env.TAGFOX_TEST_STORE_APPS !== '1') return;
+  const first = process.env.TAGFOX_TEST_HIDDEN === '1' ? 0 : STORE_APP_SHORTCUTS_FIRST_MS;
+  setTimeout(() => void refreshStoreAppShortcuts(), first);
+  setInterval(() => void refreshStoreAppShortcuts(), STORE_APP_SHORTCUTS_EVERY_MS);
+}
+
+ipcMain.handle('app-shortcut-roots', () => ({ ok: true, roots: appShortcutRoots() }));
+
+/**
+ * Enter on an app row: the app's most recently used window comes to the front, restored if it was
+ * minimised; with none open, the shortcut is opened, which starts the app. Called while Whippet is in front,
+ * which is what lets Windows hand the foreground over. A shortcut to anything but a program (a help page, an
+ * .msc console) just opens.
+ */
+ipcMain.handle('app-switch-or-launch', async (_event, { fullPath }) => {
+  const p = path.normalize(String(fullPath || ''));
+  const name = path.basename(p, path.extname(p));
+  if (path.extname(p).toLowerCase() !== '.lnk' || !pathUnderAppShortcutRoot(p)) {
+    return { ok: false, name, error: 'Not a Start menu app.' };
+  }
+  let link = null;
+  try {
+    link = shell.readShortcutLink(p);
+  } catch (_) {}
+  const store = link && STORE_APP_ARGS_RE.exec(String(link.args || '').trim());
+  const want = store ? { aumid: store[1] } : link && /\.exe$/i.test(String(link.target || '')) ? { exe: path.normalize(link.target) } : null;
+  if (want) {
+    const w = appWindows.findAppWindow(want, { skipPid: process.pid });
+    if (w) {
+      const a = appWindows.activateWindow(w.hwnd);
+      if (a.ok) return { ok: true, did: 'switched', name, title: w.title, foreground: a.foreground };
+    }
+  }
+  const err = await openPathWithFallback(p);
+  if (err) return { ok: false, name, error: err };
+  return { ok: true, did: 'started', name };
 });
 
 /**
