@@ -27,6 +27,7 @@ const runs = [
   { name: 'hotkey raise selects the query', args: ['hotkey-raise-select.cjs'] },
   { name: 'zoom restore', args: ['zoom-restore.cjs'] },
   { name: 'restart stays in the terminal', args: ['restart-in-terminal.cjs'] },
+  { name: 'dev reloader waits for Restart over stale main code', args: ['dev-reloader.cjs'] },
   { name: 'runner layout', args: ['runner-layout.cjs'] },
   { name: 'runner keys', args: ['runner-keys.cjs'] },
   { name: 'runner syntax', args: ['runner-syntax.cjs'] },

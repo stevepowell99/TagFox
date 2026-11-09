@@ -32,13 +32,21 @@ async function pageWs() {
 
 // A page that reloads during startup destroys the context mid-call; that is a retry, not a failure.
 // So is a reply that never comes: a call sent to a page on its way out can go unanswered, and this
-// test once waited on one for over ten minutes with the suite stalled behind it.
+// test once waited on one for over ten minutes with the suite stalled behind it. So is a socket to a page
+// that has just gone, which fails its handshake.
+// Under Electron 43 the page is listed as index.html before its preload has run, so a call made at once read
+// `window.tagBrowser` as undefined (9 November 2026); the call waits in the page for the preload first.
 async function evaluate(expr) {
+  const whenReady = `(async () => {
+    for (let i = 0; i < 150 && !(window.tagBrowser && document.readyState === 'complete'); i++) await new Promise((r) => setTimeout(r, 100));
+    return (${expr});
+  })()`;
   for (let i = 0; ; i++) {
     try {
-      return await evaluateOnce(expr);
+      return await evaluateOnce(whenReady);
     } catch (e) {
-      if (i >= 10 || !/context was destroyed|Cannot find context|no reply within|socket closed/i.test(e.message)) throw e;
+      const msg = String((e && e.message) || (e && e.type) || e);
+      if (i >= 10 || !/context was destroyed|Cannot find context|no reply within|socket closed|network error|non-101|^error$/i.test(msg)) throw e;
       await sleep(300);
     }
   }

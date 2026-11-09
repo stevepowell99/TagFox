@@ -17,10 +17,10 @@ Steve, 8 and 9 November 2026: release TagFox more widely on GitHub under a clear
   - Electron 43.8.7, electron-builder 26, xlsx 0.20.3 (`01b14fe`); npm audit leaves six moderate findings, one `minimatch` issue inside electron-builder, build time only. Electron 45 is its own task file
   - README and Help open with what Whippet does (`05594d6`)
   - Release [Whippet 1.5.0](https://github.com/stevepowell99/whippet-files/releases/tag/v1.5.0), with its installer; the hello@ Drive download folder holds the same installer
+  - README screenshot `docs/img/whippet-main.png`, made over demo files by `scripts/make-readme-screenshot.cjs` (`410d0cb`); its path line reads `C:\dev\TagFox\_tmp\demo-workspace`
+  - The dev reloader never reloads the window over stale main-process or preload code (`startDevReloader`, `test/dev-reloader.cjs`); `electron-reloader` is gone
 - **Left**
-  - Replace `docs/img/tagfox-main.png`: it shows the retired Classic layout, the title TagFox, and a real Drive path and task file. Take it from a test instance over seeded demo files, never Steve's own window
   - GitHub topics for the repo
-  - Proposed, not agreed: the dev reloader skips the window reload when `main.js` or `preload.js` changed too, and shows only Restart. On 9 November the window reloaded onto new renderer code under the old main process and stopped drawing for 100 minutes
 - **Specific to us, kept behind `machine-features` or in docs**
   - gmist: local and online pens, share link, local gmist start-up
   - Print to PDF runs JobCat's `make_pdf.py`, with "Causal Map branded" and "Steve" profiles; the JobCat lookup builds a `My Drive (hello@causalmap.app)` path

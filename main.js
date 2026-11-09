@@ -12,6 +12,7 @@ const {
   globalShortcut,
   screen,
   session,
+  webContents,
 } = require('electron');
 
 /* Chromium demotes a window's renderer to background mode whenever that window is hidden OR merely
@@ -28,31 +29,20 @@ const {
    renderer processes while the window is hidden or covered. */
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 
-// Dev: reload renderer / restart main when project files change (no manual npm start).
-// Never in a test instance (TAGFOX_TEST_HIDDEN): an edit anywhere in the repo reloaded the window under a
-// running test, which then lost its #tagfoxtest hook mid-run and failed for a reason it was not testing.
-if (!app.isPackaged && process.env.TAGFOX_TEST_HIDDEN !== '1') {
-  /* Polling only on a synced mount (OneDrive / Google Drive), where native fs.watch often never fires.
-     On local NTFS it is pure cost: measured 5% of a core in main, constantly, plus ~4k metadata ops/sec
-     on the fs threadpool, which everything else in main queues behind. */
-  const synced = /OneDrive|My Drive|Shared drives/i.test(__dirname);
-  if (process.platform === 'win32' && synced) process.env.CHOKIDAR_USEPOLLING = 'true';
-  try {
-    /* Scratch and build output must not reload Steve's running window out from under him. Nor may
-       main.js: an agent edits it often, and each edit restarted TagFox mid-use. The header shows a
-       Restart button instead once main-process code has changed (tagfox-runtime-info). */
-    require('electron-reloader')(module, { ignore: ['_tmp', 'dist', 'main.js'] });
-  } catch (_) {}
-}
-
 const { spawn, spawnSync, execFileSync } = require('child_process');
-const { pathToFileURL } = require('url');
+const { pathToFileURL, fileURLToPath } = require('url');
 const http = require('http');
 const net = require('net');
 const fs = require('fs').promises;
 const fssync = require('fs');
 const os = require('os');
 const path = require('path');
+
+/** Preload scripts, named once: the windows load them, and the dev reloader counts them as main-side code. */
+const PRELOADS = {
+  main: path.join(__dirname, 'preload.js'),
+  webEditorToolbar: path.join(__dirname, 'web-editor-toolbar-preload.js'),
+};
 
 /* The installer's product name is Whippet, which would move a packaged install's settings folder from
    %APPDATA%\TagFox to %APPDATA%\Whippet; keep the old one, so an install that is updated keeps its settings. */
@@ -2734,7 +2724,7 @@ function createWindow() {
     // false: File / View stay visible (Alt-only bar hid the menu — looked like “no File menu”).
     autoHideMenuBar: false,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: PRELOADS.main,
       contextIsolation: true,
       nodeIntegration: false,
       /* Same reason as disable-renderer-backgrounding above: a hidden window's timers are otherwise
@@ -4378,7 +4368,7 @@ function mountWebEditorBrowserViews(win, targetUrlArg, useBounds, kind) {
   });
   const toolbarBV = new BrowserView({
     webPreferences: {
-      preload: path.join(__dirname, 'web-editor-toolbar-preload.js'),
+      preload: PRELOADS.webEditorToolbar,
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -4873,10 +4863,10 @@ const LOCAL_GMIST_SIDECAR_PORT = LOCAL_GMIST_PORTS[1];
 
 const TAGFOX_STARTED_AT = Date.now();
 
-/** Every main-process source file with its mtime at startup, so a later edit on disk can be seen. */
+/** Every main-process source file and preload script with its mtime at startup, so a later edit on disk can be seen. */
 const mainCodeAtStart = (() => {
   const snap = new Map();
-  for (const f of Object.keys(require.cache)) {
+  for (const f of [...Object.keys(require.cache), ...Object.values(PRELOADS)]) {
     if (!f.startsWith(__dirname) || f.includes('node_modules')) continue;
     try {
       snap.set(f, fssync.statSync(f).mtimeMs);
@@ -4885,7 +4875,7 @@ const mainCodeAtStart = (() => {
   return snap;
 })();
 
-/** Main-process files that have changed since this TagFox started (relative names). */
+/** Main-process and preload files that have changed since this TagFox started (relative names). */
 function mainCodeChangedSinceStart() {
   const changed = [];
   for (const [f, t] of mainCodeAtStart) {
@@ -4894,6 +4884,51 @@ function mainCodeChangedSinceStart() {
     } catch (_) {}
   }
   return changed;
+}
+
+/* Dev reloader, `npm start` only, and never in a test instance unless the test asks for it: an edit reloaded
+   the window under a running test, which lost its #tagfoxtest hook mid-run.
+   An edit to a renderer file reloads Whippet's own pages. An edit to main-process or preload code reloads
+   nothing and the Restart button shows instead, and once that code is stale a renderer edit waits for Restart
+   too: a reload would run new renderer code against the old main process (9 November 2026, the window
+   reloaded onto code that needed a newer main and stopped drawing for 100 minutes). It watches only the
+   app's own files, the root entries of package.json's build.files, by polling one stat a second each, which
+   costs nothing on a local disk or a synced mount; a whole-tree watcher once cost 5-10% of a core here. */
+function startDevReloader() {
+  let files = [];
+  try {
+    const pkg = JSON.parse(fssync.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+    files = ((pkg.build && pkg.build.files) || [])
+      .filter((f) => !/[*/\\]/.test(f) && /\.(js|html|css)$/i.test(f))
+      .map((f) => path.join(__dirname, f));
+  } catch (_) {}
+  const ownPage = (wc) => {
+    try {
+      const u = wc.getURL();
+      return u.startsWith('file:') && fileURLToPath(u).toLowerCase().startsWith(__dirname.toLowerCase());
+    } catch (_) {
+      return false;
+    }
+  };
+  let timer = null;
+  const reloadIfCurrent = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (mainCodeChangedSinceStart().length) return;
+      for (const wc of webContents.getAllWebContents()) {
+        if (!wc.isDestroyed() && ownPage(wc)) wc.reloadIgnoringCache();
+      }
+    }, 300);
+  };
+  for (const f of files) {
+    fssync.watchFile(f, { interval: 1000 }, (cur, prev) => {
+      if (cur.mtimeMs !== prev.mtimeMs) reloadIfCurrent();
+    });
+  }
+  app.on('quit', () => files.forEach((f) => fssync.unwatchFile(f)));
+}
+if (!app.isPackaged && (process.env.TAGFOX_TEST_HIDDEN !== '1' || process.env.TAGFOX_TEST_DEV_RELOADER === '1')) {
+  startDevReloader();
 }
 
 /**

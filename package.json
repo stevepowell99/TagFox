@@ -59,7 +59,6 @@
     "codemirror": "5.65.20",
     "electron": "^43.8.7",
     "electron-builder": "^26.18.0",
-    "electron-reloader": "^1.2.3",
     "jszip": "^3.10.1",
     "mammoth": "^1.8.0",
     "marked": "^14.1.3",
