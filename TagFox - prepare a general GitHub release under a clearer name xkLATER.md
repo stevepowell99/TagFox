@@ -1,31 +1,28 @@
-Steve, 8 and 9 November 2026: release TagFox more widely on GitHub under a clearer name ("FileCat or whatever"). Shipping gmist's editor inside TagFox was considered and dropped (9 November): it would duplicate gmist's file-sync rules and clash with TagFox's window keys.
+Steve, 8 and 9 November 2026: release TagFox more widely on GitHub under a clearer name. Shipping gmist's editor inside TagFox was considered and dropped (9 November): it would duplicate gmist's file-sync rules and clash with TagFox's window keys.
 
-- **Already ready**
-  - Buttons that cannot work on a machine are hidden (`machine-features`): gmist, Print to PDF and Drive sign-in vanish where those are absent
-  - The repo is already public (0 stars), so nothing private is newly exposed
-- **Specific to us, by size**
-  - gmist: local and online pens, share link, local gmist start-up (~200 mentions in `main.js`, ~80 in `renderer.js`), plus the dormant bundled gmist (`serve-gmist.cjs`, `scripts/bundle-gmist.js`)
-  - Print to PDF runs JobCat's `make_pdf.py`, with "Causal Map branded" and "Steve" profiles; the JobCat lookup builds a `My Drive (hello@causalmap.app)` path
-  - `xk` tags: owners `GCC`, `STEVE`, `CLAUDE` are hard-coded in `TAG_VOCAB`, which the hub also treats as its single source
-  - Google Drive sign-in needs `google-oauth-client.json` from our Google Cloud project (gitignored)
-  - `scripts/run-dist.js` copies the installer into the hello@ Drive
-  - Comments, `CLAUDE.md`, `_role.md`, the README's developer history and the `xk` files at the root are written for us
-- **Limits any user meets**
-  - Windows only, and needs Everything 1.5a with its HTTP server
-- **Release basics missing**
-  - There is no `LICENSE`, and `package.json` does not name a licence or author; it is named `tagbrowser`, app id `app.tagbrowser`
-  - Dependabot reports 87 open alerts on `main` (38 high, 39 moderate, 10 low; seen on push, 9 November 2026)
-- **Rename: what the name is tied to**
-  - User-facing: product name, window title, help, README, repo name (GitHub redirects the old one)
-  - Structural: Electron's settings folder follows the app name, `%LOCALAPPDATA%\TagFox` logs (gmist's `GmistLocal` task writes there too), the `TagFoxAutostart` task, `tagfox-local-gmist.json`, the `#tagfoxtest` hook, `tagfox-` CSS classes, `window.tagBrowser`, the hub's `projects.md`, skills and `machine-parity.ps1`
-  - gmist's precedent: rename the product, keep the structural names
 - **Decided** (Steve, 9 November 2026)
-  - One codebase: the gmist and JobCat features stay, hidden behind `machine-features`; the dormant bundled gmist goes
+  - One codebase: the gmist and JobCat features stay, hidden behind `machine-features`
   - Licence: MIT, "Copyright (c) 2026 Stephen Powell"
   - Name: **Whippet**, subtitled "a fast file finder for Windows"
     - Longer line, for the README opening and the GitHub description: "Find any file on Windows as you type, then preview, tag and move it without leaving the keyboard"
     - Others using the word, none a file tool: WhippetSoft (IT services), and 144 GitHub repos led by a Guile garbage collector, an RNA-seq tool and a WordPress framework; whippet.com, .io, .app and .dev are all registered
-    - Repo: `whippet-files`, renamed from `TagFox` (GitHub redirects the old name), so a search for "whippet github" finds it
-- **Open decisions** (Steve)
-  - Owners in `xk` tags: a setting per user (Claude's recommendation), or drop the owner family from the public build
-- `xkLATER` until Steve says go
+    - Repo: `whippet-files`, renamed from `TagFox` (GitHub redirects the old name)
+  - Owner tags (`xp`): a setting per user, none by default
+- **Done**, 9 November 2026
+  - `LICENSE`, and `package.json` names the licence, author, repo and the installer's product name Whippet (`9c8e13a`)
+  - Owner tags are a per-user setting: `tagfox-tag-owners.json` in userData, Settings → Owner tags (`a576a69`); Steve's file lists GCC, STEVE and CLAUDE
+  - The dormant bundled gmist is gone (`00f55f4`)
+  - Every name a user sees says Whippet; the structural names stay TagFox, listed in `CLAUDE.md` "Naming"; a packaged install keeps `%APPDATA%\TagFox` as its userData; the README opens for a stranger (`4385234`)
+  - The GitHub repo is `stevepowell99/whippet-files`; the hub mentions are updated (hub `dfcbf76`)
+- **Left**
+  - Dependency upgrades: Dependabot reported 87 open alerts on 9 November 2026 (38 high). The runtime ones are Electron (33 to 45, a major jump) and `xlsx` (no fix on npm); the rest are electron-builder's build tools, which never ship in the app
+  - A new GitHub release: the only one is "TagFox 1.0.1" (6 June 2026), far behind `package.json`'s 1.4.0
+  - The GitHub repo description and topics, from the lines above
+- **Specific to us, kept behind `machine-features` or in docs**
+  - gmist: local and online pens, share link, local gmist start-up
+  - Print to PDF runs JobCat's `make_pdf.py`, with "Causal Map branded" and "Steve" profiles; the JobCat lookup builds a `My Drive (hello@causalmap.app)` path
+  - Google Drive sign-in needs `google-oauth-client.json` from our Google Cloud project (gitignored)
+  - `scripts/run-dist.js` copies the installer into the hello@ Drive's `TagFox download` folder
+  - Comments, `CLAUDE.md`, `_role.md`, the README's developer sections and the `xk` files at the root are written for us
+- **Limits any user meets**
+  - Windows only, and needs Everything 1.5a with its HTTP server
