@@ -25,9 +25,10 @@ Steve, 8 and 9 November 2026: release TagFox more widely on GitHub under a clear
   - Licence: MIT; the copyright holder (Steve or Causal Map Ltd) is still to say
 - **Open decisions** (Steve)
   - Owners in `xk` tags: a setting per user, or drop the owner family from the public build
-  - Name: "TagFox" means nothing to outsiders. Steve wants "File" plus a one-syllable everyday noun; obscure animals (stoat, shrike, vole, quoll) are out
+  - Name: "TagFox" means nothing to outsiders. Steve wants "File" plus an everyday noun of one or two syllables
     - Checks, 9 November: web search, DNS for .com/.io/.app/.dev, GitHub repo count; trademarks not checked
-    - Clear: FileTrawl (.com, .io and .dev unregistered, 0 repos; near FileTrail, a records-management product), FileTorch (.com registered, 0 repos; "torch" means set fire to in US English), FileLark and FileWren (.com registered, 0 repos)
+    - Clear, with all four domains unregistered and 0 repos: FileWhippet (Claude's pick), FileTerrier (near Terrier, Glasgow's open-source search engine), FileCollie, FileSheepdog, FileKestrel, FileArrow, FileOsprey, FileSpaniel
+    - Rejected by Steve: FileStoat, FileShrike, FileVole, FileQuoll (too obscure); FileTrawl, FileTorch, FileLark, FileWren
     - Taken or crowded: FileScout, FileRunner, TagFinder (near Tag2Find), FileCat (a Java file merger), Ferret variants, FileHound, FileHawk (Markzware's 2003 US trademark), FileSwift (fileswift.io, 21 repos), FileComb (30 repos), FileSieve (12), FileTrail (a product, 11 repos), FileFlick (8); FileOwl, FileFlint and FileBeam have most domains registered; FileFox has a dormant extension and an iOS app
   - Line: "Find any file on Windows as you type, then preview, tag and move it without leaving the keyboard"
 - `xkLATER` until Steve says go
