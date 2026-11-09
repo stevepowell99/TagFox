@@ -1,21 +1,29 @@
 # Whippet
 
-**Whippet: a fast file finder for Windows.** Find any file on Windows as you type, then preview, tag and move it without leaving the keyboard.
+**A fast file finder for Windows.** Find any file on Windows as you type, then preview, tag and move it without leaving the keyboard.
 
-It runs on top of [Voidtools Everything](https://www.voidtools.com/), which keeps an index of every file name on the computer and answers a search the moment you type. Tags are short words in the file's own name, such as `xkTODO`, so they go wherever the file goes and need no database.
-
-The code still uses the app's earlier name, TagFox, in folder names, settings files and identifiers.
+Whippet runs on top of [Voidtools Everything](https://www.voidtools.com/), which keeps an index of every file name on the computer, so a search across millions of files answers while you are still typing. Around that search it does most of what File Explorer gets used for. It keeps tags and tasks in plain file names and markdown, which people, sync services and AI assistants can all read.
 
 ![Whippet main window](docs/img/tagfox-main.png)
 
+## What it does
+
+- **Finds anything as you type**, on every drive Everything indexes.
+  - Name matches come first, then files changed recently, starred and often used, with a boost for Windows' own Recent list.
+  - `Ctrl`+`Alt`+`Space` brings Whippet up from any program with the search ready; `Ctrl`+`Shift`+`Space` shows everything changed in the last hour.
+  - Narrow by folder, by file type (`.md`), by date (`Ctrl`+`R` steps from the last hour to the last year), by tag or by deadline; `-word` leaves a word out.
+  - Save a search and run it again with `Alt`+`1` to `9`.
+- **Shows a file without opening it.** Images, PDFs, Word, Excel, PowerPoint, markdown, text, audio and video preview in a side panel. Markdown and text files can be edited there, and each folder can show and edit its own readme.
+- **Manages files.** Copy, cut and paste, to and from File Explorer and screenshots included; drag and drop; rename; bulk rename with wildcards; new folders; delete to the Recycle Bin, or for good with `Shift`+`Del`. The keys are the ones Explorer and Everything already use.
+  - The Shelf gathers files from several folders while you find the one they belong in.
+  - With another program's Open or Save dialog in front, the hotkey raises Whippet, and the file you pick goes into that dialog.
+- **Tags and tracks work in the file name.** `Report xkTODO.docx` is tagged TODO, and a click on the tag lists everything else tagged TODO. The tags travel with the file into Explorer, Google Drive, zip files and git, without a database.
+  - Tasks carry a status, an owner, a deadline (`xd-2026-07-15`) and a hide-until date (`xh-2026-09-01`), with filters for overdue, due today and due this week.
+  - `Alt`+`Shift`+`N`, from any program, writes a TODO note as a markdown file.
+- **Works with markdown and AI assistants.** `Ctrl`+`O` opens a markdown file in Obsidian when one of your vaults holds it. Because tags and tasks are plain names and markdown, an AI assistant working in the same folders can read and change them as easily as you can.
+- **Runs from the keyboard.** `/` lists every command, `?` every key, and `F1` opens the guide.
+
 ## For everyday users
-
-### What you get
-
-- **Search as you type** across every drive Everything indexes.
-- **Tags** in the file name, such as `Report xkTODO.docx`. Click a tag to filter by it; the tags travel with the file into File Explorer, Google Drive and zip files because they are part of the name.
-- **Previews** of images, PDFs, Word, Excel, PowerPoint, markdown, text, audio and video, in a side panel.
-- **Stars** on the files and folders you come back to, which rank near the top and open with a number key.
 
 ### What it needs
 
@@ -73,7 +81,7 @@ MIT; see [`LICENSE`](LICENSE).
 
 ## For developers
 
-Whippet is an [Electron](https://www.electronjs.org/) desktop app. It talks only to the local Everything HTTP server and the local filesystem; there is no backend.
+Whippet is an [Electron](https://www.electronjs.org/) desktop app. It talks only to the local Everything HTTP server and the local filesystem; there is no backend. The code keeps the app's earlier name, TagFox, in folder names, settings files and identifiers.
 
 ### Run from source
 

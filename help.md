@@ -36,7 +36,14 @@
 
 ### What Whippet does
 
-Whippet finds files and folders on your computer as you type, and lets you open, preview, move, rename and tag them without going through File Explorer. Most things can be done from the keyboard.
+Whippet finds files and folders on your computer as you type, and lets you open, preview, move, rename and tag them without going through File Explorer.
+
+- **Finds anything as you type**, on every drive, with name matches first and then what you changed recently, starred or use often. Narrow by folder, type, date, tag or deadline (see **Finding things**).
+- **Shows a file without opening it**: images, PDFs, Office files, markdown, text, audio and video, with markdown and text editable in place (see **The Viewer**).
+- **Manages files**: copy, cut, paste, drag, rename, bulk rename, new folders and delete, with the keys File Explorer uses, plus the Shelf for gathering files from several folders (see **Working with files**).
+- **Tags and tracks work in the file name**: status, owner, deadline and hide-until tags, and a Quick TODO note from any program (see **Tags and tasks**).
+- **Hands files on**: `Ctrl`+`O` opens markdown in Obsidian, and from another program's Open or Save dialog the file you pick goes into that dialog.
+- **Runs from the keyboard**: `?` lists every key, and `/` every command.
 
 ### Everything has to be running
 
