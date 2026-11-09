@@ -120,7 +120,7 @@ Whippet does not search the disk itself. It asks [Everything](https://www.voidto
 - Files whose **name** matches come before files that match only by the folder they are in. A whole word ranks above the start of a word, which ranks above a match in the middle of one.
 - After that, Whippet favours files changed recently, starred files and folders, things you open often in Whippet, and things Windows lists as recently opened in any program.
 - Files under `AppData` and `ProgramData` folders, Word's `~$` lock files and the like are listed lower down, unless you typed their name.
-- Searching everywhere (no folder chosen), the programs in your Start menu are listed too, Store apps such as Calculator and Terminal included, and an app whose name you typed comes first.
+- Searching everywhere (no folder chosen), the programs in your Start menu are listed too, Store apps such as Calculator and Terminal included, and an app whose name you typed comes first. An app has a rocket where a file has its type icon.
 - `Ctrl`+`M` sorts by date, newest first, and the same key again goes back to the usual order. `/name` sorts by name, `/size` puts the largest first, and `/smallest` the smallest.
 - A search that finds a very large number of matches ranks only the newest few hundred; a note at the right of the search box then says how many it ranked out of how many it found. Type more to narrow it down.
 

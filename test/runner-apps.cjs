@@ -74,6 +74,11 @@ async function main() {
     let s = await listing('qzvapp studio', [app, uninstaller, notes]);
     check(at(s, app) === 0, `the app's name typed puts its shortcut first, above today's file with the same words (${s.rows.slice(0, 4).map((r) => path.basename(r)).join(', ')})`);
     check(at(s, notes) >= 0 && at(s, uninstaller) > at(s, notes), `an uninstaller gets no lift and sits below that file (notes ${at(s, notes)}, uninstaller ${at(s, uninstaller)})`);
+    const marked = await drv.ev(`(() => {
+      const rowFor = (p) => [...document.querySelectorAll('#tbody tr')].find((t) => (t.dataset.rowPath || '').toLowerCase() === p.toLowerCase());
+      return [${JSON.stringify(app)}, ${JSON.stringify(notes)}, ${JSON.stringify(uninstaller)}].map((p) => !!rowFor(p)?.querySelector('.tagfox-app-icon'));
+    })()`);
+    check(JSON.stringify(marked) === '[true,false,false]', `the app row carries the app glyph, and the file and the uninstaller do not (${JSON.stringify(marked)})`);
     check(
       (s.sentExtra || []).some((t) => t.includes(appRoot) && /ext:lnk/.test(t)),
       `the app query names the app folders (${(s.sentExtra || []).find((t) => /ext:lnk/.test(t)) || 'none sent'})`

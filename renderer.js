@@ -2618,10 +2618,12 @@
          without the whole-name exception an xk note that only mentions keys.kdbx ranks above it. */
       tilde: 45,
       /* A Start menu app whose name holds every query word, scaled by how well it matches: an exact name gets
-         all of it and a word prefix (`exc` for Excel) about 0.7, so typing an app's name puts it first while a
-         word that merely occurs in an app's name ("Maps" for "map") does not bury the files. Apps are exempt
-         from rankedDown, since the shared Start menu is under ProgramData. Uninstallers get none. */
-      app: 35,
+         all of it and a word prefix (`exc` for Excel) about 0.7. At 60 (Steve, 9 November 2026) an app typed
+         by name comes above a file of the same name, even a starred one changed today, unless that file is
+         also opened often in Whippet; an app whose name starts with the word ("Maps" for "map") comes above
+         most files that merely contain it.
+         Apps are exempt from rankedDown, since the shared Start menu is under ProgramData. Uninstallers get none. */
+      app: 60,
       /* Apps come from a query of their own, the two Start menu folders and the Store app shortcuts, so the
          main fetch's newest 300 cannot crowd them out. Only with no folder chosen. */
       appFetch: 10,
@@ -7936,6 +7938,7 @@
       if (iconMount) {
         iconMount.innerHTML = '';
         if (isFolder) iconMount.appendChild(folderIconEl());
+        else if (runnerIsAppShortcut(propPath)) iconMount.appendChild(appIconEl());
         else iconMount.appendChild(fileIconEl(fileExtFromPretty(parsedTitle.pretty)));
       }
       syncViewerCopyButton();
@@ -12255,6 +12258,16 @@
       return holder;
     }
 
+    /** A Start menu app row's glyph, in place of the shortcut's file glyph, so an app reads as an app. */
+    function appIconEl() {
+      const holder = document.createElement('span');
+      holder.className = 'file-type-icon tagfox-app-icon';
+      holder.setAttribute('aria-label', 'App');
+      holder.title = 'App: Enter switches to its window, or starts it';
+      holder.innerHTML = '<i class="fa-solid fa-rocket fa-fw" aria-hidden="true"></i>';
+      return holder;
+    }
+
     function renderNameCell(row, preParsed, queryNeedle) {
       const fp = fullPathForRow(row);
       const base = T.baseName(fp);
@@ -12265,6 +12278,7 @@
       const lead = document.createElement('span');
       lead.className = 'name-badges-lead';
       if (rowIsFolder(row)) lead.appendChild(folderIconEl());
+      else if (runnerIsAppShortcut(fp)) lead.appendChild(appIconEl());
       else {
         const ext = fileExtFromPretty(parsed.pretty);
         const iconHolder = fileIconEl(ext);

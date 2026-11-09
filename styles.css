@@ -1245,6 +1245,8 @@ html[data-bs-theme='dark'] .tagfox-navbar-tip-kbd {
   align-items: center;
 }
 .folder-type-icon { color: #d97706; }
+/* A Start menu app (renderer, appIconEl): a rocket in the accent colour, a glyph no file kind uses. */
+.file-type-icon.tagfox-app-icon { color: var(--tb-accent); }
 .folder-type-icon i, .file-type-icon i { font-size: 0.8125rem; line-height: 1; vertical-align: -0.06em; }
 /* Result-row thumbnail replaces the glyph in the same icon box (Settings, Thumbnails). */
 .file-type-icon.file-type-icon-has-thumb { width: 1.25rem; justify-content: center; }
