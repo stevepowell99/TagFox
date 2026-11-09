@@ -5,7 +5,7 @@
 //     the request carried the export path and the shortcut's own account (authuser);
 //   - a .gslides goes to the Slides export path;
 //   - a .gdoc Google sends no PDF for (its sign-in page) keeps the shortcut block, says TagFox is probably not
-//     signed in, and still offers Open in TagFox; the PDF pane stays hidden;
+//     signed in, and still offers Open in Whippet; the PDF pane stays hidden;
 //   - a .doc shows its paragraphs as text, escaped, whether it is Word 97-2003 binary or Word 2003 XML; a .docx
 //     under a .doc name gets the .docx preview; anything else named .doc says it could not be read.
 //
@@ -113,8 +113,8 @@ async function main() {
 
     // A shortcut Google sends its sign-in page for.
     await select(signedOut);
-    check(await waitFor(async () => /not signed in/.test(await text('gdocWorkspaceUrl'))), `no PDF: the block says TagFox is probably not signed in ("${await text('gdocWorkspaceUrl')}")`);
-    check(await shown('btnOpenGoogleWorkspace'), 'no PDF: Open in TagFox is still offered');
+    check(await waitFor(async () => /not signed in/.test(await text('gdocWorkspaceUrl'))), `no PDF: the block says Whippet is probably not signed in ("${await text('gdocWorkspaceUrl')}")`);
+    check(await shown('btnOpenGoogleWorkspace'), 'no PDF: Open in Whippet is still offered');
     check(
       (await shown('btnGdocOpenBrowser')) && (await ev(`document.getElementById('btnGdocOpenBrowser').dataset.url === 'https://docs.google.com/document/d/signedOutDoc1234567890/edit'`)),
       'no PDF: Open in browser is offered too, aimed at the document'

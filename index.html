@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>TagFox</title>
+  <title>Whippet</title>
   <!-- Offline: synced from npm (npm run vendor:sync / postinstall). -->
   <link rel="stylesheet" href="vendor/bootstrap/css/bootstrap.min.css" />
   <link rel="stylesheet" href="vendor/codemirror/lib/codemirror.css" />
@@ -106,7 +106,7 @@
         </button>
       </div>
       <div id="settingsAutoRefreshDetails" class="collapse">
-        <label class="form-label small mb-1" for="autoRefreshSec">Picks up files changed outside TagFox. The list is only repainted when something has actually changed, so a quiet folder stays still.</label>
+        <label class="form-label small mb-1" for="autoRefreshSec">Picks up files changed outside Whippet. The list is only repainted when something has actually changed, so a quiet folder stays still.</label>
         <select id="autoRefreshSec" class="form-select form-select-sm mb-1" autocomplete="off">
           <option value="0">Off</option>
           <option value="3">Every 3 seconds</option>
@@ -141,7 +141,7 @@
           <div class="d-flex flex-wrap gap-1 mb-2">
             <button type="button" class="btn btn-sm btn-outline-primary" id="btnSearchScopeAddFolder">Choose folder…</button>
             <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSearchScopeAddProfile">Use my Windows profile folder</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSearchScopeAddCurrent" title="Uses the folder TagFox is showing">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSearchScopeAddCurrent" title="Uses the folder Whippet is showing">
               Use current folder
             </button>
             <button type="button" class="btn btn-sm btn-outline-danger d-none" id="btnSearchScopeClearMax">Remove limit</button>
@@ -173,7 +173,7 @@
         <p class="small fw-semibold text-body-secondary mb-2">Keyboard shortcuts</p>
         <div class="row g-3 align-items-start mb-0">
           <div class="col-12 col-lg-8">
-            <label class="form-label small mb-0" for="globalToggleHotkeyDisplay">Show / hide TagFox from anywhere</label>
+            <label class="form-label small mb-0" for="globalToggleHotkeyDisplay">Show / hide Whippet from anywhere</label>
             <div class="input-group input-group-sm">
               <input
                 type="text"
@@ -196,7 +196,7 @@
               <label class="form-check-label small" for="optHideTitleBar">Hide the window's title bar</label>
             </div>
             <div class="form-text text-muted small">
-              Windows then draws only the minimise, maximise and close buttons, over the top right of TagFox. Drag the window by its top strip; double-click the strip to maximise. Applies when TagFox restarts.
+              Windows then draws only the minimise, maximise and close buttons, over the top right of Whippet. Drag the window by its top strip; double-click the strip to maximise. Applies when Whippet restarts.
               <button type="button" class="btn btn-sm btn-warning py-0 ms-1 d-none" id="btnRestartForTitleBar">Restart now</button>
             </div>
           </div>
@@ -216,7 +216,7 @@
                 Record…
               </button>
             </div>
-            <div id="quickTodoHotkeyHelp" class="form-text text-muted small">Default <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd>. TagFox must be running.</div>
+            <div id="quickTodoHotkeyHelp" class="form-text text-muted small">Default <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd>. Whippet must be running.</div>
           </div>
         </div>
         <p class="small fw-semibold text-body-secondary mb-2 mt-3">Quick TODO folder</p>
@@ -224,7 +224,7 @@
         <input type="hidden" id="quickTodoFolder" autocomplete="off" />
         <div class="d-flex flex-wrap gap-1 mb-2">
           <button type="button" class="btn btn-sm btn-outline-primary" id="btnQuickTodoPickFolder">Choose folder…</button>
-          <button type="button" class="btn btn-sm btn-outline-secondary" id="btnQuickTodoSetCurrent" title="Uses the folder TagFox is showing">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="btnQuickTodoSetCurrent" title="Uses the folder Whippet is showing">
             Use current folder
           </button>
           <button type="button" class="btn btn-sm btn-outline-danger" id="btnQuickTodoClearFolder">Clear</button>
@@ -334,13 +334,13 @@
       </div>
       <div id="settingsRankingDetails" class="collapse">
         <p class="text-muted small mb-2">
-          How much each thing counts in the smart order. The middle of each slider is TagFox's own weight; right counts it more (up to ×4),
+          How much each thing counts in the smart order. The middle of each slider is Whippet's own weight; right counts it more (up to ×4),
           left less, and the far left not at all. Rows with more of your words in their name still come first: these sliders order the rest.
           The date, name and size orders ignore them.
         </p>
         <div id="runnerRankKnobs" class="tagfox-rank-knobs mb-2"></div>
         <button type="button" class="btn btn-sm btn-outline-secondary" id="btnRunnerRankReset" title="Put every slider back in the middle">
-          Reset to TagFox's weights
+          Reset to Whippet's weights
         </button>
       </div>
 
@@ -467,7 +467,7 @@
           <div id="fileDialogBarTitle" class="tagfox-file-dialog-bar-title"></div>
           <div id="fileDialogBarHint" class="tagfox-file-dialog-bar-hint"></div>
         </div>
-        <button type="button" id="btnFileDialogSendFolder" class="tagfox-viewer-pill tagfox-viewer-pill--ghost" title="Send the folder TagFox is showing (Ctrl+Enter)">
+        <button type="button" id="btnFileDialogSendFolder" class="tagfox-viewer-pill tagfox-viewer-pill--ghost" title="Send the folder Whippet is showing (Ctrl+Enter)">
           <i class="fa-regular fa-folder-open" aria-hidden="true"></i><span>Send this folder</span>
         </button>
         <button type="button" id="btnFileDialogCancel" class="tagfox-viewer-icon" title="Stop sending to the dialog (Esc)" aria-label="Stop sending to the dialog">
@@ -488,7 +488,7 @@
             <input type="text" id="query" class="form-control tagfox-query-empty" placeholder="" autocomplete="off" />
           </div>
           <!-- Shown only once TagFox's own code has changed since it started (refreshRunningNow). -->
-          <button type="button" class="btn btn-sm btn-warning d-none" id="btnRestartTagFox" title="TagFox's own code has changed since it started. Restart to run it." aria-label="Restart TagFox"><i class="fa-solid fa-power-off" aria-hidden="true"></i> Restart</button>
+          <button type="button" class="btn btn-sm btn-warning d-none" id="btnRestartTagFox" title="Whippet's own code has changed since it started. Restart to run it." aria-label="Restart Whippet"><i class="fa-solid fa-power-off" aria-hidden="true"></i> Restart</button>
           <!-- Runner only: shown when the smart order ranked only part of the matches (renderRunnerRankNote). -->
           <span id="runnerRankNote" class="tagfox-runner-rank-note d-none"></span>
           <!-- Runner only: the Viewer toggle, and the options, one low-contrast control that opens on click. -->
@@ -584,7 +584,7 @@
               type="button"
               class="btn btn-sm btn-outline-secondary flex-shrink-0"
               id="btnShelfOsDrag"
-              title="Makes your next drag work like dragging a real file — you can drop it into File Explorer or any other app outside TagFox"
+              title="Makes your next drag work like dragging a real file — you can drop it into File Explorer or any other app outside Whippet"
             >
               <i class="fa-solid fa-hand-pointer" aria-hidden="true"></i>
             </button>
@@ -630,7 +630,7 @@
               <i class="fa-solid fa-pen" aria-hidden="true"></i><span>Edit</span>
             </button>
             <!-- Google shortcut shown as its PDF: Edit opens it in the Workspace window. -->
-            <button type="button" id="btnGdocEdit" class="tagfox-viewer-pill d-none" title="Edit it in Google, in a TagFox window">
+            <button type="button" id="btnGdocEdit" class="tagfox-viewer-pill d-none" title="Edit it in Google, in a Whippet window">
               <i class="fa-solid fa-pen" aria-hidden="true"></i><span>Edit</span>
             </button>
             <button type="button" class="tagfox-viewer-icon d-none" id="btnPropsCopyText" title="Copy the text" aria-label="Copy the text">
@@ -761,13 +761,13 @@
             <div id="readmeEmptyState" class="tagfox-viewer-empty d-none">
               <div class="tagfox-viewer-empty-icon" aria-hidden="true"><i class="fa-solid fa-feather-pointed"></i></div>
               <div class="tagfox-viewer-empty-title">No folder doc here</div>
-              <p class="mb-0">A folder doc is an optional short note on what the folder is for, which TagFox shows whenever the folder is selected.</p>
+              <p class="mb-0">A folder doc is an optional short note on what the folder is for, which Whippet shows whenever the folder is selected.</p>
               <div id="readmeEmptyNameSlot" class="tagfox-viewer-empty-row">
                 <button type="button" id="btnReadmeWrite" class="tagfox-viewer-pill">
                   <i class="fa-solid fa-pen" aria-hidden="true"></i><span>Write it</span>
                 </button>
               </div>
-              <p class="tagfox-viewer-empty-small mb-0">TagFox shows the first it finds of <span id="readmeEmptyNames"></span>.</p>
+              <p class="tagfox-viewer-empty-small mb-0">Whippet shows the first it finds of <span id="readmeEmptyNames"></span>.</p>
             </div>
             <!-- The new doc's name: stem, extension and tags. Lives in one of the two slots above. -->
             <span id="readmeFolderDocNameField" class="tagfox-viewer-namefield">
@@ -847,7 +847,7 @@
             </div>
             <div class="tagfox-viewer-empty-row">
               <button type="button" id="btnOpenGoogleWorkspace" class="tagfox-viewer-pill tagfox-viewer-pill--solid">
-                <i class="fa-solid fa-window-maximize" aria-hidden="true"></i><span>Open in TagFox</span>
+                <i class="fa-solid fa-window-maximize" aria-hidden="true"></i><span>Open in Whippet</span>
               </button>
               <button type="button" id="btnGdocOpenBrowser" class="tagfox-viewer-pill tagfox-viewer-pill--ghost">
                 <i class="fa-solid fa-globe" aria-hidden="true"></i><span>Open in browser</span>

@@ -1,6 +1,8 @@
-# TagFox
+# Whippet (TagFox)
 
-Electron desktop UI over the local [Voidtools Everything](https://www.voidtools.com/) HTTP server. No backend; it talks only to Everything and the local filesystem. Main editor: Cursor.
+Electron desktop UI over the local [Voidtools Everything](https://www.voidtools.com/) HTTP server. No backend; it talks only to Everything and the local filesystem. Main editor: Cursor. Public on GitHub as `stevepowell99/whippet-files`, MIT licence.
+
+**Naming.** The product is "Whippet": every name a user sees (window title, menus, Help, Settings, status lines, the installer's product name, README). Steve and this file still call it TagFox. The structural names stay TagFox on purpose, because settings, logs, tasks and tests are keyed on them: the `C:\dev\TagFox` folder, the userData files (`tagfox-*.json`, `tagBrowser-*.json`; a packaged install pins its userData to `%APPDATA%\TagFox`), `%LOCALAPPDATA%\TagFox`, `%TEMP%\tagfox-mainperf.log`, the `TagFoxAutostart` task, `#tagfoxtest`, `tagfox-` CSS classes and data attributes, `window.tagBrowser`, function names such as `restartTagFoxProcess`, the package name `tagbrowser` and app id `app.tagbrowser`, test file names and the hello@ Drive's `TagFox download` folder. Do not rename them.
 
 Role: the tool Steve reaches for a hundred times a day, so it has to work in his hands rather than in a test. Measure what is on screen before designing for it; land the work on `main` in `C:\dev\TagFox`, where he runs it; prove it in the running app before calling it done. Ledger: `_role.md`.
 
@@ -10,7 +12,7 @@ Do not duplicate these here; read them:
 
 - `README.md` "For developers" is canonical for run/build, project layout, how search works, the **Search concurrency** architecture note, and the history and measurements behind each rule below. Before changing an area a rule covers, read its README section.
 - `test/README.md` is canonical for the automated tests and the `#tagfoxtest` hook they drive over CDP (general technique: memory `reference_electron_cdp_testing`).
-- `TAG_VOCAB` in `tags.js` is the single source of the `xk` tag whitelist. The hub `CLAUDE.md` table mirrors it, so a new tag goes into `TAG_VOCAB` first.
+- `TAG_VOCAB` in `tags.js` is the single source of the status (`xk`) and label (`xx`) tags. The hub `CLAUDE.md` table mirrors it, so a new tag goes into `tags.js` first. Owner (`xp`) names are a per-user setting, none by default: `tagfox-tag-owners.json` in userData, written by Settings → Owner tags and read by main and the window at startup (`setOwnerTags`). Steve's are in the hub table.
 
 ## Running, restarting and shipping
 

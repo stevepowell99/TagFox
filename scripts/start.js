@@ -32,7 +32,7 @@ function logExit(child, startedAt, code, signal) {
     const d = new Date();
     const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
     const mins = Math.round((Date.now() - startedAt) / 60000);
-    const line = `${stamp} TagFox (pid ${child.pid}) exited with code ${code}${signal ? ', signal ' + signal : ''} after ${mins} min\n`;
+    const line = `${stamp} Whippet (pid ${child.pid}) exited with code ${code}${signal ? ', signal ' + signal : ''} after ${mins} min\n`;
     fs.appendFileSync(path.join(dir, 'autostart.log'), line);
   } catch (_) {}
 }

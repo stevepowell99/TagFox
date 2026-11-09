@@ -1209,7 +1209,7 @@
       if (r && r.reason === 'no-drive-api') {
         return machineHas('googleSignIn')
           ? 'Google Drive sign-in did not complete' + (r.error ? ' (' + r.error + ')' : '') + '.'
-          : 'this file carries no Drive id, and this TagFox has no Google sign-in set up to look one up.';
+          : 'this file carries no Drive id, and this copy of Whippet has no Google sign-in set up to look one up.';
       }
       return notFound;
     }
@@ -2611,7 +2611,7 @@
       { id: 'match', label: 'How well the name matches', weights: ['match'] },
       { id: 'recency', label: 'Modified lately', weights: ['recency'] },
       { id: 'star', label: 'Starred', weights: ['star'] },
-      { id: 'use', label: 'Opened or visited in TagFox', weights: ['use', 'lastUse'] },
+      { id: 'use', label: 'Opened or visited in Whippet', weights: ['use', 'lastUse'] },
       { id: 'windowsRecent', label: 'Opened lately in any app', weights: ['windowsRecent'] },
       { id: 'rankedDown', label: 'AppData and ProgramData ranked down', weights: ['rankedDown'] },
       { id: 'tilde', label: '~ paths ranked down', weights: ['tilde'] },
@@ -3591,13 +3591,13 @@
       { id: 'recent-1h', group: 'Modified', label: 'Modified in the last hour', isOn: () => recencyFilterMode() === '1h', run: () => runnerSetRecency('1h') },
       { id: 'recent-1d', group: 'Modified', label: 'Modified in the last day', isOn: () => recencyFilterMode() === '1d', run: () => runnerSetRecency('1d') },
       { id: 'recent-1w', group: 'Modified', label: 'Modified in the last week', isOn: () => recencyFilterMode() === '1w', run: () => runnerSetRecency('1w') },
-      { id: 'new-todo', group: 'TagFox', label: 'New TODO in this folder', run: () => runnerNewTodoHere() },
-      { id: 'refresh', group: 'TagFox', label: 'Refresh', run: () => void refreshResultsFromUi() },
-      { id: 'dark', group: 'TagFox', label: 'Dark or light mode', run: () => toggleDarkMode() },
-      { id: 'settings', group: 'TagFox', label: 'Settings', run: () => toggleSettingsPanel() },
-      { id: 'help', group: 'TagFox', label: 'Help', run: () => showHelp() },
-      { id: 'keys', group: 'TagFox', label: 'Keys', run: () => openRunnerKeysHelp() },
-      { id: 'quit', group: 'TagFox', label: 'Quit TagFox (its shortcut stops working until TagFox starts again)', run: () => void window.tagBrowser?.quitTagFox?.() },
+      { id: 'new-todo', group: 'Whippet', label: 'New TODO in this folder', run: () => runnerNewTodoHere() },
+      { id: 'refresh', group: 'Whippet', label: 'Refresh', run: () => void refreshResultsFromUi() },
+      { id: 'dark', group: 'Whippet', label: 'Dark or light mode', run: () => toggleDarkMode() },
+      { id: 'settings', group: 'Whippet', label: 'Settings', run: () => toggleSettingsPanel() },
+      { id: 'help', group: 'Whippet', label: 'Help', run: () => showHelp() },
+      { id: 'keys', group: 'Whippet', label: 'Keys', run: () => openRunnerKeysHelp() },
+      { id: 'quit', group: 'Whippet', label: 'Quit Whippet (its shortcut stops working until Whippet starts again)', run: () => void window.tagBrowser?.quitTagFox?.() },
     ];
 
     function runnerOptOn(id) {
@@ -4527,7 +4527,7 @@
       {
         group: 'Move and select',
         keys: ['Esc'],
-        does: 'One step back a press: a list or menu, the checked rows, the text, the folder, then TagFox hides',
+        does: 'One step back a press: a list or menu, the checked rows, the text, the folder, then Whippet hides',
         when: (c) => c.plain && c.key === 'Escape',
         fields: true,
         menus: true,
@@ -4562,7 +4562,7 @@
         when: (c) => c.inBox && c.plain && c.key === 'Backspace' && c.empty && !c.e.repeat && !!currentScopeFolderPath(),
         run: () => clearSearchScope(),
       },
-      { group: 'Folders', keys: ['Shift+Enter'], does: 'Go to the folder holding the selected row, here in TagFox', when: (c) => c.plain && c.shift && c.key === 'Enter', run: () => void runnerActivateSelection('folder') },
+      { group: 'Folders', keys: ['Shift+Enter'], does: 'Go to the folder holding the selected row, here in Whippet', when: (c) => c.plain && c.shift && c.key === 'Enter', run: () => void runnerActivateSelection('folder') },
       {
         group: 'Folders',
         keys: ['Ctrl+Shift+1…9'],
@@ -4583,7 +4583,7 @@
       /* Another app's Open or Save dialog, while the toggle shortcut has raised TagFox from one. `first`: these
          are tried before every other entry, so they win over the plain Enter, Ctrl+Enter and Esc above and below. */
       { group: "Another app's Open or Save dialog", first: true, keys: ['Enter'], does: 'With a dialog waiting (the toggle shortcut was pressed from it): send it the selected row. In an Open dialog a file opens and a folder is shown; a Save dialog gets the folder and keeps its file name, and you press Save', when: (c) => !!fileDialogTarget && c.plain && !c.shift && c.key === 'Enter' && !c.onControl, run: (c) => void runnerEnter(c) },
-      { group: "Another app's Open or Save dialog", first: true, keys: ['Ctrl+Enter'], does: 'With a dialog waiting: send it the folder TagFox is showing', when: (c) => !!fileDialogTarget && c.mod && !c.alt && !c.shift && c.key === 'Enter', run: () => sendScopeFolderToFileDialog() },
+      { group: "Another app's Open or Save dialog", first: true, keys: ['Ctrl+Enter'], does: 'With a dialog waiting: send it the folder Whippet is showing', when: (c) => !!fileDialogTarget && c.mod && !c.alt && !c.shift && c.key === 'Enter', run: () => sendScopeFolderToFileDialog() },
       { group: "Another app's Open or Save dialog", first: true, keys: ['Esc'], does: 'With a dialog waiting: stop sending to it, so Enter opens rows again', when: (c) => !!fileDialogTarget && c.plain && !c.shift && c.key === 'Escape', run: () => cancelFileDialogTarget() },
       { group: 'Open and act', keys: ['Alt+P'], does: 'Show or hide the Viewer', cmd: 'viewer', when: (c) => c.alt && !c.mod && !c.shift && c.k === 'p' },
       { group: 'Open and act', keys: ['Shift+Space'], does: 'The Viewer full screen', when: (c) => c.plain && c.shift && c.key === ' ', menus: true, run: () => togglePropsTheaterMode() },
@@ -4646,9 +4646,9 @@
       { group: 'Open and act', keys: ['Ctrl+Z'], does: 'Undo the last rename, tag change, move, paste or new folder (in the search box: undo the typing)', when: (c) => c.ctrl('z') && !c.inBox, menus: true, run: () => void runUndo() },
 
       /* TagFox */
-      { group: 'TagFox', keys: ['F1'], does: 'Help', cmd: 'help', when: (c) => c.key === 'F1', menus: true },
-      { group: 'TagFox', keys: ['Ctrl+,'], does: 'Settings', cmd: 'settings', when: (c) => c.mod && !c.alt && !c.shift && (c.key === ',' || c.code === 'Comma'), menus: true },
-      { group: 'TagFox', keys: ['Ctrl+W'], does: "Hide TagFox, as the window's × does; its shortcut brings it back", when: (c) => c.ctrl('w'), menus: true, run: () => void window.tagBrowser?.hideMainWindow?.() },
+      { group: 'Whippet', keys: ['F1'], does: 'Help', cmd: 'help', when: (c) => c.key === 'F1', menus: true },
+      { group: 'Whippet', keys: ['Ctrl+,'], does: 'Settings', cmd: 'settings', when: (c) => c.mod && !c.alt && !c.shift && (c.key === ',' || c.code === 'Comma'), menus: true },
+      { group: 'Whippet', keys: ['Ctrl+W'], does: "Hide Whippet, as the window's × does; its shortcut brings it back", when: (c) => c.ctrl('w'), menus: true, run: () => void window.tagBrowser?.hideMainWindow?.() },
     ];
 
     /** The key that runs a command, from RUNNER_KEYS, for the / list and the options panel. */
@@ -7995,7 +7995,7 @@
           urlEl.textContent =
             rGw.code === 'ENOENT'
               ? 'This shortcut file is not on disk any more.'
-              : 'TagFox could not read where this shortcut points, so it cannot open the ' + kindName + ' here. Look for it in Drive instead.';
+              : 'Whippet could not read where this shortcut points, so it cannot open the ' + kindName + ' here. Look for it in Drive instead.';
           btnGw.classList.add('d-none');
           delete btnGw.dataset.url;
           btnBrowser?.classList.add('d-none');
@@ -8013,7 +8013,7 @@
             linksWrap.classList.add('d-none');
           }
         } else {
-          urlEl.textContent = 'A shortcut to a ' + kindName + '. It opens in a TagFox window, where you sign in to Google once.';
+          urlEl.textContent = 'A shortcut to a ' + kindName + '. It opens in a Whippet window, where you sign in to Google once.';
           urlEl.title = rGw.url;
           btnGw.classList.remove('d-none');
           btnGw.dataset.url = rGw.url;
@@ -8043,7 +8043,7 @@
           } else {
             urlEl.textContent =
               rPdf.code === 'not-pdf'
-                ? 'Google sent no preview of this ' + kindName + ', so TagFox is probably not signed in to it. Open it in TagFox once to sign in, or open it in your browser.'
+                ? 'Google sent no preview of this ' + kindName + ', so Whippet is probably not signed in to it. Open it in Whippet once to sign in, or open it in your browser.'
                 : 'No preview of this ' + kindName + ': ' + (rPdf.error || 'Google did not answer.');
           }
         }
@@ -8334,7 +8334,7 @@
         activeReadmePath = null;
         activeMdPath = null;
         mdAutosaveTargetPath = null;
-        showPropsPlaceholder('TagFox shows .pptx but not the older .ppt. Open it in PowerPoint.', { withOpen: true });
+        showPropsPlaceholder('Whippet shows .pptx but not the older .ppt. Open it in PowerPoint.', { withOpen: true });
         return;
       }
 
@@ -8418,7 +8418,7 @@
       activeMdPath = null;
       mdAutosaveTargetPath = null;
       showPropsPlaceholder(
-        'TagFox cannot show ' + (ext ? '.' + ext + ' files' : 'this kind of file') + '. Open it in the program Windows uses for it.',
+        'Whippet cannot show ' + (ext ? '.' + ext + ' files' : 'this kind of file') + '. Open it in the program Windows uses for it.',
         { withOpen: true }
       );
     }
@@ -9192,7 +9192,7 @@
           sec.textContent = relLabel(f.folder) || segmentPretty(T.baseName(f.folder));
           sec.setAttribute('role', 'button');
           sec.tabIndex = 0;
-          sec.title = 'Focus TagFox on this folder';
+          sec.title = 'Focus Whippet on this folder';
           const fldr = f.folder;
           sec.addEventListener('click', () => void applySearchScopeAndRefresh(fldr));
           sec.addEventListener('keydown', (e) => {
@@ -10394,7 +10394,7 @@
       if (!zone || !chips || !hint || !window.tagBrowser.shelfState) return;
       const r = await window.tagBrowser.shelfState();
       const shelfDropHelp =
-        'The shelf is temporary storage, like a clipboard. Drag files or folders onto it and off it into any folder: a drag moves them, and holding Shift copies. To drag things outside TagFox, use Alt+drag, or press the hand button first.';
+        'The shelf is temporary storage, like a clipboard. Drag files or folders onto it and off it into any folder: a drag moves them, and holding Shift copies. To drag things outside Whippet, use Alt+drag, or press the hand button first.';
       zone.title = r.ok ? shelfDropHelp + ' Staging folder: ' + r.path : shelfDropHelp + ' ' + String(r.error || 'Shelf unavailable');
       chips.innerHTML = '';
       if (!r.ok || !r.entries.length) {
@@ -10418,7 +10418,7 @@
         allChip.title =
           'All ' +
           r.entries.length +
-          ' items on the Shelf — drag within TagFox; use OS drag button or Alt+drag to send to Explorer';
+          ' items on the Shelf — drag within Whippet; use OS drag button or Alt+drag to send to Explorer';
         bindShelfChipDrag(allChip, allPaths);
         chips.appendChild(allChip);
       }
@@ -10437,7 +10437,7 @@
         chip.title =
           ent.fullPath +
           (ent.isDirectory ? ' (folder)' : '') +
-          ' — drag within TagFox; use OS drag button or Alt+drag to send to Explorer';
+          ' — drag within Whippet; use OS drag button or Alt+drag to send to Explorer';
         bindShelfChipDrag(chip, [ent.fullPath]);
         row.appendChild(chip);
         const rm = document.createElement('button');
@@ -10460,7 +10460,7 @@
           ev.stopPropagation();
           const rmFn = window.tagBrowser && window.tagBrowser.removeShelfPaths;
           if (!rmFn) {
-            setStatusMain('Fully quit TagFox and start again so Shelf remove is available.');
+            setStatusMain('Fully quit Whippet and start again so Shelf remove is available.');
             return;
           }
           void (async () => {
@@ -12967,7 +12967,7 @@
           /* Local: any markdown, on any machine that has a gmist, running or not. A stopped gmist used to
              remove the button, which reads as the feature having gone; the click starts it instead. */
           if (machineHas('gmist')) {
-            gmistBtns.push(mkPen('fa-pen-to-square', 'Open in local gmist (a TagFox window; starts npm run preview:local if it is not up)', 'Open in local gmist', openRowInLocalGmist));
+            gmistBtns.push(mkPen('fa-pen-to-square', 'Open in local gmist (a Whippet window; starts npm run preview:local if it is not up)', 'Open in local gmist', openRowInLocalGmist));
           }
           // Online: the deployed worker, only for a file under a Drive mount.
           if (pathUnderGoogleDrive(fp)) {
@@ -13108,7 +13108,7 @@
         btnStar.type = 'button';
         btnStar.className = 'results-row-star' + (starred ? ' results-row-star--on' : '');
         btnStar.title = numbered
-          ? 'Star ' + place + ': Ctrl+Shift+' + place + ' opens it from anywhere in TagFox. Click to unstar (Ctrl+D)'
+          ? 'Star ' + place + ': Ctrl+Shift+' + place + ' opens it from anywhere in Whippet. Click to unstar (Ctrl+D)'
           : starred
             ? 'Unstar (Ctrl+D)'
             : 'Star: keeps it near the top of searches (Ctrl+D)';
@@ -14450,7 +14450,7 @@
             hint.textContent =
               'Saved ' +
               r.accelerator +
-              '. Recording needs at least one modifier. Works while TagFox is hidden.';
+              '. Recording needs at least one modifier. Works while Whippet is hidden.';
         } else {
           if (st) setStatusMain((r && r.error) || 'Could not set global shortcut.');
           if (hint) hint.textContent = (r && r.error) || 'Registration failed — shortcut unchanged.';
@@ -14481,7 +14481,7 @@
           if (st) setStatusMain('Quick TODO shortcut: ' + r.accelerator);
           if (hint)
             hint.textContent =
-              'Saved ' + r.accelerator + '. Recording needs at least one modifier. Works only while TagFox is running.';
+              'Saved ' + r.accelerator + '. Recording needs at least one modifier. Works only while Whippet is running.';
         } else {
           if (st) setStatusMain((r && r.error) || 'Could not set Quick TODO shortcut.');
           if (hint) hint.textContent = (r && r.error) || 'Registration failed — shortcut unchanged.';
@@ -14910,8 +14910,8 @@
     if (typeof window.tagBrowser.setAppRestartHintHandler === 'function') {
       window.tagBrowser.setAppRestartHintHandler((payload) => {
         const src = payload && payload.source;
-        if (src === 'menu') setStatusMain('Restarting TagFox (menu)…');
-        else setStatusMain('Restarting TagFox (Ctrl+F5)…');
+        if (src === 'menu') setStatusMain('Restarting Whippet (menu)…');
+        else setStatusMain('Restarting Whippet (Ctrl+F5)…');
       });
     }
     if (typeof window.tagBrowser.setQuickTodoOpenHandler === 'function') {
@@ -15084,7 +15084,7 @@
       } catch (e) {
         r = { ok: false, error: String((e && e.message) || e) };
       }
-      if (!r || !r.ok) setStatusMain('Not sent to the dialog: ' + ((r && r.error) || 'no answer from TagFox'));
+      if (!r || !r.ok) setStatusMain('Not sent to the dialog: ' + ((r && r.error) || 'no answer from Whippet'));
     }
     function sendScopeFolderToFileDialog() {
       const folder = currentScopeFolderPath();
@@ -15622,7 +15622,7 @@
         const st = document.getElementById('statusMain');
         void (async () => {
           if (!window.tagBrowser) {
-            if (st) setStatusMain('Electron bridge missing — run TagFox with npm start (not a raw browser tab).');
+            if (st) setStatusMain('Electron bridge missing — run Whippet with npm start (not a raw browser tab).');
             console.warn('[TagFox] window.tagBrowser missing');
             return;
           }
@@ -15630,7 +15630,7 @@
             if (typeof window.tagBrowser.pickScopeFolder !== 'function') {
               if (st)
                 setStatusMain(
-                  'Folder picker not available — fully quit TagFox and start again so preload.js is reloaded.'
+                  'Folder picker not available — fully quit Whippet and start again so preload.js is reloaded.'
                 );
               console.warn('[TagFox] pickScopeFolder missing on tagBrowser');
               return;
@@ -15647,7 +15647,7 @@
           }
           if (addProfile) {
             if (typeof window.tagBrowser.userHomeDir !== 'function') {
-              if (st) setStatusMain('Profile folder not available — restart TagFox.');
+              if (st) setStatusMain('Profile folder not available — restart Whippet.');
               console.warn('[TagFox] userHomeDir missing on tagBrowser');
               return;
             }
@@ -15689,7 +15689,7 @@
         const st = document.getElementById('statusMain');
         void (async () => {
           if (!window.tagBrowser) {
-            if (st) setStatusMain('Electron bridge missing — run TagFox with npm start.');
+            if (st) setStatusMain('Electron bridge missing — run Whippet with npm start.');
             return;
           }
           if (clearF) {
@@ -15698,7 +15698,7 @@
           }
           if (pick) {
             if (typeof window.tagBrowser.pickScopeFolder !== 'function') {
-              if (st) setStatusMain('Folder picker not available — restart TagFox.');
+              if (st) setStatusMain('Folder picker not available — restart Whippet.');
               return;
             }
             try {
@@ -15778,12 +15778,12 @@
       const btn = document.getElementById('btnRestartTagFox');
       if (btn) {
         btn.classList.toggle('d-none', !stale.length);
-        btn.title = 'Changed since TagFox started: ' + stale.join(', ') + '. Click to restart and run the new code.';
+        btn.title = 'Changed since Whippet started: ' + stale.join(', ') + '. Click to restart and run the new code.';
       }
       const tf = document.getElementById('runningNowTagFox');
       if (tf) {
         tf.textContent =
-          'TagFox: started ' + whenText(info.startedAt) + ', PID ' + info.pid +
+          'Whippet: started ' + whenText(info.startedAt) + ', PID ' + info.pid +
           (info.restartsInTerminal ? ', under npm start' : ', not under npm start (a restart detaches it)') +
           (stale.length ? '. Code changed since: ' + stale.join(', ') + ' (Restart in the search box).' : '. Running the code on disk.');
       }
@@ -15794,7 +15794,7 @@
           ? 'gmist: none on this machine, so markdown opens in its default app.'
           : !g.devPortHeld
           ? 'gmist: not running' + (g.sidecarPortHeld ? ', but something holds its sidecar port 5199' : '') +
-            '. TagFox starts it the first time a markdown file is opened.'
+            '. Whippet starts it the first time a markdown file is opened.'
           : 'gmist: ' + (g.holder ? g.holder.kind : 'running') +
             (g.holder && g.holder.started ? ', started ' + whenText(g.holder.started) : '') +
             (g.holder && g.holder.pid ? ', PID ' + g.holder.pid : '') + ', on port 5173.';
@@ -15917,7 +15917,7 @@
     document.getElementById('btnShelfOsDrag').addEventListener('click', () => {
       tagBrowserNextOsFileDrag = true;
       setStatusMain(
-        'Next drag armed as a real file drag — drop into Explorer or another app. Without this, drags stay inside TagFox.'
+        'Next drag armed as a real file drag — drop into Explorer or another app. Without this, drags stay inside Whippet.'
       );
     });
     document.getElementById('btnShelfClear').addEventListener('click', async () => {

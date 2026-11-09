@@ -54,6 +54,10 @@ const fssync = require('fs');
 const os = require('os');
 const path = require('path');
 
+/* The installer's product name is Whippet, which would move a packaged install's settings folder from
+   %APPDATA%\TagFox to %APPDATA%\Whippet; keep the old one, so an install that is updated keeps its settings. */
+if (app.isPackaged) app.setPath('userData', path.join(app.getPath('appData'), 'TagFox'));
+
 /* Under `npm start`, scripts/start.js starts TagFox again when it exits with this code. Trust it only when
    the parent really is that wrapper, and take it out of the environment, which every child and every
    app.relaunch() inherits. It used to be read from the environment alone, so a TagFox that a Ctrl+F5 had
@@ -635,7 +639,7 @@ async function runGoogleOAuthDesktopFlowAndPersistToken(oauth2, redirectUri) {
         if (err) {
           res.statusCode = 200;
           res.setHeader('Content-Type', 'text/html; charset=utf-8');
-          res.end('<h3>TagFox Google auth cancelled.</h3>You can close this tab.');
+          res.end('<h3>Whippet Google auth cancelled.</h3>You can close this tab.');
           server.close(() => finish(new Error(`Google auth error: ${err}`)));
           return;
         }
@@ -646,7 +650,7 @@ async function runGoogleOAuthDesktopFlowAndPersistToken(oauth2, redirectUri) {
         }
         res.statusCode = 200;
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
-        res.end('<h3>TagFox Google auth complete.</h3>You can close this tab and return to TagFox.');
+        res.end('<h3>Whippet Google auth complete.</h3>You can close this tab and return to Whippet.');
         server.close(() => finish(null, { code }));
       } catch (e) {
         try {
@@ -2234,7 +2238,7 @@ function installApplicationMenu() {
     /* No F5 accelerator: Windows always registers it and the renderer never gets F5 (refresh search). Use menu click for full reload(). */
     { label: 'Reload', click: reloadWindow },
     /* No role:forceReload — Ctrl+F5 restarts the whole app instead. */
-    { label: 'Restart TagFox', accelerator: 'CmdOrCtrl+F5', click: restartApp },
+    { label: 'Restart Whippet', accelerator: 'CmdOrCtrl+F5', click: restartApp },
     { type: 'separator' },
     { role: 'toggleDevTools' },
     { type: 'separator' },
@@ -2261,7 +2265,7 @@ function installApplicationMenu() {
       ]
     : [
         /* Labelled, since the role reads "Exit" on Windows and the / command and the help say Quit TagFox. */
-        { label: 'File', submenu: [{ role: 'quit', label: 'Quit TagFox' }] },
+        { label: 'File', submenu: [{ role: 'quit', label: 'Quit Whippet' }] },
         { label: 'View', submenu: viewSubmenu },
       ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -2592,7 +2596,7 @@ function registerQuickTodoShortcut(accelRaw) {
   if (globalToggleRegistered && accel === globalToggleRegistered) {
     return {
       ok: false,
-      error: 'That shortcut is already used for Toggle TagFox.',
+      error: 'That shortcut is already used for Toggle Whippet.',
       accelerator: quickTodoHotkeyRegistered || loadQuickTodoAccelFromDisk(),
     };
   }
@@ -4090,7 +4094,7 @@ function offerOnlineGmistTarget(parentWin, url) {
   const owner = parentWin && !parentWin.isDestroyed() && parentWin.getParentWindow ? parentWin.getParentWindow() : null;
   Menu.buildFromTemplate([
     {
-      label: 'Open online gmist in a TagFox window',
+      label: 'Open online gmist in a Whippet window',
       click: () => openWebEditorWindow(owner || parentWin, url, 'gmistOnline'),
     },
     {
@@ -4107,7 +4111,7 @@ function offerOnlineGmistTarget(parentWin, url) {
  */
 function setWebEditorWindowTitle(win, { label, pageTitle } = {}) {
   if (!win || win.isDestroyed()) return;
-  const kindName = (win.webEditKind && win.webEditKind.windowKindName) || 'TagFox';
+  const kindName = (win.webEditKind && win.webEditKind.windowKindName) || 'Whippet';
   if (label !== undefined) win.webEditLabel = label || '';
   if (pageTitle !== undefined) win.webEditPageTitle = pageTitle || '';
   const name = win.webEditLabel || win.webEditPageTitle || '';
@@ -5098,7 +5102,7 @@ async function startLocalGmist() {
         up: false,
         noRepo: true,
         error:
-          'No gmist ("mist") checkout was found beside TagFox. Set one in ' +
+          'No gmist ("mist") checkout was found beside Whippet. Set one in ' +
           localGmistPrefsPath() +
           ' as {"repoDir": "C:\\\\dev\\\\mist"}.',
       };

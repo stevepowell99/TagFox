@@ -34,18 +34,18 @@
 
 <!-- help:tab {"id":"essentials","label":"Get started","active":true} -->
 
-### What TagFox does
+### What Whippet does
 
-TagFox finds files and folders on your computer as you type, and lets you open, preview, move, rename and tag them without going through File Explorer. Most things can be done from the keyboard.
+Whippet finds files and folders on your computer as you type, and lets you open, preview, move, rename and tag them without going through File Explorer. Most things can be done from the keyboard.
 
 ### Everything has to be running
 
-TagFox does not search the disk itself. It asks [Everything](https://www.voidtools.com/), a free search program from voidtools, which keeps an index of every file name on the computer. If TagFox finds nothing at all, Everything is probably not running: look for its icon in the system tray, or see **Setting up**.
+Whippet does not search the disk itself. It asks [Everything](https://www.voidtools.com/), a free search program from voidtools, which keeps an index of every file name on the computer. If Whippet finds nothing at all, Everything is probably not running: look for its icon in the system tray, or see **Setting up**.
 
-### Bring TagFox up from anywhere
+### Bring Whippet up from anywhere
 
-- `Ctrl`+`Alt`+`Space` shows TagFox from any program, and pressing it again hides it. You can choose another key in **Settings**, under **Global hotkey & Quick TODO**: click **Record…** and press the keys you want.
-- The × at the top right of the window, or `Ctrl`+`W`, hides TagFox rather than closing it, so the shortcut still brings it back. To quit, choose **File → Quit TagFox**, or the `/` command **Quit TagFox**. The shortcuts then stop working until TagFox starts again.
+- `Ctrl`+`Alt`+`Space` shows Whippet from any program, and pressing it again hides it. You can choose another key in **Settings**, under **Global hotkey, Quick TODO & owner tags**: click **Record…** and press the keys you want.
+- The × at the top right of the window, or `Ctrl`+`W`, hides Whippet rather than closing it, so the shortcut still brings it back. To quit, choose **File → Quit Whippet**, or the `/` command **Quit Whippet**. The shortcuts then stop working until Whippet starts again.
 - `Ctrl`+`Shift`+`Space`, from anywhere, shows everything that changed in the last hour, in every folder.
 - `Alt`+`Shift`+`N`, from anywhere, opens the **Quick TODO** box, for noting a task as a file (see **Tags and tasks**).
 
@@ -53,7 +53,7 @@ TagFox does not search the disk itself. It asks [Everything](https://www.voidtoo
 
 - Type a few letters of a name. The list changes as you type.
 - `↑` and `↓` choose a row, and `Enter` opens it. On a folder, `Enter` takes you inside.
-- `Esc` steps back one thing a press: it closes a menu, unchecks rows, clears the text, leaves the folder, and last of all hides TagFox.
+- `Esc` steps back one thing a press: it closes a menu, unchecks rows, clears the text, leaves the folder, and last of all hides Whippet.
 
 ### What is on the screen
 
@@ -61,7 +61,7 @@ TagFox does not search the disk itself. It asks [Everything](https://www.voidtoo
 - The **list** shows what was found: each row's name, the folder it is in, its size and when it last changed.
 - The **Viewer**, on the right, previews whatever is selected (see **The Viewer**).
 - The **Shelf**, under the list, holds files while you find the folder they belong in (see **Working with files**).
-- Each time you bring TagFox up, and every few minutes while it is up, a line at the bottom of the list shows a tip for ten seconds. A message, such as what an action did or why it failed, takes its place for a few seconds; point at it to keep it there.
+- Each time you bring Whippet up, and every few minutes while it is up, a line at the bottom of the list shows a tip for ten seconds. A message, such as what an action did or why it failed, takes its place for a few seconds; point at it to keep it there.
 - Two faint buttons sit at the right of the search box. The first hides and shows the Viewer. The second, **Options**, lists the sort orders, filters and tags as buttons.
 
 ### Help and keys
@@ -76,7 +76,7 @@ TagFox does not search the disk itself. It asks [Everything](https://www.voidtoo
 - With the search box empty you see the current folder's own contents. Once you type, the search covers that folder and every folder inside it.
 - When you are not inside a folder, the search covers everything Everything has indexed.
 - Your words are matched against the whole path, so `budget 2026` finds `2026\budget.xlsx` as well as `budget 2026.xlsx`. `Ctrl`+`U` matches names only; press it again to go back.
-- `F5` searches again, if the list looks out of date. TagFox also searches again on its own every few seconds, and changes the list only when something has changed.
+- `F5` searches again, if the list looks out of date. Whippet also searches again on its own every few seconds, and changes the list only when something has changed.
 
 ### Moving between folders
 
@@ -111,14 +111,14 @@ TagFox does not search the disk itself. It asks [Everything](https://www.voidtoo
 ### How the list is ordered
 
 - Files whose **name** matches come before files that match only by the folder they are in. A whole word ranks above the start of a word, which ranks above a match in the middle of one.
-- After that, TagFox favours files changed recently, starred files and folders, things you open often in TagFox, and things Windows lists as recently opened in any program.
+- After that, Whippet favours files changed recently, starred files and folders, things you open often in Whippet, and things Windows lists as recently opened in any program.
 - Files under `AppData` and `ProgramData` folders, Word's `~$` lock files and the like are listed lower down, unless you typed their name.
 - `Ctrl`+`M` sorts by date, newest first, and the same key again goes back to the usual order. `/name` sorts by name, `/size` puts the largest first, and `/smallest` the smallest.
 - A search that finds a very large number of matches ranks only the newest few hundred; a note at the right of the search box then says how many it ranked out of how many it found. Type more to narrow it down.
 
 ### Saved searches
 
-- `Ctrl`+`S`, or the `/` command **Save this search**, saves the search on screen. TagFox keeps the folder, the text in the box and every filter, and names the search after its text, or after the folder when the box is empty.
+- `Ctrl`+`S`, or the `/` command **Save this search**, saves the search on screen. Whippet keeps the folder, the text in the box and every filter, and names the search after its text, or after the folder when the box is empty.
 - Each saved search becomes a `/` command of its own: type `/` and a few letters of its name. `Alt`+`1` to `Alt`+`9` run the first nine, in the order you saved them.
 - While a saved search is on screen, the `/` command reads **Forget this saved search**, and `Ctrl`+`S` says which one it is.
 
@@ -126,7 +126,7 @@ TagFox does not search the disk itself. It asks [Everything](https://www.voidtoo
 
 ### Opening
 
-- `Enter`, or a double-click, opens the selected file in its usual program. On a folder it goes inside, here in TagFox.
+- `Enter`, or a double-click, opens the selected file in its usual program. On a folder it goes inside, here in Whippet.
 - `Ctrl`+`Enter` shows the selected file in File Explorer. `Alt`+`Enter` opens its Windows **Properties**.
 - `Ctrl`+`1` to `Ctrl`+`9` open one of the first nine rows; hold `Ctrl` to see their numbers.
 
@@ -158,14 +158,14 @@ TagFox does not search the disk itself. It asks [Everything](https://www.voidtoo
 
 - Drag rows onto a folder row, or onto a folder's name in the path above the search box, to move them there. Hold `Shift` to copy instead.
 - Dropping onto a file's row puts them in the folder that file is in.
-- To drag something out of TagFox, into File Explorer, an email or another program, hold `Alt` as you start the drag.
-- You can also drag files from File Explorer into TagFox.
+- To drag something out of Whippet, into File Explorer, an email or another program, hold `Alt` as you start the drag.
+- You can also drag files from File Explorer into Whippet.
 
 ### Stars
 
-- `Ctrl`+`D`, or the star at the end of a row, stars the selected file or folder; the same again takes the star off. TagFox keeps up to 30 stars.
+- `Ctrl`+`D`, or the star at the end of a row, stars the selected file or folder; the same again takes the star off. Whippet keeps up to 30 stars.
 - A starred item sits near the top of any search that finds it.
-- `Ctrl`+`Shift`+`1` to `Ctrl`+`Shift`+`9` open your first nine stars, in the order you starred them: a folder opens here in TagFox, and a file opens in its program.
+- `Ctrl`+`Shift`+`1` to `Ctrl`+`Shift`+`9` open your first nine stars, in the order you starred them: a folder opens here in Whippet, and a file opens in its program.
 - The `/` command **Show only starred items** lists the stars in the current folder and the folders inside it, or every star when you are not in a folder.
 
 ### The Shelf
@@ -182,11 +182,11 @@ The Shelf is the strip under the list. It holds files and folders while you go a
 
 ### Another program's Open and Save dialogs
 
-TagFox can pick the file for a program that is asking you to open or save one.
+Whippet can pick the file for a program that is asking you to open or save one.
 
-- With an Open or Save dialog on screen (Notepad's, a browser's upload, most of Office), press TagFox's shortcut (`Ctrl`+`Alt`+`Space`, unless you chose another). TagFox comes up with a strip above the search box saying where the next pick goes, such as **Next pick goes to: Notepad · Open**.
-- Find the file or folder as usual, then press `Enter` or double-click it. TagFox steps aside and the dialog takes it. In an Open dialog a file opens, and a folder is shown in the dialog. A Save dialog gets the folder and keeps the file name it already had, and you press **Save** yourself.
-- `Ctrl`+`Enter`, or **Send this folder** on the strip, sends the folder TagFox is showing.
+- With an Open or Save dialog on screen (Notepad's, a browser's upload, most of Office), press Whippet's shortcut (`Ctrl`+`Alt`+`Space`, unless you chose another). Whippet comes up with a strip above the search box saying where the next pick goes, such as **Next pick goes to: Notepad · Open**.
+- Find the file or folder as usual, then press `Enter` or double-click it. Whippet steps aside and the dialog takes it. In an Open dialog a file opens, and a folder is shown in the dialog. A Save dialog gets the folder and keeps the file name it already had, and you press **Save** yourself.
+- `Ctrl`+`Enter`, or **Send this folder** on the strip, sends the folder Whippet is showing.
 - `Esc`, or the × on the strip, stops sending to the dialog, and `Enter` opens rows again.
 
 <!-- help:tab {"id":"viewer","label":"The Viewer"} -->
@@ -194,13 +194,13 @@ TagFox can pick the file for a program that is asking you to open or save one.
 ### Previews
 
 - Select a file and the Viewer on the right shows it: pictures, PDFs, Word documents (the text only, for an old `.doc`), web pages, text and markdown files, sound and video.
-- A Google Doc, Sheet or Slides deck shows as the PDF Google makes of it, which takes about a second. TagFox uses the Google sign-in of its own Google window. If the Viewer says it is not signed in, click **Open in TagFox** to sign in there once. **Edit** at the top of the Viewer opens the document in that window.
+- A Google Doc, Sheet or Slides deck shows as the PDF Google makes of it, which takes about a second. Whippet uses the Google sign-in of its own Google window. If the Viewer says it is not signed in, click **Open in Whippet** to sign in there once. **Edit** at the top of the Viewer opens the document in that window.
 - Its top line shows the file's name. Under that are its tags, its size, when it last changed and the folder it is in; click the folder to copy the file's full path.
 - A file the Viewer cannot show says so, and offers **Open** and **Show in folder**.
 
 ### Showing and hiding it
 
-- The Viewer starts at a third of the window. Drag the gap between the list and the Viewer to make it wider or narrower, and TagFox remembers the width. Double-click the gap to put it back to a third.
+- The Viewer starts at a third of the window. Drag the gap between the list and the Viewer to make it wider or narrower, and Whippet remembers the width. Double-click the gap to put it back to a third.
 - `Alt`+`P`, or the first faint button at the right of the search box, hides the Viewer and gives the list the whole width. The same again brings it back.
 - `Shift`+`Space`, or the arrows button at the top right of the Viewer, makes it fill most of the window. The same again puts it back.
 
@@ -208,7 +208,7 @@ TagFox can pick the file for a program that is asking you to open or save one.
 
 - A text or markdown file has an **Edit** button, which opens an editor beside the preview; double-clicking the text does the same.
 - Your changes are saved as you type, and a note beside the button says when they were. **Done** closes the editor.
-- If something else changed the file since TagFox loaded it, TagFox does not save over it and says so. The reload button at the top of the Viewer loads the file again from disk.
+- If something else changed the file since Whippet loaded it, Whippet does not save over it and says so. The reload button at the top of the Viewer loads the file again from disk.
 
 ### Folders
 
@@ -223,9 +223,9 @@ When you select a folder, the Viewer has two tabs.
 
 ### Tags live in the file name
 
-A tag is a short code word in a file's name, such as `xkTODO` in `Report xkTODO.docx`. Because the tag is part of the name, it goes wherever the file goes: File Explorer, Google Drive, a zip file or an email attachment. TagFox shows the tags as labels in front of the name, and leaves them out of the name itself.
+A tag is a short code word in a file's name, such as `xkTODO` in `Report xkTODO.docx`. Because the tag is part of the name, it goes wherever the file goes: File Explorer, Google Drive, a zip file or an email attachment. Whippet shows the tags as labels in front of the name, and leaves them out of the name itself.
 
-TagFox knows three kinds of tag, each with its own two-letter prefix:
+Whippet knows three kinds of tag, each with its own two-letter prefix:
 
 | Kind | Prefix | Words |
 |---|---|---|
@@ -257,27 +257,27 @@ Owner names are 2 to 12 letters or digits, separated by commas or spaces in the 
 
 ### Hiding a file until a date
 
-- The tag editor's **Hide until** date adds a token such as `xh-2026-09-01`. TagFox leaves the file out of every list until that day, and then it comes back on its own. Use it for a task that cannot start yet.
+- The tag editor's **Hide until** date adds a token such as `xh-2026-09-01`. Whippet leaves the file out of every list until that day, and then it comes back on its own. Use it for a task that cannot start yet.
 - The `/` command **Show files hidden until a later date** lists them anyway.
-- The hiding happens only in TagFox. File Explorer, Everything and Google Drive still show the file.
+- The hiding happens only in Whippet. File Explorer, Everything and Google Drive still show the file.
 
 ### Copies of tasks
 
-- A tagged file inside a `_tmp` folder, an `archive` or `_archive` folder, or a linked git worktree (a second checkout of a repository) is a copy of a task, so TagFox leaves it out of the list. Files without tags there are listed as usual.
+- A tagged file inside a `_tmp` folder, an `archive` or `_archive` folder, or a linked git worktree (a second checkout of a repository) is a copy of a task, so Whippet leaves it out of the list. Files without tags there are listed as usual.
 - Inside such a folder, its own tasks are listed: only the folders below the one you are in count.
 - The `/` command **Show task copies** lists them anyway.
 
 ### Writing a task down
 
 - **Quick TODO** makes a markdown file whose name is the task, such as `Ring the bank xkTODO.md`. Type a title and press the save button.
-- `Alt`+`Shift`+`N` opens it from anywhere in Windows. The file goes in the **Quick TODO folder**, which you choose in **Settings** under **Global hotkey & Quick TODO**.
+- `Alt`+`Shift`+`N` opens it from anywhere in Windows. The file goes in the **Quick TODO folder**, which you choose in **Settings** under **Global hotkey, Quick TODO & owner tags**.
 - `Ctrl`+`N`, **New TODO** in the Viewer when a folder is selected, or the `/` command **New TODO in this folder** opens the same box aimed at that folder. Outside a folder, `Ctrl`+`N` aims it at the Quick TODO folder.
 - The box's tag button chooses its tags, deadline and hide-until date, and its other button adds text to go inside the file. **Open in list after save** takes you to the new file.
 - When the task is done, delete the file, or change its tag.
 
 <!-- help:tab {"id":"runner","label":"Keys"} -->
 
-Every key TagFox answers to. `?`, with the search box empty, opens this list.
+Every key Whippet answers to. `?`, with the search box empty, opens this list.
 
 <div id="runnerKeysTable"></div>
 
@@ -289,16 +289,16 @@ Every key TagFox answers to. `?`, with the search box empty, opens this list.
 2. Install the HTTP Server plugin for your version of Windows: the <a href="https://www.voidtools.com/Everything-HTTP-Server-1.0.3.4.x64-Setup.exe" target="_blank" rel="noopener">64-bit installer</a> for nearly every computer today, or the <a href="https://www.voidtools.com/Everything-HTTP-Server-1.0.3.4.x86-Setup.exe" target="_blank" rel="noopener">32-bit installer</a>.
 3. In Everything, open **Tools → Options → HTTP Server**, turn it on, and keep the address `127.0.0.1` and port `8080` unless you have a reason to change them.
 
-### Connect TagFox
+### Connect Whippet
 
-- Start TagFox. In **Settings**, under **Connection to Everything Search**, the address should be the same as Everything's: `http://127.0.0.1:8080` unless you changed it.
+- Start Whippet. In **Settings**, under **Connection to Everything Search**, the address should be the same as Everything's: `http://127.0.0.1:8080` unless you changed it.
 - If you gave Everything's HTTP server a username and password, enter the same ones here.
-- Everything has to be running whenever you use TagFox. Its icon sits in the system tray.
+- Everything has to be running whenever you use Whippet. Its icon sits in the system tray.
 
 ### Settings worth knowing
 
-- **Global hotkey & Quick TODO**: the key that shows and hides TagFox, the Quick TODO key, and the folder new Quick TODO files go in.
+- **Global hotkey, Quick TODO & owner tags**: the key that shows and hides Whippet, the Quick TODO key, the folder new Quick TODO files go in, and the owner names for `xp` tags.
 - **Search only inside one folder**: keeps every search inside one folder or drive, such as your Windows profile folder.
-- **Auto-refresh**: how often TagFox looks for changes made outside it.
+- **Auto-refresh**: how often Whippet looks for changes made outside it.
 - **Search results**: highlight the matching letters, show thumbnails in place of file icons, and show a larger preview when the pointer rests on a file's icon.
 - **Hide the window's title bar** gives the list more room, from the next start. Drag the window by the strip along its top.

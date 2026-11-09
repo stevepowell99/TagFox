@@ -206,7 +206,7 @@ function describeFileDialog(dlg) {
 /** Still the same visible #32770 dialog of the same process, with its file-name box found again; else why not. */
 function checkTarget(target) {
   const u = load();
-  if (!u) return { ok: false, error: 'TagFox cannot reach other windows here: ' + loadError };
+  if (!u) return { ok: false, error: 'Whippet cannot reach other windows here: ' + loadError };
   if (!target || !target.hwnd) return { ok: false, error: 'No dialog is waiting.' };
   const dlg = target.hwnd;
   if (!u.IsWindow(dlg) || className(u, dlg) !== '#32770' || pidOf(u, dlg) !== target.pid || !u.IsWindowVisible(dlg)) {

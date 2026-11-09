@@ -5,7 +5,7 @@
 //     Positive control, run by hand on 25 October 2026: with the close handler switched off, the same
 //     message ended the process. The renderer's own window.close() is no stand-in: it ends the window
 //     without the close event the handler listens for;
-//   - the options panel, and so the / list, offers Quit TagFox;
+//   - the options panel, and so the / list, offers Quit Whippet;
 //   - quitTagFox (that command's route) ends the process, as File → Quit does through before-quit.
 //
 // Run: node test/close-hides.cjs
@@ -62,11 +62,11 @@ async function main() {
     check(await answers('document.readyState'), 'closing the main window (WM_CLOSE) leaves TagFox running');
 
     const hasQuit = await drv.ev(`(() => { const b = document.getElementById('btnRunnerOpts'); b.click(); const on = !!document.querySelector('#runnerOptsPanel [data-cmd-id="quit"]'); b.click(); return on; })()`);
-    check(hasQuit, 'the options panel, and so the / list, offers Quit TagFox');
+    check(hasQuit, 'the options panel, and so the / list, offers Quit Whippet');
 
     await drv.ev('window.tagBrowser.quitTagFox(), 1').catch(() => {});
     await sleep(2500);
-    check(!(await answers('1 + 1')), 'Quit TagFox ends it');
+    check(!(await answers('1 + 1')), 'Quit Whippet ends it');
   } catch (e) {
     failures.push('threw: ' + (e && e.message));
     console.log('  FAIL threw:', e && e.message);

@@ -42,7 +42,7 @@ try {
   fs.copyFileSync(src, dest);
   console.log('Copied installer to:', dest);
   for (const name of fs.readdirSync(copyDir)) {
-    if (name !== exeNames[0] && /^TagFox Setup .*\.exe$/i.test(name)) {
+    if (name !== exeNames[0] && /^(TagFox|Whippet) Setup .*\.exe$/i.test(name)) {
       fs.unlinkSync(path.join(copyDir, name));
       console.log('Removed older installer:', name);
     }
