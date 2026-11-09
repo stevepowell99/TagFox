@@ -1,6 +1,6 @@
 Steve, 8 and 9 November 2026: release TagFox more widely on GitHub under a clearer name ("FileCat or whatever"). Shipping gmist's editor inside TagFox was considered and dropped (9 November): it would duplicate gmist's file-sync rules and clash with TagFox's window keys.
 
-- **Already in good shape**
+- **Already ready**
   - Buttons that cannot work on a machine are hidden (`machine-features`): gmist, Print to PDF and Drive sign-in vanish where those are absent
   - The repo is already public (0 stars), so nothing private is newly exposed
 - **Specific to us, by size**
@@ -13,7 +13,7 @@ Steve, 8 and 9 November 2026: release TagFox more widely on GitHub under a clear
 - **Limits any user meets**
   - Windows only, and needs Everything 1.5a with its HTTP server
 - **Release basics missing**
-  - No `LICENSE`; `package.json` has no licence or author; it is named `tagbrowser`, app id `app.tagbrowser`
+  - There is no `LICENSE`, and `package.json` does not name a licence or author; it is named `tagbrowser`, app id `app.tagbrowser`
 - **Rename: what the name is tied to**
   - User-facing: product name, window title, help, README, repo name (GitHub redirects the old one)
   - Structural: Electron's settings folder follows the app name, `%LOCALAPPDATA%\TagFox` logs (gmist's `GmistLocal` task writes there too), the `TagFoxAutostart` task, `tagfox-local-gmist.json`, the `#tagfoxtest` hook, `tagfox-` CSS classes, `window.tagBrowser`, the hub's `projects.md`, skills and `machine-parity.ps1`
