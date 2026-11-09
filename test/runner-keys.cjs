@@ -315,7 +315,8 @@ async function main() {
     const keysHelp = await drv.ev(`(() => { const t = document.getElementById('runnerKeysTable'); const tab = document.querySelector('#helpModalTabs .nav-link.active')?.dataset.helpTab; return { tab, rows: t ? t.querySelectorAll('tbody tr').length : 0, altP: !!t && /Alt\\+P/.test(t.textContent.replace(/\\s+/g, '')) }; })()`);
     check(keysHelp.tab === 'runner' && keysHelp.rows > 20 && keysHelp.altP, `? opens Help at Runner's keys (${JSON.stringify(keysHelp)})`);
     await drv.ev(`bootstrap.Modal.getInstance(document.getElementById('helpModal'))?.hide(); 1`);
-    await sleep(500);
+    // Wait for the fade to finish: under a loaded suite, F1 during it once left Help on the Runner tab.
+    for (let i = 0; i < 40 && await drv.ev(`(() => { const m = document.getElementById('helpModal'); return m.classList.contains('show') || m.style.display === 'block'; })()`); i++) await sleep(100);
 
     // F1 opens Help on Get started (after ?, so the Keys tab is the one last shown).
     await key('F1', 'F1', 112);

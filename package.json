@@ -48,7 +48,7 @@
       "target": [
         "nsis"
       ],
-      "signAndEditExecutable": false,
+      "signExecutable": false,
       "icon": "icons/whippet.ico"
     },
     "nsis": {
