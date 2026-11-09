@@ -101,6 +101,8 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   listChildFolders: (payload) => ipcRenderer.invoke('list-child-folders', payload),
   /** { ok, kinds: { [path]: 'file' | 'folder' | 'missing' } } */
   pathKinds: (paths) => ipcRenderer.invoke('path-kinds', paths),
+  /** { ok, roots: the folders among these whose .git file marks a linked worktree } */
+  linkedWorktrees: (dirs) => ipcRenderer.invoke('linked-worktrees', dirs),
   listFolderEntries: (payload) => ipcRenderer.invoke('list-folder-entries', payload),
   debugFolderSnapshot: (payload) => ipcRenderer.invoke('debug-folder-snapshot', payload),
   focusWebContents: () => ipcRenderer.send('tagbrowser-focus-web-contents'),

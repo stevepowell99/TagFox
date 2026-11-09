@@ -259,6 +259,12 @@ A word only counts as a tag with its own prefix: `xkTODO` is a tag, while `todo`
 - The `/` command **Show files hidden until a later date** lists them anyway.
 - The hiding happens only in TagFox. File Explorer, Everything and Google Drive still show the file.
 
+### Copies of tasks
+
+- A tagged file inside a `_tmp` folder, an `archive` or `_archive` folder, or a linked git worktree (a second checkout of a repository) is a copy of a task, so TagFox leaves it out of the list. Files without tags there are listed as usual.
+- Inside such a folder, its own tasks are listed: only the folders below the one you are in count.
+- The `/` command **Show task copies** lists them anyway.
+
 ### Writing a task down
 
 - **Quick TODO** makes a markdown file whose name is the task, such as `Ring the bank xkTODO.md`. Type a title and press the save button.

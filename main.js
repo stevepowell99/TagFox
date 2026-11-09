@@ -6411,6 +6411,22 @@ ipcMain.handle('path-kinds', async (_event, paths) => {
   return { ok: true, kinds };
 });
 
+/** Which of these folders, each holding a file named .git, is a linked git worktree: its .git points into
+    <repo>\.git\worktrees\. A Drive repo's .git file points at C:\dev\_gitdirs and is not one. */
+ipcMain.handle('linked-worktrees', async (_event, dirs) => {
+  const list = Array.isArray(dirs) ? [...new Set(dirs.map((d) => String(d || '')).filter(Boolean))] : [];
+  const roots = [];
+  await Promise.all(
+    list.map(async (dir) => {
+      try {
+        const text = await fs.readFile(path.join(dir, '.git'), 'utf8');
+        if (/^gitdir:.*[\\/]worktrees[\\/]/m.test(text)) roots.push(dir);
+      } catch (_) {}
+    })
+  );
+  return { ok: true, roots, read: list.length };
+});
+
 /** Subfolders only (breadcrumb sibling picker). */
 ipcMain.handle('list-child-folders', async (_event, { parentPath }) => {
   const t0 = Date.now();

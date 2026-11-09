@@ -311,6 +311,12 @@
               <li>The <code>/</code> command <strong>Show files hidden until a later date</strong> lists them anyway.</li>
               <li>The hiding happens only in TagFox. File Explorer, Everything and Google Drive still show the file.</li>
               </ul>
+              <h3>Copies of tasks</h3>
+              <ul>
+              <li>A tagged file inside a <code>_tmp</code> folder, an <code>archive</code> or <code>_archive</code> folder, or a linked git worktree (a second checkout of a repository) is a copy of a task, so TagFox leaves it out of the list. Files without tags there are listed as usual.</li>
+              <li>Inside such a folder, its own tasks are listed: only the folders below the one you are in count.</li>
+              <li>The <code>/</code> command <strong>Show task copies</strong> lists them anyway.</li>
+              </ul>
               <h3>Writing a task down</h3>
               <ul>
               <li><strong>Quick TODO</strong> makes a markdown file whose name is the task, such as <code>Ring the bank xkTODO.md</code>. Type a title and press the save button.</li>

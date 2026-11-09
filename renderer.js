@@ -3569,6 +3569,7 @@
       { id: 'hidden-until', group: 'Due', label: 'Show files hidden until a later date (xh-)', isOn: () => showHiddenUntil, run: () => setShowHiddenUntil(!showHiddenUntil) },
       { id: 'starred', group: 'Show', label: 'Show only starred items', isOn: () => runnerStarredOnlyOn(), run: () => runnerToggleStarredOnly() },
       { id: 'system', group: 'Show', label: 'Show system files (. $ desktop.ini)', isOn: () => !isHideSpecialPaths(), run: () => runnerToggleSystemFiles() },
+      { id: 'task-copies', group: 'Show', label: 'Show task copies (tagged files in _tmp, archive and linked git worktrees)', isOn: () => showTaskCopies, run: () => setShowTaskCopies(!showTaskCopies) },
       { id: 'tilde', group: 'Show', label: 'Hide ~ paths (lock files, ~folders; listed lower when shown)', isOn: () => isHideTildePaths(), run: () => runnerToggleTilde() },
       { id: 'temp', group: 'Show', label: 'Hide temp files (AppData\\Local\\Temp; listed lower when shown)', isOn: () => runnerHideTempOn(), run: () => runnerToggleTemp() },
       { id: 'folders', group: 'Show', label: 'Folders only', isOn: () => isFoldersOnly(), run: () => runnerSetContent(isFoldersOnly() ? 'all' : 'folders') },
@@ -3647,6 +3648,7 @@
         hideTemp: runnerHideTempOn(),
         deadline: activeDeadlineRange || '',
         showHiddenUntil: !!showHiddenUntil,
+        showTaskCopies: !!showTaskCopies,
       };
     }
     function savedSearchFilters(s) {
@@ -3659,6 +3661,7 @@
         hideTemp: !!f.hideTemp,
         deadline: DEADLINE_RANGE_IDS.includes(f.deadline) ? f.deadline : '',
         showHiddenUntil: !!f.showHiddenUntil,
+        showTaskCopies: !!f.showTaskCopies,
       };
     }
 
@@ -3750,7 +3753,9 @@
       persistDeadlineFilter();
       showHiddenUntil = f.showHiddenUntil;
       flag(LS_SHOW_HIDDEN, showHiddenUntil);
-      const st = searchStateWithoutCeiling({ ...runnerDefaultSearchState(), ...savedSearchCore(s) });
+      showTaskCopies = f.showTaskCopies;
+      flag(LS_SHOW_TASK_COPIES, showTaskCopies);
+      const st =searchStateWithoutCeiling({ ...runnerDefaultSearchState(), ...savedSearchCore(s) });
       applySearchState(st);
       selectAfterSearchKey = null;
       updateQueryPlaceholder();
@@ -3942,6 +3947,14 @@
         label: () => 'Showing files hidden until a later date',
         reset: () => setShowHiddenUntil(false),
       },
+      {
+        id: 'task-copies',
+        icon: 'fa-clone',
+        narrows: false,
+        on: () => showTaskCopies,
+        label: () => 'Showing task copies',
+        reset: () => setShowTaskCopies(false),
+      },
     ];
 
     function runnerActiveFilterChips() {
@@ -4062,6 +4075,8 @@
       persistDeadlineFilter();
       showHiddenUntil = false;
       localStorage.removeItem(LS_SHOW_HIDDEN);
+      showTaskCopies = false;
+      localStorage.removeItem(LS_SHOW_TASK_COPIES);
       saveSettings();
       void runSearchNow();
     }
@@ -4965,21 +4980,23 @@
        instance had been up two weeks: first query 9874ms, then 12ms, 51ms, 45ms, 42ms. That one cold
        query is the whole of "TagFox is frozen after I wake it up" — a filter click calls runSearchNow(),
        which queues on searchMutex behind it and shows nothing, so the list sits stale for ten seconds.
-       A trivial query every few minutes keeps the pages resident, which costs nothing once warm. */
+       A trivial query every few minutes keeps the pages resident, which costs nothing once warm. That query
+       is the linked-worktree lookup (refreshLinkedWorktreeRoots, 2-4ms warm), so the two cost one query. */
     const EVERYTHING_KEEPALIVE_MS = 3 * 60 * 1000;
     let everythingKeepaliveTimerId = null;
 
     async function everythingKeepalivePing() {
       if (searchInFlight) return;
       try {
-        await everythingSearchOnce({ searchText: 'tagfox-keepalive-no-match', count: 1 });
+        await refreshLinkedWorktreeRoots();
       } catch (_) {}
     }
 
+    /* The first lookup runs even while the first search does, or task copies would show until the next ping. */
     function startEverythingKeepalive() {
       if (everythingKeepaliveTimerId) return;
       everythingKeepaliveTimerId = setInterval(() => void everythingKeepalivePing(), EVERYTHING_KEEPALIVE_MS);
-      void everythingKeepalivePing();
+      void refreshLinkedWorktreeRoots().catch(() => {});
     }
 
     /* One search flow at a time, so two F5 or auto-refresh ticks cannot interleave: every call waits on
@@ -11324,6 +11341,7 @@
       setRecencyFilterMode('all');
       restoreDeadlineFilter();
       restoreHideUntilFilter();
+      restoreTaskCopiesFilter();
       {
         const hm = document.getElementById('optHighlightMatchedNames');
         if (hm) hm.checked = localStorage.getItem(LS.highlightMatchedNames) !== '0';
@@ -12267,6 +12285,69 @@
       else localStorage.removeItem(LS_SHOW_HIDDEN);
       void runSearchNow();
     }
+
+    /* ---- Task copies ----------------------------------------------------------------------------
+     * A task file (one whose name carries a tag) inside a linked git worktree, a `_tmp` folder or an
+     * `archive` or `_archive` folder is a copy of a task rather than a task: a worktree copies its
+     * repo's backlog as it stood at the branch point, done tasks included, and `_tmp` collects worktree
+     * and test leftovers. On 9 November 2026 about 530 of the 1,334 files Everything held with a status
+     * tag were such copies. They are left out, as the hub's session-start scan leaves them out
+     * (`bin\surface-tasks.ps1`; the two lists change together). Only folders below the one being browsed
+     * count, so a search inside a worktree or an archive folder lists its own tasks, and untagged files
+     * are never touched. The / command "Show task copies" lists them anyway.
+     */
+    let showTaskCopies = false;
+    const LS_SHOW_TASK_COPIES = 'tagfox-show-task-copies';
+    const TASK_COPY_FOLDER_NAMES = new Set(['_tmp', 'archive', '_archive']);
+    /** The roots of this machine's linked worktrees, as pathKeyLoose keys (refreshLinkedWorktreeRoots). */
+    let linkedWorktreeRootKeys = [];
+    /** Files named .git on the machine: 19 on 9 November 2026. A larger count is reported, never cut. */
+    const GIT_FILES_FETCH = 2000;
+
+    function rowIsTaskCopy(r, scopeKey) {
+      const fp = fullPathForRow(r);
+      if (!T.allTagsFromFullPath(fp).length) return false;
+      const key = pathKeyLoose(fp);
+      const inScope = (k) => !!scopeKey && (k === scopeKey || k.startsWith(scopeKey + '\\'));
+      const folders = (inScope(key) ? key.slice(scopeKey.length) : key).split('\\').slice(0, -1);
+      if (folders.some((s) => TASK_COPY_FOLDER_NAMES.has(s))) return true;
+      return linkedWorktreeRootKeys.some((w) => key.startsWith(w + '\\') && !(scopeKey && (scopeKey === w || scopeKey.startsWith(w + '\\'))));
+    }
+    function applyTaskCopyFilter(rowsIn) {
+      const rows = Array.isArray(rowsIn) ? rowsIn : [];
+      if (showTaskCopies) return rows;
+      const scopeKey = pathKeyLoose(currentScopeFolderPath());
+      return rows.filter((r) => !rowIsTaskCopy(r, scopeKey));
+    }
+    function restoreTaskCopiesFilter() {
+      showTaskCopies = localStorage.getItem(LS_SHOW_TASK_COPIES) === '1';
+    }
+    function setShowTaskCopies(on) {
+      showTaskCopies = !!on;
+      if (showTaskCopies) localStorage.setItem(LS_SHOW_TASK_COPIES, '1');
+      else localStorage.removeItem(LS_SHOW_TASK_COPIES);
+      void runSearchNow();
+    }
+
+    /** Ask Everything for every file named .git and main which of their folders are linked worktrees;
+        repaint when that changes which rows show. Returns the roots, or null when a lookup failed. */
+    async function refreshLinkedWorktreeRoots() {
+      const res = await everythingSearchOnce({ searchText: '.git file: wfn:.git', count: GIT_FILES_FETCH });
+      if (!res || !res.ok || !Array.isArray(res.rows) || !window.tagBrowser?.linkedWorktrees) return null;
+      if (typeof res.totalResults === 'number' && res.totalResults > res.rows.length) {
+        console.warn(`[tagfox] ${res.totalResults} files named .git, only ${res.rows.length} read for linked worktrees`);
+      }
+      const got = await window.tagBrowser.linkedWorktrees(res.rows.map((r) => T.parentDir(fullPathForRow(r))));
+      if (!got || !got.ok) return null;
+      const keys = got.roots.map(pathKeyLoose).sort();
+      if (keys.join('|') !== linkedWorktreeRootKeys.join('|')) {
+        const before = listRowsForUi().length;
+        linkedWorktreeRootKeys = keys;
+        if (!searchInFlight && listRowsForUi().length !== before) renderTable();
+      }
+      return keys;
+    }
+
     function persistDeadlineFilter() {
       localStorage.setItem(LS_DEADLINE_FILTER, activeDeadlineRange);
     }
@@ -12311,8 +12392,8 @@
       return rows;
     }
 
-    /** Advanced path hides at node level, plus the
-     *  hide-until drop, which belongs in the same pass: both answer "should this be on screen". */
+    /** Advanced path hides at node level, plus the task-copy and
+     *  hide-until drops, which belong in the same pass: each answers "should this be on screen". */
     function applyAdvancedPathHides(rowsIn) {
       let rows = Array.isArray(rowsIn) ? rowsIn : [];
       if (isHideSpecialPaths()) {
@@ -12321,7 +12402,7 @@
       if (isHideTildePaths()) {
         rows = rows.filter((r) => !pathUnderTildeSegment(fullPathForRow(r)));
       }
-      return applyHideUntilFilter(rows);
+      return applyHideUntilFilter(applyTaskCopyFilter(rows));
     }
 
     /** The rows the list shows: lastRows after the tag, recency and path filters. */
@@ -16070,6 +16151,8 @@
         setRunnerSort: (sort) => setRunnerSort(String(sort)),
         setDeadlineRange: (range) => setDeadlineRange(String(range || '')),
         setShowHiddenUntil: (on) => setShowHiddenUntil(!!on),
+        /* The linked-worktree lookup now, rather than at the next keepalive ping; returns the roots it found. */
+        refreshLinkedWorktrees: () => refreshLinkedWorktreeRoots(),
         runCommand: (id) => runRunnerCommand(runnerCommands().find((c) => c.id === String(id))),
         /* Stand-in for Windows' Recent list, opened just now, so a test can see the boost without the real one. */
         setWindowsRecent: (paths) => {

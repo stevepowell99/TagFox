@@ -1,6 +1,6 @@
 # Intermittent test failures
 
-Faults that fail a run of the full suite now and then and pass when the test is rerun alone. The record is the `runner` session's full suites in `C:\dev\TagFox-runner` on 25 and 26 October 2026: 20 suites of 39 to 41 runs each.
+Faults that fail a run of the full suite now and then and pass when the test is rerun alone. The record is the `runner` session's full suites in `C:\dev\TagFox-runner` on 25 and 26 October 2026: 20 suites of 39 to 41 runs each. The next full suite, on 9 November 2026 (46 runs, on the commit that hides task copies), passed with none of them, which is too few to retire any.
 
 - **`a test Electron outliving its test ends itself` failed "with its parent gone, it ends by itself within 8 seconds"** once (25 October 2026, evening).
 - **A test TagFox now and then acts on no key at all, with under 1GB of RAM free.** Both tests now end each failed check with what became of its keys, from the page's own record of them: "never reached the page", "reached the page at …, no entry matched" (or "taken before the key table"), or "entry ran (…)". The next failure says which.
