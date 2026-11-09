@@ -14,6 +14,7 @@ Steve, 8 and 9 November 2026: release TagFox more widely on GitHub under a clear
   - Windows only, and needs Everything 1.5a with its HTTP server
 - **Release basics missing**
   - There is no `LICENSE`, and `package.json` does not name a licence or author; it is named `tagbrowser`, app id `app.tagbrowser`
+  - Dependabot reports 87 open alerts on `main` (38 high, 39 moderate, 10 low; seen on push, 9 November 2026)
 - **Rename: what the name is tied to**
   - User-facing: product name, window title, help, README, repo name (GitHub redirects the old one)
   - Structural: Electron's settings folder follows the app name, `%LOCALAPPDATA%\TagFox` logs (gmist's `GmistLocal` task writes there too), the `TagFoxAutostart` task, `tagfox-local-gmist.json`, the `#tagfoxtest` hook, `tagfox-` CSS classes, `window.tagBrowser`, the hub's `projects.md`, skills and `machine-parity.ps1`
