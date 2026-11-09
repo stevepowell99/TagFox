@@ -24,5 +24,5 @@ Steve, 8 and 9 November 2026: release TagFox more widely on GitHub under a clear
   - Licence: MIT; the copyright holder (Steve or Causal Map Ltd) is still to say
 - **Open decisions** (Steve)
   - Owners in `xk` tags: a setting per user, or drop the owner family from the public build
-  - Name: "TagFox" means nothing to outsiders. Taken: FileScout (a Windows text-search app and a macOS indexer), FileRunner (Sohonet's transfer app, a Unix file manager), TagFinder (too near Tag2Find); FileCat is a Java file merger
+  - Name: "TagFox" means nothing to outsiders. Taken: FileScout (a Windows text-search app and a macOS indexer), FileRunner (Sohonet's transfer app, a Unix file manager), TagFinder (too near Tag2Find); FileCat is a Java file merger; Ferret several times over (a semantic search tool on GitHub, File Ferret for Mac and an old Windows one, Folder Ferret). Clear in this category on 9 November: Whippet, Claude's recommendation, with the line "Find any file on Windows as you type, then preview, tag and move it without leaving the keyboard"
 - `xkLATER` until Steve says go
