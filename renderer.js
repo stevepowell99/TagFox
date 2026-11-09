@@ -1,5 +1,11 @@
 ﻿// TagFox renderer UI logic (after vendor scripts + tags.js).
     const T = window.TagBrowserTags;
+    /* Owner tags (`xp`) are per user, from Settings: adopt them before anything reads the vocabulary. */
+    try {
+      if (window.tagBrowser && typeof window.tagBrowser.tagOwnersReadSync === 'function') {
+        T.setOwnerTags(window.tagBrowser.tagOwnersReadSync());
+      }
+    } catch (_) {}
     /** Pretty filename for one path segment (strip bracket tags). */
     function segmentPretty(name) {
       return T.parseSegmentTags(name).pretty;
@@ -15716,12 +15722,41 @@
       });
     }
 
+    /** Owner tags (Settings): the field shows the live owners; Save (or Enter) writes them and main reloads the window. */
+    function wireTagOwnersSettingsUiOnce() {
+      const input = document.getElementById('tagOwnersInput');
+      const btn = document.getElementById('btnSaveTagOwners');
+      if (!input || !btn || btn.dataset.wired) return;
+      btn.dataset.wired = '1';
+      input.value = T.ownerTags().join(', ');
+      const save = async () => {
+        if (!window.tagBrowser || typeof window.tagBrowser.tagOwnersSet !== 'function') {
+          setStatusMain('Owner tags cannot be saved: restart with the Restart button first.');
+          return;
+        }
+        const r = await window.tagBrowser.tagOwnersSet(input.value);
+        if (r && r.ok) setStatusMain(r.owners.length ? 'Owner tags: ' + r.owners.join(', ') + '. Reloading…' : 'No owner tags. Reloading…');
+        else setStatusMain('Owner tags not saved: ' + ((r && r.error) || 'no answer from main'));
+      };
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        void save();
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        e.stopPropagation();
+        void save();
+      });
+    }
+
     wireEverythingConnectionSectionCollapseOnce();
     wireTagfoxSettingsSectionCollapsesOnce();
     loadSettings();
     setEverythingConnectionBadgeUnknown();
     wireSearchScopeSettingsUiOnce();
     wireQuickTodoSettingsUiOnce();
+    wireTagOwnersSettingsUiOnce();
     document.getElementById('settingsPanel')?.addEventListener('shown.bs.offcanvas', () => {
       void probeEverythingConnectionForSettingsBadge();
       void refreshRunningNow(true);

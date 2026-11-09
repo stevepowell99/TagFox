@@ -10,6 +10,7 @@ const path = require('path');
 const global_ = {};
 require(path.join(__dirname, '..', 'tags.js'));
 const T = (typeof window !== 'undefined' ? window : globalThis).TagBrowserTags;
+T.setOwnerTags(['STEVE']); // the names below carry xpSTEVE; owners are a per-user setting, none by default
 
 let pass = 0;
 let fail = 0;

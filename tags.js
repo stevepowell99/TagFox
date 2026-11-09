@@ -1,10 +1,11 @@
 // TagFox tags: two-letter-prefixed vocabulary tokens anywhere in the name are tags, e.g.
-// `xkTODO name xpGCC.ext` or `name xkTODO xpGCC.ext`. Three families, all two chars wide:
-// xk = status (TODO/WAITING/LATER), xp = person/owner (GCC/STEVE/CLAUDE), xx = label. Tags are
+// `xkTODO name xpSAM.ext` or `name xkTODO xpSAM.ext`. Three families, all two chars wide:
+// xk = status (TODO/WAITING/LATER), xp = person/owner (the names each user sets in Settings, none by
+// default; setOwnerTags), xx = label. Tags are
 // space-separated; the prefix is stripped for display and the tag tokens are removed from the
 // pretty name wherever they sit. Recognising any position (not only trailing) matches the hub
 // `xkTODO` convention, where the tag may lead the name (`xkTODO chapter5 GNI tables.md`); it is
-// safe because only the fixed TAG_VOCAB words (plus `xd-` deadlines and `xh-` hide-until dates)
+// safe because only the TAG_VOCAB words (plus `xd-` deadlines and `xh-` hide-until dates)
 // count, so a real word is never mistaken for a tag. The family for a typed tag is chosen by word
 // (see prefixForTag). Plain words and `name[foo].ext` are literal text, not tags.
 (function (global) {
@@ -14,17 +15,52 @@
   /** Back-compat default prefix (status family). */
   const TAG_PREFIX = 'xk';
 
+  /** The fixed families: tag body -> family prefix. To add a status or label, add it here (and
+   *  mirror it in CLAUDE.md / help.md). Owners are not fixed: see setOwnerTags. */
+  const STATUS_TAGS = { TODO: 'xk', BLOCKING: 'xk', WAITING: 'xk', LATER: 'xk' };
+  const LABEL_TAGS = { PUB: 'xx', INFO: 'xx', KEY: 'xx' };
+  const OWNER_PREFIX = 'xp';
+
   /**
-   * The agreed, fixed tag vocabulary: tag body -> family prefix. This is the single source of
-   * truth for what counts as a tag. Only these are recognised, which keeps filename look-alikes
-   * (xkeyboard, xpath, ITL, RED1, package names, ...) out of the tag bar. To add a tag, add it
-   * here (and mirror it in CLAUDE.md / help.md).
+   * The live tag vocabulary: tag body -> family prefix, the single source of truth for what counts
+   * as a tag. Only these are recognised, which keeps filename look-alikes (xkeyboard, xpath, ITL,
+   * RED1, package names, ...) out of the tag bar. Status, then owners, then labels, which is the
+   * order the options panel draws them in. The object is mutated in place by setOwnerTags, so a
+   * caller holding TAG_VOCAB always sees the current owners.
    */
-  const TAG_VOCAB = {
-    TODO: 'xk', BLOCKING: 'xk', WAITING: 'xk', LATER: 'xk', // status
-    GCC: 'xp', STEVE: 'xp', CLAUDE: 'xp', // person
-    PUB: 'xx', INFO: 'xx', KEY: 'xx', // label
-  };
+  const TAG_VOCAB = {};
+
+  /** Owner names as stored and shown: from an array, or a string separated by commas, semicolons
+   *  or spaces; uppercased, letters and digits only, 2 to 12 characters, de-duplicated, in the order
+   *  given. A word of the fixed families (TODO, KEY, ...) is dropped, since one word has one family. */
+  function normaliseOwnerTags(input) {
+    const parts = Array.isArray(input) ? input : String(input == null ? '' : input).split(/[\s,;]+/);
+    const out = [];
+    for (const raw of parts) {
+      const w = String(raw == null ? '' : raw).toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (w.length < 2 || w.length > 12) continue;
+      if (STATUS_TAGS[w] || LABEL_TAGS[w] || out.includes(w)) continue;
+      out.push(w);
+    }
+    return out;
+  }
+
+  /** Replace the owner (`xp`) family with these names; returns the normalised list. */
+  function setOwnerTags(input) {
+    const owners = normaliseOwnerTags(input);
+    for (const k of Object.keys(TAG_VOCAB)) delete TAG_VOCAB[k];
+    Object.assign(TAG_VOCAB, STATUS_TAGS);
+    for (const o of owners) TAG_VOCAB[o] = OWNER_PREFIX;
+    Object.assign(TAG_VOCAB, LABEL_TAGS);
+    return owners;
+  }
+
+  /** The owner names currently in the vocabulary, in order. */
+  function ownerTags() {
+    return Object.keys(TAG_VOCAB).filter((k) => TAG_VOCAB[k] === OWNER_PREFIX);
+  }
+
+  setOwnerTags([]);
 
   /**
    * Two date families, both ISO dates, both open patterns rather than vocabulary:
@@ -89,7 +125,7 @@
 
   /** Tag name for a token, or '' if not a tag. A date KEEPS its prefix (`xd-2026-07-15`,
    *  `xh-2026-09-01`), because that prefix is the only thing telling a deadline from a hide-until
-   *  once the token is off the filename. Other tags drop theirs: `xkTODO`->`TODO`, `xpGCC`->`GCC`.
+   *  once the token is off the filename. Other tags drop theirs: `xkTODO`->`TODO`, `xpSAM`->`SAM`.
    *  `xxTODO`, `xkeyboard`, `xpITL` etc. are not tags. */
   function tagNameFromToken(token) {
     if (!token) return '';
@@ -223,6 +259,9 @@
     TAG_PREFIX,
     TAG_PREFIXES,
     TAG_VOCAB,
+    normaliseOwnerTags,
+    setOwnerTags,
+    ownerTags,
     DATE_PREFIX,
     HIDE_PREFIX,
     DATE_PREFIXES,

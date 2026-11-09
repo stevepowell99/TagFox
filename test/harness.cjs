@@ -104,7 +104,9 @@ function makeCdp(wsUrl) {
 // scope: the folder connect() goes into with a search before it returns, as a folder pick does. Runner starts
 // from its own state, whose scope is the whole machine, and a folder set without a search leaves the
 // breadcrumb and the list on the old one.
-async function connect({ profile, maxResults = 60, scope = SCOPES.repo, disableAutofill = true, profileFiles = {}, autoRefresh = false } = {}) {
+// owners: the owner (`xp`) tag names written into the profile's tagfox-tag-owners.json. The tests' files use
+// xpCLAUDE and xpSTEVE, so these are the default; pass null for a profile with no owners file at all.
+async function connect({ profile, maxResults = 60, scope = SCOPES.repo, disableAutofill = true, profileFiles = {}, autoRefresh = false, owners = ['GCC', 'STEVE', 'CLAUDE'] } = {}) {
   if (!profile) throw new Error('connect needs { profile }');
   const baseUrl = await resolveEverythingUrl();
   const port = await freePort();
@@ -112,7 +114,9 @@ async function connect({ profile, maxResults = 60, scope = SCOPES.repo, disableA
   // Wipe the profile so every run starts fresh (deterministic startup: no settings carried over from a
   // prior run).
   try { fs.rmSync(userData, { recursive: true, force: true }); } catch (_) {}
-  for (const [name, text] of Object.entries(profileFiles)) {
+  const files = { ...profileFiles };
+  if (Array.isArray(owners) && !('tagfox-tag-owners.json' in files)) files['tagfox-tag-owners.json'] = JSON.stringify({ owners });
+  for (const [name, text] of Object.entries(files)) {
     fs.mkdirSync(userData, { recursive: true });
     fs.writeFileSync(path.join(userData, name), text, 'utf8');
   }

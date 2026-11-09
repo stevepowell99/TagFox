@@ -139,6 +139,9 @@ contextBridge.exposeInMainWorld('tagBrowser', {
   tagPrefsReadSync: () => ipcRenderer.sendSync('tag-prefs-read-sync'),
   tagPrefsWrite: (payload) => ipcRenderer.invoke('tag-prefs-write', payload),
   tagPrefsWriteSync: (payload) => ipcRenderer.sendSync('tag-prefs-write-sync', payload),
+  /** Owner names for the `xp` tag family (read before first paint — sync IPC); setting them reloads the window. */
+  tagOwnersReadSync: () => ipcRenderer.sendSync('tag-owners-read-sync'),
+  tagOwnersSet: (input) => ipcRenderer.invoke('tag-owners-set', input),
   /** OS-wide show/hide shortcut (Electron globalShortcut). */
   globalToggleGet: () => ipcRenderer.invoke('global-toggle-get'),
   globalToggleSet: (accelerator) => ipcRenderer.invoke('global-toggle-set', accelerator),

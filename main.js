@@ -1980,6 +1980,22 @@ function tagBrowserTagPrefsPath() {
   return path.join(app.getPath('userData'), 'tagBrowser-tag-prefs.json');
 }
 
+/** Owner names for the `xp` tag family, set per user in Settings; none when the file is absent. */
+function tagOwnersPath() {
+  return path.join(app.getPath('userData'), 'tagfox-tag-owners.json');
+}
+
+function readTagOwnersFromDisk() {
+  try {
+    const p = tagOwnersPath();
+    if (!fssync.existsSync(p)) return [];
+    const j = JSON.parse(fssync.readFileSync(p, 'utf8'));
+    return TagBrowserTags.normaliseOwnerTags(j && j.owners);
+  } catch (_) {
+    return [];
+  }
+}
+
 function writeTagBrowserTagPrefs(payload) {
   const p = tagBrowserTagPrefsPath();
   const dir = path.dirname(p);
@@ -3008,6 +3024,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.whenReady().then(() => {
+  TagBrowserTags.setOwnerTags(readTagOwnersFromDisk());
   /* Event-loop lag sampler: if the main loop stalls (sync work or a saturated threadpool), the renderer
      only sees IPC replies arrive late. Log stalls so we can tell a slow handler from a blocked loop. */
   try {
@@ -3107,6 +3124,31 @@ ipcMain.on('tag-prefs-read-sync', (event) => {
     event.returnValue = fssync.existsSync(p) ? fssync.readFileSync(p, 'utf8') : '';
   } catch {
     event.returnValue = '';
+  }
+});
+
+ipcMain.on('tag-owners-read-sync', (event) => {
+  event.returnValue = readTagOwnersFromDisk();
+});
+
+/* Save the owner names, adopt them here (main names files by the same tag rules), then reload the window,
+   which reads them again before its first render, so every list of tags is rebuilt from the new set. */
+ipcMain.handle('tag-owners-set', async (event, input) => {
+  try {
+    const owners = TagBrowserTags.normaliseOwnerTags(input);
+    const p = tagOwnersPath();
+    await fs.mkdir(path.dirname(p), { recursive: true });
+    await fs.writeFile(p, JSON.stringify({ owners }), 'utf8');
+    const back = readTagOwnersFromDisk();
+    if (back.join(',') !== owners.join(',')) return { ok: false, error: 'the owners file did not read back as written' };
+    TagBrowserTags.setOwnerTags(owners);
+    const wc = event.sender;
+    setTimeout(() => {
+      if (wc && !wc.isDestroyed()) wc.reload();
+    }, 150);
+    return { ok: true, owners };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
   }
 });
 

@@ -230,10 +230,12 @@ TagFox knows three kinds of tag, each with its own two-letter prefix:
 | Kind | Prefix | Words |
 |---|---|---|
 | Status: what state the task is in | `xk` | `TODO`, `BLOCKING`, `WAITING`, `LATER` |
-| Owner: whose it is | `xp` | `STEVE`, `CLAUDE`, `GCC` |
+| Owner: whose it is | `xp` | The names you set in **Settings**, under **Owner tags**, such as `SAM` for `xpSAM`. There are none until you add some. |
 | Label: what kind of thing it is | `xx` | `PUB`, `INFO`, `KEY` |
 
 A word only counts as a tag with its own prefix: `xkTODO` is a tag, while `todo` in `todo list.txt` is just part of the name.
+
+Owner names are 2 to 12 letters or digits, separated by commas or spaces in the Settings field. Saving them reloads the window, and from then on `xpSAM` in a name shows as the tag `SAM`.
 
 ### Adding and removing tags
 

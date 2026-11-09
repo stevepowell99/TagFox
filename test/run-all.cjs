@@ -31,6 +31,7 @@ const runs = [
   { name: 'runner keys', args: ['runner-keys.cjs'] },
   { name: 'runner syntax', args: ['runner-syntax.cjs'] },
   { name: 'runner tags', args: ['runner-tags.cjs'] },
+  { name: 'owner tags from Settings', args: ['tag-owners.cjs'] },
   { name: 'task copies left out', args: ['task-copies.cjs'] },
   { name: 'runner query order', args: ['runner-query-order.cjs'] },
   { name: 'runner shelf', args: ['runner-shelf.cjs'] },

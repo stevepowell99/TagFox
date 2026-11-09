@@ -159,14 +159,14 @@
           data-bs-toggle="collapse"
           data-bs-target="#settingsShortcutsTodoDetails"
           data-tagfox-settings-collapse="settingsShortcutsTodoDetails"
-          title="Show or hide shortcuts and Quick TODO folder"
+          title="Show or hide shortcuts, the Quick TODO folder and owner tags"
         >
           <i
             class="fa-solid fa-chevron-right tagfox-settings-section-chevron flex-shrink-0 d-inline-flex align-items-center justify-content-center"
             style="width: 1.5rem"
             aria-hidden="true"
           ></i>
-          <span class="h6 fw-semibold mb-0">Global hotkey &amp; Quick TODO</span>
+          <span class="h6 fw-semibold mb-0">Global hotkey, Quick TODO &amp; owner tags</span>
         </button>
       </div>
       <div id="settingsShortcutsTodoDetails" class="collapse">
@@ -230,6 +230,14 @@
           <button type="button" class="btn btn-sm btn-outline-danger" id="btnQuickTodoClearFolder">Clear</button>
         </div>
         <div id="quickTodoFolderDisplay" class="small border rounded px-2 py-2 bg-body font-monospace text-break text-muted mb-0"></div>
+        <p class="small fw-semibold text-body-secondary mb-2 mt-3">Owner tags</p>
+        <p class="text-muted small mb-2">
+          Names that say whose a file is, written into its name as <code>xp</code> plus the name (<code>report xkTODO xpSAM.md</code>). Separate them with commas or spaces; each is 2 to 12 letters or digits. Saving reloads the window.
+        </p>
+        <div class="input-group input-group-sm">
+          <input type="text" id="tagOwnersInput" class="form-control form-control-sm" autocomplete="off" spellcheck="false" placeholder="SAM, ALEX" aria-label="Owner tags" />
+          <button type="button" class="btn btn-outline-primary" id="btnSaveTagOwners">Save</button>
+        </div>
       </div>
 
       <div class="mb-3 pb-2 border-bottom tagfox-settings-section-title">
