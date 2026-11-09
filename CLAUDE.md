@@ -81,7 +81,6 @@ README "Open in gmist and Google Workspace" describes the row's pen buttons and 
   - Spawn with `shell: true` and not `detached`; output to `%LOCALAPPDATA%\TagFox\gmist-local.log`, whose tail a failure reports.
   - Start `preview:local`, a production build, never the dev server (`localGmistStartScript()`): React's dev build kills gmist on any deck with the slide pane open.
   - Find the repo, never hardcode it (`repoDir` in `tagfox-local-gmist.json`, else a sibling `mist`, else `C:\dev\mist`).
-- **The bundled gmist is dormant: the installer carries none.** Before reviving it, read README "Bundled gmist", whose per-install sidecar token and `.dev.vars` check are security rules.
 - **One child-window mechanism serves both editors** (`openWebEditorWindow`); everything site-specific lives in `WEB_EDITOR_KINDS`.
 - **A minimised doc window's icon carries two letters (`webEditorIconAbbrev`), and two is the measured ceiling, not a compromise to revisit.** A `PrintWindow` capture misleads here; capture the live screen.
 - **The row's cloud pen opens online gmist in the default browser; local gmist's own Online button asks** (`offerOnlineGmistTarget`).

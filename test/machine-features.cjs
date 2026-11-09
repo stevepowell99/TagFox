@@ -1,8 +1,8 @@
 // A packaged TagFox handed to someone else usually has no gmist, no JobCat and no Google sign-in, and must not
 // show buttons that can only fail there. This runs a markdown row twice: on this machine as it is, where a gmist
 // checkout exists and the row carries the local gmist pen (the positive control, so the hidden case cannot pass
-// on a row drawn without any buttons), and with TAGFOX_GMIST_FORCE_BUNDLED=1 and no bundled gmist, which is the
-// recipient's case: main reports no gmist and the row has no local pen, while its other buttons stay.
+// on a row drawn without any buttons), and with TAGFOX_TEST_NO_GMIST=1, which hides the checkout as a recipient's
+// machine has none: main reports no gmist and the row has no local pen, while its other buttons stay.
 //
 // Run: node test/machine-features.cjs
 
@@ -52,25 +52,20 @@ async function main() {
     await drv.close();
     drv = null;
 
-    const bundled = ['_gmist', path.join('node_modules', 'electron', 'dist', 'resources', 'gmist')].some((p) => fs.existsSync(path.join(APP_DIR, p)));
-    if (bundled) {
-      console.log('  SKIP no-gmist case: this checkout carries a bundled gmist (_gmist), so TAGFOX_GMIST_FORCE_BUNDLED still finds one');
-    } else {
-      process.env.TAGFOX_GMIST_FORCE_BUNDLED = '1';
-      drv = await connect({ profile: 'tagfox-test-machine-features-none', scope: root });
-      console.log('Hook ready (no gmist: checkout skipped, no bundle).');
-      await drv.settle('startup');
-      r = await rowButtons(drv);
-      check(r.features && r.features.gmist === false, `main reports no gmist (${JSON.stringify(r.features)})`);
-      check(r.labels && !r.labels.includes('Open in local gmist'), `the markdown row has no local gmist pen: ${JSON.stringify(r.labels)}`);
-      check(r.labels && r.labels.length > 0, 'and keeps its other buttons, so the row was drawn with them');
-    }
+    process.env.TAGFOX_TEST_NO_GMIST = '1';
+    drv = await connect({ profile: 'tagfox-test-machine-features-none', scope: root });
+    console.log('Hook ready (no gmist: checkout hidden).');
+    await drv.settle('startup');
+    r = await rowButtons(drv);
+    check(r.features && r.features.gmist === false, `main reports no gmist (${JSON.stringify(r.features)})`);
+    check(r.labels && !r.labels.includes('Open in local gmist'), `the markdown row has no local gmist pen: ${JSON.stringify(r.labels)}`);
+    check(r.labels && r.labels.length > 0, 'and keeps its other buttons, so the row was drawn with them');
   } catch (e) {
     failures.push('threw: ' + (e && e.stack ? e.stack : e));
     console.error(e);
   } finally {
     if (drv) await drv.close();
-    delete process.env.TAGFOX_GMIST_FORCE_BUNDLED;
+    delete process.env.TAGFOX_TEST_NO_GMIST;
     try {
       fs.rmSync(root, { recursive: true, force: true });
     } catch (_) {}

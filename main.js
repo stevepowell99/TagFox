@@ -41,7 +41,7 @@ if (!app.isPackaged && process.env.TAGFOX_TEST_HIDDEN !== '1') {
     /* Scratch and build output must not reload Steve's running window out from under him. Nor may
        main.js: an agent edits it often, and each edit restarted TagFox mid-use. The header shows a
        Restart button instead once main-process code has changed (tagfox-runtime-info). */
-    require('electron-reloader')(module, { ignore: ['_tmp', 'dist', '_gmist', 'main.js'] });
+    require('electron-reloader')(module, { ignore: ['_tmp', 'dist', 'main.js'] });
   } catch (_) {}
 }
 
@@ -53,7 +53,6 @@ const fs = require('fs').promises;
 const fssync = require('fs');
 const os = require('os');
 const path = require('path');
-const nodeCrypto = require('crypto');
 
 /* Under `npm start`, scripts/start.js starts TagFox again when it exits with this code. Trust it only when
    the parent really is that wrapper, and take it out of the environment, which every child and every
@@ -4866,7 +4865,7 @@ const LOCAL_GMIST_SIDECAR_PORT = LOCAL_GMIST_PORTS[1];
 
 /* What is running --------------------------------------------------------------
    Two servers matter and neither announces itself: this TagFox (which may predate the code on disk)
-   and whichever gmist holds 5173 (a dev server, a production build, or TagFox's bundled copy). */
+   and whichever gmist holds 5173 (a dev server or a production build). */
 
 const TAGFOX_STARTED_AT = Date.now();
 
@@ -4910,7 +4909,7 @@ function describeLocalGmistHolder() {
         '-Command',
         '$id=' + Number(pids[0]) + '; for ($i=0; $i -lt 8 -and $id; $i++) { ' +
           '$c = Get-CimInstance Win32_Process -Filter "ProcessId=$id"; if (-not $c) { break }; ' +
-          'if ($c.CommandLine -match "preview:local|dev:local|dev-local|serve-gmist") { ' +
+          'if ($c.CommandLine -match "preview:local|dev:local|dev-local") { ' +
           '[pscustomobject]@{ pid=$c.ProcessId; cmd=$c.CommandLine; started=$c.CreationDate.ToString("o") } | ConvertTo-Json -Compress; break }; ' +
           '$id = $c.ParentProcessId }',
       ],
@@ -4920,11 +4919,9 @@ function describeLocalGmistHolder() {
     if (!found) return { pid: pids[0], kind: 'unknown', started: null };
     const j = JSON.parse(found);
     const cmd = String(j.cmd || '');
-    const kind = /serve-gmist/.test(cmd)
-      ? 'bundled with TagFox'
-      : /preview:local|dev-local\.mjs\s+--built/.test(cmd) // preview:local runs dev-local.mjs --built
-        ? 'production build (preview:local)'
-        : 'dev server (dev:local)';
+    const kind = /preview:local|dev-local\.mjs\s+--built/.test(cmd) // preview:local runs dev-local.mjs --built
+      ? 'production build (preview:local)'
+      : 'dev server (dev:local)';
     return { pid: j.pid, kind, started: j.started };
   } catch (_) {
     return { pid: pids[0], kind: 'unknown', started: null };
@@ -5003,41 +5000,12 @@ function localGmistPortHolderHint() {
   );
 }
 
-/* The bundled gmist ---------------------------------------------------------
-   A machine with no gmist checkout used to have no local gmist at all, so every
-   markdown row on Gabriele's build answered "could not find the gmist repo", while
-   markdown is routed to gmist by default. The installer now carries a runnable
-   gmist (scripts/bundle-gmist.js stages it) and this starts it. A checkout still
-   wins where there is one, so Steve keeps hot reload and his own dev:local
-   workflow; the bundle is the fallback rather than a second way of working. */
-
-/** Where the staged gmist lives: beside the packaged resources, or _gmist in a dev tree. */
-function findBundledGmistDir() {
-  const candidates = [
-    process.resourcesPath ? path.join(process.resourcesPath, 'gmist') : null,
-    path.join(__dirname, '_gmist'),
-  ].filter(Boolean);
-  for (const dir of candidates) {
-    try {
-      if (
-        fssync.existsSync(path.join(dir, 'build', 'server', 'index.js')) &&
-        fssync.existsSync(path.join(dir, 'serve-gmist.cjs'))
-      ) {
-        return dir;
-      }
-    } catch (_) {}
-  }
-  return null;
-}
-
-/** Where a local gmist runs from on this machine: a checkout, else the bundled copy, else null, meaning this
-    machine has no gmist (a packaged build handed to someone else). TAGFOX_GMIST_FORCE_BUNDLED=1 skips the
-    checkout, so the packaged cases can run on the machine they are written on. */
+/** Where a local gmist runs from on this machine: a `mist` checkout, else null, meaning this machine has no
+    gmist (a packaged build handed to someone else). TAGFOX_TEST_NO_GMIST=1 skips the checkout, so that case
+    can run on the machine it is written on. */
 function localGmistSource() {
-  const repoDir = process.env.TAGFOX_GMIST_FORCE_BUNDLED === '1' ? null : findLocalGmistRepoDir();
-  if (repoDir) return { repoDir };
-  const bundledDir = findBundledGmistDir();
-  return bundledDir ? { bundledDir } : null;
+  const repoDir = process.env.TAGFOX_TEST_NO_GMIST === '1' ? null : findLocalGmistRepoDir();
+  return repoDir ? { repoDir } : null;
 }
 
 /* What this machine has beyond Everything and the disk, for the row buttons and menu entries that cannot work
@@ -5055,123 +5023,6 @@ function machineFeatures() {
 }
 
 ipcMain.handle('machine-features', () => machineFeatures());
-
-/**
- * The sidecar token is the whole access control on a server that reads and writes any
- * file this user can (see gmist's CLAUDE.md), so it is generated once per install and
- * kept in userData rather than shipped in the installer, where it would be the same
- * secret on every machine. The session secret is generated the same way.
- */
-function bundledGmistSecrets() {
-  const file = localGmistPrefsPath();
-  let prefs = {};
-  try {
-    prefs = JSON.parse(fssync.readFileSync(file, 'utf8')) || {};
-  } catch (_) {
-    prefs = {};
-  }
-  let changed = false;
-  for (const key of ['localFsToken', 'sessionSecret']) {
-    if (typeof prefs[key] !== 'string' || prefs[key].length < 32) {
-      prefs[key] = nodeCrypto.randomBytes(32).toString('hex');
-      changed = true;
-    }
-  }
-  if (changed) {
-    try {
-      fssync.mkdirSync(path.dirname(file), { recursive: true });
-      fssync.writeFileSync(file, JSON.stringify(prefs, null, 2), 'utf8');
-    } catch (_) {
-      /* An unwritable prefs file only costs a fresh secret next start. */
-    }
-  }
-  return { localFsToken: prefs.localFsToken, sessionSecret: prefs.sessionSecret };
-}
-
-/** Start the bundled gmist and wait for it to answer. Same result shape as the dev-repo start. */
-async function startBundledGmist(gmistDir) {
-  const logPath = localGmistLogPath();
-  let fd = null;
-  try {
-    fssync.mkdirSync(path.dirname(logPath), { recursive: true });
-    fd = fssync.openSync(logPath, 'a');
-    fssync.writeSync(fd, '\n=== ' + new Date().toISOString() + ' TagFox: bundled gmist in ' + gmistDir + ' ===\n');
-  } catch (_) {
-    fd = null;
-  }
-  const secrets = bundledGmistSecrets();
-  let child = null;
-  let exitReason = null;
-  try {
-    /* Electron's own binary is the node runtime, so the installer carries no second one.
-       Not detached and not through a shell: there is no npm in the way here, and an early
-       exit has to reach the handler below rather than a console of its own. */
-    child = spawn(process.execPath, [path.join(gmistDir, 'serve-gmist.cjs')], {
-      env: {
-        ...process.env,
-        ELECTRON_RUN_AS_NODE: '1',
-        GMIST_DIR: gmistDir,
-        GMIST_PORT: String(LOCAL_GMIST_PORTS[0]),
-        LOCAL_FS_URL: 'http://127.0.0.1:' + LOCAL_GMIST_PORTS[1],
-        LOCAL_FS_TOKEN: secrets.localFsToken,
-        GMIST_SESSION_SECRET: secrets.sessionSecret,
-        GMIST_PERSIST_DIR: path.join(app.getPath('userData'), 'gmist-state'),
-      },
-      windowsHide: true,
-      stdio: ['ignore', fd == null ? 'ignore' : fd, fd == null ? 'ignore' : fd],
-    });
-  } catch (e) {
-    if (fd != null) try { fssync.closeSync(fd); } catch (_) {}
-    return {
-      ok: false,
-      up: false,
-      bundled: true,
-      gmistDir,
-      logPath,
-      error: 'Could not start the bundled gmist: ' + String(e.message || e),
-    };
-  }
-  child.on('error', (e) => {
-    if (exitReason == null) exitReason = 'the bundled gmist could not be started: ' + String(e.message || e);
-  });
-  child.on('exit', (code) => {
-    if (exitReason == null) exitReason = 'the bundled gmist exited straight away (code ' + (code == null ? 'signal' : code) + ')';
-  });
-  child.unref();
-  if (fd != null) try { fssync.closeSync(fd); } catch (_) {}
-
-  const deadline = Date.now() + LOCAL_GMIST_START_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    if (await probeLocalGmistOnce(LOCAL_GMIST_BASE_URL, LOCAL_GMIST_PROBE_PATIENT_MS)) {
-      return { ok: true, up: true, started: true, bundled: true, gmistDir, logPath };
-    }
-    if (exitReason) {
-      return {
-        ok: false,
-        up: false,
-        bundled: true,
-        gmistDir,
-        logPath,
-        error: [exitReason, localGmistLogTail(logPath), localGmistPortHolderHint()].filter(Boolean).join('. '),
-      };
-    }
-    await new Promise((r) => setTimeout(r, LOCAL_GMIST_POLL_MS));
-  }
-  return {
-    ok: false,
-    up: false,
-    bundled: true,
-    gmistDir,
-    logPath,
-    error: [
-      'The bundled gmist did not answer on ' + LOCAL_GMIST_BASE_URL + ' within ' + Math.round(LOCAL_GMIST_START_TIMEOUT_MS / 1000) + 's',
-      localGmistLogTail(logPath),
-      localGmistPortHolderHint(),
-    ]
-      .filter(Boolean)
-      .join('. '),
-  };
-}
 
 let localGmistStartInFlight = null;
 
@@ -5236,13 +5087,7 @@ async function startLocalGmist() {
      every cold start for a certain answer we already have. */
   if (localGmistStartInFlight) return localGmistStartInFlight;
   localGmistStartInFlight = (async () => {
-    /* A checkout wins where there is one: it gives hot reload and it is the copy being worked on.
-       The bundle is what a machine without one runs, which is every machine but Steve's. That also
-       means the bundled path never runs on the machine it is developed on, which is the shape of
-       the bug this whole feature fixes, so TAGFOX_GMIST_FORCE_BUNDLED=1 exercises it here. Stop the
-       dev gmist first: both want ports 5173 and 5199. */
     const source = localGmistSource();
-    if (source && source.bundledDir) return startBundledGmist(source.bundledDir);
     const repoDir = source && source.repoDir;
     if (!repoDir) {
       /* No checkout at all is a different case from a start that failed, and callers must be able to
@@ -5253,7 +5098,7 @@ async function startLocalGmist() {
         up: false,
         noRepo: true,
         error:
-          'This build carries no gmist and no "mist" checkout was found beside TagFox. Set one in ' +
+          'No gmist ("mist") checkout was found beside TagFox. Set one in ' +
           localGmistPrefsPath() +
           ' as {"repoDir": "C:\\\\dev\\\\mist"}.',
       };
