@@ -19,9 +19,10 @@ Steve, 8 and 9 November 2026: release TagFox more widely on GitHub under a clear
   - Structural: Electron's settings folder follows the app name, `%LOCALAPPDATA%\TagFox` logs (gmist's `GmistLocal` task writes there too), the `TagFoxAutostart` task, `tagfox-local-gmist.json`, the `#tagfoxtest` hook, `tagfox-` CSS classes, `window.tagBrowser`, the hub's `projects.md`, skills and `machine-parity.ps1`
   - gmist's precedent: rename the product, keep the structural names
   - "FileCat" is already a Java file-merging tool on Softpedia; check GitHub, domains and trademarks before choosing
+- **Decided** (Steve, 9 November 2026)
+  - One codebase: the gmist and JobCat features stay, hidden behind `machine-features`; the dormant bundled gmist goes
+  - Licence: MIT; the copyright holder (Steve or Causal Map Ltd) is still to say
 - **Open decisions** (Steve)
-  - Strip the gmist and JobCat features from the public build, or keep them hidden behind `machine-features`
-  - Licence: MIT, or Causal Map's FSL-1.1-MIT default
   - Owners in `xk` tags: a setting per user, or drop the owner family from the public build
-  - Name
+  - Name: "TagFox" means nothing to outsiders. Taken: FileScout (a Windows text-search app and a macOS indexer), FileRunner (Sohonet's transfer app, a Unix file manager), TagFinder (too near Tag2Find); FileCat is a Java file merger
 - `xkLATER` until Steve says go
