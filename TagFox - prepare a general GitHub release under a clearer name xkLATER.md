@@ -21,7 +21,7 @@ Steve, 8 and 9 November 2026: release TagFox more widely on GitHub under a clear
   - gmist's precedent: rename the product, keep the structural names
 - **Decided** (Steve, 9 November 2026)
   - One codebase: the gmist and JobCat features stay, hidden behind `machine-features`; the dormant bundled gmist goes
-  - Licence: MIT; the copyright holder (Steve or Causal Map Ltd) is still to say
+  - Licence: MIT
   - Name: **Whippet**, subtitled "a fast file finder for Windows"
     - Longer line, for the README opening and the GitHub description: "Find any file on Windows as you type, then preview, tag and move it without leaving the keyboard"
     - Others using the word, none a file tool: WhippetSoft (IT services), and 144 GitHub repos led by a Guile garbage collector, an RNA-seq tool and a WordPress framework; whippet.com, .io, .app and .dev are all registered
