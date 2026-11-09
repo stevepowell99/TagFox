@@ -13,11 +13,14 @@ Steve, 8 and 9 November 2026: release TagFox more widely on GitHub under a clear
   - Owner tags are a per-user setting: `tagfox-tag-owners.json` in userData, Settings → Owner tags (`a576a69`); Steve's file lists GCC, STEVE and CLAUDE
   - The dormant bundled gmist is gone (`00f55f4`)
   - Every name a user sees says Whippet; the structural names stay TagFox, listed in `CLAUDE.md` "Naming"; a packaged install keeps `%APPDATA%\TagFox` as its userData; the README opens for a stranger (`4385234`)
-  - The GitHub repo is `stevepowell99/whippet-files`; the hub mentions are updated (hub `dfcbf76`)
+  - The GitHub repo is `stevepowell99/whippet-files`, with the long line as its description; the hub mentions are updated (hub `dfcbf76`)
+  - Electron 43.8.7, electron-builder 26, xlsx 0.20.3 (`01b14fe`); npm audit leaves six moderate findings, one `minimatch` issue inside electron-builder, build time only. Electron 45 is its own task file
+  - README and Help open with what Whippet does (`05594d6`)
+  - Release [Whippet 1.5.0](https://github.com/stevepowell99/whippet-files/releases/tag/v1.5.0), with its installer; the hello@ Drive download folder holds the same installer
 - **Left**
-  - Dependency upgrades: Dependabot reported 87 open alerts on 9 November 2026 (38 high). The runtime ones are Electron (33 to 45, a major jump) and `xlsx` (no fix on npm); the rest are electron-builder's build tools, which never ship in the app
-  - A new GitHub release: the only one is "TagFox 1.0.1" (6 June 2026), far behind `package.json`'s 1.4.0
-  - The GitHub repo description and topics, from the lines above
+  - Replace `docs/img/tagfox-main.png`: it shows the retired Classic layout, the title TagFox, and a real Drive path and task file. Take it from a test instance over seeded demo files, never Steve's own window
+  - GitHub topics for the repo
+  - Proposed, not agreed: the dev reloader skips the window reload when `main.js` or `preload.js` changed too, and shows only Restart. On 9 November the window reloaded onto new renderer code under the old main process and stopped drawing for 100 minutes
 - **Specific to us, kept behind `machine-features` or in docs**
   - gmist: local and online pens, share link, local gmist start-up
   - Print to PDF runs JobCat's `make_pdf.py`, with "Causal Map branded" and "Steve" profiles; the JobCat lookup builds a `My Drive (hello@causalmap.app)` path
