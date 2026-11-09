@@ -4,7 +4,7 @@
 
 Whippet runs on top of [Voidtools Everything](https://www.voidtools.com/), which keeps an index of every file name on the computer, so a search across millions of files answers while you are still typing. Around that search it does most of what File Explorer gets used for. It keeps tags and tasks in plain file names and markdown, which people, sync services and AI assistants can all read.
 
-![Whippet main window](docs/img/tagfox-main.png)
+![Whippet main window](docs/img/whippet-main.png)
 
 ## What it does
 
