@@ -336,7 +336,7 @@ async function main() {
     check(panes.length >= 5 && panes.every((p) => p.shown && p.chars > 200), `every Help tab shows its own text (${panes.map((p) => p.id + ':' + p.chars).join(', ')})`);
     await drv.ev(`bootstrap.Modal.getInstance(document.getElementById('helpModal'))?.hide(); 1`);
     await sleep(500);
-    // The Settings link "Get Everything 1.5a" opens Help on Setting up, not on the keys.
+    // The Settings link "Get Everything 1.5" opens Help on Setting up, not on the keys.
     await drv.ev(`document.getElementById('btnEverythingHttpSetupHelp').click(); 1`);
     await sleep(500);
     const setupTab = await drv.ev(`document.querySelector('#helpModalTabs .nav-link.active')?.dataset.helpTab || ''`);

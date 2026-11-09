@@ -54,9 +54,10 @@
       </div>
       <div id="settingsConnectionDetails" class="collapse show">
         <p class="text-muted mb-3">
-          Use <strong>Everything 1.5a</strong> with the HTTP Server plugin. If Everything is not installed, get it here:
-          <a href="https://www.voidtools.com/everything-1.5a" target="_blank" rel="noopener">Everything 1.5a downloads</a>.
-          Then in Everything turn on <strong>HTTP Server</strong> under <strong>Tools → Options → HTTP Server</strong> and use the same address here. Default: <code>http://127.0.0.1:8080</code>.
+          Use <strong>Everything 1.5</strong> (in beta) with the HTTP Server plugin. If Everything is not installed, get it here:
+          <a href="https://www.voidtools.com/everything-1.5/" target="_blank" rel="noopener">Everything 1.5 downloads</a>
+          and <a href="https://www.voidtools.com/support/everything/plugins/" target="_blank" rel="noopener">the HTTP Server plugin</a>.
+          Then in Everything turn on <strong>HTTP Server</strong> under <strong>Tools → Options → HTTP Server</strong>. If Whippet cannot reach Everything, it looks up the port in Everything's settings and fills it in here. To set it by hand, use the same address as Everything.
         </p>
         <div class="row g-3 align-items-start mb-0">
           <div class="col-12 col-md-8">
@@ -524,7 +525,7 @@
               Settings
             </button>
             <button type="button" class="btn btn-sm btn-primary flex-shrink-0" id="btnEverythingHttpSetupHelp">
-              Get Everything 1.5a
+              Get Everything 1.5
             </button>
             <button type="button" class="btn-close flex-shrink-0" id="btnEverythingHttpHelpDismiss" aria-label="Dismiss"></button>
           </div>
@@ -540,6 +541,17 @@
         >
         <!-- Scroll only the table (+ load more) -->
         <div id="resultsScroll" class="results-table-scroll flex-grow-1 min-h-0">
+          <!-- First-run setup: shown in place of the list while Whippet cannot search through Everything (renderer.js, "Setup card"). -->
+          <div id="everythingSetupCard" class="tagfox-setup-card d-none" role="region" aria-label="Set up Everything">
+            <ol id="everythingSetupSteps" class="tagfox-setup-steps list-unstyled d-flex flex-wrap gap-2 small mb-3"></ol>
+            <h2 id="everythingSetupTitle" class="h5 fw-semibold mb-2"></h2>
+            <div id="everythingSetupBody" class="tagfox-setup-body mb-3"></div>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+              <button type="button" class="btn btn-primary" id="everythingSetupPrimary"></button>
+              <button type="button" class="btn btn-outline-secondary" id="everythingSetupCheck">Check again</button>
+              <span id="everythingSetupNote" class="small text-muted" role="status" aria-live="polite"></span>
+            </div>
+          </div>
           <table class="table table-sm mb-0" id="resultsTable">
           <tbody id="tbody"></tbody>
         </table>

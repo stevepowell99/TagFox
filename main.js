@@ -3163,9 +3163,11 @@ ipcMain.handle('tag-prefs-write', async (_e, payload) => {
   }
 });
 
-ipcMain.handle('everything-search', async (_event, payload) => {
+/** One request to Everything's HTTP server. The search handler below and the first-run setup's port probe both
+    go through it, so a base URL means the same thing to each. `timeoutMs` bounds a probe; a search has none. */
+async function everythingSearchRequest(payload) {
   const tStart = Date.now();
-  const { baseUrl, searchText, httpUser, httpPassword, count, options } = payload;
+  const { baseUrl, searchText, httpUser, httpPassword, count, options, timeoutMs } = payload;
   const settingsBase = String(baseUrl || '').trim();
   const url = everythingSearchUrl(baseUrl, searchText, count, options);
   const headers = {};
@@ -3177,7 +3179,7 @@ ipcMain.handle('everything-search', async (_event, payload) => {
   }
   let res;
   try {
-    res = await fetch(url, { headers });
+    res = await fetch(url, { headers, ...(timeoutMs > 0 ? { signal: AbortSignal.timeout(timeoutMs) } : {}) });
   } catch (e) {
     return everythingSearchFailureFromFetch(settingsBase, url, e);
   }
@@ -3237,7 +3239,111 @@ ipcMain.handle('everything-search', async (_event, payload) => {
     );
   }
   return { ok: true, rows, totalResults: typeof data.totalResults === 'number' ? data.totalResults : null };
+}
+
+ipcMain.handle('everything-search', async (_event, payload) => everythingSearchRequest(payload));
+
+/* First-run setup (everything-setup.js): where the user is on the way to a working Everything connection.
+   The renderer asks while its setup card shows and on window focus, at most every 6 seconds, and never while
+   connected. Detection only reads (processes, the uninstall registry, Program Files, Everything's settings
+   files). The one thing it does for the user is start the Everything program it found. */
+const EverythingSetup = require(path.join(__dirname, 'everything-setup.js'));
+/* A test instance names a fake machine in a JSON file, so every state can be reached without uninstalling
+   Everything; it is read only under TAGFOX_TEST_HIDDEN. */
+const everythingSetupSource = () =>
+  process.env.TAGFOX_TEST_HIDDEN === '1' && process.env.TAGFOX_TEST_EVERYTHING_SOURCE
+    ? EverythingSetup.testSource(process.env.TAGFOX_TEST_EVERYTHING_SOURCE)
+    : EverythingSetup.systemSource();
+let everythingSetupLast = null; // the last detection, so Start launches only a program detection itself found
+let everythingSetupInFlight = null;
+const everythingSetupStartedExes = []; // a test instance records a start here instead of launching anything
+
+/** The URL of Whippet's own Everything address with the port Everything's settings name. */
+function everythingAddressWithPort(baseUrl, port, host) {
+  let u;
+  try {
+    u = new URL(String(baseUrl || '').trim() || 'http://127.0.0.1');
+  } catch (_) {
+    u = new URL('http://127.0.0.1');
+  }
+  if (host) u.hostname = host;
+  u.port = String(port);
+  return u.href.replace(/\/$/, '');
+}
+
+function everythingAddressPort(baseUrl) {
+  try {
+    const u = new URL(String(baseUrl || '').trim() || 'http://127.0.0.1');
+    return Number(u.port) || (u.protocol === 'https:' ? 443 : 80);
+  } catch (_) {
+    return 0;
+  }
+}
+
+/** Does Everything's HTTP server answer here? Any answer from the server counts, a refused sign-in included. */
+async function everythingAnswersAt(baseUrl, httpUser, httpPassword) {
+  const r = await everythingSearchRequest({ baseUrl, searchText: 'sort-mix:', count: 1, httpUser, httpPassword, options: {}, timeoutMs: 2500 });
+  return !!(r && (r.ok || /^HTTP 40[13]/.test(String(r.error || ''))));
+}
+
+async function runEverythingSetupDetect(payload) {
+  const { baseUrl, httpUser, httpPassword } = payload || {};
+  const found = await EverythingSetup.detect(everythingSetupSource());
+  if (found.state === 'http-on') {
+    /* The HTTP server is on. If Whippet is pointed at another port, try the one Everything's settings name
+       (on Whippet's host first, then on the hosts Everything binds to, then loopback). */
+    const want = found.httpPort;
+    if (want && want !== everythingAddressPort(baseUrl)) {
+      let host = '';
+      try {
+        host = new URL(String(baseUrl || '').trim() || 'http://127.0.0.1').hostname;
+      } catch (_) {}
+      const hosts = [...new Set([host, ...(found.bindings || []).filter((b) => /^[\w.\-]+$/.test(b) && b !== '*'), '127.0.0.1'].filter(Boolean))];
+      for (const h of hosts) {
+        const candidate = everythingAddressWithPort(baseUrl, want, h);
+        if (await everythingAnswersAt(candidate, httpUser, httpPassword)) {
+          found.state = 'port-found';
+          found.baseUrl = candidate;
+          break;
+        }
+      }
+    }
+    if (found.state === 'http-on') found.state = 'waiting';
+  }
+  found.at = Date.now();
+  everythingSetupLast = found;
+  return found;
+}
+
+ipcMain.handle('everything-setup-detect', async (_event, payload) => {
+  if (everythingSetupInFlight) return everythingSetupInFlight;
+  everythingSetupInFlight = runEverythingSetupDetect(payload)
+    .catch((e) => ({ state: 'error', error: String((e && e.message) || e), at: Date.now() }))
+    .finally(() => {
+      everythingSetupInFlight = null;
+    });
+  return everythingSetupInFlight;
 });
+
+/* Starts the Everything program detection found, with -startup (as the autostart task does: into the tray, not a
+   window over Whippet). Takes no path from the page. */
+ipcMain.handle('everything-setup-start', async () => {
+  const exe = everythingSetupLast && everythingSetupLast.startExe;
+  if (!exe) return { ok: false, error: 'No Everything program was found to start.' };
+  if (process.env.TAGFOX_TEST_HIDDEN === '1') {
+    everythingSetupStartedExes.push(exe);
+    return { ok: true, exe, testOnly: true };
+  }
+  try {
+    const child = spawn(exe, ['-startup'], { detached: true, stdio: 'ignore', windowsHide: false });
+    child.on('error', () => {});
+    child.unref();
+    return { ok: true, exe };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+});
+ipcMain.handle('everything-setup-test-starts', async () => (process.env.TAGFOX_TEST_HIDDEN === '1' ? everythingSetupStartedExes.slice() : []));
 
 ipcMain.handle('open-path', async (_event, fullPath) => {
   return openPathWithFallback(fullPath);

@@ -46,6 +46,9 @@ ipcRenderer.on('tagfox-app-restart-imminent', (_e, payload) => {
 
 contextBridge.exposeInMainWorld('tagBrowser', {
   search: (payload) => ipcRenderer.invoke('everything-search', payload),
+  everythingSetupDetect: (payload) => ipcRenderer.invoke('everything-setup-detect', payload),
+  everythingSetupStart: () => ipcRenderer.invoke('everything-setup-start'),
+  everythingSetupTestStarts: () => ipcRenderer.invoke('everything-setup-test-starts'),
   openPath: (fullPath) => ipcRenderer.invoke('open-path', fullPath),
   showInFolder: (fullPath) => ipcRenderer.invoke('show-in-folder', fullPath),
   hideMainWindow: () => ipcRenderer.invoke('hide-main-window'),

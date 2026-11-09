@@ -52,6 +52,7 @@ const runs = [
   { name: 'settings as / commands', args: ['runner-settings-commands.cjs'] },
   { name: 'runner saved searches', args: ['runner-saved-searches.cjs'] },
   { name: 'machine features', args: ['machine-features.cjs'] },
+  { name: 'first-run setup card', args: ['everything-setup.cjs'] },
   { name: 'row buttons by keyboard', args: ['row-actions-keys.cjs'] },
   { name: 'option, dialog and folder keys', args: ['runner-key-actions.cjs'] },
   { name: 'hidden title bar', args: ['window-chrome.cjs'] },

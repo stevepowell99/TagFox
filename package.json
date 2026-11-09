@@ -36,6 +36,7 @@
       "tags.js",
       "preview-text-helpers.js",
       "file-dialog-handoff.js",
+      "everything-setup.js",
       "did-you-know-tips.js",
       "renderer.js",
       "package.json",

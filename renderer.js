@@ -3039,7 +3039,7 @@
       const positive = toks.filter((t) => !t.startsWith('!') && !/^ext:/i.test(t)).join(' ');
       const negative = toks.filter((t) => t.startsWith('!') || /^ext:/i.test(t)).join(' ');
       /* Name matches, so the main fetch's newest 300 (mostly path matches for a common word) cannot crowd
-         them out. nopath:<...> also takes groups, | and regex: terms (checked against Everything 1.5a). */
+         them out. nopath:<...> also takes groups, | and regex: terms (checked against Everything 1.5). */
       if (runnerSort === 'smart' && positive && options.pathSearch && !/^nopath:/i.test(q)) {
         ask(everythingSearchTextForUi(ceilingNorms, rootFolder, ('nopath:<' + positive + '> ' + negative).trim(), recursive), cap);
       }
@@ -11729,10 +11729,10 @@
     }
 
     /** One-shot Everything search using the current Settings connection. opts: { searchText, count, options }. */
-    async function everythingSearchOnce({ searchText, count, options }) {
+    async function everythingSearchOnce({ searchText, count, options, timeoutMs = 0 }) {
       if (!window.tagBrowser || typeof window.tagBrowser.search !== 'function') return null;
       const { baseUrl, httpUser, httpPassword } = readEverythingConnection();
-      return window.tagBrowser.search({ baseUrl, searchText, count: String(count), httpUser, httpPassword, options });
+      return window.tagBrowser.search({ baseUrl, searchText, count: String(count), httpUser, httpPassword, options, timeoutMs });
     }
 
     function serializeSearchState() {
@@ -13937,10 +13937,11 @@
     function everythingHttpSetupHintKind(errMsg) {
       const s = String(errMsg || '');
       const sl = s.toLowerCase();
-      if (/http\s+401\b/.test(s) || /http\s+403\b/.test(s)) return 'auth';
+      /* Main reports "HTTP 401 Unauthorized", capitals included, so the HTTP tests ignore case. */
+      if (/http\s+40[13]\b/i.test(s)) return 'auth';
       if (/response was not json/i.test(s)) return 'json';
-      if (/http\s+404\b/.test(s)) return 'http';
-      if (/http\s+50[0-9]\b/.test(s)) return 'http';
+      if (/http\s+404\b/i.test(s)) return 'http';
+      if (/http\s+50[0-9]\b/i.test(s)) return 'http';
       if (/econnrefused|etimedout|enotfound/i.test(s)) return 'net';
       if (sl.includes('failed to fetch')) return 'net';
       if (sl.includes('networkerror') || sl.includes('network request failed')) return 'net';
@@ -14058,9 +14059,22 @@
         el.textContent = "Can't connect";
         el.className = 'badge rounded-pill text-bg-danger';
         el.title =
-          'Nothing reached this URL — is Everything running with HTTP enabled (and plug-in on 1.5a)? ' + detail;
+          'Nothing reached this URL — is Everything running with its HTTP server on? ' + detail;
       }
       syncEverythingConnectionSectionCollapse();
+    }
+
+    /** The one connection probe: a one-result `sort-mix:` query with the current Settings fields. It serves the
+        Settings badge and the setup card. `sort-mix:` is Everything 1.5's own prefix and, on its own, matches every
+        item, so `totalResults` above 0 shows 1.5 (1.4 reads it as text and finds nothing). Zero is either 1.4 or an
+        index not built yet, which the setup card settles from the installed exe's version. */
+    async function probeEverythingOnce({ timeoutMs = 0 } = {}) {
+      return everythingSearchOnce({
+        searchText: 'sort-mix:',
+        count: 1,
+        options: { ...everythingOptionsForRequest(), offset: 0 },
+        timeoutMs,
+      });
     }
 
     /** Tiny query using current Settings fields — runs when Settings opens. */
@@ -14074,11 +14088,7 @@
       syncEverythingConnectionSectionCollapse();
       let res;
       try {
-        res = await everythingSearchOnce({
-          searchText: 'sort-mix:',
-          count: 1,
-          options: { ...everythingOptionsForRequest(), offset: 0 },
-        });
+        res = await probeEverythingOnce();
       } catch (e) {
         if (seq !== everythingConnectionBadgeProbeSeq) return;
         setEverythingConnectionBadgeFromErr(e && e.message ? String(e.message) : 'Request failed');
@@ -14094,6 +14104,13 @@
       setEverythingConnectionBadgeFromErr(errMsg);
       const kind = everythingHttpSetupHintKind(errMsg);
       if (!kind) return;
+      /* Nothing there to talk to (refused, timed out, or not Everything's JSON): the setup card says what to do
+         next. A server that answers with an error or refuses the sign-in keeps the banner. */
+      if (kind === 'net' || kind === 'json') {
+        hideEverythingHttpHelpBanner();
+        everythingSetupStart('failed');
+        return;
+      }
       const wrap = document.getElementById('everythingHttpHelpAlert');
       const span = document.getElementById('everythingHttpHelpMsg');
       if (!wrap || !span) return;
@@ -14102,16 +14119,327 @@
         span.textContent =
           'Everything HTTP auth failed. Use the same username/password as Tools → Options → HTTP Server. ' +
           (detail ? '(' + detail + ')' : '');
-      } else if (kind === 'json') {
-        span.textContent =
-          'This URL did not return Everything JSON — wrong port, not the HTTP server, or a proxy. Check the base URL. ' +
-          (detail ? '(' + detail + ')' : '');
       } else {
         span.textContent =
-          'Cannot reach Everything HTTP — is Everything running, HTTP enabled (on 1.5a: HTTP plug-in installed), URL/port correct? ' +
+          'Everything’s HTTP server answered with an error. Check the address in Settings, and that it is Everything’s HTTP server. ' +
           (detail ? '(' + detail + ')' : '');
       }
       wrap.classList.remove('d-none');
+    }
+
+    /* Setup card: the first-run guide, shown in place of the empty list while Whippet cannot search through
+       Everything. It works out where the user is (main's everything-setup-detect, see everything-setup.js) and
+       shows one next step, then re-checks by itself so it advances as they act and goes once Everything answers.
+       Cost: the HTTP probe (probeEverythingOnce) runs every 2 seconds while the card is up; the detection, which
+       shells out to PowerShell, at most every 6 seconds and on window focus. Nothing runs while connected: the
+       timer is cleared, and a search that fails starts it again. */
+    const EVERYTHING_PAGE_URL = 'https://www.voidtools.com/everything-1.5/';
+    const EVERYTHING_PLUGINS_URL = 'https://www.voidtools.com/support/everything/plugins/';
+    const EVERYTHING_RUN_BOTH_URL = 'https://www.voidtools.com/forum/viewtopic.php?t=17663';
+    const EVERYTHING_SETUP_PROBE_MS = 2000;
+    const EVERYTHING_SETUP_DETECT_MS = 6000;
+    const EVERYTHING_SETUP_STEPS = [
+      'Install Everything 1.5',
+      'Start Everything',
+      'Add the HTTP Server plugin',
+      'Turn on the HTTP server',
+      'Connect',
+    ];
+    /* state -> the step it is on (index into the list above) */
+    const EVERYTHING_SETUP_STEP_OF = { 'not-installed': 0, 'only-14': 0, 'not-running': 1, 'no-plugin': 2, 'http-off': 3, waiting: 4 };
+
+    const everythingSetup = {
+      active: false, // the loop is running
+      shown: false, // the card is on screen
+      timer: null,
+      busy: false,
+      lastDetectAt: 0,
+      last: null, // the last detection
+      verified15: false, // a probe has matched sort-mix:, or a detection found 1.5; no more checks for a quiet empty list
+      probes: 0,
+      detects: 0,
+      current: null, // what the card shows now: { state, ... }
+      addressNote: '', // the status line for an address changed to Everything's port, kept through the reconnect
+    };
+
+    function everythingSetupEl(id) {
+      return document.getElementById(id);
+    }
+
+    function everythingSetupOpenUrl(url) {
+      void window.tagBrowser.openUrlDefaultBrowser({ url });
+    }
+
+    /** What the card says for one detection: a title, paragraphs (or a numbered list), and the one button. */
+    function everythingSetupContent(d) {
+      const v = d && d.exes && d.exes[0] ? d.exes[0].version : '';
+      switch (d.state) {
+        case 'not-installed':
+          return {
+            title: 'Whippet needs Everything',
+            paras: [
+              'Everything is a search program from voidtools. It keeps an index of every file name on your computer, and Whippet asks it for results as you type. Whippet needs Everything 1.5, which is in beta.',
+            ],
+            button: { text: 'Get Everything 1.5', url: EVERYTHING_PAGE_URL },
+            note: 'Install it, then come back here. Whippet notices by itself.',
+          };
+        case 'only-14':
+          return {
+            title: 'Whippet needs Everything 1.5',
+            paras: [
+              'You have Everything ' + (v || '1.4') + '. Whippet uses the sort-mix: search of Everything 1.5, which is in beta, so 1.4 will not do.',
+            ],
+            link: { text: 'how to run Everything 1.4 and 1.5 side by side', url: EVERYTHING_RUN_BOTH_URL, before: 'They normally cannot run at the same time; voidtools explains ' },
+            button: { text: 'Get Everything 1.5', url: EVERYTHING_PAGE_URL },
+            note: 'Install it, then come back here.',
+          };
+        case 'not-running':
+          return {
+            title: 'Start Everything',
+            paras: ['Everything is installed but not running. Start it and Whippet connects by itself.'],
+            button: { text: 'Start Everything', start: true },
+          };
+        case 'no-plugin':
+          return {
+            title: 'Add the HTTP Server plugin',
+            paras: ['Everything is running, but Whippet reaches it through the Everything HTTP Server plugin, which is not installed.'],
+            button: { text: 'Get the HTTP Server plugin', url: EVERYTHING_PLUGINS_URL },
+            note: 'Install it, then come back here.',
+          };
+        case 'http-off':
+          return {
+            title: 'Turn on the HTTP server',
+            paras: ['The plugin is installed. In Everything:'],
+            steps: [
+              'Open Tools, Options, HTTP Server.',
+              'Turn the HTTP server on.',
+              'Leave the address and port as they are, and click OK. Whippet reads the port from Everything’s settings.',
+            ],
+          };
+        case 'waiting':
+          return {
+            title: 'Everything is not answering yet',
+            paras: [
+              'Everything’s HTTP server is on at port ' + (d.httpPort || '?') + ', but nothing has answered there yet. If Everything has only just started, wait a moment. If this stays, restart Everything.',
+            ],
+          };
+        case 'error':
+          return { title: 'Could not look for Everything', paras: [String(d.error || 'Unknown error')] };
+        default:
+          return { title: 'Looking for Everything…', paras: [] };
+      }
+    }
+
+    function everythingSetupRender(d) {
+      const card = everythingSetupEl('everythingSetupCard');
+      if (!card) return;
+      const c = everythingSetupContent(d);
+      card.dataset.state = d.state;
+      everythingSetupEl('everythingSetupTitle').textContent = c.title;
+      const body = everythingSetupEl('everythingSetupBody');
+      body.textContent = '';
+      for (const t of c.paras) {
+        const p = document.createElement('p');
+        p.textContent = t;
+        body.appendChild(p);
+      }
+      if (c.steps) {
+        const ol = document.createElement('ol');
+        for (const t of c.steps) {
+          const li = document.createElement('li');
+          li.textContent = t;
+          ol.appendChild(li);
+        }
+        body.appendChild(ol);
+      }
+      if (c.link) {
+        const p = document.createElement('p');
+        p.appendChild(document.createTextNode(c.link.before || ''));
+        const a = document.createElement('a');
+        a.href = c.link.url;
+        a.textContent = c.link.text;
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          everythingSetupOpenUrl(c.link.url);
+        });
+        p.appendChild(a);
+        p.appendChild(document.createTextNode('.'));
+        body.appendChild(p);
+      }
+      const steps = everythingSetupEl('everythingSetupSteps');
+      steps.textContent = '';
+      const at = EVERYTHING_SETUP_STEP_OF[d.state];
+      EVERYTHING_SETUP_STEPS.forEach((label, i) => {
+        const li = document.createElement('li');
+        const done = at != null && i < at;
+        const cur = at != null && i === at;
+        li.className = done ? 'is-done' : cur ? 'is-current' : '';
+        const icon = document.createElement('i');
+        icon.className = 'fa-solid ' + (done ? 'fa-check' : cur ? 'fa-arrow-right' : 'fa-circle fa-2xs');
+        icon.setAttribute('aria-hidden', 'true');
+        li.appendChild(icon);
+        li.appendChild(document.createTextNode(label));
+        if (cur) li.setAttribute('aria-current', 'step');
+        steps.appendChild(li);
+      });
+      const primary = everythingSetupEl('everythingSetupPrimary');
+      const check = everythingSetupEl('everythingSetupCheck');
+      primary.classList.toggle('d-none', !c.button);
+      if (c.button) {
+        primary.textContent = c.button.text;
+        primary.dataset.url = c.button.url || '';
+        primary.dataset.start = c.button.start ? '1' : '';
+      }
+      /* A step with nothing to press (turn the server on in Everything) makes Check again the main button. */
+      check.className = 'btn ' + (c.button ? 'btn-outline-secondary' : 'btn-primary');
+      everythingSetupEl('everythingSetupNote').textContent = c.note || '';
+      everythingSetup.current = d;
+    }
+
+    function everythingSetupShow(on) {
+      everythingSetup.shown = on;
+      everythingSetupEl('everythingSetupCard')?.classList.toggle('d-none', !on);
+      everythingSetupEl('resultsScroll')?.classList.toggle('tagfox-setup-on', on);
+    }
+
+    function everythingSetupStop() {
+      everythingSetup.active = false;
+      clearInterval(everythingSetup.timer);
+      everythingSetup.timer = null;
+    }
+
+    /** Everything answers: the card goes, the list refills, and the checks stop. */
+    function everythingSetupConnected() {
+      const wasShown = everythingSetup.shown;
+      everythingSetupStop();
+      everythingSetupShow(false);
+      everythingSetup.current = null;
+      setEverythingConnectionBadgeOk();
+      hideEverythingHttpHelpBanner();
+      if (wasShown) {
+        /* Keep the line that says the address was changed; it is the one that explains why it now works. */
+        setStatusMain(everythingSetup.addressNote || 'Connected to Everything.');
+        everythingSetup.addressNote = '';
+        scheduleSearch();
+      }
+    }
+
+    async function everythingSetupDetect(force) {
+      const now = Date.now();
+      if (!force && now - everythingSetup.lastDetectAt < EVERYTHING_SETUP_DETECT_MS) return everythingSetup.last;
+      if (force && now - everythingSetup.lastDetectAt < 1000) return everythingSetup.last;
+      everythingSetup.lastDetectAt = now;
+      everythingSetup.detects++;
+      const { baseUrl, httpUser, httpPassword } = readEverythingConnection();
+      let d;
+      try {
+        d = await window.tagBrowser.everythingSetupDetect({ baseUrl, httpUser, httpPassword });
+      } catch (e) {
+        d = { state: 'error', error: String((e && e.message) || e) };
+      }
+      everythingSetup.last = d;
+      return d;
+    }
+
+    /** One round: probe, and if Everything still does not answer, detect (at most every 6 seconds) and redraw. */
+    async function everythingSetupTick(force, again) {
+      if (!everythingSetup.active || everythingSetup.busy) return;
+      everythingSetup.busy = true;
+      try {
+        everythingSetup.probes++;
+        let res = null;
+        try {
+          res = await probeEverythingOnce({ timeoutMs: 3000 });
+        } catch (_) {}
+        if (!everythingSetup.active) return;
+        if (res && res.ok && res.totalResults > 0) {
+          everythingSetup.verified15 = true;
+          everythingSetupConnected();
+          return;
+        }
+        if (res && !res.ok) {
+          const kind = everythingHttpSetupHintKind(res.error);
+          if (kind !== 'net' && kind !== 'json') {
+            /* Something answered with an error or refused the sign-in: that is the banner's job, not setup's. */
+            everythingSetupConnected();
+            maybeShowEverythingHttpHelpBanner(res.error);
+            return;
+          }
+        }
+        const d = await everythingSetupDetect(force);
+        if (!everythingSetup.active || !d) return;
+        if (d.state === 'port-found' && d.baseUrl) {
+          document.getElementById('baseUrl').value = d.baseUrl;
+          saveSettings();
+          everythingSetup.addressNote = 'Everything’s HTTP server is on port ' + new URL(d.baseUrl).port + ', so Whippet’s Everything address is now ' + d.baseUrl + '.';
+          setStatusMain(everythingSetup.addressNote);
+          if (!again) {
+            everythingSetup.busy = false;
+            await everythingSetupTick(false, true);
+          }
+          return;
+        }
+        if (res && res.ok) {
+          /* Answers, but sort-mix: matched nothing: Everything 1.4, or a 1.5 whose index is not built yet. The
+             installed program's version tells them apart, and only a 1.4 (or a 1.5 that is not the one running)
+             gets a card. */
+          if (d.state === 'only-14' || d.state === 'not-running') {
+            everythingSetupShow(true);
+            everythingSetupRender(d);
+          } else {
+            everythingSetup.verified15 = true;
+            everythingSetupConnected();
+          }
+          return;
+        }
+        everythingSetupShow(true);
+        everythingSetupRender(d);
+      } finally {
+        everythingSetup.busy = false;
+      }
+    }
+
+    /** A search failed to reach Everything (reason 'failed'), or an empty list needs its version checked
+        ('empty'). The card appears only once a detection says there is something to do. */
+    function everythingSetupStart(reason) {
+      if (everythingSetup.active) return;
+      everythingSetup.active = true;
+      /* A new episode looks afresh: what an earlier one found says nothing about the machine now. */
+      everythingSetup.lastDetectAt = 0;
+      everythingSetup.last = null;
+      if (reason === 'failed') {
+        everythingSetupShow(true);
+        if (!everythingSetup.current) everythingSetupRender({ state: 'checking' });
+      }
+      clearInterval(everythingSetup.timer);
+      everythingSetup.timer = setInterval(() => void everythingSetupTick(false), EVERYTHING_SETUP_PROBE_MS);
+      setTimeout(() => void everythingSetupTick(false), 0);
+    }
+
+    /** A search succeeded but listed nothing. That is normal for a folder; it is also what Everything 1.4 gives,
+        which cannot run sort-mix:. So once a session, before a probe or detection has shown 1.5, look. */
+    function everythingSetupCheckEmptyList() {
+      if (everythingSetup.verified15 || everythingSetup.active) return;
+      everythingSetupStart('empty');
+    }
+
+    function wireEverythingSetupOnce() {
+      everythingSetupEl('everythingSetupPrimary')?.addEventListener('click', async () => {
+        const b = everythingSetupEl('everythingSetupPrimary');
+        if (b.dataset.start === '1') {
+          const r = await window.tagBrowser.everythingSetupStart();
+          everythingSetupEl('everythingSetupNote').textContent =
+            r && r.ok ? 'Starting Everything…' : 'Could not start Everything: ' + ((r && r.error) || 'unknown error');
+          setTimeout(() => void everythingSetupTick(true), 1500);
+        } else if (b.dataset.url) {
+          everythingSetupOpenUrl(b.dataset.url);
+        }
+      });
+      everythingSetupEl('everythingSetupCheck')?.addEventListener('click', () => void everythingSetupTick(true));
+      /* Back from Everything's window, or from a browser: look at once. */
+      window.addEventListener('focus', () => {
+        if (everythingSetup.active) void everythingSetupTick(true);
+      });
     }
 
     /** The Everything search text for the current filters: scope, query, tags, deadlines, content, recency.
@@ -14246,6 +14574,7 @@
       hideEverythingHttpHelpBanner();
       setEverythingConnectionBadgeOk();
       let got = Array.isArray(res.rows) ? res.rows : [];
+      if (!got.length) everythingSetupCheckEmptyList();
       let usedLocalFolderFallback = false;
       const localFallbackRows = await maybeBuildLocalCloudBrowseFallbackRows({
         runId,
@@ -15751,6 +16080,7 @@
     }
 
     wireEverythingConnectionSectionCollapseOnce();
+    wireEverythingSetupOnce();
     wireTagfoxSettingsSectionCollapsesOnce();
     loadSettings();
     setEverythingConnectionBadgeUnknown();
@@ -16223,6 +16553,31 @@
           viewerOff: document.body.classList.contains('tagfox-runner-viewer-off'),
           focusInList: !!document.activeElement?.closest?.('#resultsWrap'),
         }),
+        /* The setup card: what it shows, one round of its checks by hand, and how often it has probed and detected. */
+        setupCard: () => {
+          const card = document.getElementById('everythingSetupCard');
+          const prim = document.getElementById('everythingSetupPrimary');
+          const r = prim.getBoundingClientRect();
+          const wrap = document.getElementById('resultsWrap').getBoundingClientRect();
+          return {
+            visible: !!card && !card.classList.contains('d-none'),
+            state: card ? card.dataset.state || '' : '',
+            title: document.getElementById('everythingSetupTitle').textContent,
+            body: document.getElementById('everythingSetupBody').innerText,
+            note: document.getElementById('everythingSetupNote').textContent,
+            primary: prim.classList.contains('d-none') ? null : { text: prim.textContent, url: prim.dataset.url || '', start: prim.dataset.start === '1', inView: r.bottom <= Math.min(window.innerHeight, wrap.bottom) && r.top >= 0 },
+            steps: [...document.querySelectorAll('#everythingSetupSteps li')].map((li) => ({ text: li.textContent, cls: li.className })),
+            tableHidden: getComputedStyle(document.getElementById('resultsTable')).display === 'none',
+            baseUrl: document.getElementById('baseUrl').value,
+            active: everythingSetup.active,
+            probes: everythingSetup.probes,
+            detects: everythingSetup.detects,
+            timerOn: everythingSetup.timer != null,
+          };
+        },
+        setupTick: (force) => everythingSetupTick(!!force),
+        setupStart: (reason) => everythingSetupStart(reason || 'failed'),
+        setupStop: () => everythingSetupStop(),
         autoStart: (sec) => { const e = document.getElementById('autoRefreshSec'); if (e) { e.value = String(sec); } syncAutoRefreshTimer(); },
         autoStop: () => { const e = document.getElementById('autoRefreshSec'); if (e) e.value = '0'; syncAutoRefreshTimer(); },
         configure: (cfg) => {

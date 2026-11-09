@@ -11,7 +11,7 @@
   Ship: npm run dist (electron-builder) → NSIS under dist/. Not code-signed; SmartScreen may warn recipients.
 
   Everything sort-mix: (implementation — do not remove) The HTTP API returns all folders before all files for a given sort. With Max results capped,
-  a scope with many folders can yield folder-only pages and zero visible files. Everything 1.5a adds sort-mix: so files and folders interleave in true sort order.
+  a scope with many folders can yield folder-only pages and zero visible files. Everything 1.5 adds sort-mix: so files and folders interleave in true sort order.
   TagFox appends sort-mix: when Hide files is OFF (renderer.js, runSearch()).
   Ref: https://www.voidtools.com/forum/viewtopic.php?t=8994
 
@@ -27,7 +27,7 @@
   Bulk rename preview: first 200 rows in the dialog only; Rename applies to the full batch captured at open. Wildcard Find uses same Match case as the search row.
 
   The Keys tab's table is drawn at open from RUNNER_KEYS (renderRunnerKeysHelp into #runnerKeysTable), so it cannot drift from the keys. Tab ids are read by
-  HELP_TAB_IDS and restoreHelpModalTab in renderer.js: F1 and the / command Help open `essentials` (Get started), `?` opens `runner` (the Keys tab), the Settings link "Get Everything 1.5a" opens `installation`.
+  HELP_TAB_IDS and restoreHelpModalTab in renderer.js: F1 and the / command Help open `essentials` (Get started), `?` opens `runner` (the Keys tab), the Settings link "Get Everything 1.5" opens `installation`.
 
   Tab boundaries: see scripts/build-help.js — each pane is introduced by a single-line HTML comment whose body is help:tab plus JSON (id, label, exactly one "active":true, optional "format":"html" for raw HTML). Run npm run build:help after edits.
 -->
@@ -292,13 +292,15 @@ Every key Whippet answers to. `?`, with the search box empty, opens this list.
 
 ### Install Everything
 
-1. Download and install **Everything 1.5a** from <a href="https://www.voidtools.com/everything-1.5a" target="_blank" rel="noopener">Everything 1.5a downloads</a>, and let it finish its first index.
-2. Install the HTTP Server plugin for your version of Windows: the <a href="https://www.voidtools.com/Everything-HTTP-Server-1.0.3.4.x64-Setup.exe" target="_blank" rel="noopener">64-bit installer</a> for nearly every computer today, or the <a href="https://www.voidtools.com/Everything-HTTP-Server-1.0.3.4.x86-Setup.exe" target="_blank" rel="noopener">32-bit installer</a>.
-3. In Everything, open **Tools → Options → HTTP Server**, turn it on, and keep the address `127.0.0.1` and port `8080` unless you have a reason to change them.
+If Whippet cannot search through Everything, a **setup card** takes the place of the list. It shows the one step you are on, with a button, and checks again by itself, so the next step appears as you finish each one. It goes once Everything answers. The steps are below, in case you would rather do them without it.
+
+1. Download and install **Everything 1.5**, which is in beta, from <a href="https://www.voidtools.com/everything-1.5/" target="_blank" rel="noopener">the Everything 1.5 page</a>, and let it finish its first index. Whippet does not work with Everything 1.4.
+2. Install the Everything HTTP Server plugin from <a href="https://www.voidtools.com/support/everything/plugins/" target="_blank" rel="noopener">voidtools' plugins page</a>.
+3. In Everything, open **Tools → Options → HTTP Server** and turn it on. Leave the address and port as they are.
 
 ### Connect Whippet
 
-- Start Whippet. In **Settings**, under **Connection to Everything Search**, the address should be the same as Everything's: `http://127.0.0.1:8080` unless you changed it.
+- Start Whippet. In **Settings**, under **Connection to Everything Search**, the address should be the same as Everything's. When the HTTP server is on at a port other than the one set here, the setup card changes the address to Everything's port and says so.
 - If you gave Everything's HTTP server a username and password, enter the same ones here.
 - Everything has to be running whenever you use Whippet. Its icon sits in the system tray.
 

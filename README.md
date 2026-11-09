@@ -28,17 +28,17 @@ Whippet runs on top of [Voidtools Everything](https://www.voidtools.com/), which
 ### What it needs
 
 - Windows 10 or 11.
-- [Voidtools Everything](https://www.voidtools.com/) 1.5a with its HTTP server turned on. Whippet relies on Everything 1.5a's `sort-mix:` search; Everything 1.4 may connect but is not supported.
+- [Voidtools Everything](https://www.voidtools.com/) 1.5 (in beta) with its HTTP Server plugin and HTTP server turned on. Whippet relies on Everything 1.5's `sort-mix:` search; Everything 1.4 is not supported.
 
 ### Install
 
-1. **Install Everything 1.5a** from the [Everything 1.5a downloads](https://www.voidtools.com/everything-1.5a), then add the HTTP Server plugin: [x64 installer](https://www.voidtools.com/Everything-HTTP-Server-1.0.3.4.x64-Setup.exe) or [x86 installer](https://www.voidtools.com/Everything-HTTP-Server-1.0.3.4.x86-Setup.exe). Let Everything finish its first index.
-2. **Turn on the HTTP server** in Everything under **Tools, Options, HTTP Server**. Keep the default address `127.0.0.1` and port `8080`.
+1. **Install Everything 1.5** from the [Everything 1.5 page](https://www.voidtools.com/everything-1.5/), then add the Everything HTTP Server plugin from [voidtools' plugins page](https://www.voidtools.com/support/everything/plugins/). Let Everything finish its first index.
+2. **Turn on the HTTP server** in Everything under **Tools, Options, HTTP Server**. Leave the address and port as they are.
 3. **Install Whippet**, either way:
    - Download a `Whippet Setup` installer from the [Releases page](https://github.com/stevepowell99/whippet-files/releases) and run it. The installer is not code-signed, so Windows SmartScreen may warn you the first time; choose **More info, Run anyway**.
    - Or run it from source: install [Node.js](https://nodejs.org/), then `git clone https://github.com/stevepowell99/whippet-files`, `npm install` and `npm start` in that folder.
 
-Open Whippet. In **Settings**, under **Connection to Everything Search**, the address should already be `http://127.0.0.1:8080`. If the list stays empty, Everything is probably not running.
+Open Whippet. If it cannot search through Everything, a setup card takes the place of the list. It works out which step you are on (Everything not installed, not running, only version 1.4, no HTTP Server plugin, or the HTTP server switched off), shows that one step with a button, and checks again by itself until Everything answers, when the card goes. When the HTTP server is on at a port other than the one in **Settings**, under **Connection to Everything Search**, Whippet sets that address to the port Everything's settings name. The card only reads Everything's settings and never changes them.
 
 Some buttons appear only on a machine set up for them: opening markdown in the [gmist](https://mist.broad-smoke-cc64.workers.dev) editor needs a gmist checkout beside Whippet, **Print to PDF** needs a JobCat checkout with its `make_pdf.py`, and Google Drive sign-in needs a Google OAuth client file (see "Google Drive setup" below). Without them, those buttons are not shown.
 
@@ -85,7 +85,7 @@ Whippet is an [Electron](https://www.electronjs.org/) desktop app. It talks only
 
 ### Run from source
 
-You still need Everything 1.5a with its HTTP server running (see the install steps above).
+You still need Everything 1.5 with its HTTP server running (see the install steps above); the setup card walks you through it.
 
 ```bash
 npm install
@@ -110,7 +110,7 @@ The build bundles `google-oauth-client.json` (it is in the `build.files` allowli
 
 Steve runs Whippet with `npm start`, never the packaged app, so `npm run dist` exists only to hand someone else a build. A second running instance is another `npm start`, which loses the global hotkeys and the Chromium disk cache to the first (harmless startup errors: "already in use", "Unable to move the cache").
 
-**Autostart** is a scheduled task per machine, `TagFoxAutostart`. `scripts/autostart.ps1` starts the Everything *user* instance (the service runs as SYSTEM and does not host the HTTP server, so the user instance is the one Whippet needs) and then `npm start`, waiting for the HTTP port read from `%APPDATA%\Everything\Plugins-1.5a.ini`. It is idempotent, so its triggers can be generous: logon, session unlock and resume from sleep. Install or remove it with `pwsh scripts/install-autostart.ps1 [-Uninstall]`; no elevation needed. The task is not carried by git, so a fresh machine needs the installer run once, which `machine-parity.ps1 -Fix` does. It logs to `%LOCALAPPDATA%\TagFox\autostart.log`, and `scripts/start.js` adds a line there for every Electron exit (code, signal, minutes up), so a Whippet that vanished says whether it quit (code 0), was killed or crashed; there is no crash reporter, so no dump is ever written. An autostarted Whippet does not show a console, so stop it and run `npm start` by hand when you want the log live.
+**Autostart** is a scheduled task per machine, `TagFoxAutostart`. `scripts/autostart.ps1` starts the Everything *user* instance (the service runs as SYSTEM and does not host the HTTP server, so the user instance is the one Whippet needs) and then `npm start`, waiting for the HTTP port read from the newest `Plugins*.ini` in `%APPDATA%\Everything` (`Plugins-1.5a.ini` for the alpha, `Plugins.ini` for the beta). It is idempotent, so its triggers can be generous: logon, session unlock and resume from sleep. Install or remove it with `pwsh scripts/install-autostart.ps1 [-Uninstall]`; no elevation needed. The task is not carried by git, so a fresh machine needs the installer run once, which `machine-parity.ps1 -Fix` does. It logs to `%LOCALAPPDATA%\TagFox\autostart.log`, and `scripts/start.js` adds a line there for every Electron exit (code, signal, minutes up), so a Whippet that vanished says whether it quit (code 0), was killed or crashed; there is no crash reporter, so no dump is ever written. An autostarted Whippet does not show a console, so stop it and run `npm start` by hand when you want the log live.
 
 **Restart.** An edit to `main.js` never restarts Whippet; a Restart button shows in the search box instead (September 2026). The reloader used to `app.relaunch()` on every main-process change, which starts the new process outside the terminal, so an agent editing `main.js` killed Steve's `npm start` window and left a Whippet he could not see the console of. Main snapshots the mtime of every main-process module and both preload scripts at startup, and `tagfox-runtime-info` reports what has changed since; the renderer polls it every 30s and on focus and shows `btnRestartTagFox`. `npm start` is `scripts/start.js`, which runs Electron and starts it again when it exits with code 75. Every restart goes through `restartTagFoxProcess()` in main: the Restart button (`tagfox-restart`), Ctrl+F5 and the View menu's restart. It exits with 75 under the wrapper, so Whippet stays in the same terminal, and falls back to `app.relaunch` outside it. Settings opens with a **Running now** block naming this Whippet (start time, PID, whether its code is current) and whichever gmist holds 5173, classified from the runner above the listener (`describeLocalGmistHolder`: `dev-local.mjs --built` is `preview:local`). Guarded by `test/restart-in-terminal.cjs`.
 
@@ -153,6 +153,7 @@ invariants checked and how to add a test, is in [`test/README.md`](test/README.m
 | `scripts/sync-vendor-assets.js` | Copies Bootstrap, Font Awesome, CodeMirror and other vendor files into `vendor/` |
 | `scripts/run-dist.js` | Wraps the electron-builder distribution build |
 | `file-dialog-handoff.js` | Reads and fills another app's Open or Save dialog through user32 (koffi) |
+| `everything-setup.js` | First-run setup: finds Everything and reads its settings, read only (see "The setup card") |
 | `web-editor-toolbar.html`, `web-editor-toolbar-preload.js` | Toolbar of the gmist and Google Workspace doc windows |
 | `scripts/start.js` | `npm start`: runs Electron and starts it again on exit code 75 |
 | `scripts/autostart.ps1`, `scripts/install-autostart.ps1` | The per-machine `TagFoxAutostart` task |
@@ -160,13 +161,23 @@ invariants checked and how to add a test, is in [`test/README.md`](test/README.m
 
 ### How search works
 
-Everything's HTTP API returns all folders before all files for a given sort. With **Max results** capped, a folder-heavy scope can fill a page with folders and show no files. Everything 1.5a adds a `sort-mix:` prefix that interleaves files and folders in true sort order, and Whippet appends it when **Hide files** is off (see `runSearch()` in `renderer.js`). This is why 1.5a is required. Reference: the [Everything forum thread](https://www.voidtools.com/forum/viewtopic.php?t=8994).
+Everything's HTTP API returns all folders before all files for a given sort. With **Max results** capped, a folder-heavy scope can fill a page with folders and show no files. Everything 1.5 adds a `sort-mix:` prefix that interleaves files and folders in true sort order, and Whippet appends it when **Hide files** is off (see `runSearch()` in `renderer.js`). This is why 1.5 is required. Reference: the [Everything forum thread](https://www.voidtools.com/forum/viewtopic.php?t=8994).
 
 **Term order is most of what a query costs.** Everything answers one HTTP query at a time (five sent together took as long as five in a row), and for each item it checks the query's terms left to right, stopping at the first that fails. So a term that rules out most items cheaply goes first: a folder path or a `filelist:` before the words, plain text before a regex. Measured on 2.4 million items in October 2026, with identical rows either way: a tag filter alone 5.6s as a regex and 17ms behind its token as plain text; Runner's Temp query 300-500ms with the folder after the words and 75-115ms before them; the starred-paths `filelist:` 0.5-1s last and 3-10ms first.
 
 Active tag filters are sent to Everything as a regex clause behind the tag token as plain text (`appendTagFiltersToEverythingQuery`, which adds the deadline filter's terms the same way), so matches exist before results load. **Hide special** and **Hide ~** are client-side filters in `listRowsForUi()`; the Everything query is unchanged, so paging still counts raw hits per page. So are the hide-until drop and the task-copy drop (`applyTaskCopyFilter`), which leaves out a tagged file in a `_tmp`, `archive` or `_archive` folder or a linked git worktree below the folder being browsed, as the hub's session-start scan does (`bin\surface-tasks.ps1`; the two lists change together). On 9 November 2026 it took a machine-wide `xkTODO` search from 846 rows to 406. The worktree roots come from the Everything keepalive, whose query lists every file named `.git` (19 on this machine, 2-4ms warm); main reads each and counts it a linked worktree when it points into `.git\worktrees\` (`linked-worktrees`). Guarded by `test/task-copies.cjs`.
 
 **Recency means a file's own modified time**, so a recency window excludes folders (`file:`) unless Folders only is on (October 2026). The window is `dm:>=…` in the Everything query, but Windows bumps a folder's modified time when a child is created, deleted or renamed and never when one is edited, so folder hits made the filter look as if it followed creation: measured on STEVE-DELL, 1,876 of the last hour's 10,186 hits were such folders. `appendRecencyToEverythingQuery` is the one place recency is applied; there is no client-side recency filter.
+
+### The setup card
+
+When a search cannot reach Everything, `#everythingSetupCard` takes the place of the list (`renderer.js`, "Setup card"; `everything-setup.js` and the `everything-setup-detect` handler in `main.js`). It shows the first step not yet done: Everything not installed, only 1.4 installed, not running, no HTTP Server plugin, the HTTP server off, or on but not answering. Main reads and never writes: running processes (user sessions only; the Everything service runs in session 0), the uninstall registry entries, `Program Files\Everything*`, and Everything's settings. The one thing it does for the user is start the Everything program it found (`everything-setup-start`, which takes no path from the page).
+
+- **Where Everything 1.5 keeps the HTTP server's settings** (read on 9 November 2026, and in [voidtools' guide](https://www.voidtools.com/forum/viewtopic.php?t=17663)): `%APPDATA%\Everything\Plugins.ini` for the beta, `Plugins-1.5a.ini` for the alpha (a portable copy keeps it beside the exe), section `[http_server64.dll]`, keys `enabled`, `port` and `bindings`. The beta installs to `C:\Program Files\Everything` with `Plugins\http_server64.dll`; the alpha used `Everything 1.5a`. The x64 plugin is `http_server64.dll` and other builds may be named otherwise, so any `http_server*.dll` counts, and the newest `Plugins*.ini` with such a section wins. Whippet's default address has no port, which is port 80, the HTTP server's own default.
+- **Cost.** The probe is the Settings badge's (`probeEverythingOnce`, a one-result `sort-mix:` query through `everythingSearchRequest` in main) and runs every 2 seconds while the card shows. The detection, which starts PowerShell, runs at most every 6 seconds and on window focus. Nothing runs while connected: a search that fails starts the loop and a connection ends it.
+- **1.4 or 1.5.** `sort-mix:` on its own matches every item in 1.5 (`totalResults` in the millions) and nothing in 1.4, which reads it as text. A probe that answers with zero results is 1.4 or a 1.5 still building its index, so the installed exe's file version decides, and a 1.5 shows no card.
+- **Wrong port.** When the settings name a port other than Whippet's address and Everything answers there, the address is set to it. A refused sign-in counts as an answer.
+- **Tests.** `test/everything-setup.cjs` names a fake machine in a JSON file (`TAGFOX_TEST_EVERYTHING_SOURCE`, read only under `TAGFOX_TEST_HIDDEN`) and drives every state without touching the real Everything.
 
 ### Runner layout
 

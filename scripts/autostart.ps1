@@ -27,15 +27,26 @@ function Get-EverythingExe {
   $svc = Get-CimInstance Win32_Service -ErrorAction SilentlyContinue |
     Where-Object { $_.PathName -match 'Everything\.exe' } | Select-Object -First 1
   if ($svc -and $svc.PathName -match '"([^"]+Everything\.exe)"') { return $Matches[1] }
+  # 1.4 and the 1.5 beta share C:\Program Files\Everything, and the 1.5 alpha has a folder of its own, so the
+  # folder name says nothing: take the highest file version.
   Get-ChildItem 'C:\Program Files\Everything*','C:\Program Files (x86)\Everything*' `
     -Filter Everything.exe -ErrorAction SilentlyContinue |
+    Sort-Object { Get-VersionKey $_.VersionInfo.FileVersion } -Descending |
     Select-Object -First 1 -ExpandProperty FullName
 }
 
+function Get-VersionKey([string]$v) {
+  # "1.5.0.1409a" -> a sortable string; the trailing letter (a, b) is ignored.
+  $n = [regex]::Matches($v, '\d+') | ForEach-Object { '{0:D6}' -f [int]$_.Value }
+  $n -join '.'
+}
+
 function Get-EverythingHttpPort {
-  # The HTTP server is a plugin; its port lives in the per-user plugin ini.
-  $ini = Join-Path $env:APPDATA 'Everything\Plugins-1.5a.ini'
-  if (Test-Path $ini) {
+  # The HTTP server is a plugin; its port lives in the per-user plugin ini. The 1.5 beta drops the alpha's
+  # suffix and uses Plugins.ini, copying Plugins-1.5a.ini only when it has none; so read Plugins.ini first.
+  foreach ($name in 'Plugins.ini', 'Plugins-1.5a.ini') {
+    $ini = Join-Path $env:APPDATA "Everything\$name"
+    if (-not (Test-Path $ini)) { continue }
     $m = Select-String -Path $ini -Pattern '^port=(\d+)' | Select-Object -First 1
     if ($m) { return [int]$m.Matches[0].Groups[1].Value }
   }
