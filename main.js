@@ -2709,8 +2709,8 @@ function watchPageHealth(win) {
   });
   win.on('unresponsive', () => mainPerfLog('page unresponsive'));
   win.on('responsive', () => mainPerfLog('page responsive again'));
-  wc.on('console-message', (_e, level, message, line, sourceId) => {
-    if (level < 3) return;
+  wc.on('console-message', ({ level, message, lineNumber: line, sourceId }) => {
+    if (level !== 'error') return;
     const minute = Math.floor(Date.now() / 60000);
     if (minute !== errorMinute) {
       errorMinute = minute;

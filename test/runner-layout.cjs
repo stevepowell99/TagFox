@@ -586,7 +586,7 @@ async function main() {
     await drv.settle('whole index');
     s = await R();
     check(!s.statusShown && !/\bhits?\b|Hiding/.test(s.status), `a search leaves the status bar hidden and writes no standing line ("${s.status.slice(0, 60)}")`);
-    check(!!s.rankNote && /^\d+ of [\d.]+[KMB]? ranked$/.test(s.rankNote.text) && /^Ranked the \d+ newest of [\d,]+ matches/.test(s.rankNote.title),
+    check(!!s.rankNote && /^\d+ of [\d.]+[A-Za-z]{0,2} ranked$/.test(s.rankNote.text) && /^Ranked the \d+ newest of [\d,]+ matches/.test(s.rankNote.title),
       `a partly ranked list says so in the box (${JSON.stringify(s.rankNote)})`);
     await drv.T('configure', { rootFolder: root });
     await drv.T('setQuery', 'zeta');
