@@ -60,6 +60,15 @@ async function main() {
     check(Math.abs(runner.stripH - tba.height) < 1 && runner.stripRegion === 'drag', `the drag strip is the title bar's height (${runner.stripH} vs ${tba.height}, ${runner.stripRegion})`);
     check(Math.abs(runner.gradientH - 3) < 0.5, `the gradient stays 3px (${runner.gradientH})`);
     check(runner.queryTop >= tba.height, `the search box starts below the strip (${Math.round(runner.queryTop)})`);
+    // The name and mark sit in the strip's left end, under the drag region, and take no clicks.
+    const brand = await drv.ev(`(() => {
+      const el = document.getElementById('whippetBrand');
+      const r = el.getBoundingClientRect();
+      const s = getComputedStyle(el);
+      return { display: s.display, text: el.textContent.trim(), top: r.top, bottom: r.bottom, left: r.left, w: r.width, pe: s.pointerEvents, svgW: el.querySelector('svg').getBoundingClientRect().width };
+    })()`);
+    check(brand.display === 'flex' && brand.text === 'Whippet' && brand.svgW > 0, `the strip shows the mark and the name Whippet (${JSON.stringify(brand)})`);
+    check(brand.top >= -0.5 && brand.bottom <= tba.height + 0.5 && brand.left < 40 && brand.pe === 'none', `and they sit at the strip's left end and take no clicks (${JSON.stringify(brand)})`);
     let hits = await underButtons('body');
     check(hits.length === 0, `nothing clickable under the window buttons ${JSON.stringify(hits)}`);
 
@@ -112,6 +121,8 @@ async function main() {
     console.log('Hook ready (title bar shown).');
     const framed = await drv.ev(`({ frameless: document.body.classList.contains('tagfox-frameless'), wco: !!(navigator.windowControlsOverlay && navigator.windowControlsOverlay.visible) })`);
     check(!framed.frameless && !framed.wco, `with the setting off the window keeps its title bar (${JSON.stringify(framed)})`);
+    const brandFramed = await drv.ev(`getComputedStyle(document.getElementById('whippetBrand')).display`);
+    check(brandFramed === 'none', `and the page draws no name of its own, Windows' title bar showing it (${brandFramed})`);
   } catch (e) {
     failures.push(String((e && e.stack) || e));
     console.log('  ERROR ' + ((e && e.stack) || e));

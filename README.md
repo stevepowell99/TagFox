@@ -149,6 +149,7 @@ invariants checked and how to add a test, is in [`test/README.md`](test/README.m
 | `preview-text-helpers.js` | Text and markdown preview helpers |
 | `did-you-know-tips.js` | Rotating tips on Runner's status line |
 | `help.md`, `help.html` | In-app help source and generated output |
+| `icons/` | The app icon: `whippet.svg`, and the `.ico` and 256 px PNG that `python scripts/make-icon.py` renders from it. The window and the installer use the `.ico`; the top strip's mark is the same head, inline in `index.html` |
 | `scripts/build-help.js` | Builds `help.html` from `help.md` and its tab markers |
 | `scripts/sync-vendor-assets.js` | Copies Bootstrap, Font Awesome, CodeMirror and other vendor files into `vendor/` |
 | `scripts/run-dist.js` | Wraps the electron-builder distribution build |

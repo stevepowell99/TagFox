@@ -12,6 +12,11 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body class="app-shell bg-body-secondary">
+  <!-- The name in the top strip, shown only with the title bar hidden (Windows draws the title otherwise). -->
+  <div id="whippetBrand" class="whippet-brand" aria-hidden="true">
+    <svg viewBox="0 0 100 100" focusable="false"><path fill="currentColor" fill-rule="evenodd" d="M6 49 C16 45 28 40 38 36 C44 33 50 31 57 32 C61 27 67 25 74 27 C70 30 68 33 67 36 C76 44 84 58 88 76 C90 85 91 92 92 100 L60 100 C58 88 55 76 50 68 C46 62 42 59 37 58 C28 57 18 56 10 54 C6 53 4 51 6 49 Z M44 39 C46 37 49 37 50 39 C48 41 46 41 44 39 Z"/></svg>
+    <span>Whippet</span>
+  </div>
   <button type="button" id="propsTheaterBackdrop" class="props-theater-backdrop d-none" aria-label="Close expanded viewer" title="Close"></button>
   <!-- Everything + app settings: offcanvas from the left (not a strip dropping under the header). -->
   <div

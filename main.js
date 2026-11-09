@@ -2721,6 +2721,8 @@ function createWindow() {
     ...startBounds,
     show: false,
     ...(hideTitleBar ? { titleBarStyle: 'hidden', titleBarOverlay: titleBarOverlayFor(chrome) } : {}),
+    // The taskbar and Alt-Tab icon under `npm start`; the installer takes the same file from build.win.icon.
+    icon: path.join(__dirname, 'icons', 'whippet.ico'),
     // false: File / View stay visible (Alt-only bar hid the menu — looked like “no File menu”).
     autoHideMenuBar: false,
     webPreferences: {

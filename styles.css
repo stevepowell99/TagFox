@@ -3217,6 +3217,30 @@ body.tagfox-frameless {
 body.tagfox-frameless {
   padding-top: var(--tagfox-titlebar-h);
 }
+/* The name and mark at its left end, under the drag strip (z-index 1), so a drag there still moves the window. */
+.whippet-brand {
+  display: none;
+}
+body.tagfox-frameless .whippet-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  position: fixed;
+  top: 0;
+  left: 0.75rem;
+  height: var(--tagfox-titlebar-h);
+  z-index: 0;
+  pointer-events: none;
+  color: var(--bs-body-color);
+  opacity: 0.6;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+body.tagfox-frameless .whippet-brand svg {
+  width: 1rem;
+  height: 1rem;
+}
 body.tagfox-frameless::after {
   content: '';
   position: fixed;

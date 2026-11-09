@@ -41,13 +41,15 @@
       "renderer.js",
       "package.json",
       "google-oauth-client.json",
-      "vendor/**/*"
+      "vendor/**/*",
+      "icons/**/*"
     ],
     "win": {
       "target": [
         "nsis"
       ],
-      "signAndEditExecutable": false
+      "signAndEditExecutable": false,
+      "icon": "icons/whippet.ico"
     },
     "nsis": {
       "oneClick": false,
