@@ -3364,10 +3364,53 @@
         setStatusMain('Starred ' + name + '.');
       }
       renderTable();
+      syncScopeBarStar();
     }
 
+    /** Ctrl+D: the selected row, or the folder itself when it is the selection (as a browser's Ctrl+D stars the page). */
     function toggleStarForSelection() {
-      if (selectedFullPath) toggleStarPath(selectedFullPath);
+      const p = propsTargetPath();
+      if (p) toggleStarPath(p);
+    }
+
+    /** /Star this folder and the folder chip's star. */
+    function toggleStarCurrentFolder() {
+      const scope = currentScopeFolderPath();
+      if (scope) toggleStarPath(scope);
+      else setStatusMain('Go into a folder first; this stars the folder Whippet is showing.');
+    }
+
+    /** A path's 1-based place in the stars, 0 if it has none. */
+    function starPlaceOf(fp) {
+      const k = pathNormKey(normalizeFolderPathForEverything(String(fp || '').trim()));
+      return loadFavouriteFolders().findIndex((p) => pathNormKey(p) === k) + 1;
+    }
+
+    /** A star button's look, for a row and for the folder chip; the first nine stars carry their Ctrl+Shift number. */
+    function paintStarButton(btn, place) {
+      const starred = place > 0;
+      const numbered = place >= 1 && place <= 9;
+      btn.classList.toggle('results-row-star--on', starred);
+      btn.title = numbered
+        ? 'Star ' + place + ': Ctrl+Shift+' + place + ' opens it from anywhere in Whippet. Click to unstar (Ctrl+D)'
+        : starred
+          ? 'Unstar (Ctrl+D)'
+          : 'Star: keeps it near the top of searches (Ctrl+D)';
+      btn.setAttribute('aria-label', numbered ? 'Unstar (star ' + place + ')' : starred ? 'Unstar' : 'Star');
+      btn.setAttribute('aria-pressed', starred ? 'true' : 'false');
+      btn.innerHTML =
+        '<i class="fa-' + (starred ? 'solid' : 'regular') + ' fa-star" aria-hidden="true"></i>' +
+        (numbered ? '<span class="results-row-star-num" aria-hidden="true">' + place + '</span>' : '');
+    }
+
+    /** The folder chip's star follows the current folder and the stars list. */
+    function syncScopeBarStar() {
+      const btn = document.getElementById('btnScopeBarStar');
+      if (!btn) return;
+      const scope = currentScopeFolderPath();
+      paintStarButton(btn, scope ? starPlaceOf(scope) : 0);
+      /* A Bootstrap tooltip holds the title it was made with. */
+      if (window.bootstrap?.Tooltip?.getInstance(btn)) makeChromeTooltip(btn);
     }
 
     function setRunnerSort(sort) {
@@ -3655,6 +3698,7 @@
       { id: 'recent-1d', group: 'Modified', label: 'Modified in the last day', isOn: () => recencyFilterMode() === '1d', run: () => runnerSetRecency('1d') },
       { id: 'recent-1w', group: 'Modified', label: 'Modified in the last week', isOn: () => recencyFilterMode() === '1w', run: () => runnerSetRecency('1w') },
       { id: 'new-todo', group: 'Whippet', label: 'New TODO in this folder', run: () => runnerNewTodoHere() },
+      { id: 'star-folder', group: 'Whippet', label: 'Star this folder', isOn: () => !!currentScopeFolderPath() && starPlaceOf(currentScopeFolderPath()) > 0, run: () => toggleStarCurrentFolder() },
       { id: 'refresh', group: 'Whippet', label: 'Refresh', run: () => void refreshResultsFromUi() },
       { id: 'dark', group: 'Whippet', label: 'Dark or light mode', run: () => toggleDarkMode() },
       { id: 'settings', group: 'Whippet', label: 'Settings', run: () => toggleSettingsPanel() },
@@ -4651,7 +4695,7 @@
       { group: 'Open and act', keys: ['Alt+P'], does: 'Show or hide the Viewer', cmd: 'viewer', when: (c) => c.alt && !c.mod && !c.shift && c.k === 'p' },
       { group: 'Open and act', keys: ['Shift+Space'], does: 'The Viewer full screen', when: (c) => c.plain && c.shift && c.key === ' ', menus: true, run: () => togglePropsTheaterMode() },
       { group: 'Open and act', keys: ['Shift+F10', 'Menu'], does: "The selected row's menu", when: (c) => (c.plain && c.shift && c.key === 'F10') || c.key === 'ContextMenu', run: () => runnerOpenRowMenu() },
-      { group: 'Open and act', keys: ['Ctrl+D'], does: 'Star or unstar the selected row', when: (c) => c.ctrl('d'), run: () => toggleStarForSelection() },
+      { group: 'Open and act', keys: ['Ctrl+D'], does: 'Star or unstar the selected row, or the folder itself when no row is selected', when: (c) => c.ctrl('d'), run: () => toggleStarForSelection() },
       { group: 'Open and act', keys: ['Ctrl+T'], does: 'Tags: add or remove them on the checked rows, or on the selected row', cmd: 'edit-tags', when: (c) => c.ctrl('t') },
       { group: 'Open and act', keys: ['F2'], does: 'Rename', when: (c) => c.plain && c.key === 'F2', menus: true, run: () => void renameItemInteractive() },
       {
@@ -13229,22 +13273,10 @@
         tdActInner.appendChild(btnDelete);
         tdActInner.appendChild(btnMore);
         tdAct.appendChild(tdActInner);
-        const place = starPlace.get(pathNormKey(fp)) || 0;
-        const starred = place > 0;
-        const numbered = place >= 1 && place <= 9;
         const btnStar = document.createElement('button');
         btnStar.type = 'button';
-        btnStar.className = 'results-row-star' + (starred ? ' results-row-star--on' : '');
-        btnStar.title = numbered
-          ? 'Star ' + place + ': Ctrl+Shift+' + place + ' opens it from anywhere in Whippet. Click to unstar (Ctrl+D)'
-          : starred
-            ? 'Unstar (Ctrl+D)'
-            : 'Star: keeps it near the top of searches (Ctrl+D)';
-        btnStar.setAttribute('aria-label', numbered ? 'Unstar (star ' + place + ')' : starred ? 'Unstar' : 'Star');
-        btnStar.setAttribute('aria-pressed', starred ? 'true' : 'false');
-        btnStar.innerHTML =
-          '<i class="fa-' + (starred ? 'solid' : 'regular') + ' fa-star" aria-hidden="true"></i>' +
-          (numbered ? '<span class="results-row-star-num" aria-hidden="true">' + place + '</span>' : '');
+        btnStar.className = 'results-row-star';
+        paintStarButton(btnStar, starPlace.get(pathNormKey(fp)) || 0);
         btnStar.addEventListener('click', (e) => {
           e.stopPropagation();
           toggleStarPath(fp);
@@ -14845,6 +14877,11 @@
     ['baseUrl', 'maxResults'].forEach((id) => {
       document.getElementById(id).addEventListener('input', scheduleSearch);
     });
+    document.getElementById('btnScopeBarStar')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleStarCurrentFolder();
+    });
     document.getElementById('btnScopeBarOpen')?.addEventListener('click', async (e) => {
       e.preventDefault();
       const raw = currentFolderPath.trim();
@@ -15797,14 +15834,15 @@
       commitSearchHistoryNow();
     }
 
-    /** The folder buttons (Explorer, copy, tags, terminal, quoted path, more) need a current folder. */
+    /** The folder buttons (star, Explorer, copy, tags, terminal, quoted path, more) need a current folder. */
     function syncScopeBarButtons() {
       const raw = currentFolderPath.trim();
       const hasScope = !!normalizeFolderPathForEverything(raw);
-      for (const id of ['btnScopeBarOpen', 'btnScopeBarClip', 'btnScopeBarTags', 'btnScopeBarTerminal', 'btnScopeBarCopyQuoted', 'btnScopeBarMore']) {
+      for (const id of ['btnScopeBarStar', 'btnScopeBarOpen', 'btnScopeBarClip', 'btnScopeBarTags', 'btnScopeBarTerminal', 'btnScopeBarCopyQuoted', 'btnScopeBarMore']) {
         const el = document.getElementById(id);
         if (el) el.disabled = !hasScope;
       }
+      syncScopeBarStar();
     }
 
     /** Move scope folder to parent (toolbar scope / Settings field). */

@@ -1857,7 +1857,7 @@ body.tagfox-runner #queryInputGroup .tagfox-query-clear.btn {
   opacity: 0.45;
   cursor: pointer;
 }
-/* The folder's buttons (Explorer, copy, tags, terminal, quoted path, more), shown while the chip is hovered. */
+/* The folder's buttons (star, Explorer, copy, tags, terminal, quoted path, more), shown while the chip is hovered. */
 .tagfox-runner-scope-chip .tagfox-scope-bar-row-actions {
   display: none !important;
 }
@@ -1887,6 +1887,16 @@ body.tagfox-runner #queryInputGroup .tagfox-query-clear.btn {
 }
 .tagfox-runner-scope-chip .tagfox-scope-bar-icon-btn:disabled {
   opacity: 0.18;
+}
+/* The folder's star: a row star's amber and number, at the chip's size, and still amber under the pointer. */
+.tagfox-runner-scope-chip .tagfox-scope-bar-icon-btn.results-row-star.results-row-star--on {
+  color: #d97706;
+}
+.tagfox-runner-scope-chip .tagfox-scope-bar-icon-btn.results-row-star.results-row-star--on:has(.results-row-star-num) {
+  color: #b45309;
+}
+.tagfox-runner-scope-chip .results-row-star:has(.results-row-star-num) {
+  font-size: 1.05rem;
 }
 .tagfox-runner-scope-chip .tagfox-runner-scope-chip-x:hover {
   opacity: 1;
