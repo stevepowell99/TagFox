@@ -233,12 +233,6 @@ function driveFolderUrlFromShortcutTargetsPath(fullPath) {
   return { driveFolderId: id, driveFolderUrl: `https://drive.google.com/drive/folders/${id}` };
 }
 
-/** Office files that Google Drive can open/convert in-browser. */
-function isGoogleWorkspaceOfficeFilePath(fullPath) {
-  const ext = path.extname(String(fullPath || '')).toLowerCase();
-  return ext === '.docx' || ext === '.xlsx' || ext === '.pptx';
-}
-
 /** Markdown, the types the app opens in a local gmist rather than the shell (renderer: GMIST_EXT). */
 function isMarkdownFilePath(fullPath) {
   const ext = path.extname(String(fullPath || '')).toLowerCase();
@@ -468,71 +462,6 @@ async function tryResolveDriveFileIdViaDriveNameSearch(drive, filePath) {
   const id = resolved.file && resolved.file.id ? String(resolved.file.id).trim() : '';
   if (!id) return null;
   return { ok: true, fileId: id, reason: resolved.reason };
-}
-
-/** Build Docs/Sheets/Slides editor URL from a Drive file id + local extension. */
-function googleWorkspaceEditorUrlFromDriveId(fullPath, id) {
-  if (!id) return null;
-  const ext = path.extname(String(fullPath || '')).toLowerCase();
-  if (ext === '.docx') return `https://docs.google.com/document/d/${encodeURIComponent(id)}/edit`;
-  if (ext === '.xlsx') return `https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/edit`;
-  if (ext === '.pptx') return `https://docs.google.com/presentation/d/${encodeURIComponent(id)}/edit`;
-  return `https://drive.google.com/file/d/${encodeURIComponent(id)}/view`;
-}
-
-/** Prefer direct Docs/Sheets/Slides editor URLs for Office files already in Drive. */
-function googleWorkspaceEditorUrlForOfficePath(fullPath) {
-  const id = googleDriveFileIdForLocalPath(fullPath);
-  return googleWorkspaceEditorUrlFromDriveId(fullPath, id);
-}
-
-/** Summarize :user.drive.id probe for status line + search-debug (paths truncated). */
-function compactDriveVirtualStreamDiag(stream) {
-  if (!stream) return { state: 'no_probe' };
-  if (stream.ok) return { state: 'ok', idLen: stream.idLen, via: stream.via };
-  const attempts = stream.attempts || [];
-  let anyLocalPlaceholder = false;
-  let anyEnoent = false;
-  for (const a of attempts) {
-    if (a && a.note === 'empty_or_local_placeholder') anyLocalPlaceholder = true;
-    const m = String((a && a.msg) || '');
-    if (/ENOENT|no such file|cannot find/i.test(m)) anyEnoent = true;
-  }
-  const slim = attempts.slice(0, 8).map((a) => {
-    const o = { m: a.label };
-    if (a.note) o.note = a.note;
-    if (a.code) o.code = a.code;
-    if (a.adsPath) {
-      const s = String(a.adsPath);
-      o.adsTail = s.length > 100 ? '…' + s.slice(-100) : s;
-    }
-    if (a.msg) o.err = String(a.msg).slice(0, 140);
-    if (a.psErr) o.psErr = String(a.psErr).slice(0, 400);
-    return o;
-  });
-  return { state: 'fail', anyLocalPlaceholder, anyEnoent, attempts: slim };
-}
-
-/** Short user-facing hint when Office→Workspace URL cannot be built from local streams only. */
-function gwsOfficeNoDriveIdUserMessage(fileDiag, parentDiag) {
-  const parts = [];
-  if (fileDiag.anyLocalPlaceholder) {
-    parts.push('file `:user.drive.id` empty or still `local…` (Drive not materialized)');
-  } else if (fileDiag.anyEnoent) {
-    parts.push('no `:user.drive.id` alternate stream on file');
-  } else if (fileDiag.state === 'fail') {
-    parts.push('file stream had no valid id');
-  } else {
-    parts.push('file has no usable Drive id from local metadata');
-  }
-  if (parentDiag.state === 'ok') {
-    parts.push('parent folder has an id; this command still needs the file id');
-  } else if (parentDiag.anyLocalPlaceholder) {
-    parts.push('parent folder id also placeholder');
-  } else if (parentDiag.state === 'fail') {
-    parts.push('parent folder has no id stream either');
-  }
-  return `Could not resolve Google Drive file ID. ${parts.join(' — ')} Try Open, or make the file available offline in Drive for Desktop. With Search debug on, see gws.office.noDriveId for :user.drive.id details.`;
 }
 
 /** Read metadata (parents, list) + create Google Docs in folders the user can access. */
@@ -5938,7 +5867,7 @@ ipcMain.handle('app-switch-or-launch', async (_event, { fullPath }) => {
  * Shell item menu: standard Electron pattern (Menu + shell + clipboard in main).
  * Full Explorer.context menu would need native IContextMenu bindings — not in core Electron.
  */
-ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFolder, inObsidianVault, underGoogleDrive }) => {
+ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFolder, inObsidianVault, underGoogleDrive, canOpenInGoogleWorkspace }) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   const fp = path.normalize(String(filePath || '').trim());
   if (!fp) return { ok: false, error: 'No path' };
@@ -5957,7 +5886,6 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
   const pathFwdSlashes = fpPlain.replace(/\\/g, '/');
   const shortcutExt = path.extname(fp).toLowerCase();
   const isGoogleShortcutFile = !isDir && ['.gdoc', '.gsheet', '.gslides'].includes(shortcutExt);
-  const canOpenInGoogleWorkspace = !isDir && isGoogleWorkspaceOfficeFilePath(fp);
   /* Entries that cannot work on this machine are left out or greyed. Whether the path is in Google Drive is the
      renderer's call (pathUnderGoogleDrive, which also decides the row's cloud and Workspace pens). */
   const features = machineFeatures();
@@ -6092,69 +6020,13 @@ ipcMain.handle('show-item-actions-menu', async (event, { filePath, x, y, scopeFo
       ...(!isDir && inObsidianVault
         ? [{ label: 'Open in Obsidian', click: () => done({ ok: true, action: 'openInObsidian' }) }]
         : []),
+      /* The renderer decides which rows Google can edit (rowEligibleForWorkspaceEdit, the test behind
+         the row's pen) and runs the open (openRowInGoogleWorkspace), so this entry and the pen are one
+         decision and one action. */
       {
         label: 'Open in Google Workspace',
-        enabled: canOpenInGoogleWorkspace && !!underGoogleDrive,
-        click: () => {
-          void (async () => {
-            const dFile = {};
-            let id = tryReadGoogleDriveVirtualFileIdWindowsSync(fp, dFile);
-            let u = googleWorkspaceEditorUrlFromDriveId(fp, id);
-            // Local :user.drive.id is often missing outside .shortcut-targets-by-id; resolve file id via Drive API (OAuth account).
-            if (!u) {
-              try {
-                const drive = await getGoogleDriveMetadataClientSingleAccount();
-                const byName = await tryResolveDriveFileIdViaDriveNameSearch(drive, fp);
-                if (byName && byName.ok && byName.fileId) {
-                  u = googleWorkspaceEditorUrlFromDriveId(fp, byName.fileId);
-                } else if (byName && byName.ok === false && byName.reason === 'drive-name-ambiguous') {
-                  event.sender.send(
-                    'shell-action-error',
-                    'Open in Google Workspace: several Drive files share this name; rename one or open from drive.google.com.'
-                  );
-                  done({ ok: false, action: 'openGoogleWorkspace', error: 'drive-name-ambiguous' });
-                  return;
-                }
-              } catch (e) {
-                const msg = String((e && e.message) || e || '');
-                if (!/Missing google-oauth-client\.json/i.test(msg)) {
-                  event.sender.send('shell-action-error', msg);
-                  done({ ok: false, action: 'openGoogleWorkspace', error: msg });
-                  return;
-                }
-              }
-            }
-            if (!u) {
-              const dPar = {};
-              tryReadGoogleDriveVirtualFileIdWindowsSync(path.dirname(fp), dPar);
-              const fileDiag = compactDriveVirtualStreamDiag(dFile.driveVirtualIdStream);
-              const parentDiag = compactDriveVirtualStreamDiag(dPar.driveVirtualIdStream);
-              sendSearchDebugLine(event.sender, 'gws.office.noDriveId', {
-                path: fp,
-                file: fileDiag,
-                parent: parentDiag,
-              });
-              let hint = gwsOfficeNoDriveIdUserMessage(fileDiag, parentDiag);
-              if (!readGoogleOAuthClientConfigSync()) {
-                hint += ' Add google-oauth-client.json and sign in once to open by file name when local Drive id is missing.';
-              }
-              event.sender.send('shell-action-error', hint);
-              done({ ok: false, action: 'openGoogleWorkspace', error: 'Could not resolve Drive file ID.' });
-              return;
-            }
-            const parent = BrowserWindow.fromWebContents(event.sender);
-            const r = openWebEditorWindow(parent, u, 'googleWorkspace', { label: baseName });
-            if (!r.ok) {
-              event.sender.send('shell-action-error', r.error || 'Could not open Google Workspace window.');
-              done({ ok: false, action: 'openGoogleWorkspace', error: r.error || 'Open failed' });
-              return;
-            }
-            done({ ok: true, action: 'openGoogleWorkspace' });
-          })().catch((e) => {
-            event.sender.send('shell-action-error', String((e && e.message) || e || 'Open in Google Workspace failed.'));
-            done({ ok: false, action: 'openGoogleWorkspace', error: String(e && e.message) });
-          });
-        },
+        enabled: !isDir && !!canOpenInGoogleWorkspace,
+        click: () => done({ ok: true, action: 'openInGoogleWorkspace' }),
       },
       {
         label: 'Create new Google Doc here',

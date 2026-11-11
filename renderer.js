@@ -1256,10 +1256,11 @@
       else setStatusMain('Opening in gmist online…');
     }
 
-    /* Open in Google Workspace (edit online): Office and Google-native docs on Drive. The edit (pen) icon uses
-       this for anything that isn't md/qmd (those go to gmist). Google-native shortcuts reuse the existing
-       shortcut resolver; Office files resolve their Drive file id and open the matching Google editor window. */
-    const WORKSPACE_DOC_EXT = new Set(['doc', 'docx', 'rtf', 'odt']);
+    /* Open in Google Workspace (edit online): Office, markdown and Google-native docs on Drive. The row's pen
+       uses this for anything that isn't md/qmd (those go to gmist); the context menu's entry uses it for
+       markdown too, since Docs edits a Drive .md file in place. Google-native shortcuts reuse the existing
+       shortcut resolver; other files resolve their Drive file id and open the matching Google editor window. */
+    const WORKSPACE_DOC_EXT = new Set(['doc', 'docx', 'rtf', 'odt', 'md', 'markdown']);
     const WORKSPACE_SHEET_EXT = new Set(['xls', 'xlsx', 'ods', 'csv', 'tsv']);
     const WORKSPACE_SLIDES_EXT = new Set(['ppt', 'pptx', 'odp']);
 
@@ -12919,6 +12920,7 @@
         scopeFolder: currentFolderPath.trim(),
         inObsidianVault: pathInObsidianVault(fp),
         underGoogleDrive: pathUnderGoogleDrive(fp),
+        canOpenInGoogleWorkspace: rowEligibleForWorkspaceEdit(fp),
         x: Math.round(clientX),
         y: Math.round(clientY),
       });
@@ -12935,6 +12937,7 @@
       } else if (res && res.action === 'printPdf') void printRowToPdf(fp, res.profile);
       else if (res && res.action === 'gmistShareLink') void openRowInOnlineGmist(fp, { share: res.share });
       else if (res && res.action === 'openInObsidian') void openRowInObsidian(fp);
+      else if (res && res.action === 'openInGoogleWorkspace') void openRowInGoogleWorkspace(fp);
       else if (res && res.action === 'rename') void renameItemInteractive(fp);
       else if (res && res.action === 'bulkRename') openBulkRenameModal();
       else if (res && res.action === 'duplicate' && res.destPath)
@@ -13158,7 +13161,7 @@
             gmistBtns.push(btnPdf);
           }
         }
-        // Google Workspace edit for Office / Google-native docs (never markdown).
+        // Google Workspace pen for Office / Google-native docs; markdown has its gmist pens instead.
         let btnGmist = null;
         if (!rowIsFolder(row) && !gmistBtns.length && rowEligibleForWorkspaceEdit(fp)) {
           btnGmist = document.createElement('button');
