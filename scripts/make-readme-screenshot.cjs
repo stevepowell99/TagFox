@@ -1,19 +1,24 @@
-// Makes the README screenshot (docs/img/whippet-main.png). It writes a small demo folder of made-up files under
-// _tmp/, starts a hidden test instance of Whippet on its own temporary userData through the test harness (the
-// #tagfoxtest hook over CDP), waits for Everything to index the demo files, searches them, previews a markdown
-// note in the Viewer and captures the window with Page.captureScreenshot at 1400x850. It never touches the
-// running app or any real file, and it stops only the test instance it started, by PID. The demo folder is
-// removed afterwards (pass --keep to leave it). Not a test, so it is not in test/run-all.cjs; re-run it after UI
-// changes with `node scripts/make-readme-screenshot.cjs [output.png] [--keep]`.
+// Makes the README screenshot (docs/img/whippet-main.png) and, with --gif, the README's demo GIF
+// (docs/img/whippet-demo.gif). It writes a small demo folder of made-up files under _tmp/, starts a hidden test
+// instance of Whippet on its own temporary userData through the test harness (the #tagfoxtest hook over CDP) and
+// waits for Everything to index the demo files. The screenshot searches them, previews a markdown note in the
+// Viewer and captures the window with Page.captureScreenshot at 1400x850. The GIF records the window while the
+// script types a search, steps down the rows with the Viewer following, tags a file with Ctrl+T and clicks a
+// tag, then has ffmpeg (on PATH) turn the frames into a GIF. It never touches the running app or any real file,
+// and it stops only the test instance it started, by PID. The demo folder is removed afterwards (pass --keep to
+// leave it). Not a test, so it is not in test/run-all.cjs; re-run it after UI changes with
+// `node scripts/make-readme-screenshot.cjs [output] [--gif] [--keep]`.
 
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
+const { execFileSync } = require('child_process');
 const { connect, APP_DIR, sleep } = require('../test/harness.cjs');
 
 const args = process.argv.slice(2);
 const keep = args.includes('--keep');
-const out = path.resolve(args.find((a) => !a.startsWith('--')) || path.join(APP_DIR, 'docs', 'img', 'whippet-main.png'));
+const GIF = args.includes('--gif');
+const out = path.resolve(args.find((a) => !a.startsWith('--')) || path.join(APP_DIR, 'docs', 'img', GIF ? 'whippet-demo.gif' : 'whippet-main.png'));
 const root = path.join(APP_DIR, '_tmp', 'demo-workspace');
 const scope = path.join(root, 'Projects');
 const QUERY = 'launch';
@@ -158,15 +163,123 @@ function seed() {
   });
 }
 
+// --- The GIF: stop motion, one frame after each step, held for as long as the step should show -----------------
+// A capture of the hidden window takes about half a second (November 2026), too slow to record in real time, so
+// each step settles, is captured, and is given its own display time. ffmpeg turns the frames into the GIF.
+const GIF_WIDTH = 1000;
+const TAG_TARGET = path.join(scope, 'Budget', 'launch supplier quotes.docx');
+
+async function recordDemo(drv, key) {
+  const frames = [];
+  const snap = async (holdMs) => {
+    await drv.ev(`new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))`);
+    await sleep(150);
+    const shot = await drv.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    frames.push({ data: shot.data, holdMs });
+  };
+  const selected = async () => String((await drv.T('runnerState')).selected || '');
+  const focusBox = () => drv.ev(`(() => { const q = document.getElementById('query'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); return 1; })()`);
+  /* Down the list until the named row is selected, one frame per row, the Viewer following. */
+  const downTo = async (name, holdMs) => {
+    for (let i = 0; i < 15 && path.basename(await selected()) !== name; i++) {
+      await key('ArrowDown', 'ArrowDown', 40);
+      await sleep(700);
+      await snap(holdMs);
+    }
+    if (path.basename(await selected()) !== name) throw new Error(`never reached the row "${name}" (at ${await selected()})`);
+  };
+
+  await drv.T('setQuery', '');
+  await drv.T('runSearchNow');
+  await drv.settle('empty box');
+  await focusBox();
+  await sleep(600);
+  await snap(1500);
+
+  for (const c of QUERY) {
+    await drv.send('Input.insertText', { text: c });
+    await sleep(250);
+    await drv.settle('typing');
+    await snap(220);
+  }
+  await sleep(1200);
+  await snap(2200);
+  await downTo('launch budget.xlsx', 900);
+  frames[frames.length - 1].holdMs = 1800;
+  await downTo(path.basename(TAG_TARGET), 700);
+  frames[frames.length - 1].holdMs = 1400;
+
+  /* Tag it: Ctrl+T, "todo" typed into the editor (its datalist stalls CDP's insertText, so the value is set a
+     letter at a time), Enter, then Esc once the rename has refreshed the list. */
+  await key('t', 'KeyT', 84, 2);
+  await sleep(900);
+  await snap(900);
+  for (const c of 'todo') {
+    await drv.ev(`(() => { const i = document.getElementById('tagModalInput'); i.focus(); i.value += ${JSON.stringify(c)}; return 1; })()`);
+    await snap(200);
+  }
+  frames[frames.length - 1].holdMs = 700;
+  await key('Enter', 'Enter', 13, 0, '\r');
+  const renamed = path.join(path.dirname(TAG_TARGET), 'launch supplier quotes xkTODO.docx');
+  for (let i = 0; i < 50 && !fs.existsSync(renamed); i++) await sleep(100);
+  if (!fs.existsSync(renamed)) throw new Error('the tag editor did not rename the file');
+  await sleep(800);
+  await snap(1200);
+  for (let i = 0; i < 50 && (await drv.ev(`document.getElementById('tagModal').classList.contains('tag-renaming')`)); i++) await sleep(100);
+  await key('Escape', 'Escape', 27);
+  await sleep(900);
+  await snap(2000);
+
+  /* /todo from the box: the launch files tagged TODO, the one just tagged among them. */
+  await focusBox();
+  await key('/', 'Slash', 191, 0, '/');
+  await sleep(300);
+  if (!(await drv.T('runnerState')).cmdListOpen) throw new Error('"/" did not open the command list');
+  await snap(700);
+  for (const c of 'todo') {
+    await drv.send('Input.insertText', { text: c });
+    await sleep(200);
+    await snap(220);
+  }
+  frames[frames.length - 1].holdMs = 1000;
+  await key('Enter', 'Enter', 13, 0, '\r');
+  await sleep(400);
+  await drv.settle('tag filter');
+  await sleep(600);
+  const end = await drv.T('runnerState');
+  if (!end.chips.includes('tags') || !end.rows.some((r) => r.toLowerCase() === renamed.toLowerCase())) {
+    throw new Error(`/todo did not list the file just tagged (chips ${JSON.stringify(end.chips)}, ${end.rows.length} rows)`);
+  }
+  await snap(4000);
+
+  const dir = path.join(APP_DIR, '_tmp', 'readme-gif-frames');
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  const list = [];
+  frames.forEach((f, i) => {
+    const name = `f${String(i).padStart(4, '0')}.png`;
+    fs.writeFileSync(path.join(dir, name), Buffer.from(f.data, 'base64'));
+    list.push(`file '${name}'`, `duration ${(f.holdMs / 1000).toFixed(3)}`);
+  });
+  list.push(`file 'f${String(frames.length - 1).padStart(4, '0')}.png'`);
+  fs.writeFileSync(path.join(dir, 'frames.txt'), 'ffconcat version 1.0\n' + list.join('\n') + '\n');
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  const filter = `scale=${GIF_WIDTH}:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`;
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', path.join(dir, 'frames.txt'), '-vf', filter, '-fps_mode', 'vfr', '-loop', '0', out], { stdio: 'inherit' });
+  if (!keep) fs.rmSync(dir, { recursive: true, force: true });
+  const secs = (frames.reduce((s, f) => s + f.holdMs, 0) / 1000).toFixed(1);
+  console.log(`Wrote ${out} (${frames.length} frames, ${secs}s a loop, ${Math.round(fs.statSync(out).size / 1024)} KB)`);
+}
+
 async function main() {
   seed();
   let drv;
   let ok = false;
   try {
     drv = await connect({ profile: 'tagfox-readme-shot', scope, owners: ['ALICE', 'BEN'] });
-    const key = async (k, code, vk) => {
-      await drv.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: k, code, windowsVirtualKeyCode: vk });
-      await drv.send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code, windowsVirtualKeyCode: vk });
+    const key = async (k, code, vk, modifiers = 0, text) => {
+      await drv.send('Input.dispatchKeyEvent', { type: text ? 'keyDown' : 'rawKeyDown', key: k, code, windowsVirtualKeyCode: vk, modifiers, text });
+      await drv.send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code, windowsVirtualKeyCode: vk, modifiers });
     };
     await key('Shift', 'ShiftLeft', 16); // a hidden window runs no frames until its first input
     await drv.send('Emulation.setDeviceMetricsOverride', { ...SIZE, deviceScaleFactor: 1, mobile: false });
@@ -184,6 +297,12 @@ async function main() {
       await sleep(500);
     }
     if (rows.length < want) throw new Error(`Everything listed ${rows.length} of ${want} demo files for "${QUERY}"`);
+
+    if (GIF) {
+      await recordDemo(drv, key);
+      ok = true;
+      return;
+    }
 
     await drv.T('selectViewerFile', SELECT);
     await sleep(1200);

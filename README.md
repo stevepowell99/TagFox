@@ -4,7 +4,7 @@
 
 Whippet runs on top of [Voidtools Everything](https://www.voidtools.com/), which keeps an index of every file name on the computer, so a search across millions of files answers while you are still typing. Around that search it does most of what File Explorer gets used for. It keeps tags and tasks in plain file names and markdown, which people, sync services and AI assistants can all read.
 
-![Whippet main window](docs/img/whippet-main.png)
+![Whippet: typing a search, the Viewer following each row, tagging a file with Ctrl+T, and /todo listing the files tagged TODO](docs/img/whippet-demo.gif)
 
 ## What it does
 
@@ -17,7 +17,7 @@ Whippet runs on top of [Voidtools Everything](https://www.voidtools.com/), which
 - **Manages files.** Copy, cut and paste, to and from File Explorer and screenshots included; drag and drop; rename; bulk rename with wildcards; new folders; delete to the Recycle Bin, or for good with `Shift`+`Del`. The keys are the ones Explorer and Everything already use.
   - The Shelf gathers files from several folders while you find the one they belong in.
   - With another program's Open or Save dialog in front, the hotkey raises Whippet, and the file you pick goes into that dialog.
-- **Tags and tracks work in the file name.** `Report xkTODO.docx` is tagged TODO, and a click on the tag lists everything else tagged TODO. The tags travel with the file into Explorer, Google Drive, zip files and git, without a database.
+- **Tags and tracks work in the file name.** `Report xkTODO.docx` is tagged TODO, and typing `/todo` lists everything tagged TODO. The tags travel with the file into Explorer, Google Drive, zip files and git, without a database.
   - Tasks carry a status, an owner, a deadline (`xd-2026-07-15`) and a hide-until date (`xh-2026-09-01`), with filters for overdue, due today and due this week.
   - `Alt`+`Shift`+`N`, from any program, writes a TODO note as a markdown file.
 - **Works with markdown and AI assistants.** `Ctrl`+`O` opens a markdown file in Obsidian when one of your vaults holds it. Because tags and tasks are plain names and markdown, an AI assistant working in the same folders can read and change them as easily as you can.
@@ -48,6 +48,10 @@ Owner tags (`xp` plus a name, such as `xpSAM`) are the names you set in **Settin
 
 MIT; see [`LICENSE`](LICENSE).
 
+### Support
+
+I built Whippet for my own work and use it every day. I read every issue, but I cannot promise fixes or support.
+
 ### First things to try
 
 - **Set a search scope (recommended on a new PC).** In **Settings**, set one **search scope folder**, for example your profile or a projects root. Everything then only returns paths under that root.
@@ -57,6 +61,8 @@ MIT; see [`LICENSE`](LICENSE).
 - **Press `F1` or `Ctrl`+`/`** any time for the full in-app guide.
 
 ## Features
+
+![Whippet main window](docs/img/whippet-main.png)
 
 - **Keyboard first.** Navigate, tag, rename, bulk-edit and search without the mouse. Press `F1` for the shortcut table.
 - **Filename tags.** Add, remove and filter by `xktag` labels stored in the filename. No database and no hidden metadata, so tags work everywhere the file goes.
