@@ -56,7 +56,7 @@ async function main() {
     check(!o.includes(-1), `both files are listed (positive control) (${o})`);
 
     const knobs = await drv.ev(`[...document.querySelectorAll('#runnerRankKnobs input[data-knob]')].map((el) => [el.dataset.knob, el.value, el.nextElementSibling.textContent])`);
-    check(knobs.length === 8 && knobs.every(([, v, t]) => v === '4' && t === '×1'), `eight sliders, each in the middle at ×1 (${JSON.stringify(knobs)})`);
+    check(knobs.length === 7 && knobs.every(([, v, t]) => v === '4' && t === '×1'), `seven sliders, each in the middle at ×1 (${JSON.stringify(knobs)})`);
     check(await drv.ev(`document.getElementById('btnRunnerRankReset').disabled`), 'Reset is greyed out while every slider is in the middle');
     check(o[1] < o[0], `by default the starred old file ranks above the new one (${o})`);
 
@@ -67,7 +67,7 @@ async function main() {
     check(o[0] < o[1], `with Starred off the new file ranks first (${o})`);
     check(k && k.shows === 'off', `the slider says "off" (${k && k.shows})`);
     check((await drv.T('searchCounters')).run === 0, 'moving a slider re-ranks without searching again');
-    check((await drv.ev(`localStorage.getItem('tagBrowserRunnerRankKnobs')`)) === JSON.stringify({ match: 4, recency: 4, star: 0, use: 4, windowsRecent: 4, rankedDown: 4, tilde: 4, app: 4 }), 'the position is saved');
+    check((await drv.ev(`localStorage.getItem('tagBrowserRunnerRankKnobs')`)) === JSON.stringify({ match: 4, recency: 4, star: 0, use: 4, windowsRecent: 4, rankedDown: 4, tilde: 4 }), 'the position is saved');
     check(!(await drv.ev(`document.getElementById('btnRunnerRankReset').disabled`)), 'Reset is offered once a slider has moved');
 
     await moveKnob('star', 8);

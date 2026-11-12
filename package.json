@@ -36,8 +36,6 @@
       "tags.js",
       "preview-text-helpers.js",
       "file-dialog-handoff.js",
-      "win32.js",
-      "app-windows.js",
       "everything-setup.js",
       "did-you-know-tips.js",
       "renderer.js",

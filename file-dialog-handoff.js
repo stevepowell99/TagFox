@@ -3,9 +3,9 @@
  * Chrome's uploads and most of Office use. The toggle shortcut reads the foreground window here before it
  * raises TagFox; if that is such a dialog, the next row Steve opens in TagFox is sent to it instead.
  *
- * Every call goes to user32 through koffi, by way of `win32.js` (about 5µs a call, measured October 2026;
- * PowerShell cost a second a call and a warm PowerShell 13ms). Nothing here imports Electron, so
- * `test/manual-file-dialog.cjs` can drive it from plain node against a real dialog.
+ * Every call goes to user32 through koffi (about 5µs a call, measured October 2026; PowerShell cost a
+ * second a call and a warm PowerShell 13ms). Nothing here imports Electron, so `test/manual-file-dialog.cjs`
+ * can drive it from plain node against a real dialog.
  *
  * What the dialog looks like, measured on Windows 11 with the Open and Save As dialogs:
  * - Open: the file-name box is an Edit (control id 1148) in a ComboBox in a ComboBoxEx32, and button 1 reads "&Open".
@@ -22,9 +22,48 @@
 'use strict';
 
 const path = require('path');
-const win32 = require('./win32.js');
 
-const { load, className, windowText, pidOf, children, exeBaseName } = win32;
+let api = null;
+let loadError = '';
+
+function load() {
+  if (api || loadError) return api;
+  try {
+    const koffi = require('koffi');
+    const user32 = koffi.load('user32.dll');
+    const kernel32 = koffi.load('kernel32.dll');
+    const HWND = koffi.pointer('HWND', koffi.opaque());
+    const EnumProc = koffi.proto('bool __stdcall TagFoxEnumChildProc(HWND hwnd, intptr_t lParam)');
+    const u = {
+      koffi,
+      EnumProc,
+      GetForegroundWindow: user32.func('HWND __stdcall GetForegroundWindow()'),
+      SetForegroundWindow: user32.func('bool __stdcall SetForegroundWindow(HWND hWnd)'),
+      IsWindow: user32.func('bool __stdcall IsWindow(HWND hWnd)'),
+      IsWindowVisible: user32.func('bool __stdcall IsWindowVisible(HWND hWnd)'),
+      IsChild: user32.func('bool __stdcall IsChild(HWND hWndParent, HWND hWnd)'),
+      GetParent: user32.func('HWND __stdcall GetParent(HWND hWnd)'),
+      GetWindow: user32.func('HWND __stdcall GetWindow(HWND hWnd, uint32_t uCmd)'),
+      GetDlgItem: user32.func('HWND __stdcall GetDlgItem(HWND hDlg, int nIDDlgItem)'),
+      GetDlgCtrlID: user32.func('int __stdcall GetDlgCtrlID(HWND hWnd)'),
+      GetClassNameW: user32.func('int __stdcall GetClassNameW(HWND hWnd, _Out_ uint16_t *lpClassName, int nMaxCount)'),
+      GetWindowTextW: user32.func('int __stdcall GetWindowTextW(HWND hWnd, _Out_ uint16_t *lpString, int nMaxCount)'),
+      GetWindowThreadProcessId: user32.func('uint32_t __stdcall GetWindowThreadProcessId(HWND hWnd, _Out_ uint32_t *pid)'),
+      EnumChildWindows: user32.func('bool __stdcall EnumChildWindows(HWND hWndParent, TagFoxEnumChildProc *cb, intptr_t lParam)'),
+      SendTextOut: user32.func('SendMessageTimeoutW', 'intptr_t', ['HWND', 'uint32_t', 'uintptr_t', koffi.out(koffi.pointer('uint16_t')), 'uint32_t', 'uint32_t', koffi.out(koffi.pointer('uintptr_t'))]),
+      SendTextIn: user32.func('SendMessageTimeoutW', 'intptr_t', ['HWND', 'uint32_t', 'uintptr_t', 'str16', 'uint32_t', 'uint32_t', koffi.out(koffi.pointer('uintptr_t'))]),
+      SendInts: user32.func('SendMessageTimeoutW', 'intptr_t', ['HWND', 'uint32_t', 'intptr_t', 'intptr_t', 'uint32_t', 'uint32_t', koffi.out(koffi.pointer('uintptr_t'))]),
+      PostCommand: user32.func('PostMessageW', 'bool', ['HWND', 'uint32_t', 'uintptr_t', 'HWND']),
+      OpenProcess: kernel32.func('void * __stdcall OpenProcess(uint32_t dwDesiredAccess, bool bInheritHandle, uint32_t dwProcessId)'),
+      QueryFullProcessImageNameW: kernel32.func('bool __stdcall QueryFullProcessImageNameW(void *hProcess, uint32_t dwFlags, _Out_ uint16_t *lpExeName, _Inout_ uint32_t *lpdwSize)'),
+      CloseHandle: kernel32.func('bool __stdcall CloseHandle(void *hObject)'),
+    };
+    api = u;
+  } catch (e) {
+    loadError = String((e && e.message) || e);
+  }
+  return api;
+}
 
 const WM_SETTEXT = 0x000c;
 const WM_GETTEXT = 0x000d;
@@ -35,6 +74,13 @@ const GW_OWNER = 4;
 const IDOK = 1;
 const FILE_NAME_IDS = new Set([1148, 1001]);
 
+const textBuf = Buffer.alloc(4096);
+function className(u, h) {
+  return textBuf.toString('utf16le', 0, u.GetClassNameW(h, textBuf, 256) * 2);
+}
+function windowText(u, h) {
+  return textBuf.toString('utf16le', 0, u.GetWindowTextW(h, textBuf, 2000) * 2);
+}
 /** A control's text in another process (GetWindowText reads only captions there). */
 function controlText(u, h) {
   const out = Buffer.alloc(4096);
@@ -42,6 +88,29 @@ function controlText(u, h) {
   if (!u.SendTextOut(h, WM_GETTEXT, 2000, out, SMTO_ABORTIFHUNG, 1000, res)) return null;
   return out.toString('utf16le', 0, Number(res[0]) * 2);
 }
+function pidOf(u, h) {
+  const pid = [0];
+  u.GetWindowThreadProcessId(h, pid);
+  return pid[0];
+}
+function sameHandle(u, a, b) {
+  return !!a && !!b && u.koffi.address(a) === u.koffi.address(b);
+}
+
+function children(u, parent) {
+  const out = [];
+  const cb = u.koffi.register((h) => {
+    out.push(h);
+    return true;
+  }, u.koffi.pointer(u.EnumProc));
+  try {
+    u.EnumChildWindows(parent, cb, 0);
+  } finally {
+    u.koffi.unregister(cb);
+  }
+  return out;
+}
+
 /** The dialog's file-name box: a visible Edit with control id 1148 (Open) or 1001 (Save As) in a ComboBox. */
 function findFileNameBox(u, dlg) {
   for (const h of children(u, dlg)) {
@@ -71,6 +140,20 @@ function currentFolder(u, dlg) {
     return i >= 0 ? t.slice(i + 2) : t;
   }
   return '';
+}
+
+function exeBaseName(u, pid) {
+  const PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+  const h = u.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+  if (!h) return '';
+  try {
+    const buf = Buffer.alloc(2048);
+    const size = [1000];
+    if (!u.QueryFullProcessImageNameW(h, 0, buf, size)) return '';
+    return path.win32.basename(buf.toString('utf16le', 0, size[0] * 2)).replace(/\.exe$/i, '');
+  } finally {
+    u.CloseHandle(h);
+  }
 }
 
 /** "Untitled - Notepad" → "Notepad"; with no owner title, the program's file name. */
@@ -123,7 +206,7 @@ function describeFileDialog(dlg) {
 /** Still the same visible #32770 dialog of the same process, with its file-name box found again; else why not. */
 function checkTarget(target) {
   const u = load();
-  if (!u) return { ok: false, error: 'Whippet cannot reach other windows here: ' + win32.loadError() };
+  if (!u) return { ok: false, error: 'Whippet cannot reach other windows here: ' + loadError };
   if (!target || !target.hwnd) return { ok: false, error: 'No dialog is waiting.' };
   const dlg = target.hwnd;
   if (!u.IsWindow(dlg) || className(u, dlg) !== '#32770' || pidOf(u, dlg) !== target.pid || !u.IsWindowVisible(dlg)) {
@@ -174,7 +257,7 @@ function sendToFileDialog(target, fp, isFolder) {
 
 module.exports = {
   available: () => !!load(),
-  loadError: win32.loadError,
+  loadError: () => (load(), loadError),
   foregroundFileDialog,
   describeFileDialog,
   checkTarget: (t) => {
