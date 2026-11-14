@@ -4981,9 +4981,16 @@
        An explicit refresh is a thing Steve asked for, so it always repaints and always reports. */
     let quietAutoRefreshRender = false;
 
-    /* A repaint under the pointer moves the row being aimed at, so the click lands on the wrong file.
-       Skip the tick and let the next one have it: a few seconds later is invisible, a row that jumps
-       mid-click is not. */
+    /* A repaint under a moving pointer moves the row being aimed at, so the click lands on the wrong
+       file. Skip the tick and let the next one have it: a few seconds later is invisible, a row that
+       jumps mid-click is not. Only a pointer that moved, pressed or wheeled over the list within
+       RESULTS_POINTER_SETTLE_MS counts: a pointer merely resting there is not aiming, and skipping on
+       hover alone kept the list stale for as long as the mouse sat on it. */
+    const RESULTS_POINTER_SETTLE_MS = 2000;
+    let resultsPointerActiveAt = 0;
+    function noteResultsPointerActivity() {
+      resultsPointerActiveAt = Date.now();
+    }
     function autoRefreshTickWouldDisturb() {
       if (document.body.classList.contains('tagfox-internal-path-drag')) return true;
       if (runnerCmdListIsOpen()) return true;
@@ -4998,10 +5005,7 @@
          silently stop the timer altogether. */
       const paging = resultsPagingCtx;
       if (paging && paging.mode === 'single' && paging.singleOffset > paging.pageSize) return true;
-      const scroll = document.getElementById('resultsScroll');
-      try {
-        if (scroll && scroll.matches(':hover')) return true;
-      } catch (_) {}
+      if (Date.now() - resultsPointerActiveAt < RESULTS_POINTER_SETTLE_MS) return true;
       return false;
     }
 
@@ -14760,6 +14764,9 @@
       if (resultsTableScrollEl && resultsTableScrollEl.dataset.resultsScrollBound !== '1') {
         resultsTableScrollEl.dataset.resultsScrollBound = '1';
         resultsTableScrollEl.addEventListener('scroll', onResultsWrapScrollForPaging, { passive: true });
+        for (const type of ['pointermove', 'pointerdown', 'wheel']) {
+          resultsTableScrollEl.addEventListener(type, noteResultsPointerActivity, { passive: true });
+        }
       }
       const loadMoreBtn = document.getElementById('btnLoadMoreResults');
       if (loadMoreBtn && loadMoreBtn.dataset.resultsLoadMoreBound !== '1') {
